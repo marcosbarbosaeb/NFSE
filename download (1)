@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Segredos / config local — NUNCA versionar
+.env
+backend/.env
+*.pfx
+*.p12
+*.pem
+*.key
+
+# Dados reais da Raiana (nunca versionados — ver integracao/ no repo, que
+# traz só o CÓDIGO, não a saída gerada)
+integracao/output/
+integracao/danfse/
+
+# Editor/SO
+.DS_Store
+.vscode/
+.idea/

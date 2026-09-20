@@ -1,0 +1,45 @@
+# Só pra rodar LOCAL, parecido com produção mas na sua máquina — não é o
+# que o Railway usa pra fazer deploy (ele builda a partir do Dockerfile
+# direto). Útil pra testar o Dockerfile/entrypoint antes de subir de
+# verdade, ou pra rodar tudo localmente sem instalar Postgres à mão.
+#
+# Uso:
+#   cp backend/.env.example backend/.env   # e preencha CERT_MASTER_KEY/SESSION_SECRET_KEY
+#   docker compose up --build
+#   # noutro terminal, uma vez:
+#   docker compose exec app psql "$DATABASE_URL_ADMIN" -f scripts/provisionar_banco.sql   # (não precisa aqui — o serviço db já cria o app com dono certo, ver abaixo)
+#   docker compose exec app python3 scripts/migrar_fornecedores.py --database-url postgresql://postgres:postgres_local@db:5432/nfse_saas
+#   docker compose exec app python3 scripts/criar_usuario.py --email voce@exemplo.com --database-url postgresql://postgres:postgres_local@db:5432/nfse_saas
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres_local
+      POSTGRES_DB: nfse_saas
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    env_file:
+      - backend/.env
+    environment:
+      # Neste compose local, roda como o próprio postgres admin (não vale a
+      # separação nfse_app/admin do DEPLOY.md — é só pra testar rápido).
+      DATABASE_URL: postgresql+psycopg://postgres:postgres_local@db:5432/nfse_saas
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

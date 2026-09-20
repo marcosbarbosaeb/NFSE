@@ -1,0 +1,22 @@
+# Backend do SaaS de NFS-e. Ver plano (Planejamento detalhado de construção
+# > Stack técnico) para o racional de cada escolha.
+sqlalchemy==2.0.54
+psycopg[binary]==3.3.6
+alembic==1.20.0
+fastapi==0.141.1
+uvicorn[standard]==0.46.0
+pydantic==2.13.3
+pydantic-settings==2.14.0
+# Marco 10 (login): starlette.middleware.sessions.SessionMiddleware usa
+# isto pra assinar o cookie de sessão — já vinha como dependência
+# transitiva do fastapi, fixando explicitamente porque agora é requisito
+# direto do login funcionar, não só um transitivo qualquer.
+itsdangerous==2.2.0
+
+# Biblioteca fiscal (app/fiscal/) — mesmas dependências de integracao/
+# (ver integracao/requirements.txt), deliberadamente sem xmlsec/signxml.
+lxml==6.1.0
+cryptography==46.0.7
+requests==2.33.1
+
+pytest==9.1.1

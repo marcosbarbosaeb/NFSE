@@ -1,0 +1,8 @@
+# Dependências dos scripts fiscais (build_dps.py, sign_dps.py,
+# cancelar_nfse.py, consultar_nfse.py) e da suíte de regressão em tests/.
+# Deliberadamente sem xmlsec/signxml — ver sign_dps.py sobre o motivo da
+# assinatura ser feita à mão com lxml + cryptography.
+lxml==6.1.0
+cryptography==46.0.7
+requests==2.33.1
+pytest==9.1.1

@@ -1,0 +1,11 @@
+**/__pycache__/
+**/*.pyc
+.git
+.pytest_cache
+backend/.env
+*.pfx
+*.p12
+*.pem
+*.key
+integracao/output/
+integracao/danfse/
