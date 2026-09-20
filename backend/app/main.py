@@ -418,7 +418,8 @@ _PAGINA_HTML = """<!DOCTYPE html>
   button:disabled { opacity: .5; cursor: default; }
   pre { background: #f5f5f5; padding: .8rem; border-radius: 6px; overflow-x: auto; font-size: .8rem; white-space: pre-wrap; }
   .aviso { background: #fff4e5; border: 1px solid #ffc266; border-radius: 6px; padding: .6rem .8rem; font-size: .85rem; }
-  .erro { color: #b00020; }
+  .erro { color: #b00020; background: #fdecea; border: 1px solid #f5b5ac; border-radius: 6px; padding: .5rem .7rem; font-size: .85rem; margin-top: .5rem; }
+  .sucesso { color: #0a6b2b; background: #e6f4ea; border: 1px solid #8fd19e; border-radius: 6px; padding: .5rem .7rem; font-size: .85rem; margin-top: .5rem; }
   .status { font-size: .85rem; }
   .badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; background: #e5e5e5; font-size: .8rem; }
 </style>
@@ -448,7 +449,8 @@ Sefin — submissão continua manual via scripts, do computador com rede liberad
   <input type="file" id="cert-pfx">
   <label>Senha</label>
   <input type="password" id="cert-senha">
-  <button onclick="enviarCertificado()">Carregar certificado</button>
+  <button id="btn-cert" onclick="enviarCertificado()">Carregar certificado</button>
+  <div id="cert-resultado"></div>
 </fieldset>
 
 <fieldset>
@@ -464,7 +466,11 @@ Sefin — submissão continua manual via scripts, do computador com rede liberad
   <label>Alíquota do Simples Nacional (%)</label>
   <input id="aliq_sn" type="number" step="0.01">
   <label>Ambiente</label>
-  <select id="tpAmb"><option value="2">Homologação</option><option value="1">Produção</option></select>
+  <select id="tpAmb">
+    <option value="2">Homologação — ambiente de teste, NÃO vale como nota fiscal real</option>
+    <option value="1">Produção — nota fiscal real, seria enviada de verdade à Receita</option>
+  </select>
+  <p class="aviso">Use sempre <strong>Homologação</strong> pra testar. "Produção" ainda não envia nada de verdade pra Sefin neste painel (isso é um passo futuro), mas já é a opção que vale pra quando enviar de verdade — não troque por engano.</p>
   <button onclick="gerar()">Gerar (cria + monta)</button>
   <button id="btn-assinar" onclick="assinar()" disabled>Assinar</button>
 </fieldset>
@@ -573,14 +579,28 @@ async function carregarStatusCertificado() {
 async function enviarCertificado() {
   const pfx = document.getElementById('cert-pfx').files[0];
   const senha = document.getElementById('cert-senha').value;
-  if (!pfx || !senha) { alert('Selecione o .pfx e informe a senha.'); return; }
+  const resultado = document.getElementById('cert-resultado');
+  const btn = document.getElementById('btn-cert');
+  resultado.innerHTML = '';
+  if (!pfx || !senha) { resultado.innerHTML = '<p class="erro">Selecione o arquivo .pfx e informe a senha antes de carregar.</p>'; return; }
   const fd = new FormData();
   fd.append('pfx', pfx);
   fd.append('senha', senha);
-  const r = await fetch('/api/certificado', { method: 'POST', body: fd });
-  if (!r.ok) { alert('Erro: ' + (await r.json()).detail); return; }
-  document.getElementById('cert-senha').value = '';
-  carregarStatusCertificado();
+  btn.disabled = true;
+  btn.textContent = 'Carregando...';
+  try {
+    const r = await fetch('/api/certificado', { method: 'POST', body: fd });
+    const dados = await r.json();
+    if (!r.ok) { resultado.innerHTML = `<p class="erro">Erro: ${dados.detail}</p>`; return; }
+    document.getElementById('cert-senha').value = '';
+    resultado.innerHTML = `<p class="sucesso">✓ Certificado carregado com sucesso. Validade: ${dados.validade}${dados.vencido ? ' — ATENÇÃO: VENCIDO' : ''}.</p>`;
+    carregarStatusCertificado();
+  } catch (e) {
+    resultado.innerHTML = `<p class="erro">Falha de conexão ao enviar o certificado: ${e}. Tente de novo.</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Carregar certificado';
+  }
 }
 function mostrarEmissao(dados) {
   emissaoAtualId = dados.id;
