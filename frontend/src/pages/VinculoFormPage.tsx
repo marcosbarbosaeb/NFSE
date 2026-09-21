@@ -140,13 +140,13 @@ export function VinculoFormPage() {
     }
   }
 
-  if (carregando) return <p className="text-sm text-slate-400">Carregando...</p>
+  if (carregando) return <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">{editando ? "Regras de emissão" : "Adicionar tomador"}</h1>
-        <p className="text-sm text-slate-500">
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{editando ? "Regras de emissão" : "Adicionar tomador"}</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
           {editando
             ? "Estas regras valem como padrão para as próximas notas deste vínculo — não alteram notas já emitidas."
             : "Use um tomador já cadastrado ou cadastre um novo, do jeito que o Emissor Nacional permite."}
@@ -159,20 +159,20 @@ export function VinculoFormPage() {
         {editando ? (
           tomadorSelecionado && (
             <Card className="p-5">
-              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">Tomador</h2>
-              <p className="font-medium text-slate-800">{tomadorSelecionado.razao_social}</p>
-              <p className="text-sm text-slate-500">{tomadorSelecionado.cnpj}</p>
+              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Tomador</h2>
+              <p className="font-medium text-slate-800 dark:text-slate-200">{tomadorSelecionado.razao_social}</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">{tomadorSelecionado.cnpj}</p>
             </Card>
           )
         ) : (
           <Card className="p-5">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Tomador</h2>
-            <div className="mb-4 flex rounded-lg bg-slate-100 p-1 text-sm">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Tomador</h2>
+            <div className="mb-4 flex rounded-lg bg-slate-100 dark:bg-slate-700 p-1 text-sm">
               <button
                 type="button"
                 onClick={() => setModoTomador("existente")}
                 className={`flex-1 rounded-md px-3 py-1.5 font-medium transition-colors ${
-                  modoTomador === "existente" ? "bg-white text-primary-700 shadow-sm" : "text-slate-500"
+                  modoTomador === "existente" ? "bg-white dark:bg-slate-800 text-primary-700 shadow-sm" : "text-slate-500 dark:text-slate-400"
                 }`}
               >
                 Usar tomador existente
@@ -181,7 +181,7 @@ export function VinculoFormPage() {
                 type="button"
                 onClick={() => setModoTomador("novo")}
                 className={`flex-1 rounded-md px-3 py-1.5 font-medium transition-colors ${
-                  modoTomador === "novo" ? "bg-white text-primary-700 shadow-sm" : "text-slate-500"
+                  modoTomador === "novo" ? "bg-white dark:bg-slate-800 text-primary-700 shadow-sm" : "text-slate-500 dark:text-slate-400"
                 }`}
               >
                 Cadastrar novo tomador
@@ -194,7 +194,7 @@ export function VinculoFormPage() {
                   required
                   value={tomadorExistenteId ?? ""}
                   onChange={(e) => setTomadorExistenteId(e.target.value || null)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                 >
                   <option value="" disabled>
                     Selecione...
@@ -259,7 +259,7 @@ export function VinculoFormPage() {
         )}
 
         <Card className="p-5">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Regras de emissão</h2>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Regras de emissão</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field
               label="Apelido"
@@ -295,7 +295,7 @@ export function VinculoFormPage() {
               <select
                 value={form.metodo_captura_valor}
                 onChange={(e) => atualizarCampo("metodo_captura_valor", e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
               >
                 {METODOS_CAPTURA.map((m) => (
                   <option key={m.value} value={m.value}>
@@ -313,27 +313,27 @@ export function VinculoFormPage() {
               onChange={(e) => atualizarCampo("template_descricao", e.target.value)}
               rows={3}
               placeholder="Ex.: Comissão de vendas - {mes_nome_upper}/{ano}"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
             />
           </FieldWrap>
 
-          <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+          <label className="mt-3 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
             <input
               type="checkbox"
               checked={form.requer_revisao}
               onChange={(e) => atualizarCampo("requer_revisao", e.target.checked)}
-              className="rounded border-slate-300"
+              className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-900"
             />
             Exigir revisão antes de assinar cada nota deste vínculo
           </label>
 
           {editando && (
-            <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+            <label className="mt-2 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
               <input
                 type="checkbox"
                 checked={form.ativo}
                 onChange={(e) => atualizarCampo("ativo", e.target.checked)}
-                className="rounded border-slate-300"
+                className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-900"
               />
               Vínculo ativo
             </label>
@@ -341,8 +341,8 @@ export function VinculoFormPage() {
         </Card>
 
         <Card className="p-5">
-          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-400">Calendário</h2>
-          <p className="mb-3 text-xs text-slate-400">
+          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Calendário</h2>
+          <p className="mb-3 text-xs text-slate-400 dark:text-slate-500">
             Opcional — preenche automaticamente os prazos e previsões deste tomador no Calendário.
           </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

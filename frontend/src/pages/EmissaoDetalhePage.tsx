@@ -113,7 +113,7 @@ export function EmissaoDetalhePage() {
     }
   }
 
-  if (carregando) return <p className="text-sm text-slate-400">Carregando...</p>
+  if (carregando) return <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>
   if (!nota) return <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro ?? "Nota não encontrada."}</p>
 
   return (
@@ -123,7 +123,7 @@ export function EmissaoDetalhePage() {
           <Link to="/nfse" className="text-sm text-primary-600 hover:underline">
             ← Voltar para NFS-e
           </Link>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-900">
+          <h1 className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">
             NFS-e nº {nota.n_dps} — série {nota.serie}
           </h1>
         </div>
@@ -135,51 +135,51 @@ export function EmissaoDetalhePage() {
       {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
 
       <Card className="p-6">
-        <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-4">
+        <div className="mb-4 flex items-center justify-between border-b border-slate-100 dark:border-slate-700/60 pb-4">
           <div>
-            <p className="text-xs uppercase tracking-wide text-slate-400">Competência</p>
-            <p className="font-medium text-slate-800">{nota.competencia}</p>
+            <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">Competência</p>
+            <p className="font-medium text-slate-800 dark:text-slate-200">{nota.competencia}</p>
           </div>
           <div className="text-right">
-            <p className="text-xs uppercase tracking-wide text-slate-400">Ambiente</p>
-            <p className="font-medium text-slate-800">{nota.ambiente_label ?? "—"}</p>
+            <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">Ambiente</p>
+            <p className="font-medium text-slate-800 dark:text-slate-200">{nota.ambiente_label ?? "—"}</p>
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <div>
-            <p className="mb-1 text-xs uppercase tracking-wide text-slate-400">Prestador</p>
-            <p className="font-medium text-slate-800">{nota.prestador.razao_social}</p>
-            <p className="text-sm text-slate-500">{nota.prestador.cnpj}</p>
-            {nota.prestador.endereco && <p className="text-sm text-slate-500">{nota.prestador.endereco}</p>}
+            <p className="mb-1 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">Prestador</p>
+            <p className="font-medium text-slate-800 dark:text-slate-200">{nota.prestador.razao_social}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{nota.prestador.cnpj}</p>
+            {nota.prestador.endereco && <p className="text-sm text-slate-500 dark:text-slate-400">{nota.prestador.endereco}</p>}
           </div>
           <div>
-            <p className="mb-1 text-xs uppercase tracking-wide text-slate-400">Tomador</p>
-            <p className="font-medium text-slate-800">{nota.tomador.razao_social ?? "—"}</p>
-            <p className="text-sm text-slate-500">{nota.tomador.cnpj}</p>
-            {nota.tomador.endereco && <p className="text-sm text-slate-500">{nota.tomador.endereco}</p>}
+            <p className="mb-1 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">Tomador</p>
+            <p className="font-medium text-slate-800 dark:text-slate-200">{nota.tomador.razao_social ?? "—"}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{nota.tomador.cnpj}</p>
+            {nota.tomador.endereco && <p className="text-sm text-slate-500 dark:text-slate-400">{nota.tomador.endereco}</p>}
           </div>
         </div>
 
-        <div className="mt-6 border-t border-slate-100 pt-4">
-          <p className="mb-1 text-xs uppercase tracking-wide text-slate-400">Serviço</p>
-          <p className="text-sm text-slate-700">{nota.servico.descricao}</p>
-          <p className="mt-1 text-xs text-slate-400">
+        <div className="mt-6 border-t border-slate-100 dark:border-slate-700/60 pt-4">
+          <p className="mb-1 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">Serviço</p>
+          <p className="text-sm text-slate-700 dark:text-slate-300">{nota.servico.descricao}</p>
+          <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
             Cód. tributação nacional {nota.servico.codigo_tributacao_nacional}
             {nota.servico.codigo_tributacao_municipal && ` · municipal ${nota.servico.codigo_tributacao_municipal}`}
           </p>
         </div>
 
-        <div className="mt-6 flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-          <span className="text-sm font-medium text-slate-600">Valor do serviço</span>
-          <span className="text-xl font-semibold text-slate-900">{formatBRL(nota.valores.valor_servico)}</span>
+        <div className="mt-6 flex items-center justify-between rounded-xl bg-slate-50 dark:bg-slate-900/40 px-4 py-3">
+          <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Valor do serviço</span>
+          <span className="text-xl font-semibold text-slate-900 dark:text-slate-100">{formatBRL(nota.valores.valor_servico)}</span>
         </div>
 
-        {nota.chave_acesso && <p className="mt-3 text-xs text-slate-400">Chave de acesso: {nota.chave_acesso}</p>}
+        {nota.chave_acesso && <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">Chave de acesso: {nota.chave_acesso}</p>}
       </Card>
 
       <Card className="p-5">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Ações</h2>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Ações</h2>
         <div className="flex flex-wrap gap-2">
           {nota.estado === "montado" && (
             <Button variant="accent" onClick={assinar} disabled={processando}>
@@ -195,8 +195,8 @@ export function EmissaoDetalhePage() {
         </div>
 
         {mensagemPronta && (
-          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <pre className="whitespace-pre-wrap font-sans text-sm text-slate-700">{mensagemPronta}</pre>
+          <div className="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+            <pre className="whitespace-pre-wrap font-sans text-sm text-slate-700 dark:text-slate-300">{mensagemPronta}</pre>
             <button
               type="button"
               onClick={() => {
@@ -212,7 +212,7 @@ export function EmissaoDetalhePage() {
       </Card>
 
       <Card className="p-5">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Envio ao fornecedor</h2>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Envio ao fornecedor</h2>
         <div className="mb-4 flex flex-wrap gap-2">
           {CANAIS.filter((c) => c.value === "email" || c.value === "whatsapp" || c.value === "direto_fornecedor").map((c) => (
             <Button key={c.value} variant="outline" onClick={() => registrarEnvio(c.value)} disabled={!nota.xml_disponivel}>
@@ -222,12 +222,12 @@ export function EmissaoDetalhePage() {
         </div>
 
         {envios.length === 0 ? (
-          <p className="text-sm text-slate-400">Nenhum envio registrado ainda.</p>
+          <p className="text-sm text-slate-400 dark:text-slate-500">Nenhum envio registrado ainda.</p>
         ) : (
-          <ul className="flex flex-col divide-y divide-slate-100">
+          <ul className="flex flex-col divide-y divide-slate-100 dark:divide-slate-700">
             {envios.map((e) => (
               <li key={e.id} className="flex items-center justify-between py-2.5 text-sm">
-                <span className="text-slate-700">{CANAIS.find((c) => c.value === e.canal)?.label ?? e.canal}</span>
+                <span className="text-slate-700 dark:text-slate-300">{CANAIS.find((c) => c.value === e.canal)?.label ?? e.canal}</span>
                 <div className="flex items-center gap-3">
                   {badgeStatusEnvio(e.status)}
                   {e.status === "pendente" && (

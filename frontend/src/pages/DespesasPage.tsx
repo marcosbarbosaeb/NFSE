@@ -36,8 +36,8 @@ export function DespesasPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Despesas</h1>
-          <p className="text-sm text-slate-500">Despesas por categoria (Pró-labore, INSS, Simples Nacional...).</p>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Despesas</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Despesas por categoria (Pró-labore, INSS, Simples Nacional...).</p>
         </div>
         <Button variant="accent" onClick={() => setModalAberto(true)}>
           <Plus size={16} /> Registrar despesa
@@ -49,7 +49,7 @@ export function DespesasPage() {
           <select
             value={ano}
             onChange={(e) => setAno(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
           >
             {ANOS.map((a) => (
               <option key={a} value={a}>
@@ -58,19 +58,19 @@ export function DespesasPage() {
             ))}
           </select>
           {despesas && (
-            <p className="text-sm text-slate-500">
-              Total no ano: <span className="font-semibold text-slate-800">{formatBRL(total)}</span>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Total no ano: <span className="font-semibold text-slate-800 dark:text-slate-200">{formatBRL(total)}</span>
             </p>
           )}
         </div>
 
         {erro && <p className="mb-3 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
-        {carregando && <p className="py-8 text-center text-sm text-slate-400">Carregando...</p>}
+        {carregando && <p className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</p>}
 
         {!carregando && (
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
+              <tr className="border-b border-slate-100 dark:border-slate-700/60 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                 <th className="py-2 font-medium">Categoria</th>
                 <th className="py-2 font-medium">Competência</th>
                 <th className="py-2 font-medium">Valor</th>
@@ -79,14 +79,14 @@ export function DespesasPage() {
             <tbody>
               {despesas?.map((d) => (
                 <tr key={d.id} className="border-b border-slate-50 last:border-0">
-                  <td className="py-3 font-medium text-slate-800">{d.categoria}</td>
-                  <td className="py-3 text-slate-600">{d.competencia}</td>
-                  <td className="py-3 text-slate-600">{formatBRL(d.valor)}</td>
+                  <td className="py-3 font-medium text-slate-800 dark:text-slate-200">{d.categoria}</td>
+                  <td className="py-3 text-slate-600 dark:text-slate-300">{d.competencia}</td>
+                  <td className="py-3 text-slate-600 dark:text-slate-300">{formatBRL(d.valor)}</td>
                 </tr>
               ))}
               {despesas?.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="py-8 text-center text-slate-400">
+                  <td colSpan={3} className="py-8 text-center text-slate-400 dark:text-slate-500">
                     Nenhuma despesa neste ano ainda.
                   </td>
                 </tr>
@@ -146,13 +146,13 @@ function RegistrarDespesaModal({ onClose, onRegistrada }: { onClose: () => void;
 
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Competência</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Competência</span>
             <input
               required
               type="month"
               value={competencia}
               onChange={(e) => setCompetencia(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
             />
           </label>
           <Field label="Valor (R$)" required type="number" step="0.01" min="0.01" value={valor} onChange={(e) => setValor(e.target.value)} />

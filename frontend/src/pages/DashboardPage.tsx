@@ -71,22 +71,22 @@ export function DashboardPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Bom dia! 👋</h1>
-          <p className="text-sm text-slate-500">Aqui está o resumo das suas notas deste mês.</p>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Bom dia! 👋</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Aqui está o resumo das suas notas deste mês.</p>
         </div>
-        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm">
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800">
           <button
             type="button"
             onClick={() => setCompetencia((c) => deslocarCompetencia(c, -1))}
-            className="rounded px-2 py-0.5 text-slate-500 hover:bg-slate-100"
+            className="rounded px-2 py-0.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
           >
             ‹
           </button>
-          <span className="min-w-[9rem] text-center font-medium text-slate-700">{formatCompetenciaLonga(competencia)}</span>
+          <span className="min-w-[9rem] text-center font-medium text-slate-700 dark:text-slate-300">{formatCompetenciaLonga(competencia)}</span>
           <button
             type="button"
             onClick={() => setCompetencia((c) => deslocarCompetencia(c, 1))}
-            className="rounded px-2 py-0.5 text-slate-500 hover:bg-slate-100"
+            className="rounded px-2 py-0.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
           >
             ›
           </button>
@@ -95,7 +95,7 @@ export function DashboardPage() {
 
       {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
 
-      {carregando && !resumo && <p className="text-sm text-slate-400">Carregando...</p>}
+      {carregando && !resumo && <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>}
 
       {resumo && (
         <>
@@ -133,7 +133,7 @@ export function DashboardPage() {
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
             <Card className="p-5 xl:col-span-2">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-800">Emissões deste mês</h2>
+                <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Emissões deste mês</h2>
                 <div className="flex items-center gap-3">
                   <Link to="/nfse" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
                     Ver todas <ArrowRight size={14} />
@@ -147,12 +147,12 @@ export function DashboardPage() {
               </div>
 
               {resumo.emissoes.length === 0 ? (
-                <p className="py-8 text-center text-sm text-slate-400">Nenhuma nota emitida nesta competência ainda.</p>
+                <p className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">Nenhuma nota emitida nesta competência ainda.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead>
-                      <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
+                      <tr className="border-b border-slate-100 dark:border-slate-700/60 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                         <th className="py-2 font-medium">Tomador</th>
                         <th className="py-2 font-medium">Competência</th>
                         <th className="py-2 font-medium">Valor</th>
@@ -165,11 +165,11 @@ export function DashboardPage() {
                       {resumo.emissoes.map((linha) => (
                         <tr key={linha.emissao_id} className="border-b border-slate-50 last:border-0">
                           <td className="py-3">
-                            <p className="font-medium text-slate-800">{linha.apelido}</p>
-                            <p className="text-xs text-slate-400">{linha.tomador_razao_social}</p>
+                            <p className="font-medium text-slate-800 dark:text-slate-200">{linha.apelido}</p>
+                            <p className="text-xs text-slate-400 dark:text-slate-500">{linha.tomador_razao_social}</p>
                           </td>
-                          <td className="py-3 text-slate-600">{linha.competencia}</td>
-                          <td className="py-3 text-slate-600">{formatBRL(linha.valor)}</td>
+                          <td className="py-3 text-slate-600 dark:text-slate-300">{linha.competencia}</td>
+                          <td className="py-3 text-slate-600 dark:text-slate-300">{formatBRL(linha.valor)}</td>
                           <td className="py-3">{badgeEstadoNfse(linha.estado, linha.estado_label)}</td>
                           <td className="py-3">{badgeEnvio(linha.envio_status)}</td>
                           <td className="py-3">{badgePagamento(linha.pagamento_recebido)}</td>
@@ -184,17 +184,17 @@ export function DashboardPage() {
             <Card className="p-5">
               <div className="mb-3 flex items-center gap-2">
                 <AlertTriangle size={16} className="text-warning-600" />
-                <h2 className="text-base font-semibold text-slate-800">Precisa da sua atenção</h2>
+                <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Precisa da sua atenção</h2>
                 {resumo.atencao.length > 0 && <Badge variant="warning">{resumo.atencao.length}</Badge>}
               </div>
               {resumo.atencao.length === 0 ? (
-                <p className="text-sm text-slate-400">Tudo em dia por aqui.</p>
+                <p className="text-sm text-slate-400 dark:text-slate-500">Tudo em dia por aqui.</p>
               ) : (
                 <ul className="flex flex-col gap-3">
                   {resumo.atencao.map((item, i) => (
                     <li key={i} className="rounded-lg bg-warning-50 px-3 py-2">
-                      <p className="text-sm font-medium text-slate-800">{item.titulo}</p>
-                      <p className="text-xs text-slate-500">{item.mensagem}</p>
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{item.titulo}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{item.mensagem}</p>
                     </li>
                   ))}
                 </ul>
@@ -205,13 +205,13 @@ export function DashboardPage() {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <Card className="p-5">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-800">Recebimentos</h2>
+                <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Recebimentos</h2>
                 <Link to="/recebimentos" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
                   Ver detalhes <ArrowRight size={14} />
                 </Link>
               </div>
-              <p className="text-2xl font-semibold text-slate-900">{formatBRL(resumo.recebido_no_mes)}</p>
-              <p className="mb-4 text-xs text-slate-400">recebidos este mês</p>
+              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{formatBRL(resumo.recebido_no_mes)}</p>
+              <p className="mb-4 text-xs text-slate-400 dark:text-slate-500">recebidos este mês</p>
               {resumo.delta_recebimentos_pct !== null && (
                 <p
                   className={`mb-3 flex items-center gap-1 text-xs font-medium ${
@@ -226,17 +226,17 @@ export function DashboardPage() {
             </Card>
 
             <Card className="p-5">
-              <h2 className="mb-3 text-base font-semibold text-slate-800">Atalhos rápidos</h2>
-              <div className="flex flex-col divide-y divide-slate-100">
+              <h2 className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-200">Atalhos rápidos</h2>
+              <div className="flex flex-col divide-y divide-slate-100 dark:divide-slate-700">
                 {[
                   { to: "/nfse", label: "Nova emissão", icon: FileText },
                   { to: "/tomadores", label: "Adicionar tomador", icon: UserPlus },
                   { to: "/recebimentos", label: "Registrar recebimento", icon: Wallet },
                   { to: "/despesas", label: "Registrar despesa", icon: TrendingDown },
                 ].map(({ to, label, icon: Icon }) => (
-                  <Link key={to} to={to} className="flex items-center justify-between py-2.5 text-sm text-slate-700 hover:text-primary-600">
+                  <Link key={to} to={to} className="flex items-center justify-between py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:text-primary-600">
                     <span className="flex items-center gap-2">
-                      <Icon size={16} className="text-slate-400" />
+                      <Icon size={16} className="text-slate-400 dark:text-slate-500" />
                       {label}
                     </span>
                     <ArrowRight size={14} className="text-slate-300" />

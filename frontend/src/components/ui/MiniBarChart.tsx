@@ -24,7 +24,7 @@ export function MiniBarChart({ dados }: { dados: PontoSerieMensal[] }) {
               className={`w-full rounded-t-sm ${ehUltimo ? "bg-success-600" : "bg-success-600/30"}`}
               style={{ height: `${alturaPct}%` }}
             />
-            <span className="text-[10px] text-slate-400">{formatCompetenciaAbrev(ponto.competencia)}</span>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500">{formatCompetenciaAbrev(ponto.competencia)}</span>
           </div>
         )
       })}

@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Marco 15: tema claro/escuro por classe (não só `prefers-color-scheme`) —
+   a preferência é escolhida na tela de Configurações e persistida em
+   localStorage (ver src/lib/theme.tsx), então precisamos de um variant que
+   reaja a uma classe `.dark` no <html>, não ao SO. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /*
  * Paleta do NotaFácil — extraída a olho das duas imagens de referência que
  * o Marcos mandou (dashboard + fluxo de 12 telas, 21/09/2026), não de um
@@ -21,31 +27,61 @@
   --color-brand-800: #1c2550;
   --color-brand-700: #29356b;
 
+  /* Marco 15: ramp COMPLETA (50-900) em cada cor semântica — antes só
+     existiam os tons usados até aqui (ex.: -50/-600/-700), o que já causou
+     bug real (classe com tom não-definido renderiza invisível, sem erro
+     nenhum — ver comentário histórico em CalendarioPage.tsx). Tema escuro
+     precisa dos tons -300/-400/-800/-900 pra badges/fundos legíveis sobre
+     superfície escura, então preenchemos o resto da escala de propósito em
+     vez de ir adicionando tom a tom de novo. */
   --color-primary-50: #eef2ff;
   --color-primary-100: #e0e7ff;
+  --color-primary-200: #c7d2fe;
+  --color-primary-300: #a5b4fc;
+  --color-primary-400: #7c8ff5;
   --color-primary-500: #3b5bdb;
   --color-primary-600: #2f4fd1;
   --color-primary-700: #2540ab;
+  --color-primary-800: #1f3489;
+  --color-primary-900: #1c2d6e;
 
   --color-accent-50: #fdf2f8;
   --color-accent-100: #fce7f3;
+  --color-accent-200: #fbcfe8;
+  --color-accent-300: #f9a8d4;
+  --color-accent-400: #ec4899;
   --color-accent-500: #db2777;
   --color-accent-600: #c2255f;
   --color-accent-700: #a31c4e;
+  --color-accent-800: #861941;
+  --color-accent-900: #701838;
 
   --color-success-50: #ecfdf5;
+  --color-success-100: #d1fae5;
+  --color-success-300: #6ee7b7;
+  --color-success-400: #34d399;
   --color-success-600: #059669;
   --color-success-700: #047857;
+  --color-success-900: #064e3b;
 
   --color-warning-50: #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-300: #fcd34d;
+  --color-warning-400: #fbbf24;
   --color-warning-600: #d97706;
   --color-warning-700: #b45309;
+  --color-warning-900: #78350f;
 
   --color-danger-50: #fef2f2;
+  --color-danger-100: #fee2e2;
+  --color-danger-300: #fca5a5;
+  --color-danger-400: #f87171;
   --color-danger-600: #dc2626;
   --color-danger-700: #b91c1c;
+  --color-danger-900: #7f1d1d;
 
   --color-canvas: #f4f5fa;
+  --color-canvas-dark: #0e1220;
 
   --font-sans: -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
 }
@@ -54,6 +90,12 @@ body {
   background: var(--color-canvas);
   color: #1a1a2e;
   font-family: var(--font-sans);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.dark body {
+  background: var(--color-canvas-dark);
+  color: #e2e4f0;
 }
 
 #root {

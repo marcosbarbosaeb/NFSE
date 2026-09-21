@@ -70,8 +70,8 @@ export function NfsePage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">NFS-e</h1>
-          <p className="text-sm text-slate-500">Todas as notas emitidas, por competência.</p>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">NFS-e</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Todas as notas emitidas, por competência.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setModalCsv(true)}>
@@ -88,7 +88,7 @@ export function NfsePage() {
           <select
             value={ano}
             onChange={(e) => setAno(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
           >
             {ANOS.map((a) => (
               <option key={a} value={a}>
@@ -99,7 +99,7 @@ export function NfsePage() {
           <select
             value={vinculoFiltro}
             onChange={(e) => setVinculoFiltro(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
           >
             <option value="">Todos os fornecedores</option>
             {vinculos.map((v) => (
@@ -109,23 +109,23 @@ export function NfsePage() {
             ))}
           </select>
           <div className="relative ml-auto w-full max-w-xs">
-            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
             <input
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               placeholder="Buscar fornecedor..."
-              className="w-full rounded-lg border border-slate-200 py-1.5 pl-9 pr-3 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 py-1.5 pl-9 pr-3 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
             />
           </div>
         </div>
 
         {erro && <p className="mb-3 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
-        {carregando && <p className="py-8 text-center text-sm text-slate-400">Carregando...</p>}
+        {carregando && <p className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</p>}
 
         {!carregando && (
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
+              <tr className="border-b border-slate-100 dark:border-slate-700/60 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                 <th className="py-2 font-medium">Fornecedor</th>
                 <th className="py-2 font-medium">Competência</th>
                 <th className="py-2 font-medium">Valor</th>
@@ -135,22 +135,22 @@ export function NfsePage() {
             </thead>
             <tbody>
               {filtradas.map((e) => (
-                <tr key={e.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
+                <tr key={e.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/50">
                   <td className="py-3">
                     <Link to={`/nfse/${e.id}`} className="font-medium text-primary-700 hover:underline">
                       {e.apelido}
                     </Link>
-                    <p className="text-xs text-slate-400">{e.tomador_razao_social}</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500">{e.tomador_razao_social}</p>
                   </td>
-                  <td className="py-3 text-slate-600">{e.competencia}</td>
-                  <td className="py-3 text-slate-600">{formatBRL(e.valor)}</td>
-                  <td className="py-3 text-slate-500">{e.n_dps ?? "—"}</td>
+                  <td className="py-3 text-slate-600 dark:text-slate-300">{e.competencia}</td>
+                  <td className="py-3 text-slate-600 dark:text-slate-300">{formatBRL(e.valor)}</td>
+                  <td className="py-3 text-slate-500 dark:text-slate-400">{e.n_dps ?? "—"}</td>
                   <td className="py-3">{badgeEstado(e.estado, e.estado_label)}</td>
                 </tr>
               ))}
               {filtradas.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-400">
+                  <td colSpan={5} className="py-8 text-center text-slate-400 dark:text-slate-500">
                     Nenhuma nota encontrada.
                   </td>
                 </tr>
@@ -233,7 +233,7 @@ function NovaEmissaoModal({
             required
             value={vinculoId}
             onChange={(e) => setVinculoId(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
           >
             <option value="" disabled>
               Selecione...
@@ -253,7 +253,7 @@ function NovaEmissaoModal({
               type="month"
               value={competencia}
               onChange={(e) => setCompetencia(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
             />
           </FieldWrap>
           <Field
@@ -293,7 +293,7 @@ function NovaEmissaoModal({
               type="button"
               onClick={() => setTpAmb("2")}
               className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                tpAmb === "2" ? "border-primary-500 bg-primary-50 text-primary-700" : "border-slate-300 text-slate-600"
+                tpAmb === "2" ? "border-primary-500 bg-primary-50 text-primary-700" : "border-slate-300 text-slate-600 dark:text-slate-300"
               }`}
             >
               Homologação (teste)
@@ -302,7 +302,7 @@ function NovaEmissaoModal({
               type="button"
               onClick={() => setTpAmb("1")}
               className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                tpAmb === "1" ? "border-danger-500 bg-danger-50 text-danger-700" : "border-slate-300 text-slate-600"
+                tpAmb === "1" ? "border-danger-500 bg-danger-50 text-danger-700" : "border-slate-300 text-slate-600 dark:text-slate-300"
               }`}
             >
               Produção
@@ -358,9 +358,9 @@ function ImportarCsvModal({ onClose, onImportado }: { onClose: () => void; onImp
       {!resultado ? (
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
-          <p className="text-sm text-slate-500">
-            Colunas: <code className="rounded bg-slate-100 px-1">apelido, competencia, valor</code> — opcionalmente{" "}
-            <code className="rounded bg-slate-100 px-1">ordem, aliq_sn</code>. O apelido precisa bater com um fornecedor
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Colunas: <code className="rounded bg-slate-100 dark:bg-slate-700 px-1">apelido, competencia, valor</code> — opcionalmente{" "}
+            <code className="rounded bg-slate-100 dark:bg-slate-700 px-1">ordem, aliq_sn</code>. O apelido precisa bater com um fornecedor
             já cadastrado.
           </p>
           <input
@@ -381,13 +381,13 @@ function ImportarCsvModal({ onClose, onImportado }: { onClose: () => void; onImp
         </form>
       ) : (
         <div className="flex flex-col gap-4">
-          <p className="text-sm text-slate-700">
+          <p className="text-sm text-slate-700 dark:text-slate-300">
             {resultado.sucesso} de {resultado.total} linha(s) importada(s) com sucesso
             {resultado.erro > 0 && `, ${resultado.erro} com erro`}.
           </p>
-          <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-100">
+          <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-100 dark:border-slate-700/60">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-400">
+              <thead className="bg-slate-50 dark:bg-slate-900/40 text-slate-400 dark:text-slate-500">
                 <tr>
                   <th className="px-3 py-2 font-medium">Linha</th>
                   <th className="px-3 py-2 font-medium">Apelido</th>
@@ -396,9 +396,9 @@ function ImportarCsvModal({ onClose, onImportado }: { onClose: () => void; onImp
               </thead>
               <tbody>
                 {resultado.linhas.map((l) => (
-                  <tr key={l.linha} className="border-t border-slate-100">
-                    <td className="px-3 py-2 text-slate-500">{l.linha}</td>
-                    <td className="px-3 py-2 text-slate-700">{l.apelido}</td>
+                  <tr key={l.linha} className="border-t border-slate-100 dark:border-slate-700/60">
+                    <td className="px-3 py-2 text-slate-500 dark:text-slate-400">{l.linha}</td>
+                    <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{l.apelido}</td>
                     <td className="px-3 py-2">
                       {l.ok ? <Badge variant="success">OK — nº DPS {l.n_dps}</Badge> : <Badge variant="danger">{l.mensagem}</Badge>}
                     </td>

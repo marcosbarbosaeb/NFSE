@@ -5,8 +5,8 @@ type Variante = "primary" | "accent" | "outline" | "ghost"
 const ESTILOS: Record<Variante, string> = {
   primary: "bg-primary-600 text-white hover:bg-primary-700",
   accent: "bg-accent-500 text-white hover:bg-accent-600",
-  outline: "border border-slate-300 text-slate-700 hover:bg-slate-50",
-  ghost: "text-primary-700 hover:bg-primary-50",
+  outline: "border border-slate-300 text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700",
+  ghost: "text-primary-700 hover:bg-primary-50 dark:text-primary-300 dark:hover:bg-primary-900/30",
 }
 
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {

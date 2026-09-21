@@ -26,7 +26,7 @@ export function Sidebar() {
             <p className="text-base font-semibold text-white">
               Nota<span className="text-primary-400">Fácil</span>
             </p>
-            <p className="text-[11px] text-slate-400">NFS-e sem complicação</p>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500">NFS-e sem complicação</p>
           </div>
         </div>
 
@@ -52,7 +52,7 @@ export function Sidebar() {
       <div className="rounded-xl bg-brand-800/70 p-4 text-slate-300">
         <Lightbulb size={18} className="mb-2 text-primary-400" />
         <p className="text-sm font-medium text-white">Cadastre uma vez. Use todos os meses.</p>
-        <p className="mt-1 text-xs text-slate-400">
+        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
           Automatize suas emissões e foque no que realmente importa.
         </p>
       </div>

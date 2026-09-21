@@ -87,22 +87,22 @@ export function CalendarioPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Calendário</h1>
-          <p className="text-sm text-slate-500">Prazos de emissão e previsões de recebimento, mês a mês.</p>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Calendário</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Prazos de emissão e previsões de recebimento, mês a mês.</p>
         </div>
-        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm">
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800">
           <button
             type="button"
             onClick={() => setCompetencia((c) => deslocarCompetencia(c, -1))}
-            className="rounded px-2 py-0.5 text-slate-500 hover:bg-slate-100"
+            className="rounded px-2 py-0.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
           >
             ‹
           </button>
-          <span className="min-w-[9rem] text-center font-medium text-slate-700">{formatCompetenciaLonga(competencia)}</span>
+          <span className="min-w-[9rem] text-center font-medium text-slate-700 dark:text-slate-300">{formatCompetenciaLonga(competencia)}</span>
           <button
             type="button"
             onClick={() => setCompetencia((c) => deslocarCompetencia(c, 1))}
-            className="rounded px-2 py-0.5 text-slate-500 hover:bg-slate-100"
+            className="rounded px-2 py-0.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
           >
             ›
           </button>
@@ -114,7 +114,7 @@ export function CalendarioPage() {
       <div className="flex flex-wrap gap-4">
         {(Object.entries(ESTILO_EVENTO) as [TipoEventoCalendario, (typeof ESTILO_EVENTO)[TipoEventoCalendario]][]).map(
           ([tipo, estilo]) => (
-            <div key={tipo} className="flex items-center gap-1.5 text-xs text-slate-500">
+            <div key={tipo} className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
               <span className={`h-2 w-2 rounded-full ${estilo.dot}`} />
               {estilo.label}
             </div>
@@ -123,7 +123,7 @@ export function CalendarioPage() {
       </div>
 
       <Card className="overflow-hidden p-0">
-        <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-400">
+        <div className="grid grid-cols-7 border-b border-slate-100 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-900/40 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
           {DIAS_SEMANA.map((d) => (
             <div key={d} className="px-3 py-2 text-center">
               {d}
@@ -139,13 +139,13 @@ export function CalendarioPage() {
             return (
               <div
                 key={iso}
-                className={`min-h-[7rem] border-b border-r border-slate-100 p-2 [&:nth-child(7n)]:border-r-0 ${
-                  doMes ? "bg-white" : "bg-slate-50/60"
+                className={`min-h-[7rem] border-b border-r border-slate-100 dark:border-slate-700/60 p-2 [&:nth-child(7n)]:border-r-0 ${
+                  doMes ? "bg-white dark:bg-slate-800" : "bg-slate-50/60"
                 }`}
               >
                 <span
                   className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium ${
-                    ehHoje ? "bg-primary-600 text-white" : doMes ? "text-slate-700" : "text-slate-300"
+                    ehHoje ? "bg-primary-600 text-white" : doMes ? "text-slate-700 dark:text-slate-300" : "text-slate-300"
                   }`}
                 >
                   {data.getDate()}
@@ -161,7 +161,7 @@ export function CalendarioPage() {
                       {ev.valor != null && <span className="ml-1 opacity-70">{formatBRL(ev.valor)}</span>}
                     </div>
                   ))}
-                  {eventos.length > 3 && <span className="text-[11px] text-slate-400">+{eventos.length - 3} mais</span>}
+                  {eventos.length > 3 && <span className="text-[11px] text-slate-400 dark:text-slate-500">+{eventos.length - 3} mais</span>}
                 </div>
               </div>
             )
@@ -169,7 +169,7 @@ export function CalendarioPage() {
         </div>
       </Card>
 
-      {carregando && !calendario && <p className="text-sm text-slate-400">Carregando...</p>}
+      {carregando && !calendario && <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>}
     </div>
   )
 }

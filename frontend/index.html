@@ -5,6 +5,18 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NotaFácil</title>
+    <script>
+      // Aplica o tema ANTES do React montar, pra não piscar claro->escuro
+      // num reload com tema escuro salvo (ver src/lib/theme.tsx, que faz a
+      // mesma leitura — este script só evita o flash inicial).
+      (function () {
+        try {
+          var salvo = localStorage.getItem("notafacil.tema");
+          var escuro = salvo === "escuro" || (!salvo && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", escuro);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

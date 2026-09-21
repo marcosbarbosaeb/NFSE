@@ -42,8 +42,8 @@ export function RecebimentosPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Recebimentos</h1>
-          <p className="text-sm text-slate-500">Pagamentos recebidos, por fornecedor e competência.</p>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Recebimentos</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Pagamentos recebidos, por fornecedor e competência.</p>
         </div>
         <Button variant="accent" onClick={() => setModalAberto(true)}>
           <Plus size={16} /> Registrar recebimento
@@ -55,7 +55,7 @@ export function RecebimentosPage() {
           <select
             value={ano}
             onChange={(e) => setAno(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
           >
             {ANOS.map((a) => (
               <option key={a} value={a}>
@@ -64,19 +64,19 @@ export function RecebimentosPage() {
             ))}
           </select>
           {pagamentos && (
-            <p className="text-sm text-slate-500">
-              Total no ano: <span className="font-semibold text-slate-800">{formatBRL(total)}</span>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Total no ano: <span className="font-semibold text-slate-800 dark:text-slate-200">{formatBRL(total)}</span>
             </p>
           )}
         </div>
 
         {erro && <p className="mb-3 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
-        {carregando && <p className="py-8 text-center text-sm text-slate-400">Carregando...</p>}
+        {carregando && <p className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</p>}
 
         {!carregando && (
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
+              <tr className="border-b border-slate-100 dark:border-slate-700/60 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                 <th className="py-2 font-medium">Fornecedor</th>
                 <th className="py-2 font-medium">Competência</th>
                 <th className="py-2 font-medium">Valor</th>
@@ -86,17 +86,17 @@ export function RecebimentosPage() {
             <tbody>
               {pagamentos?.map((p) => (
                 <tr key={p.id} className="border-b border-slate-50 last:border-0">
-                  <td className="py-3 font-medium text-slate-800">{p.apelido}</td>
-                  <td className="py-3 text-slate-600">{p.competencia}</td>
-                  <td className="py-3 text-slate-600">{formatBRL(p.valor)}</td>
-                  <td className="py-3 text-slate-500">
+                  <td className="py-3 font-medium text-slate-800 dark:text-slate-200">{p.apelido}</td>
+                  <td className="py-3 text-slate-600 dark:text-slate-300">{p.competencia}</td>
+                  <td className="py-3 text-slate-600 dark:text-slate-300">{formatBRL(p.valor)}</td>
+                  <td className="py-3 text-slate-500 dark:text-slate-400">
                     {p.data_recebimento ? new Date(`${p.data_recebimento}T00:00:00`).toLocaleDateString("pt-BR") : <Badge variant="neutral">Não informada</Badge>}
                   </td>
                 </tr>
               ))}
               {pagamentos?.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="py-8 text-center text-slate-400">
+                  <td colSpan={4} className="py-8 text-center text-slate-400 dark:text-slate-500">
                     Nenhum recebimento neste ano ainda.
                   </td>
                 </tr>
@@ -166,7 +166,7 @@ function RegistrarPagamentoModal({
             required
             value={vinculoId}
             onChange={(e) => setVinculoId(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
           >
             <option value="" disabled>
               Selecione...
@@ -186,7 +186,7 @@ function RegistrarPagamentoModal({
               type="month"
               value={competencia}
               onChange={(e) => setCompetencia(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
             />
           </FieldWrap>
           <Field label="Valor (R$)" required type="number" step="0.01" min="0.01" value={valor} onChange={(e) => setValor(e.target.value)} />

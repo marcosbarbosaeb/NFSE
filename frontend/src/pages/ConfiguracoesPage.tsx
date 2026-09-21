@@ -1,13 +1,15 @@
-import { CheckCircle2, ShieldAlert, UploadCloud } from "lucide-react"
+import { CheckCircle2, Moon, ShieldAlert, Sun, UploadCloud } from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { Field } from "../components/ui/Field"
 import { ApiError, api, formatarErro } from "../lib/api"
+import { useTheme } from "../lib/theme"
 import type { CertificadoStatus, Prestador } from "../lib/types"
 
 export function ConfiguracoesPage() {
+  const { tema, definirTema } = useTheme()
   const [prestador, setPrestador] = useState<Prestador | null>(null)
   const [certificado, setCertificado] = useState<CertificadoStatus | null>(null)
   const [carregando, setCarregando] = useState(true)
@@ -52,19 +54,47 @@ export function ConfiguracoesPage() {
     }
   }
 
-  if (carregando) return <p className="text-sm text-slate-400">Carregando...</p>
+  if (carregando) return <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>
   if (erro) return <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Configurações</h1>
-        <p className="text-sm text-slate-500">Certificado digital e dados do prestador.</p>
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Configurações</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">Aparência, certificado digital e dados do prestador.</p>
       </div>
 
       <Card className="p-5">
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Aparência</h2>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => definirTema("claro")}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+              tema === "claro"
+                ? "border-primary-500 bg-primary-50 text-primary-700"
+                : "border-slate-300 text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+            }`}
+          >
+            <Sun size={16} /> Claro
+          </button>
+          <button
+            type="button"
+            onClick={() => definirTema("escuro")}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+              tema === "escuro"
+                ? "border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/40 dark:text-primary-300"
+                : "border-slate-300 text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+            }`}
+          >
+            <Moon size={16} /> Escuro
+          </button>
+        </div>
+      </Card>
+
+      <Card className="p-5">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Certificado digital (A1)</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Certificado digital (A1)</h2>
           {certificado?.carregado ? (
             certificado.vencido ? (
               <Badge variant="danger">Vencido</Badge>
@@ -77,7 +107,7 @@ export function ConfiguracoesPage() {
         </div>
 
         {certificado?.carregado && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          <div className="mb-4 flex items-center gap-2 rounded-lg bg-slate-50 dark:bg-slate-900/40 px-3 py-2 text-sm text-slate-600 dark:text-slate-300">
             {certificado.vencido ? <ShieldAlert size={16} className="text-danger-600" /> : <CheckCircle2 size={16} className="text-success-600" />}
             {certificado.validade
               ? `Validade: ${new Date(`${certificado.validade}T00:00:00`).toLocaleDateString("pt-BR")}`
@@ -88,7 +118,7 @@ export function ConfiguracoesPage() {
         <form onSubmit={enviarCertificado} className="flex flex-col gap-3">
           {erroCert && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erroCert}</p>}
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Arquivo .pfx</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Arquivo .pfx</span>
             <input
               type="file"
               accept=".pfx,application/x-pkcs12"
@@ -108,36 +138,36 @@ export function ConfiguracoesPage() {
 
       {prestador && (
         <Card className="p-5">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Dados do prestador</h2>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Dados do prestador</h2>
           <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             <div>
-              <dt className="text-xs text-slate-400">Razão social</dt>
-              <dd className="text-slate-800">{prestador.razao_social}</dd>
+              <dt className="text-xs text-slate-400 dark:text-slate-500">Razão social</dt>
+              <dd className="text-slate-800 dark:text-slate-200">{prestador.razao_social}</dd>
             </div>
             <div>
-              <dt className="text-xs text-slate-400">CNPJ/CPF</dt>
-              <dd className="text-slate-800">{prestador.cpf_cnpj}</dd>
+              <dt className="text-xs text-slate-400 dark:text-slate-500">CNPJ/CPF</dt>
+              <dd className="text-slate-800 dark:text-slate-200">{prestador.cpf_cnpj}</dd>
             </div>
             {prestador.inscricao_municipal && (
               <div>
-                <dt className="text-xs text-slate-400">Inscrição municipal</dt>
-                <dd className="text-slate-800">{prestador.inscricao_municipal}</dd>
+                <dt className="text-xs text-slate-400 dark:text-slate-500">Inscrição municipal</dt>
+                <dd className="text-slate-800 dark:text-slate-200">{prestador.inscricao_municipal}</dd>
               </div>
             )}
             <div>
-              <dt className="text-xs text-slate-400">Município (IBGE)</dt>
-              <dd className="text-slate-800">{prestador.cod_municipio}</dd>
+              <dt className="text-xs text-slate-400 dark:text-slate-500">Município (IBGE)</dt>
+              <dd className="text-slate-800 dark:text-slate-200">{prestador.cod_municipio}</dd>
             </div>
             {(prestador.logradouro || prestador.cep) && (
               <div className="sm:col-span-2">
-                <dt className="text-xs text-slate-400">Endereço</dt>
-                <dd className="text-slate-800">
+                <dt className="text-xs text-slate-400 dark:text-slate-500">Endereço</dt>
+                <dd className="text-slate-800 dark:text-slate-200">
                   {[prestador.logradouro, prestador.numero, prestador.bairro, prestador.cep].filter(Boolean).join(", ") || "—"}
                 </dd>
               </div>
             )}
           </dl>
-          <p className="mt-4 text-xs text-slate-400">
+          <p className="mt-4 text-xs text-slate-400 dark:text-slate-500">
             Edição desses dados ainda é administrativa (fora do painel) — fala com quem cuida do backend se precisar mudar algo aqui.
           </p>
         </Card>

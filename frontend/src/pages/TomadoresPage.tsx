@@ -49,8 +49,8 @@ export function TomadoresPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Tomadores</h1>
-          <p className="text-sm text-slate-500">Gerencie seus tomadores e as regras de emissão de cada um.</p>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Tomadores</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Gerencie seus tomadores e as regras de emissão de cada um.</p>
         </div>
         <Link to="/tomadores/novo">
           <Button variant="accent">
@@ -61,12 +61,12 @@ export function TomadoresPage() {
 
       <Card className="p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex rounded-lg bg-slate-100 p-1 text-sm">
+          <div className="flex rounded-lg bg-slate-100 dark:bg-slate-700 p-1 text-sm">
             <button
               type="button"
               onClick={() => setAba("meus")}
               className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
-                aba === "meus" ? "bg-white text-primary-700 shadow-sm" : "text-slate-500"
+                aba === "meus" ? "bg-white dark:bg-slate-800 text-primary-700 shadow-sm" : "text-slate-500 dark:text-slate-400"
               }`}
             >
               Meus tomadores
@@ -75,29 +75,29 @@ export function TomadoresPage() {
               type="button"
               onClick={() => setAba("todos")}
               className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
-                aba === "todos" ? "bg-white text-primary-700 shadow-sm" : "text-slate-500"
+                aba === "todos" ? "bg-white dark:bg-slate-800 text-primary-700 shadow-sm" : "text-slate-500 dark:text-slate-400"
               }`}
             >
               Todos os tomadores
             </button>
           </div>
           <div className="relative w-full max-w-xs">
-            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
             <input
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               placeholder="Buscar por nome ou CNPJ..."
-              className="w-full rounded-lg border border-slate-200 py-1.5 pl-9 pr-3 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 py-1.5 pl-9 pr-3 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
             />
           </div>
         </div>
 
-        {carregando && <p className="py-8 text-center text-sm text-slate-400">Carregando...</p>}
+        {carregando && <p className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</p>}
 
         {!carregando && aba === "meus" && (
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
+              <tr className="border-b border-slate-100 dark:border-slate-700/60 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                 <th className="py-2 font-medium">Apelido</th>
                 <th className="py-2 font-medium">Tomador</th>
                 <th className="py-2 font-medium">CNPJ</th>
@@ -107,15 +107,15 @@ export function TomadoresPage() {
             </thead>
             <tbody>
               {vinculosFiltrados.map((v) => (
-                <tr key={v.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
+                <tr key={v.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/50">
                   <td className="py-3">
                     <Link to={`/tomadores/${v.id}`} className="font-medium text-primary-700 hover:underline">
                       {v.apelido}
                     </Link>
                   </td>
-                  <td className="py-3 text-slate-600">{v.tomador_razao_social}</td>
-                  <td className="py-3 text-slate-500">{v.tomador_cnpj}</td>
-                  <td className="py-3 text-slate-500">{v.serie}</td>
+                  <td className="py-3 text-slate-600 dark:text-slate-300">{v.tomador_razao_social}</td>
+                  <td className="py-3 text-slate-500 dark:text-slate-400">{v.tomador_cnpj}</td>
+                  <td className="py-3 text-slate-500 dark:text-slate-400">{v.serie}</td>
                   <td className="py-3">
                     {v.requer_revisao ? <Badge variant="warning">Obrigatória</Badge> : <Badge variant="neutral">Não</Badge>}
                   </td>
@@ -123,7 +123,7 @@ export function TomadoresPage() {
               ))}
               {vinculosFiltrados.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-400">
+                  <td colSpan={5} className="py-8 text-center text-slate-400 dark:text-slate-500">
                     Nenhum tomador ativo ainda.
                   </td>
                 </tr>
@@ -135,7 +135,7 @@ export function TomadoresPage() {
         {!carregando && aba === "todos" && (
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
+              <tr className="border-b border-slate-100 dark:border-slate-700/60 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                 <th className="py-2 font-medium">Razão social</th>
                 <th className="py-2 font-medium">CNPJ</th>
                 <th className="py-2 font-medium"></th>
@@ -143,9 +143,9 @@ export function TomadoresPage() {
             </thead>
             <tbody>
               {tomadoresFiltrados.map((t) => (
-                <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                  <td className="py-3 font-medium text-slate-800">{t.razao_social}</td>
-                  <td className="py-3 text-slate-500">{t.cnpj}</td>
+                <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                  <td className="py-3 font-medium text-slate-800 dark:text-slate-200">{t.razao_social}</td>
+                  <td className="py-3 text-slate-500 dark:text-slate-400">{t.cnpj}</td>
                   <td className="py-3 text-right">
                     <Link to={`/tomadores/novo?tomador_id=${t.id}`} className="text-sm font-medium text-primary-600 hover:text-primary-700">
                       Usar este tomador
@@ -155,7 +155,7 @@ export function TomadoresPage() {
               ))}
               {tomadoresFiltrados.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="py-8 text-center text-slate-400">
+                  <td colSpan={3} className="py-8 text-center text-slate-400 dark:text-slate-500">
                     Nenhum tomador no catálogo ainda.
                   </td>
                 </tr>
