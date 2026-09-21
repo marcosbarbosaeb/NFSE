@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import hash_senha, verificar_senha
 from app.models import Usuario
+from app.services.billing import criar_assinatura_cortesia
 
 
 class EmailJaCadastradoError(Exception):
@@ -56,5 +57,9 @@ def criar_usuario(db: Session, prestador_id: uuid.UUID, email: str, senha: str) 
         email_confirmado=True,
     )
     db.add(usuario)
+    # Marco 15 (item 4) — conta administrativa nunca depende do Stripe pra
+    # funcionar (ver docstring de criar_assinatura_cortesia); idempotente,
+    # então rodar o script de novo pro mesmo prestador não duplica.
+    criar_assinatura_cortesia(db, prestador_id)
     db.flush()
     return usuario

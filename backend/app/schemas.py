@@ -448,3 +448,17 @@ class EventoManualAtualizarRequest(BaseModel):
     data: date | None = None
     titulo: str | None = Field(default=None, min_length=1, max_length=200)
     descricao: str | None = None
+
+
+# --- Marco 15 (item 4): assinatura/cobrança (ver app/services/billing.py) ---
+
+
+class AssinaturaResponse(BaseModel):
+    status: str
+    ativa: bool
+    trial_termina_em: datetime | None = None
+    tem_assinatura_stripe: bool
+
+
+class CheckoutSessaoResponse(BaseModel):
+    url: str

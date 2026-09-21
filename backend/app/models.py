@@ -91,6 +91,7 @@ class Prestador(Base):
     despesas: Mapped[list["Despesa"]] = relationship(back_populates="prestador")
     usuarios: Mapped[list["Usuario"]] = relationship(back_populates="prestador")
     eventos_manuais: Mapped[list["EventoManual"]] = relationship(back_populates="prestador")
+    assinatura: Mapped["Assinatura | None"] = relationship(back_populates="prestador", uselist=False)
 
 
 class Usuario(Base):
@@ -422,6 +423,56 @@ class EventoManual(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     prestador: Mapped["Prestador"] = relationship(back_populates="eventos_manuais")
+
+
+class Assinatura(Base):
+    """Marco 15 (item 4) — assinatura/cobrança (Marcos confirmou "cobrança
+    real (Stripe ou similar)", mas ainda não tem conta criada: ver
+    app/services/billing.py e o racional em app/config.py). Uma linha por
+    prestador (não por usuário — o mesmo padrão de `certificado`), criada
+    automaticamente:
+
+    - "cortesia": contas administrativas (scripts/criar_usuario.py) — nunca
+      passam por Stripe, nunca expiram. É o caso da Raiana hoje.
+    - "trial": contas que nascem por /api/cadastro (self-service) — acesso
+      liberado até `trial_termina_em` sem precisar de cartão.
+    - "ativa"/"inadimplente"/"cancelada": espelham o status de uma
+      assinatura Stripe de verdade, sincronizado via webhook
+      (checkout.session.completed / customer.subscription.*, ver
+      app/services/billing.py). Só existe depois que o prestador passa pelo
+      Checkout.
+
+    De propósito, esta versão NÃO bloqueia acesso ao painel com base no
+    status (ver docstring de `assinatura_esta_ativa` em billing.py) — a
+    estrutura de cobrança está pronta, mas ligar o bloqueio de verdade
+    depende de ter uma conta Stripe real pra validar contra ela primeiro."""
+
+    __tablename__ = "assinatura"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="trial")
+    trial_termina_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(100), unique=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(100), unique=True)
+
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('cortesia', 'trial', 'ativa', 'inadimplente', 'cancelada')",
+            name="ck_assinatura_status_valido",
+        ),
+    )
+
+    prestador: Mapped["Prestador"] = relationship(back_populates="assinatura")
 
 
 class Envio(Base):

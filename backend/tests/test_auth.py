@@ -221,6 +221,11 @@ def test_dois_usuarios_de_prestadores_diferentes_nao_veem_dados_um_do_outro(clie
     db.add(outro_prestador)
     db.flush()
     criar_usuario(db, outro_prestador_id, "outro@exemplo.com", "senhaforte123")
+    # Marco 15 (item 4): criar_usuario agora também cria uma Assinatura
+    # (RLS-protegida) — precisa apontar app.current_prestador_id de volta
+    # pro prestador_teste antes, senão o INSERT dela viola a policy (ainda
+    # setado pro outro_prestador_id acima).
+    definir_prestador_atual(db, prestador_teste.id)
     criar_usuario(db, prestador_teste.id, "raiana@exemplo.com", "senhaforte123")
 
     resp = client_sem_login.post("/api/auth/login", json={"email": "outro@exemplo.com", "senha": "senhaforte123"})

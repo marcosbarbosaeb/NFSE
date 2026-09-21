@@ -23,4 +23,10 @@ lxml==6.1.0
 cryptography==46.0.7
 requests==2.33.1
 
+# Marco 15 (item 4): cobrança/assinatura (ver app/services/billing.py). SDK
+# oficial — usada só se STRIPE_SECRET_KEY estiver configurada (ver
+# config.py); sem ela, os endpoints de cobrança respondem "não configurado"
+# em vez de tentar falar com a API.
+stripe==15.6.1
+
 pytest==9.1.1

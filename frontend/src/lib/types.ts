@@ -131,6 +131,21 @@ export interface EventoManualCriarRequest {
 
 export type EventoManualAtualizarRequest = Partial<EventoManualCriarRequest>
 
+// --- Marco 15 (item 4): assinatura/cobrança ---
+
+export type StatusAssinatura = "cortesia" | "trial" | "ativa" | "inadimplente" | "cancelada"
+
+export interface Assinatura {
+  status: StatusAssinatura
+  ativa: boolean
+  trial_termina_em: string | null
+  tem_assinatura_stripe: boolean
+}
+
+export interface CheckoutSessao {
+  url: string
+}
+
 // --- Marco 14: NFS-e (lista + nova emissão + detalhe), Recebimentos, Despesas, Configurações ---
 
 export interface EmissaoListaLinha {

@@ -7,13 +7,14 @@ import { Field } from "../components/ui/Field"
 import { useAuth } from "../lib/auth"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useTheme } from "../lib/theme"
-import type { CertificadoStatus, Prestador } from "../lib/types"
+import type { Assinatura, CertificadoStatus, CheckoutSessao, Prestador } from "../lib/types"
 
 export function ConfiguracoesPage() {
   const { tema, definirTema } = useTheme()
   const { usuario } = useAuth()
   const [prestador, setPrestador] = useState<Prestador | null>(null)
   const [certificado, setCertificado] = useState<CertificadoStatus | null>(null)
+  const [assinatura, setAssinatura] = useState<Assinatura | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
 
@@ -25,10 +26,15 @@ export function ConfiguracoesPage() {
   function carregar() {
     setCarregando(true)
     setErro(null)
-    Promise.all([api.get<Prestador>("/prestador"), api.get<CertificadoStatus>("/certificado/status")])
-      .then(([p, c]) => {
+    Promise.all([
+      api.get<Prestador>("/prestador"),
+      api.get<CertificadoStatus>("/certificado/status"),
+      api.get<Assinatura>("/assinatura"),
+    ])
+      .then(([p, c, a]) => {
         setPrestador(p)
         setCertificado(c)
+        setAssinatura(a)
       })
       .catch((err) => setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão."))
       .finally(() => setCarregando(false))
@@ -102,6 +108,8 @@ export function ConfiguracoesPage() {
         </div>
         <TrocarSenhaForm />
       </Card>
+
+      {assinatura && <AssinaturaCard assinatura={assinatura} />}
 
       <Card className="p-5">
         <div className="mb-4 flex items-center justify-between">
@@ -184,6 +192,79 @@ export function ConfiguracoesPage() {
         </Card>
       )}
     </div>
+  )
+}
+
+const STATUS_LABEL: Record<Assinatura["status"], string> = {
+  cortesia: "Conta cortesia",
+  trial: "Período de teste",
+  ativa: "Assinatura ativa",
+  inadimplente: "Pagamento pendente",
+  cancelada: "Assinatura cancelada",
+}
+
+function badgeVariante(assinatura: Assinatura): "success" | "warning" | "danger" | "neutral" {
+  if (assinatura.status === "cortesia") return "neutral"
+  if (assinatura.status === "ativa") return "success"
+  if (assinatura.status === "inadimplente" || assinatura.status === "cancelada") return "danger"
+  return "warning" // trial (ainda ativo ou já expirado — ambos avisam, nunca "sucesso" de verdade)
+}
+
+function AssinaturaCard({ assinatura }: { assinatura: Assinatura }) {
+  const [carregando, setCarregando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+
+  async function iniciarCheckoutOuPortal() {
+    setErro(null)
+    setCarregando(true)
+    try {
+      const rota = assinatura.tem_assinatura_stripe ? "/assinatura/portal" : "/assinatura/checkout"
+      const { url } = await api.post<CheckoutSessao>(rota, {})
+      window.location.href = url
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400) {
+        setErro("Cobrança ainda não está disponível — a conta Stripe está sendo configurada. Volte em breve.")
+      } else {
+        setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
+      }
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  const diasRestantesTrial =
+    assinatura.status === "trial" && assinatura.trial_termina_em
+      ? Math.max(0, Math.ceil((new Date(assinatura.trial_termina_em).getTime() - Date.now()) / 86_400_000))
+      : null
+
+  return (
+    <Card className="p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Assinatura</h2>
+        <Badge variant={assinatura.status === "trial" && !assinatura.ativa ? "danger" : badgeVariante(assinatura)}>
+          {STATUS_LABEL[assinatura.status]}
+        </Badge>
+      </div>
+
+      <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
+        {assinatura.status === "cortesia" && "Sua conta tem acesso liberado — nada pra fazer aqui."}
+        {assinatura.status === "trial" &&
+          (diasRestantesTrial !== null && diasRestantesTrial > 0
+            ? `Você está no período de teste gratuito — ${diasRestantesTrial} dia${diasRestantesTrial === 1 ? "" : "s"} restante${diasRestantesTrial === 1 ? "" : "s"}.`
+            : "Seu período de teste acabou. Assine pra continuar usando o NotaFácil sem interrupção.")}
+        {assinatura.status === "ativa" && "Sua assinatura está em dia."}
+        {assinatura.status === "inadimplente" && "O último pagamento não foi confirmado — atualize a forma de pagamento pra evitar interrupção."}
+        {assinatura.status === "cancelada" && "Sua assinatura foi cancelada. Assine de novo pra recuperar o acesso completo."}
+      </p>
+
+      {erro && <p className="mb-4 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
+
+      {assinatura.status !== "cortesia" && (
+        <Button type="button" variant="accent" disabled={carregando} onClick={iniciarCheckoutOuPortal}>
+          {carregando ? "Um momento..." : assinatura.tem_assinatura_stripe ? "Gerenciar assinatura" : "Assinar agora"}
+        </Button>
+      )}
+    </Card>
   )
 }
 

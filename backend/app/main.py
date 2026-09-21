@@ -42,12 +42,14 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import get_settings
 from app.database import definir_prestador_atual, get_db
 from app.fiscal.dps import DescricaoIncompletaError
-from app.models import Certificado, Emissao, Prestador, Usuario
+from app.models import Assinatura, Certificado, Emissao, Prestador, Usuario
 from app.schemas import (
+    AssinaturaResponse,
     CadastroRequest,
     CadastroResponse,
     CalendarioResponse,
     CertificadoStatus,
+    CheckoutSessaoResponse,
     ConfirmarEmailRequest,
     DashboardResumoResponse,
     DespesaResponse,
@@ -77,6 +79,15 @@ from app.schemas import (
     VinculoAtualizarRequest,
     VinculoDetalheResponse,
     VinculoResumo,
+)
+from app.services.billing import (
+    AssinaturaNaoEncontradaError,
+    BillingNaoConfiguradoError,
+    WebhookInvalidoError,
+    assinatura_esta_ativa,
+    criar_sessao_checkout,
+    criar_sessao_portal,
+    processar_webhook,
 )
 from app.services.certificados import (
     CertificadoNaoEncontradoError,
@@ -258,6 +269,73 @@ def api_trocar_senha(req: TrocarSenhaRequest, request: Request, db: Session = De
         raise HTTPException(status_code=400, detail="Senha atual incorreta.")
     db.commit()
     return {"ok": True}
+
+
+# --- Marco 15 (item 4): assinatura/cobrança (ver app/services/billing.py) ---
+
+
+@app.get("/api/assinatura", response_model=AssinaturaResponse)
+def api_ver_assinatura(prestador_id: uuid.UUID = Depends(prestador_atual_id), db: Session = Depends(get_db)):
+    """`get_db` puro (não `db_sessao`): `assinatura` TEM RLS, mas
+    `prestador_atual_id` já resolveu quem está logado sem precisar setar a
+    variável de sessão só pra este SELECT — setamos abaixo, direto."""
+    definir_prestador_atual(db, prestador_id)
+    assinatura = db.query(Assinatura).filter_by(prestador_id=prestador_id).one_or_none()
+    return AssinaturaResponse(
+        status=assinatura.status if assinatura else "trial",
+        ativa=assinatura_esta_ativa(assinatura),
+        trial_termina_em=assinatura.trial_termina_em if assinatura else None,
+        tem_assinatura_stripe=bool(assinatura and assinatura.stripe_subscription_id),
+    )
+
+
+@app.post("/api/assinatura/checkout", response_model=CheckoutSessaoResponse, responses={400: {"model": ErroResponse}})
+def api_criar_checkout(
+    request: Request, prestador_id: uuid.UUID = Depends(prestador_atual_id), db: Session = Depends(get_db)
+):
+    definir_prestador_atual(db, prestador_id)
+    usuario_id = request.session.get("usuario_id")
+    if usuario_id is None:
+        raise HTTPException(status_code=401, detail="Não autenticado.")
+    usuario = db.get(Usuario, uuid.UUID(usuario_id))
+    try:
+        url = criar_sessao_checkout(db, prestador_id, usuario.email)
+    except BillingNaoConfiguradoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    db.commit()
+    return CheckoutSessaoResponse(url=url)
+
+
+@app.post("/api/assinatura/portal", response_model=CheckoutSessaoResponse, responses={400: {"model": ErroResponse}})
+def api_criar_portal(prestador_id: uuid.UUID = Depends(prestador_atual_id), db: Session = Depends(get_db)):
+    definir_prestador_atual(db, prestador_id)
+    try:
+        url = criar_sessao_portal(db, prestador_id)
+    except (BillingNaoConfiguradoError, AssinaturaNaoEncontradaError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return CheckoutSessaoResponse(url=url)
+
+
+@app.post("/api/webhooks/stripe")
+async def api_webhook_stripe(request: Request, db: Session = Depends(get_db)):
+    """Rota pública (sem sessão) — quem autentica isto é a assinatura
+    criptográfica no header `stripe-signature`, verificada dentro de
+    `processar_webhook` (nunca confia no corpo sem essa checagem passar
+    antes). Usa `get_db` puro porque não há prestador_id resolvido pela
+    sessão aqui — `processar_webhook` descobre e SETA o prestador_id certo
+    internamente (a partir do metadata que a própria Stripe devolve,
+    gravado por nós no Checkout) antes de tocar em `assinatura`, que tem
+    RLS — ver docstring de `_resolver_prestador_id_do_evento`."""
+    payload = await request.body()
+    assinatura_header = request.headers.get("stripe-signature", "")
+    try:
+        tipo = processar_webhook(db, payload, assinatura_header)
+    except WebhookInvalidoError:
+        raise HTTPException(status_code=400, detail="Assinatura de webhook inválida.")
+    except BillingNaoConfiguradoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    db.commit()
+    return {"recebido": True, "tipo": tipo}
 
 
 @app.get("/api/vinculos", response_model=list[VinculoResumo])

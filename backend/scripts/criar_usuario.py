@@ -45,6 +45,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import hash_senha
 from app.models import Prestador, Usuario
+from app.services.billing import criar_assinatura_cortesia
 
 DEFAULT_ADMIN_DATABASE_URL = "postgresql+psycopg://postgres:postgres_dev_local@localhost:5432/nfse_saas"
 
@@ -84,6 +85,9 @@ def criar_ou_atualizar(db: Session, *, email: str, senha: str, prestador_id: uui
         usuario.ativo = True
         usuario.email_confirmado = True  # reset administrativo também confirma, mesmo se o cadastro original era self-service pendente
         acao = "atualizado"
+    # Marco 15 (item 4) — conta administrativa nunca depende do Stripe pra
+    # continuar funcionando (idempotente, ver criar_assinatura_cortesia).
+    criar_assinatura_cortesia(db, prestador_id)
     db.flush()
     print(f"Usuário {acao}: {usuario.email} -> prestador {prestador.razao_social} ({prestador_id})")
     return usuario

@@ -66,6 +66,29 @@ class Settings(BaseSettings):
     # marketing + rota pública de cadastro).
     app_base_url: str = "http://localhost:5173"
 
+    # Marco 15 (item 4) — assinatura/cobrança via Stripe (ver
+    # app/services/billing.py). Marcos confirmou "cobrança real (Stripe)"
+    # mas ainda não tem conta — mesmo padrão do resend_api_key acima: monta
+    # a estrutura toda agora, com defaults vazios/placeholder, e troca só
+    # estes valores quando a conta existir, sem mudar código. Enquanto
+    # `stripe_secret_key` estiver vazia, os endpoints de cobrança respondem
+    # com um erro "não configurado" em vez de chamar a API de verdade — não
+    # há como testar contra a API real deste sandbox de qualquer forma.
+    stripe_secret_key: str = ""
+    # Assina o corpo do webhook (Stripe Dashboard > Webhooks > chave de
+    # assinatura) — necessário pra verificar que um POST em
+    # /api/webhooks/stripe realmente veio da Stripe e não de qualquer um
+    # tentando forjar "pagamento confirmado".
+    stripe_webhook_secret: str = ""
+    # Price ID do plano mensal único (self-service, Checkout em modo
+    # "subscription"). Placeholder óbvio de propósito — se aparecer na
+    # Stripe de verdade é sinal de que esqueceram de configurar via env var.
+    stripe_price_id_mensal: str = "price_placeholder_trocar_quando_criar_a_conta_stripe"
+    # Duração do período de teste grátis pra quem se cadastra pelo /cadastro
+    # público (contas administrativas, criadas via scripts/criar_usuario.py,
+    # não passam por trial — ver app/services/billing.py).
+    stripe_dias_trial: int = 14
+
 
 @lru_cache
 def get_settings() -> Settings:

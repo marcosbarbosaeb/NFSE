@@ -25,6 +25,7 @@ from app.auth import hash_senha
 from app.config import get_settings
 from app.database import definir_prestador_atual
 from app.models import Prestador, Usuario
+from app.services.billing import criar_assinatura_trial
 from app.services.email import EmailEnvioError, get_email_sender
 
 _VALIDADE_TOKEN = datetime.timedelta(hours=24)
@@ -84,6 +85,12 @@ def criar_cadastro(
             db.flush()
     except IntegrityError as exc:
         raise PrestadorJaCadastradoError("Já existe uma conta cadastrada com este CNPJ.") from exc
+
+    # Marco 15 (item 4) — cadastro self-service libera acesso por um trial
+    # sem cartão (ver docstring de criar_assinatura_trial); RLS de
+    # `assinatura` já enxerga este prestador_id porque `definir_prestador_atual`
+    # foi chamado acima, antes do INSERT de `prestador`.
+    criar_assinatura_trial(db, prestador_id)
 
     token = _gerar_token()
     usuario = Usuario(
