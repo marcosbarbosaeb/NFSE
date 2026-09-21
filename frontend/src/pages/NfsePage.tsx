@@ -137,7 +137,7 @@ export function NfsePage() {
               {filtradas.map((e) => (
                 <tr key={e.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/50">
                   <td className="py-3">
-                    <Link to={`/nfse/${e.id}`} className="font-medium text-primary-700 hover:underline">
+                    <Link to={`/app/nfse/${e.id}`} className="font-medium text-primary-700 hover:underline">
                       {e.apelido}
                     </Link>
                     <p className="text-xs text-slate-400 dark:text-slate-500">{e.tomador_razao_social}</p>

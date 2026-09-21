@@ -162,12 +162,8 @@ def criar_sessao_checkout(db: Session, prestador_id: uuid.UUID, email: str) -> s
     customer_id = _obter_ou_criar_customer(assinatura, prestador, email)
     db.flush()
 
-    # /configuracoes (não /app/configuracoes ainda) — a rota do painel só
-    # muda de endereço no item 5 do Marco 15 (marketing pública + painel em
-    # /app). Como stripe_price_id_mensal continua placeholder até existir
-    # conta Stripe de verdade, isto nunca é exercitado em produção antes
-    # dessa migração de rota acontecer — mas registra aqui pra não
-    # esquecer de atualizar junto.
+    # /app/configuracoes — painel movido pra debaixo de /app no item 6 do
+    # Marco 15 (marketing pública, ver frontend/src/App.tsx).
     base = settings.app_base_url
     # `metadata` no Session E na subscription resultante (via
     # subscription_data) — é assim que o webhook (que não tem sessão de
@@ -181,8 +177,8 @@ def criar_sessao_checkout(db: Session, prestador_id: uuid.UUID, email: str) -> s
         mode="subscription",
         customer=customer_id,
         line_items=[{"price": settings.stripe_price_id_mensal, "quantity": 1}],
-        success_url=f"{base}/configuracoes?assinatura=sucesso",
-        cancel_url=f"{base}/configuracoes?assinatura=cancelado",
+        success_url=f"{base}/app/configuracoes?assinatura=sucesso",
+        cancel_url=f"{base}/app/configuracoes?assinatura=cancelado",
         metadata={"prestador_id": str(prestador_id)},
         subscription_data={"metadata": {"prestador_id": str(prestador_id)}},
         api_key=settings.stripe_secret_key,
@@ -201,7 +197,7 @@ def criar_sessao_portal(db: Session, prestador_id: uuid.UUID) -> str:
         raise AssinaturaNaoEncontradaError("Nenhuma assinatura Stripe iniciada ainda — assine primeiro.")
     sessao = stripe.billing_portal.Session.create(
         customer=assinatura.stripe_customer_id,
-        return_url=f"{settings.app_base_url}/configuracoes",
+        return_url=f"{settings.app_base_url}/app/configuracoes",
         api_key=settings.stripe_secret_key,
     )
     return sessao["url"]

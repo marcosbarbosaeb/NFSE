@@ -19,7 +19,7 @@ export function CadastroPage() {
   const [erro, setErro] = useState<string | null>(null)
   const [enviado, setEnviado] = useState<string | null>(null)
 
-  if (usuario) return <Navigate to="/" replace />
+  if (usuario) return <Navigate to="/app" replace />
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()

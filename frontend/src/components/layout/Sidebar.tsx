@@ -5,13 +5,13 @@ import { NavLink } from "react-router-dom"
 // pedido à parte pelo usuário (previsão de recebimento + prazo de emissão
 // por tomador), então entra como item novo na navegação.
 const ITENS = [
-  { to: "/", label: "Visão geral", icon: Home, end: true },
-  { to: "/nfse", label: "NFS-e", icon: FileText },
-  { to: "/tomadores", label: "Tomadores", icon: Users },
-  { to: "/calendario", label: "Calendário", icon: CalendarDays },
-  { to: "/recebimentos", label: "Recebimentos", icon: Wallet },
-  { to: "/despesas", label: "Despesas", icon: TrendingDown },
-  { to: "/configuracoes", label: "Configurações", icon: Settings },
+  { to: "/app", label: "Visão geral", icon: Home, end: true },
+  { to: "/app/nfse", label: "NFS-e", icon: FileText },
+  { to: "/app/tomadores", label: "Tomadores", icon: Users },
+  { to: "/app/calendario", label: "Calendário", icon: CalendarDays },
+  { to: "/app/recebimentos", label: "Recebimentos", icon: Wallet },
+  { to: "/app/despesas", label: "Despesas", icon: TrendingDown },
+  { to: "/app/configuracoes", label: "Configurações", icon: Settings },
 ]
 
 export function Sidebar() {

@@ -14,7 +14,7 @@ export function LoginPage() {
   const [emailNaoConfirmado, setEmailNaoConfirmado] = useState(false)
   const [reenviado, setReenviado] = useState(false)
 
-  if (usuario) return <Navigate to="/" replace />
+  if (usuario) return <Navigate to="/app" replace />
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()

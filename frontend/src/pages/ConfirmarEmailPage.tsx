@@ -36,13 +36,13 @@ export function ConfirmarEmailPage() {
       .post("/cadastro/confirmar", { token })
       .then(() => {
         setEstado("sucesso")
-        // Recarrega a página raiz de propósito (em vez de navigate()): o
+        // Recarrega /app de propósito (em vez de navigate()): o
         // AuthProvider só sabe que a sessão existe reconsultando /auth/me,
         // e confirmar o e-mail já loga (cookie de sessão setado pelo
         // backend) — um reload pego essa sessão nova sem precisar expor um
         // método novo em lib/auth.tsx só pra este caso.
         setTimeout(() => {
-          window.location.href = "/"
+          window.location.href = "/app"
         }, 1500)
       })
       .catch((err) => {

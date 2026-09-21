@@ -120,7 +120,7 @@ export function EmissaoDetalhePage() {
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <Link to="/nfse" className="text-sm text-primary-600 hover:underline">
+          <Link to="/app/nfse" className="text-sm text-primary-600 hover:underline">
             ← Voltar para NFS-e
           </Link>
           <h1 className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">
@@ -258,7 +258,7 @@ export function EmissaoDetalhePage() {
       </Card>
 
       <div>
-        <Button variant="ghost" onClick={() => navigate("/nfse")}>
+        <Button variant="ghost" onClick={() => navigate("/app/nfse")}>
           ← Voltar
         </Button>
       </div>

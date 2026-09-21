@@ -52,7 +52,7 @@ export function TomadoresPage() {
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Tomadores</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Gerencie seus tomadores e as regras de emissão de cada um.</p>
         </div>
-        <Link to="/tomadores/novo">
+        <Link to="/app/tomadores/novo">
           <Button variant="accent">
             <Plus size={16} /> Adicionar tomador
           </Button>
@@ -109,7 +109,7 @@ export function TomadoresPage() {
               {vinculosFiltrados.map((v) => (
                 <tr key={v.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/50">
                   <td className="py-3">
-                    <Link to={`/tomadores/${v.id}`} className="font-medium text-primary-700 hover:underline">
+                    <Link to={`/app/tomadores/${v.id}`} className="font-medium text-primary-700 hover:underline">
                       {v.apelido}
                     </Link>
                   </td>
@@ -147,7 +147,7 @@ export function TomadoresPage() {
                   <td className="py-3 font-medium text-slate-800 dark:text-slate-200">{t.razao_social}</td>
                   <td className="py-3 text-slate-500 dark:text-slate-400">{t.cnpj}</td>
                   <td className="py-3 text-right">
-                    <Link to={`/tomadores/novo?tomador_id=${t.id}`} className="text-sm font-medium text-primary-600 hover:text-primary-700">
+                    <Link to={`/app/tomadores/novo?tomador_id=${t.id}`} className="text-sm font-medium text-primary-600 hover:text-primary-700">
                       Usar este tomador
                     </Link>
                   </td>

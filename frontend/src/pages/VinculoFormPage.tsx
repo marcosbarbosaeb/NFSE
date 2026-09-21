@@ -122,7 +122,7 @@ export function VinculoFormPage() {
 
       if (editando && id) {
         await api.patch(`/vinculos/${id}`, { ...base, ativo: form.ativo })
-        navigate("/tomadores")
+        navigate("/app/tomadores")
         return
       }
 
@@ -132,7 +132,7 @@ export function VinculoFormPage() {
           : { ...base, novo_tomador: { ...novoTomador, cep: novoTomador.cep || null } }
 
       const criado = await api.post<VinculoDetalhe>("/vinculos", payload)
-      navigate(`/tomadores/${criado.id}`)
+      navigate(`/app/tomadores/${criado.id}`)
     } catch (err) {
       setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
     } finally {
@@ -367,7 +367,7 @@ export function VinculoFormPage() {
         </Card>
 
         <div className="flex justify-end gap-3">
-          <Button type="button" variant="outline" onClick={() => navigate("/tomadores")}>
+          <Button type="button" variant="outline" onClick={() => navigate("/app/tomadores")}>
             Cancelar
           </Button>
           <Button type="submit" variant="accent" disabled={enviando}>
