@@ -462,3 +462,45 @@ class AssinaturaResponse(BaseModel):
 
 class CheckoutSessaoResponse(BaseModel):
     url: str
+
+
+# --- Marco 15 (item 5): extrato bancário em PDF (ver app/services/extrato_pdf.py
+# e app/services/importacao_extrato.py) ---
+
+
+class TransacaoExtraidaResponse(BaseModel):
+    linha: int
+    data: date | None
+    descricao: str
+    valor: float
+    credito: bool
+
+
+class ExtratoExtraidoResponse(BaseModel):
+    total_transacoes: int
+    transacoes: list[TransacaoExtraidaResponse]
+
+
+class ItemConfirmarExtratoRequest(BaseModel):
+    vinculo_id: uuid.UUID
+    competencia: str = Field(pattern=r"^\d{4}-\d{2}$", description="AAAA-MM, mês de referência")
+    valor: float = Field(gt=0)
+    data_recebimento: date | None = None
+
+
+class ConfirmarExtratoRequest(BaseModel):
+    itens: list[ItemConfirmarExtratoRequest] = Field(min_length=1)
+
+
+class ItemConfirmadoExtratoResponse(BaseModel):
+    indice: int
+    ok: bool
+    mensagem: str | None = None
+    pagamento_id: uuid.UUID | None = None
+
+
+class ConfirmarExtratoResponse(BaseModel):
+    total: int
+    sucesso: int
+    erro: int
+    itens: list[ItemConfirmadoExtratoResponse]

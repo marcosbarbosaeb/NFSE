@@ -29,4 +29,13 @@ requests==2.33.1
 # em vez de tentar falar com a API.
 stripe==15.6.1
 
+# Marco 15 (item 5): extração de texto de extrato bancário em PDF (ver
+# app/services/extrato_pdf.py) — só leitura, nunca geração de PDF (isso
+# continua sendo o skill de pdf do painel de documentos, não este backend).
+pdfplumber==0.11.9
+
 pytest==9.1.1
+# Só usada em tests/test_extrato.py, pra gerar um PDF de extrato de
+# exemplo na hora do teste (nenhum extrato real é versionado) — não é
+# dependência de runtime do backend.
+reportlab==4.4.10

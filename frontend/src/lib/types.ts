@@ -146,6 +146,42 @@ export interface CheckoutSessao {
   url: string
 }
 
+// --- Marco 15 (item 5): extrato bancário em PDF ---
+
+export interface TransacaoExtraida {
+  linha: number
+  data: string | null
+  descricao: string
+  valor: number
+  credito: boolean
+}
+
+export interface ExtratoExtraido {
+  total_transacoes: number
+  transacoes: TransacaoExtraida[]
+}
+
+export interface ItemConfirmarExtrato {
+  vinculo_id: string
+  competencia: string
+  valor: number
+  data_recebimento?: string | null
+}
+
+export interface ItemConfirmadoExtrato {
+  indice: number
+  ok: boolean
+  mensagem: string | null
+  pagamento_id: string | null
+}
+
+export interface ConfirmarExtratoResultado {
+  total: number
+  sucesso: number
+  erro: number
+  itens: ItemConfirmadoExtrato[]
+}
+
 // --- Marco 14: NFS-e (lista + nova emissão + detalhe), Recebimentos, Despesas, Configurações ---
 
 export interface EmissaoListaLinha {

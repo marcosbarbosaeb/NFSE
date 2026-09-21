@@ -51,6 +51,8 @@ from app.schemas import (
     CertificadoStatus,
     CheckoutSessaoResponse,
     ConfirmarEmailRequest,
+    ConfirmarExtratoRequest,
+    ConfirmarExtratoResponse,
     DashboardResumoResponse,
     DespesaResponse,
     EmissaoListaLinha,
@@ -60,6 +62,7 @@ from app.schemas import (
     EventoCalendarioResponse,
     EventoManualAtualizarRequest,
     EventoManualCriarRequest,
+    ExtratoExtraidoResponse,
     GerarDpsRequest,
     ImportacaoCsvResponse,
     LoginRequest,
@@ -115,7 +118,9 @@ from app.services.envios import (
     melhor_xml_disponivel,
     registrar_envio,
 )
+from app.services.extrato_pdf import PdfInvalidoError, extrair_transacoes
 from app.services.importacao_csv import CsvInvalidoError, importar_csv
+from app.services.importacao_extrato import ItemExtrato, confirmar_importacao_extrato
 from app.services.listagens import listar_despesas, listar_emissoes, listar_pagamentos
 from app.services.motor_emissao import (
     EmissaoJaExisteError,
@@ -748,6 +753,49 @@ def api_listar_pagamentos(
     if ano is not None and (len(ano) != 4 or not ano.isdigit()):
         raise HTTPException(status_code=422, detail="ano deve estar no formato AAAA")
     return listar_pagamentos(db, ano=ano, vinculo_id=vinculo_id)
+
+
+@app.post("/api/recebimentos/extrato", response_model=ExtratoExtraidoResponse, responses={400: {"model": ErroResponse}})
+async def api_extrair_extrato(arquivo: UploadFile = File(...), db: Session = Depends(db_sessao)):
+    """Marco 15 (item 5) — extração heurística de transações de um extrato
+    bancário em PDF (ver docstring de app/services/extrato_pdf.py). GET
+    conceitual apesar do POST (upload exige POST): não grava NADA no banco
+    — só devolve candidatos pra tela de revisão. `db_sessao` aqui só serve
+    pra manter o padrão de autenticação das outras rotas; o parser em si
+    não toca o banco."""
+    bruto = await arquivo.read()
+    try:
+        transacoes = extrair_transacoes(bruto)
+    except PdfInvalidoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ExtratoExtraidoResponse(
+        total_transacoes=len(transacoes),
+        transacoes=[
+            {"linha": t.linha, "data": t.data, "descricao": t.descricao, "valor": float(t.valor), "credito": t.credito}
+            for t in transacoes
+        ],
+    )
+
+
+@app.post("/api/recebimentos/extrato/confirmar", response_model=ConfirmarExtratoResponse)
+def api_confirmar_extrato(req: ConfirmarExtratoRequest, db: Session = Depends(db_sessao)):
+    """Segunda metade do fluxo acima — grava um PagamentoRecebido por item
+    que a pessoa confirmou na revisão (cada um casado com um vínculo à
+    mão). Mesmo padrão de isolamento por item do /api/dps/importar-csv:
+    um item ruim não derruba os demais (ver
+    app/services/importacao_extrato.py)."""
+    itens = [
+        ItemExtrato(vinculo_id=i.vinculo_id, competencia=i.competencia, valor=i.valor, data_recebimento=i.data_recebimento)
+        for i in req.itens
+    ]
+    resultados = confirmar_importacao_extrato(db, itens)
+    sucesso = sum(1 for r in resultados if r.ok)
+    if sucesso > 0:
+        db.commit()
+    return ConfirmarExtratoResponse(
+        total=len(resultados), sucesso=sucesso, erro=len(resultados) - sucesso,
+        itens=[{"indice": r.indice, "ok": r.ok, "mensagem": r.mensagem, "pagamento_id": r.pagamento_id} for r in resultados],
+    )
 
 
 @app.post("/api/despesas", response_model=DespesaResponse)
