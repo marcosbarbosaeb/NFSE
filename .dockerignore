@@ -9,3 +9,5 @@ backend/.env
 *.key
 integracao/output/
 integracao/danfse/
+frontend/node_modules
+frontend/dist

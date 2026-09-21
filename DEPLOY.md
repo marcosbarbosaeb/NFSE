@@ -1,5 +1,25 @@
 # Como colocar isso no ar
 
+## Status atual
+
+Já está no ar: projeto `nfse-saas` no Railway, service `app` (build a
+partir do `Dockerfile` deste repo, conectado ao GitHub
+`marcosbarbosaeb/NFSE`, branch `main`) + service `Postgres`. `DATABASE_URL`,
+`CERT_MASTER_KEY` e `SESSION_SECRET_KEY` já estão configurados nas
+Variables do service `app`. A partir daqui, **atualizar o que está no ar é
+só dar `git push` pra `main`** — o Railway builda e reimplanta sozinho
+(deploy a cada push), e o `entrypoint.sh` roda `alembic upgrade head` a
+cada start, então o schema do banco de produção fica em dia sozinho
+também. O resto deste documento (passos 1–3 abaixo) é o roteiro original
+de como esse setup foi feito, útil se precisar refazer do zero num
+projeto/conta novos — não precisa repetir pra atualizar o que já existe.
+
+Desde o Marco 12, o `Dockerfile` builda o frontend novo (React/Vite, em
+`frontend/`) num estágio separado (Node) e copia o resultado estático pra
+dentro da imagem final — o FastAPI serve esse build em `/` (ver o
+catch-all no fim de `backend/app/main.py`). Não tem servidor Node nenhum
+rodando em produção.
+
 Este projeto até agora só rodou dentro do sandbox onde foi construído — nada
 está hospedado em lugar nenhum que dê pra abrir num navegador de fora. Este
 documento é o passo a passo pra isso mudar.
