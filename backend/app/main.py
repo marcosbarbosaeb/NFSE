@@ -44,8 +44,11 @@ from app.database import definir_prestador_atual, get_db
 from app.fiscal.dps import DescricaoIncompletaError
 from app.models import Certificado, Emissao, Prestador, Usuario
 from app.schemas import (
+    CadastroRequest,
+    CadastroResponse,
     CalendarioResponse,
     CertificadoStatus,
+    ConfirmarEmailRequest,
     DashboardResumoResponse,
     DespesaResponse,
     EmissaoListaLinha,
@@ -63,6 +66,7 @@ from app.schemas import (
     PagamentoResponse,
     PainelStatusResponse,
     PrestadorResponse,
+    ReenviarConfirmacaoRequest,
     RegistrarDespesaRequest,
     RegistrarEnvioRequest,
     RegistrarPagamentoRequest,
@@ -113,6 +117,14 @@ from app.services.nota_visual import montar_nota_visual
 from app.services.pagamentos import registrar_pagamento
 from app.services.painel_status import painel_status_completo
 from app.services.tomadores import CnpjJaCadastradoError, buscar_tomador, criar_tomador, listar_catalogo
+from app.services.cadastro import (
+    EmailJaCadastradoError as CadastroEmailJaCadastradoError,
+    PrestadorJaCadastradoError,
+    TokenInvalidoOuExpiradoError,
+    confirmar_email,
+    criar_cadastro,
+    reenviar_confirmacao,
+)
 from app.services.usuarios import SenhaAtualIncorretaError, autenticar, trocar_senha
 from app.services.vinculos import (
     ApelidoJaExisteError,
@@ -142,7 +154,7 @@ def prestador_atual_id(request: Request, db: Session = Depends(get_db)) -> uuid.
     usuario_id = request.session.get("usuario_id")
     if usuario_id is None:
         raise HTTPException(status_code=401, detail="Não autenticado — faça login.")
-    usuario = db.query(Usuario).filter_by(id=uuid.UUID(usuario_id), ativo=True).one_or_none()
+    usuario = db.query(Usuario).filter_by(id=uuid.UUID(usuario_id), ativo=True, email_confirmado=True).one_or_none()
     if usuario is None:
         request.session.clear()
         raise HTTPException(status_code=401, detail="Sessão inválida — faça login novamente.")
@@ -156,15 +168,63 @@ def db_sessao(db: Session = Depends(get_db), prestador_id: uuid.UUID = Depends(p
     return db
 
 
-@app.post("/api/auth/login", response_model=UsuarioResponse, responses={401: {"model": ErroResponse}})
+@app.post("/api/auth/login", response_model=UsuarioResponse, responses={401: {"model": ErroResponse}, 403: {"model": ErroResponse}})
 def api_login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
-    """Marco 10 — cadastro de usuário é administrativo (scripts/criar_usuario.py),
-    não há self-service signup aqui de propósito."""
+    """Desde o Marco 15 existem dois jeitos de uma conta nascer: administrativo
+    (scripts/criar_usuario.py, já confirmado) ou cadastro público self-service
+    (ver /api/cadastro abaixo, precisa confirmar e-mail antes de logar)."""
     usuario = autenticar(db, req.email, req.senha)
     if usuario is None:
         raise HTTPException(status_code=401, detail="E-mail ou senha inválidos.")
+    if not usuario.email_confirmado:
+        raise HTTPException(status_code=403, detail="Confirme seu e-mail antes de entrar — verifique sua caixa de entrada.")
     request.session["usuario_id"] = str(usuario.id)
     return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id)
+
+
+@app.post("/api/cadastro", response_model=CadastroResponse, responses={409: {"model": ErroResponse}})
+def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
+    """Marco 15 — cadastro público self-service (rota pública, sem sessão).
+    Cria Prestador+Usuario de verdade (ver app/services/cadastro.py), mas o
+    Usuario nasce sem `email_confirmado` — não dá pra logar até confirmar
+    (ver /api/cadastro/confirmar abaixo)."""
+    try:
+        usuario = criar_cadastro(
+            db, email=req.email, senha=req.senha, razao_social=req.razao_social,
+            cpf_cnpj=req.cpf_cnpj, cod_municipio=req.cod_municipio,
+        )
+    except CadastroEmailJaCadastradoError:
+        raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")
+    except PrestadorJaCadastradoError:
+        raise HTTPException(status_code=409, detail="Já existe uma conta cadastrada com este CNPJ.")
+    db.commit()
+    return CadastroResponse(
+        mensagem="Conta criada! Enviamos um link de confirmação pro seu e-mail — confira sua caixa de entrada.",
+        email=usuario.email,
+    )
+
+
+@app.post("/api/cadastro/confirmar", response_model=UsuarioResponse, responses={400: {"model": ErroResponse}})
+def api_confirmar_email(req: ConfirmarEmailRequest, request: Request, db: Session = Depends(get_db)):
+    """Confirma o e-mail E já loga (mesma sessão) — evita o usuário ter que
+    digitar a senha de novo logo depois de criar a conta."""
+    try:
+        usuario = confirmar_email(db, req.token)
+    except TokenInvalidoOuExpiradoError:
+        raise HTTPException(status_code=400, detail="Link de confirmação inválido ou expirado. Peça um novo.")
+    db.commit()
+    request.session["usuario_id"] = str(usuario.id)
+    return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id)
+
+
+@app.post("/api/cadastro/reenviar-confirmacao")
+def api_reenviar_confirmacao(req: ReenviarConfirmacaoRequest, db: Session = Depends(get_db)):
+    """Resposta sempre igual, exista o e-mail ou não (ver docstring de
+    reenviar_confirmacao) — não dá pista pra quem está tentando adivinhar
+    contas cadastradas."""
+    reenviar_confirmacao(db, req.email)
+    db.commit()
+    return {"mensagem": "Se esse e-mail tiver um cadastro pendente de confirmação, reenviamos o link."}
 
 
 @app.post("/api/auth/logout")

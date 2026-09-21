@@ -72,13 +72,17 @@ def criar_ou_atualizar(db: Session, *, email: str, senha: str, prestador_id: uui
     email_norm = email.strip().lower()
     usuario = db.query(Usuario).filter_by(email=email_norm).one_or_none()
     if usuario is None:
-        usuario = Usuario(id=uuid.uuid4(), email=email_norm, prestador_id=prestador_id, senha_hash=hash_senha(senha))
+        usuario = Usuario(
+            id=uuid.uuid4(), email=email_norm, prestador_id=prestador_id, senha_hash=hash_senha(senha),
+            email_confirmado=True,  # caminho administrativo — ver docstring de criar_usuario em app/services/usuarios.py
+        )
         db.add(usuario)
         acao = "criado"
     else:
         usuario.senha_hash = hash_senha(senha)
         usuario.prestador_id = prestador_id
         usuario.ativo = True
+        usuario.email_confirmado = True  # reset administrativo também confirma, mesmo se o cadastro original era self-service pendente
         acao = "atualizado"
     db.flush()
     print(f"Usuário {acao}: {usuario.email} -> prestador {prestador.razao_social} ({prestador_id})")

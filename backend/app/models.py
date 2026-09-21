@@ -125,6 +125,15 @@ class Usuario(Base):
     senha_hash: Mapped[str] = mapped_column(String(300), nullable=False)
     ativo: Mapped[bool] = mapped_column(nullable=False, server_default="true")
 
+    # Marco 15 — cadastro público self-service (ver app/services/cadastro.py).
+    # default=False no lado Python de propósito: um cadastro novo nasce NÃO
+    # confirmado; usuários criados administrativamente (scripts/criar_usuario.py)
+    # setam True explicitamente. `autenticar`/`api_login` bloqueiam login
+    # enquanto isto for False (ver app/main.py).
+    email_confirmado: Mapped[bool] = mapped_column(nullable=False, default=False)
+    token_confirmacao: Mapped[str | None] = mapped_column(String(64), unique=True)
+    token_confirmacao_expira_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

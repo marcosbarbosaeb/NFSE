@@ -256,6 +256,31 @@ class UsuarioResponse(BaseModel):
     prestador_id: uuid.UUID
 
 
+class CadastroRequest(BaseModel):
+    """Marco 15 — formulário público de cadastro (/cadastro no frontend).
+    O mínimo pra já existir um Prestador+Usuario utilizáveis: o resto
+    (endereço, inscrição municipal, certificado...) se configura depois em
+    Configurações, como já é hoje pra contas criadas administrativamente."""
+    email: str
+    senha: str = Field(min_length=8)
+    razao_social: str = Field(min_length=1, max_length=200)
+    cpf_cnpj: str = Field(pattern=r"^\d{14}$", description="CNPJ, só dígitos, 14 caracteres")
+    cod_municipio: str = Field(pattern=r"^\d{7}$", description="Código IBGE do município, 7 dígitos")
+
+
+class CadastroResponse(BaseModel):
+    mensagem: str
+    email: str
+
+
+class ConfirmarEmailRequest(BaseModel):
+    token: str
+
+
+class ReenviarConfirmacaoRequest(BaseModel):
+    email: str
+
+
 class TrocarSenhaRequest(BaseModel):
     """Marco 15 — troca de senha pelo próprio usuário logado (antes disso,
     só existia via scripts/criar_usuario.py, administrativo). Exige a senha

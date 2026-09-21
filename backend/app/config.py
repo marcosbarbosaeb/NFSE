@@ -49,6 +49,23 @@ class Settings(BaseSettings):
     # logar de novo) — não é destrutivo pra dado nenhum, só desloga geral.
     session_secret_key: str = "9f1c9f6b6a7e4b6c8d3a1e2f5c7b9a0d4e6f8b1c3a5d7e9f0b2c4a6e8d0f2b4c"
 
+    # Marco 15 — cadastro público self-service (ver app/services/cadastro.py
+    # e app/services/email.py). `resend_api_key` vazio (default) é o estado
+    # "ainda não tenho conta no provedor" que o Marcos pediu pra já deixar
+    # pronto: nesse caso o envio de e-mail cai pro EmailSenderConsole (só
+    # imprime/loga o e-mail, nunca falha o cadastro) em vez de tentar falar
+    # com a API de verdade — troca por uma chave real quando a conta Resend
+    # existir, sem mudar nenhuma linha de código.
+    resend_api_key: str = ""
+    email_remetente: str = "NotaFácil <onboarding@resend.dev>"
+
+    # Base da URL do painel usada pra montar o link de confirmação de e-mail
+    # (ex.: f"{app_base_url}/confirmar-email?token=..."). Default é o Vite
+    # dev server local — TROCAR via env var em produção pro domínio de
+    # verdade assim que ele existir (ver Marco 15, item 4: página de
+    # marketing + rota pública de cadastro).
+    app_base_url: str = "http://localhost:5173"
+
 
 @lru_cache
 def get_settings() -> Settings:

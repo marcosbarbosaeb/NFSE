@@ -3,8 +3,10 @@ import { AppShell } from "./components/layout/AppShell"
 import { ProtectedRoute } from "./components/layout/ProtectedRoute"
 import { AuthProvider } from "./lib/auth"
 import { ThemeProvider } from "./lib/theme"
+import { CadastroPage } from "./pages/CadastroPage"
 import { CalendarioPage } from "./pages/CalendarioPage"
 import { ConfiguracoesPage } from "./pages/ConfiguracoesPage"
+import { ConfirmarEmailPage } from "./pages/ConfirmarEmailPage"
 import { DashboardPage } from "./pages/DashboardPage"
 import { DespesasPage } from "./pages/DespesasPage"
 import { EmissaoDetalhePage } from "./pages/EmissaoDetalhePage"
@@ -20,6 +22,8 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/entrar" element={<LoginPage />} />
+          <Route path="/cadastro" element={<CadastroPage />} />
+          <Route path="/confirmar-email" element={<ConfirmarEmailPage />} />
           <Route
             element={
               <ProtectedRoute>

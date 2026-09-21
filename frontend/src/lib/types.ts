@@ -3,6 +3,14 @@ export interface Usuario {
   prestador_id: string
 }
 
+export interface CadastroRequest {
+  email: string
+  senha: string
+  razao_social: string
+  cpf_cnpj: string
+  cod_municipio: string
+}
+
 export interface VinculoResumo {
   id: string
   apelido: string

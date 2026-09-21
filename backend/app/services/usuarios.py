@@ -44,10 +44,17 @@ def trocar_senha(db: Session, usuario_id: uuid.UUID, senha_atual: str, senha_nov
 
 
 def criar_usuario(db: Session, prestador_id: uuid.UUID, email: str, senha: str) -> Usuario:
+    """Caminho ADMINISTRATIVO (scripts/criar_usuario.py) — `email_confirmado=True`
+    direto, sem token nem e-mail de confirmação: quem roda o script já é de
+    confiança (acesso ao banco), diferente do cadastro público self-service
+    (ver app/services/cadastro.py, Marco 15)."""
     email_norm = email.strip().lower()
     if db.query(Usuario).filter_by(email=email_norm).one_or_none() is not None:
         raise EmailJaCadastradoError(f"Já existe um usuário com o e-mail '{email_norm}'.")
-    usuario = Usuario(id=uuid.uuid4(), prestador_id=prestador_id, email=email_norm, senha_hash=hash_senha(senha))
+    usuario = Usuario(
+        id=uuid.uuid4(), prestador_id=prestador_id, email=email_norm, senha_hash=hash_senha(senha),
+        email_confirmado=True,
+    )
     db.add(usuario)
     db.flush()
     return usuario
