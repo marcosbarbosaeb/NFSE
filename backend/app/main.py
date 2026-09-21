@@ -458,7 +458,7 @@ Sefin — submissão continua manual via scripts, do computador com rede liberad
   <label>Vínculo (fornecedor)</label>
   <select id="vinculo"></select>
   <label>Competência (AAAA-MM)</label>
-  <input id="competencia" placeholder="2026-08">
+  <input type="month" id="competencia">
   <label>Valor (R$)</label>
   <input id="valor" type="number" step="0.01">
   <label>Ordem de pagamento (só AWIN/AWIN Rchlo)</label>
@@ -501,7 +501,7 @@ Sefin — submissão continua manual via scripts, do computador com rede liberad
   <label>Vínculo (fornecedor)</label>
   <select id="pgto-vinculo"></select>
   <label>Competência (AAAA-MM)</label>
-  <input id="pgto-competencia" placeholder="2026-08">
+  <input type="month" id="pgto-competencia">
   <label>Valor (R$)</label>
   <input id="pgto-valor" type="number" step="0.01">
   <label>Data do recebimento (opcional)</label>
@@ -515,7 +515,7 @@ Sefin — submissão continua manual via scripts, do computador com rede liberad
   <label>Categoria</label>
   <input id="desp-categoria" placeholder="Ex.: Pro Labore, Contabilidade...">
   <label>Competência (AAAA-MM)</label>
-  <input id="desp-competencia" placeholder="2026-08">
+  <input type="month" id="desp-competencia">
   <label>Valor (R$)</label>
   <input id="desp-valor" type="number" step="0.01">
   <button onclick="registrarDespesa()">Registrar despesa</button>
@@ -534,12 +534,29 @@ Sefin — submissão continua manual via scripts, do computador com rede liberad
 <script>
 let emissaoAtualId = null;
 
+// FastAPI devolve `detail` como texto simples nos erros que o backend levanta
+// de proposito (ex.: HTTPException), mas como uma LISTA de objetos quando e o
+// Pydantic validando o corpo automaticamente (422 de campo obrigatorio/formato
+// errado) — sem isso, essas mensagens apareciam como "[object Object]" pro
+// usuario, o que parecia "nao funciona" mesmo quando o erro era so, por
+// exemplo, competencia em formato errado.
+function formatarErro(detail) {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map(e => {
+      const campo = Array.isArray(e.loc) ? e.loc[e.loc.length - 1] : 'campo';
+      return `${campo}: ${e.msg}`;
+    }).join('; ');
+  }
+  return 'Erro inesperado (veja o console do navegador — F12).';
+}
+
 async function login() {
   const email = document.getElementById('login-email').value;
   const senha = document.getElementById('login-senha').value;
   const r = await fetch('/api/auth/login', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email, senha}) });
   const dados = await r.json();
-  if (!r.ok) { document.getElementById('login-resultado').innerHTML = `<p class="erro">${dados.detail}</p>`; return; }
+  if (!r.ok) { document.getElementById('login-resultado').innerHTML = `<p class="erro">${formatarErro(dados.detail)}</p>`; return; }
   document.getElementById('login-senha').value = '';
   await mostrarApp(dados);
 }
@@ -591,7 +608,7 @@ async function enviarCertificado() {
   try {
     const r = await fetch('/api/certificado', { method: 'POST', body: fd });
     const dados = await r.json();
-    if (!r.ok) { resultado.innerHTML = `<p class="erro">Erro: ${dados.detail}</p>`; return; }
+    if (!r.ok) { resultado.innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
     document.getElementById('cert-senha').value = '';
     resultado.innerHTML = `<p class="sucesso">✓ Certificado carregado com sucesso. Validade: ${dados.validade}${dados.vencido ? ' — ATENÇÃO: VENCIDO' : ''}.</p>`;
     carregarStatusCertificado();
@@ -616,24 +633,31 @@ function mostrarEmissao(dados) {
   carregarEnvios();
 }
 async function gerar() {
+  const div = document.getElementById('resultado');
+  const vinculoId = document.getElementById('vinculo').value;
+  const competencia = document.getElementById('competencia').value;
+  const valor = parseFloat(document.getElementById('valor').value);
+  if (!vinculoId) { div.innerHTML = '<p class="erro">Escolha um vinculo (fornecedor) na lista antes de gerar.</p>'; return; }
+  if (!competencia) { div.innerHTML = '<p class="erro">Escolha o mes de competencia.</p>'; return; }
+  if (!(valor > 0)) { div.innerHTML = '<p class="erro">Informe um valor maior que zero.</p>'; return; }
   const corpo = {
-    vinculo_id: document.getElementById('vinculo').value,
-    competencia: document.getElementById('competencia').value,
-    valor: parseFloat(document.getElementById('valor').value),
+    vinculo_id: vinculoId,
+    competencia: competencia,
+    valor: valor,
     ordem: document.getElementById('ordem').value || null,
     aliq_sn: document.getElementById('aliq_sn').value ? parseFloat(document.getElementById('aliq_sn').value) : null,
     tpAmb: document.getElementById('tpAmb').value,
   };
   const r = await fetch('/api/dps', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(corpo) });
   const dados = await r.json();
-  if (!r.ok) { document.getElementById('resultado').innerHTML = `<p class="erro">Erro: ${dados.detail}</p>`; return; }
+  if (!r.ok) { div.innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
   mostrarEmissao(dados);
 }
 async function assinar() {
   if (!emissaoAtualId) return;
   const r = await fetch(`/api/dps/${emissaoAtualId}/assinar`, { method: 'POST' });
   const dados = await r.json();
-  if (!r.ok) { document.getElementById('resultado').innerHTML += `<p class="erro">Erro: ${dados.detail}</p>`; return; }
+  if (!r.ok) { document.getElementById('resultado').innerHTML += `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
   mostrarEmissao(dados);
 }
 
@@ -646,7 +670,7 @@ async function importarCsv() {
   div.innerHTML = '<p>Importando...</p>';
   const r = await fetch('/api/dps/importar-csv', { method: 'POST', body: fd });
   const dados = await r.json();
-  if (!r.ok) { div.innerHTML = `<p class="erro">Erro: ${dados.detail}</p>`; return; }
+  if (!r.ok) { div.innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
   const linhasHtml = dados.linhas.map(l => `
     <tr>
       <td>${l.linha}</td>
@@ -693,7 +717,7 @@ async function mostrarMensagemPronta() {
   if (!emissaoAtualId) { alert('Gere uma nota primeiro.'); return; }
   const r = await fetch(`/api/dps/${emissaoAtualId}/mensagem-pronta`);
   const dados = await r.json();
-  if (!r.ok) { document.getElementById('envio-resultado').innerHTML = `<p class="erro">Erro: ${dados.detail}</p>`; return; }
+  if (!r.ok) { document.getElementById('envio-resultado').innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
   await fetch(`/api/dps/${emissaoAtualId}/envios`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({canal: 'mensagem_pronta'}) });
   document.getElementById('envio-resultado').innerHTML = `<pre>${dados.mensagem}</pre>`;
   carregarEnvios();
@@ -702,7 +726,7 @@ async function registrarEnvio(canal) {
   if (!emissaoAtualId) { alert('Gere uma nota primeiro.'); return; }
   const r = await fetch(`/api/dps/${emissaoAtualId}/envios`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({canal}) });
   const dados = await r.json();
-  if (!r.ok) { document.getElementById('envio-resultado').innerHTML = `<p class="erro">Erro: ${dados.detail}</p>`; return; }
+  if (!r.ok) { document.getElementById('envio-resultado').innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
   carregarEnvios();
 }
 
@@ -716,7 +740,7 @@ async function registrarPagamento() {
   const r = await fetch('/api/pagamentos', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(corpo) });
   const dados = await r.json();
   const div = document.getElementById('pgto-resultado');
-  if (!r.ok) { div.innerHTML = `<p class="erro">Erro: ${dados.detail}</p>`; return; }
+  if (!r.ok) { div.innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
   div.innerHTML = `<p>Registrado: ${dados.apelido} — ${dados.competencia} — R$ ${dados.valor.toFixed(2)}</p>`;
 }
 async function registrarDespesa() {
@@ -728,7 +752,7 @@ async function registrarDespesa() {
   const r = await fetch('/api/despesas', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(corpo) });
   const dados = await r.json();
   const div = document.getElementById('desp-resultado');
-  if (!r.ok) { div.innerHTML = `<p class="erro">Erro: ${dados.detail}</p>`; return; }
+  if (!r.ok) { div.innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
   div.innerHTML = `<p>Registrada: ${dados.categoria} — ${dados.competencia} — R$ ${dados.valor.toFixed(2)}</p>`;
 }
 const MESES_ABREV = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -744,7 +768,7 @@ async function carregarStatus() {
   div.innerHTML = '<p>Carregando...</p>';
   const r = await fetch(`/api/painel/status?ano=${encodeURIComponent(ano)}`);
   const dados = await r.json();
-  if (!r.ok) { div.innerHTML = `<p class="erro">Erro: ${dados.detail}</p>`; return; }
+  if (!r.ok) { div.innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
   div.innerHTML =
     tabelaStatus('NF Geradas', dados.notas_geradas) +
     tabelaStatus('Pagamentos recebidos', dados.pagamentos_recebidos) +
