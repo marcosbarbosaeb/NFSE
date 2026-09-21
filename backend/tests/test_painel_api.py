@@ -189,6 +189,64 @@ def test_criar_dps_com_template_de_ordem_sem_ordem_da_422(client, db, prestador_
 
 
 def test_pagina_inicial_carrega(client):
+    """Marco 12: `/` agora serve o SPA novo (React/Vite, frontend/dist) —
+    o backend só entrega o index.html gerado pelo `npm run build`; o
+    conteúdo de verdade é montado no navegador, então o teste checa só a
+    casca (`id="root"`), não texto de UI (que mudaria a cada ajuste
+    visual sem relação nenhuma com este endpoint)."""
     resp = client.get("/")
     assert resp.status_code == 200
-    assert "Painel NFS-e" in resp.text
+    assert 'id="root"' in resp.text
+
+
+# --- Marco 11: /api/dps/{id}/nota — máscara visual (ver app/services/nota_visual.py) ---
+
+
+def test_nota_visual_apos_montar_traz_prestador_tomador_e_servico(client, vinculo_teste, prestador_teste):
+    criada = client.post("/api/dps", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08", "valor": 150.0}).json()
+
+    resp = client.get(f"/api/dps/{criada['id']}/nota")
+    assert resp.status_code == 200, resp.text
+    nota = resp.json()
+
+    assert nota["estado"] == "montado"
+    assert nota["serie"] == vinculo_teste.serie
+    assert nota["n_dps"] == criada["n_dps"]
+    assert nota["competencia"] == "2026-08"
+    assert nota["ambiente"] == "2"  # default de GerarDpsRequest.tpAmb
+    assert nota["xml_disponivel"] is True
+    assert nota["id_dps"]  # nasce na montagem
+
+    # PRESTADOR vem do banco (Prestador), não do XML — a DPS deliberadamente
+    # não leva nome/endereço do prestador (ver docstring de app/fiscal/dps.py,
+    # erro E0121) — é por isso que este endpoint existe em vez de só reler o XML.
+    assert nota["prestador"]["razao_social"] == prestador_teste.razao_social
+    assert "00.000.000/0001-91" == nota["prestador"]["cnpj"]
+
+    # TOMADOR vem do snapshot congelado no rascunho, não do catálogo ao vivo.
+    assert nota["tomador"]["razao_social"] == "TOMADOR DE TESTE LTDA"
+    assert "11.222.333/0001-81" == nota["tomador"]["cnpj"]
+
+    assert nota["servico"]["codigo_tributacao_nacional"] == "170601"
+    assert "08/2026" in nota["servico"]["descricao"]
+
+    assert nota["valores"]["valor_servico"] == 150.0
+
+
+def test_nota_visual_reflete_estado_apos_assinar(client, vinculo_teste, certificado_teste):
+    with open(certificado_teste["path"], "rb") as f:
+        client.post("/api/certificado", files={"pfx": ("cert.pfx", f, "application/x-pkcs12")}, data={"senha": certificado_teste["senha"]})
+
+    criada = client.post("/api/dps", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08", "valor": 100.0}).json()
+    client.post(f"/api/dps/{criada['id']}/assinar")
+
+    resp = client.get(f"/api/dps/{criada['id']}/nota")
+    assert resp.status_code == 200
+    nota = resp.json()
+    assert nota["estado"] == "assinado"
+    assert nota["estado_label"].startswith("Assinada")
+
+
+def test_nota_visual_emissao_inexistente_da_404(client, prestador_teste):
+    resp = client.get(f"/api/dps/{uuid.uuid4()}/nota")
+    assert resp.status_code == 404

@@ -185,8 +185,15 @@ class Tomador(Base):
     complemento: Mapped[str | None] = mapped_column(String(100))
     bairro: Mapped[str | None] = mapped_column(String(100))
 
-    # Curadoria (ver Modelo de dados no plano): cadastro/edição de um tomador
-    # compartilhado não pode ser gravação direta de qualquer conta.
+    # Curadoria: o plano original previa que cadastro/edição de um tomador
+    # compartilhado não seria gravação direta de qualquer conta — nunca
+    # chegou a ser implementado, e Marcos confirmou (22/09/2026, Marco 13)
+    # que o caminho é self-service mesmo: a Raiana usa um tomador já no
+    # catálogo OU cadastra um novo na hora (igual ao Emissor Nacional
+    # permite), sem fila de aprovação — ver app/services/tomadores.py, que
+    # sempre cria com status='aprovado'. A coluna continua aqui porque não
+    # custa nada manter — dá pra ligar uma curadoria de verdade depois, se
+    # isto deixar de ser single-tenant, sem precisar de nova migração.
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="aprovado")
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -227,6 +234,17 @@ class PrestadorTomador(Base):
     requer_revisao: Mapped[bool] = mapped_column(nullable=False, server_default="true")
     ativo: Mapped[bool] = mapped_column(nullable=False, server_default="true")
 
+    # Marco 13 — calendário de prazos (ver migração 4e44be09cfe3 e
+    # app/services/calendario.py). Os dois são opcionais de propósito: nem
+    # todo vínculo tem prazo/previsão conhecidos, e um vínculo sem eles
+    # simplesmente não gera evento nenhum no calendário, sem quebrar nada.
+    dia_limite_emissao: Mapped[int | None] = mapped_column(
+        comment="Dia do mês (1-31) até o qual a nota precisa ser gerada pra não cair pro ciclo do mês seguinte."
+    )
+    dias_para_recebimento: Mapped[int | None] = mapped_column(
+        comment="Dias corridos após a EMISSÃO em que o pagamento costuma cair (não é um dia fixo do mês)."
+    )
+
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -241,6 +259,14 @@ class PrestadorTomador(Base):
         CheckConstraint(
             "metodo_captura_valor IN ('manual', 'pdf', 'csv', 'chat')",
             name="ck_prestador_tomador_metodo",
+        ),
+        CheckConstraint(
+            "dia_limite_emissao IS NULL OR (dia_limite_emissao BETWEEN 1 AND 31)",
+            name="ck_prestador_tomador_dia_limite_emissao",
+        ),
+        CheckConstraint(
+            "dias_para_recebimento IS NULL OR dias_para_recebimento >= 0",
+            name="ck_prestador_tomador_dias_para_recebimento",
         ),
     )
 

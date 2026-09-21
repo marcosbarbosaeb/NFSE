@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/*
+ * Paleta do NotaFácil — extraída a olho das duas imagens de referência que
+ * o Marcos mandou (dashboard + fluxo de 12 telas, 21/09/2026), não de um
+ * arquivo de design de verdade (não temos um). São valores aproximados:
+ * dá pra ajustar fino depois sem tocar em nenhum componente, porque tudo
+ * usa estes tokens em vez de hex direto.
+ *
+ *  - brand-*   : navy do sidebar/marca
+ *  - primary-* : azul das ações "neutras" (nav ativo, botões secundários)
+ *  - accent-*  : rosa/magenta das ações de emissão (CTA principal do fluxo
+ *                de nota — "Emitir NFS-e", "Baixar PDF")
+ *  - success/warning/danger: mesma linha dos badges de status já usados
+ *    no painel antigo (ver .badge-producao/.badge-homolog em app/main.py),
+ *    só que como tokens reaproveitáveis.
+ */
+@theme {
+  --color-brand-950: #0d1330;
+  --color-brand-900: #131b3f;
+  --color-brand-800: #1c2550;
+  --color-brand-700: #29356b;
+
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-500: #3b5bdb;
+  --color-primary-600: #2f4fd1;
+  --color-primary-700: #2540ab;
+
+  --color-accent-50: #fdf2f8;
+  --color-accent-100: #fce7f3;
+  --color-accent-500: #db2777;
+  --color-accent-600: #c2255f;
+  --color-accent-700: #a31c4e;
+
+  --color-success-50: #ecfdf5;
+  --color-success-600: #059669;
+  --color-success-700: #047857;
+
+  --color-warning-50: #fffbeb;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+
+  --color-danger-50: #fef2f2;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+
+  --color-canvas: #f4f5fa;
+
+  --font-sans: -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
+}
+
+body {
+  background: var(--color-canvas);
+  color: #1a1a2e;
+  font-family: var(--font-sans);
+}
+
+#root {
+  min-height: 100vh;
+}

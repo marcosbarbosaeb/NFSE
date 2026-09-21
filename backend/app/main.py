@@ -30,10 +30,12 @@ decisão para quando isso puder ser validado de um ambiente com rede
 liberada — Marcos continua emitindo de verdade pelos scripts em
 integracao/ até lá.
 """
+import datetime
 import uuid
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -42,7 +44,9 @@ from app.database import definir_prestador_atual, get_db
 from app.fiscal.dps import DescricaoIncompletaError
 from app.models import Certificado, Emissao, Usuario
 from app.schemas import (
+    CalendarioResponse,
     CertificadoStatus,
+    DashboardResumoResponse,
     DespesaResponse,
     EmissaoResponse,
     EnvioResponse,
@@ -51,12 +55,17 @@ from app.schemas import (
     ImportacaoCsvResponse,
     LoginRequest,
     MensagemProntaResponse,
+    NotaVisualResponse,
     PagamentoResponse,
     PainelStatusResponse,
     RegistrarDespesaRequest,
     RegistrarEnvioRequest,
     RegistrarPagamentoRequest,
+    TomadorResponse,
     UsuarioResponse,
+    VinculoCriarRequest,
+    VinculoAtualizarRequest,
+    VinculoDetalheResponse,
     VinculoResumo,
 )
 from app.services.certificados import (
@@ -65,6 +74,8 @@ from app.services.certificados import (
     certificado_vencido,
     salvar_certificado,
 )
+from app.services.calendario import eventos_calendario
+from app.services.dashboard import resumo_mes
 from app.services.despesas import registrar_despesa
 from app.services.envios import (
     CanalInvalidoError,
@@ -85,10 +96,18 @@ from app.services.motor_emissao import (
     criar_rascunho,
     montar as montar_emissao,
 )
+from app.services.nota_visual import montar_nota_visual
 from app.services.pagamentos import registrar_pagamento
 from app.services.painel_status import painel_status_completo
+from app.services.tomadores import CnpjJaCadastradoError, buscar_tomador, criar_tomador, listar_catalogo
 from app.services.usuarios import autenticar
-from app.services.vinculos import buscar_vinculo, listar_vinculos_ativos
+from app.services.vinculos import (
+    ApelidoJaExisteError,
+    atualizar_vinculo,
+    buscar_vinculo,
+    criar_vinculo,
+    listar_vinculos_ativos,
+)
 
 app = FastAPI(title="Painel NFS-e — Raiana (Marco 5/6/9/10)")
 # same_site="lax": suficiente pro painel ser first-party (o próprio backend
@@ -163,6 +182,95 @@ def api_listar_vinculos(db: Session = Depends(db_sessao)):
         )
         for v in vinculos
     ]
+
+
+@app.get("/api/vinculos/{vinculo_id}", response_model=VinculoDetalheResponse, responses={404: {"model": ErroResponse}})
+def api_ver_vinculo(vinculo_id: uuid.UUID, db: Session = Depends(db_sessao)):
+    """Marco 13 — tela de detalhe do tomador ('Regras de emissão')."""
+    vinculo = buscar_vinculo(db, vinculo_id)
+    if vinculo is None:
+        raise HTTPException(status_code=404, detail="Vínculo não encontrado (ou não pertence ao prestador ativo)")
+    return vinculo
+
+
+@app.post("/api/vinculos", response_model=VinculoDetalheResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
+def api_criar_vinculo(req: VinculoCriarRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Marco 13 — 'usar um tomador pré-cadastrado' ou 'cadastrar meu
+    próprio tomador' (ver VinculoCriarRequest) chegam aqui pela mesma
+    rota; a diferença é só qual dos dois campos veio preenchido."""
+    if req.novo_tomador is not None:
+        try:
+            tomador = criar_tomador(db, **req.novo_tomador.model_dump())
+        except CnpjJaCadastradoError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        tomador_id = tomador.id
+    else:
+        tomador = buscar_tomador(db, req.tomador_id)
+        if tomador is None:
+            raise HTTPException(status_code=404, detail="Tomador não encontrado no catálogo.")
+        tomador_id = tomador.id
+
+    try:
+        vinculo = criar_vinculo(
+            db, prestador_id=prestador_id, tomador_id=tomador_id, apelido=req.apelido,
+            cod_local_prestacao=req.cod_local_prestacao, cod_trib_nacional=req.cod_trib_nacional,
+            cod_trib_municipal=req.cod_trib_municipal, template_descricao=req.template_descricao,
+            metodo_captura_valor=req.metodo_captura_valor, serie=req.serie, requer_revisao=req.requer_revisao,
+            dia_limite_emissao=req.dia_limite_emissao, dias_para_recebimento=req.dias_para_recebimento,
+        )
+    except ApelidoJaExisteError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    return vinculo
+
+
+@app.patch("/api/vinculos/{vinculo_id}", response_model=VinculoDetalheResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
+def api_atualizar_vinculo(vinculo_id: uuid.UUID, req: VinculoAtualizarRequest, db: Session = Depends(db_sessao)):
+    """Marco 13 — edita as 'regras de emissão' de um vínculo já existente
+    (o padrão que fica valendo pras próximas notas — não reescreve notas
+    já emitidas, que usam o snapshot congelado no rascunho)."""
+    vinculo = buscar_vinculo(db, vinculo_id)
+    if vinculo is None:
+        raise HTTPException(status_code=404, detail="Vínculo não encontrado (ou não pertence ao prestador ativo)")
+    try:
+        vinculo = atualizar_vinculo(db, vinculo, **req.model_dump(exclude_unset=True))
+    except ApelidoJaExisteError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    return vinculo
+
+
+@app.get("/api/tomadores", response_model=list[TomadorResponse])
+def api_listar_tomadores(
+    apenas_meus: bool = False,
+    db: Session = Depends(db_sessao),
+    prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Marco 13 — catálogo pra tela de Tomadores: 'Meus tomadores'
+    (apenas_meus=true, só quem já tem vínculo ativo) ou 'Todos os
+    tomadores' (catálogo compartilhado inteiro)."""
+    return listar_catalogo(db, prestador_id=prestador_id, apenas_meus=apenas_meus)
+
+
+@app.get("/api/calendario", response_model=CalendarioResponse, responses={422: {"model": ErroResponse}})
+def api_calendario(
+    inicio: str,
+    fim: str,
+    db: Session = Depends(db_sessao),
+    prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Marco 13 — eventos de prazo/previsão de recebimento pro calendário
+    (ver app/services/calendario.py). `inicio`/`fim` em AAAA-MM-DD,
+    inclusivos. GET puro, sem efeito colateral."""
+    try:
+        data_inicio = datetime.date.fromisoformat(inicio)
+        data_fim = datetime.date.fromisoformat(fim)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="inicio/fim devem estar no formato AAAA-MM-DD") from exc
+    if data_fim < data_inicio:
+        raise HTTPException(status_code=422, detail="fim não pode ser anterior a inicio")
+    eventos = eventos_calendario(db, prestador_id, data_inicio, data_fim)
+    return {"inicio": data_inicio, "fim": data_fim, "eventos": eventos}
 
 
 @app.get("/api/certificado/status", response_model=CertificadoStatus)
@@ -261,6 +369,21 @@ def api_ver_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
     if emissao is None:
         raise HTTPException(status_code=404, detail="Emissão não encontrada (ou não pertence ao prestador ativo)")
     return _para_resposta(emissao)
+
+
+@app.get("/api/dps/{emissao_id}/nota", response_model=NotaVisualResponse, responses={404: {"model": ErroResponse}})
+def api_nota_visual(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
+    """Marco 11 — a mesma emissão de /api/dps/{id}, mas com os campos já
+    lidos e rotulados em português pra o painel desenhar uma 'nota' de
+    verdade (cabeçalho, prestador/tomador, serviço, valores) em vez do
+    JSON de resumo + XML cru que ele mostrava até aqui — ver docstring de
+    app/services/nota_visual.py pro porquê disso ter virado necessário (a
+    Raiana não conseguia conferir uma nota olhando aquilo). GET puro, sem
+    efeito colateral."""
+    emissao = db.query(Emissao).filter_by(id=emissao_id).one_or_none()
+    if emissao is None:
+        raise HTTPException(status_code=404, detail="Emissão não encontrada (ou não pertence ao prestador ativo)")
+    return montar_nota_visual(emissao)
 
 
 @app.post("/api/dps/{emissao_id}/assinar", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
@@ -397,385 +520,70 @@ def api_painel_status(ano: str, db: Session = Depends(db_sessao), prestador_id: 
     return painel_status_completo(db, prestador_id, ano)
 
 
-@app.get("/", response_class=HTMLResponse)
-def painel():
-    return _PAGINA_HTML
+@app.get("/api/painel/resumo-mes", response_model=DashboardResumoResponse)
+def api_painel_resumo_mes(
+    competencia: str | None = None,
+    db: Session = Depends(db_sessao),
+    prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Marco 12 — dados da tela 'Visão geral' do novo frontend (ver
+    app/services/dashboard.py pro porquê de cada campo e as aproximações
+    assumidas). `competencia` é opcional (AAAA-MM); sem ela, usa o mês
+    corrente. GET puro, sem efeito colateral."""
+    if competencia is not None and (len(competencia) != 7 or competencia[4] != "-"):
+        raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
+    return resumo_mes(db, prestador_id, competencia)
 
 
-_PAGINA_HTML = """<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8">
-<title>Painel NFS-e — Raiana</title>
-<style>
-  body { font-family: -apple-system, system-ui, sans-serif; max-width: 780px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
-  h1 { font-size: 1.3rem; }
-  fieldset { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
-  legend { font-weight: 600; padding: 0 .4rem; }
-  label { display: block; margin: .5rem 0 .2rem; font-size: .9rem; }
-  input, select { width: 100%; padding: .4rem; box-sizing: border-box; }
-  button { margin-top: .8rem; padding: .5rem 1rem; cursor: pointer; }
-  button:disabled { opacity: .5; cursor: default; }
-  pre { background: #f5f5f5; padding: .8rem; border-radius: 6px; overflow-x: auto; font-size: .8rem; white-space: pre-wrap; }
-  .aviso { background: #fff4e5; border: 1px solid #ffc266; border-radius: 6px; padding: .6rem .8rem; font-size: .85rem; }
-  .erro { color: #b00020; background: #fdecea; border: 1px solid #f5b5ac; border-radius: 6px; padding: .5rem .7rem; font-size: .85rem; margin-top: .5rem; }
-  .sucesso { color: #0a6b2b; background: #e6f4ea; border: 1px solid #8fd19e; border-radius: 6px; padding: .5rem .7rem; font-size: .85rem; margin-top: .5rem; }
-  .status { font-size: .85rem; }
-  .badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; background: #e5e5e5; font-size: .8rem; }
-</style>
-</head>
-<body>
-<h1>Painel NFS-e</h1>
+# Frontend novo (React/Vite, Marco 12/13) — o build (`npm run build` em
+# frontend/) é copiado pra frontend/dist pelo Dockerfile (estágio Node,
+# separado da imagem final — não roda servidor Node em produção, só serve
+# os arquivos estáticos gerados). Em dev local sem Docker, precisa rodar
+# `npm run build` uma vez em frontend/ pra esta pasta existir; o fluxo de
+# desenvolvimento normal usa `npm run dev` (proxy do Vite, ver
+# frontend/vite.config.ts), que não passa por aqui.
+#
+# `parents[2]`: este arquivo é backend/app/main.py — dois níveis acima é a
+# raiz do repo (onde mora frontend/), tanto localmente quanto na imagem
+# Docker (que replica a mesma estrutura: /app/backend, /app/frontend).
+_FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
-<fieldset id="login-fieldset">
-  <legend>Entrar</legend>
-  <label>E-mail</label>
-  <input id="login-email" type="email">
-  <label>Senha</label>
-  <input id="login-senha" type="password">
-  <button onclick="login()">Entrar</button>
-  <div id="login-resultado"></div>
-</fieldset>
 
-<div id="app" style="display:none;">
-<p class="status">Logado como <strong id="usuario-email"></strong> — <a href="#" onclick="logout(); return false;">sair</a></p>
-<p class="aviso">Gerar já cria e persiste a emissão (nDPS automático); assinar avança o estado dela. Não envia pra
-Sefin — submissão continua manual via scripts, do computador com rede liberada pra gov.br.</p>
+def _index_html() -> FileResponse:
+    indice = _FRONTEND_DIST / "index.html"
+    if not indice.is_file():
+        # Acontece em dev local sem Docker antes do primeiro `npm run
+        # build` em frontend/ (ver comentário acima) — 500 com instrução
+        # clara em vez de um FileNotFoundError cru.
+        raise HTTPException(
+            status_code=500,
+            detail="Build do frontend não encontrado — rode `npm run build` em frontend/ (ou use o Dockerfile).",
+        )
+    return FileResponse(indice)
 
-<fieldset>
-  <legend>Certificado</legend>
-  <div id="cert-status" class="status">carregando...</div>
-  <label>Arquivo .pfx</label>
-  <input type="file" id="cert-pfx">
-  <label>Senha</label>
-  <input type="password" id="cert-senha">
-  <button id="btn-cert" onclick="enviarCertificado()">Carregar certificado</button>
-  <div id="cert-resultado"></div>
-</fieldset>
 
-<fieldset>
-  <legend>Nova DPS</legend>
-  <label>Vínculo (fornecedor)</label>
-  <select id="vinculo"></select>
-  <label>Competência (AAAA-MM)</label>
-  <input type="month" id="competencia">
-  <label>Valor (R$)</label>
-  <input id="valor" type="number" step="0.01">
-  <label>Ordem de pagamento (só AWIN/AWIN Rchlo)</label>
-  <input id="ordem">
-  <label>Alíquota do Simples Nacional (%)</label>
-  <input id="aliq_sn" type="number" step="0.01">
-  <label>Ambiente</label>
-  <select id="tpAmb">
-    <option value="2">Homologação — ambiente de teste, NÃO vale como nota fiscal real</option>
-    <option value="1">Produção — nota fiscal real, seria enviada de verdade à Receita</option>
-  </select>
-  <p class="aviso">Use sempre <strong>Homologação</strong> pra testar. "Produção" ainda não envia nada de verdade pra Sefin neste painel (isso é um passo futuro), mas já é a opção que vale pra quando enviar de verdade — não troque por engano.</p>
-  <button onclick="gerar()">Gerar (cria + monta)</button>
-  <button id="btn-assinar" onclick="assinar()" disabled>Assinar</button>
-</fieldset>
+@app.get("/", include_in_schema=False)
+def frontend_raiz():
+    return _index_html()
 
-<fieldset>
-  <legend>Envio (nota atual)</legend>
-  <p class="aviso">'Baixar XML' e 'Mensagem pronta' o app gera sozinho. E-mail/WhatsApp/direto ao fornecedor não são automáticos aqui (sem rede/credenciais neste ambiente) — marque manualmente depois de enviar por fora.</p>
-  <button onclick="baixarXml()">Baixar XML</button>
-  <button onclick="mostrarMensagemPronta()">Mensagem pronta</button>
-  <button onclick="registrarEnvio('email')">Registrar envio: e-mail</button>
-  <button onclick="registrarEnvio('whatsapp')">Registrar envio: WhatsApp</button>
-  <button onclick="registrarEnvio('direto_fornecedor')">Registrar envio: direto ao fornecedor</button>
-  <div id="envio-resultado"></div>
-</fieldset>
 
-<fieldset>
-  <legend>Importar CSV (várias notas de uma vez)</legend>
-  <p class="aviso">Colunas: <code>apelido, competencia, valor</code> (+ <code>ordem</code>, <code>aliq_sn</code> opcionais). Uma linha por nota — o apelido precisa bater com o vínculo cadastrado (ex.: ML/Ebazar, AWIN). Uma linha com problema vira erro só naquela linha, sem travar as outras.</p>
-  <input type="file" id="csv-arquivo" accept=".csv,text/csv">
-  <button onclick="importarCsv()">Importar</button>
-  <div id="csv-resultado"></div>
-</fieldset>
+@app.get("/{caminho_completo:path}", include_in_schema=False)
+def frontend_catch_all(caminho_completo: str):
+    """Serve o SPA novo pra qualquer rota que não seja da API. Isso vem
+    DEPOIS de toda rota /api/* no arquivo (a ordem de registro é o que
+    decide qual rota o Starlette tenta primeiro — ver docstring do módulo
+    sobre a disciplina de RLS: a mesma lógica de "a rota mais específica
+    ganha por estar primeiro" vale aqui), então uma /api/rota-que-nao-existe
+    nunca cai aqui por acidente — cai no 404 explícito abaixo.
 
-<div id="resultado"></div>
-
-<fieldset>
-  <legend>Registrar pagamento recebido</legend>
-  <label>Vínculo (fornecedor)</label>
-  <select id="pgto-vinculo"></select>
-  <label>Competência (AAAA-MM)</label>
-  <input type="month" id="pgto-competencia">
-  <label>Valor (R$)</label>
-  <input id="pgto-valor" type="number" step="0.01">
-  <label>Data do recebimento (opcional)</label>
-  <input id="pgto-data" type="date">
-  <button onclick="registrarPagamento()">Registrar pagamento</button>
-  <div id="pgto-resultado"></div>
-</fieldset>
-
-<fieldset>
-  <legend>Registrar despesa</legend>
-  <label>Categoria</label>
-  <input id="desp-categoria" placeholder="Ex.: Pro Labore, Contabilidade...">
-  <label>Competência (AAAA-MM)</label>
-  <input type="month" id="desp-competencia">
-  <label>Valor (R$)</label>
-  <input id="desp-valor" type="number" step="0.01">
-  <button onclick="registrarDespesa()">Registrar despesa</button>
-  <div id="desp-resultado"></div>
-</fieldset>
-
-<fieldset>
-  <legend>Painel de status (ano completo)</legend>
-  <label>Ano</label>
-  <input id="status-ano" value="2026" style="width: 120px; display: inline-block;">
-  <button onclick="carregarStatus()">Carregar</button>
-  <div id="status-resultado"></div>
-</fieldset>
-</div>
-
-<script>
-let emissaoAtualId = null;
-
-// FastAPI devolve `detail` como texto simples nos erros que o backend levanta
-// de proposito (ex.: HTTPException), mas como uma LISTA de objetos quando e o
-// Pydantic validando o corpo automaticamente (422 de campo obrigatorio/formato
-// errado) — sem isso, essas mensagens apareciam como "[object Object]" pro
-// usuario, o que parecia "nao funciona" mesmo quando o erro era so, por
-// exemplo, competencia em formato errado.
-function formatarErro(detail) {
-  if (typeof detail === 'string') return detail;
-  if (Array.isArray(detail)) {
-    return detail.map(e => {
-      const campo = Array.isArray(e.loc) ? e.loc[e.loc.length - 1] : 'campo';
-      return `${campo}: ${e.msg}`;
-    }).join('; ');
-  }
-  return 'Erro inesperado (veja o console do navegador — F12).';
-}
-
-async function login() {
-  const email = document.getElementById('login-email').value;
-  const senha = document.getElementById('login-senha').value;
-  const r = await fetch('/api/auth/login', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email, senha}) });
-  const dados = await r.json();
-  if (!r.ok) { document.getElementById('login-resultado').innerHTML = `<p class="erro">${formatarErro(dados.detail)}</p>`; return; }
-  document.getElementById('login-senha').value = '';
-  await mostrarApp(dados);
-}
-async function logout() {
-  await fetch('/api/auth/logout', { method: 'POST' });
-  document.getElementById('app').style.display = 'none';
-  document.getElementById('login-fieldset').style.display = '';
-  document.getElementById('login-resultado').innerHTML = '';
-}
-async function mostrarApp(usuario) {
-  document.getElementById('usuario-email').textContent = usuario.email;
-  document.getElementById('login-fieldset').style.display = 'none';
-  document.getElementById('app').style.display = '';
-  carregarVinculos();
-  carregarStatusCertificado();
-}
-async function verificarSessao() {
-  const r = await fetch('/api/auth/me');
-  if (r.ok) { await mostrarApp(await r.json()); }
-}
-
-async function carregarVinculos() {
-  const r = await fetch('/api/vinculos');
-  const vinculos = await r.json();
-  const opcoes = vinculos.map(v => `<option value="${v.id}">${v.apelido} — ${v.tomador_razao_social}</option>`).join('');
-  document.getElementById('vinculo').innerHTML = opcoes;
-  const pgtoSel = document.getElementById('pgto-vinculo');
-  if (pgtoSel) pgtoSel.innerHTML = opcoes;
-}
-async function carregarStatusCertificado() {
-  const r = await fetch('/api/certificado/status');
-  const s = await r.json();
-  const el = document.getElementById('cert-status');
-  if (!s.carregado) { el.textContent = 'Nenhum certificado carregado.'; return; }
-  el.textContent = `Carregado. Validade: ${s.validade}` + (s.vencido ? ' — VENCIDO!' : '');
-}
-async function enviarCertificado() {
-  const pfx = document.getElementById('cert-pfx').files[0];
-  const senha = document.getElementById('cert-senha').value;
-  const resultado = document.getElementById('cert-resultado');
-  const btn = document.getElementById('btn-cert');
-  resultado.innerHTML = '';
-  if (!pfx || !senha) { resultado.innerHTML = '<p class="erro">Selecione o arquivo .pfx e informe a senha antes de carregar.</p>'; return; }
-  const fd = new FormData();
-  fd.append('pfx', pfx);
-  fd.append('senha', senha);
-  btn.disabled = true;
-  btn.textContent = 'Carregando...';
-  try {
-    const r = await fetch('/api/certificado', { method: 'POST', body: fd });
-    const dados = await r.json();
-    if (!r.ok) { resultado.innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
-    document.getElementById('cert-senha').value = '';
-    resultado.innerHTML = `<p class="sucesso">✓ Certificado carregado com sucesso. Validade: ${dados.validade}${dados.vencido ? ' — ATENÇÃO: VENCIDO' : ''}.</p>`;
-    carregarStatusCertificado();
-  } catch (e) {
-    resultado.innerHTML = `<p class="erro">Falha de conexão ao enviar o certificado: ${e}. Tente de novo.</p>`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Carregar certificado';
-  }
-}
-function mostrarEmissao(dados) {
-  emissaoAtualId = dados.id;
-  document.getElementById('btn-assinar').disabled = dados.estado !== 'montado';
-  const div = document.getElementById('resultado');
-  div.innerHTML = `
-    <p><span class="badge">${dados.estado}</span> nDPS ${dados.n_dps} — série ${dados.serie}</p>
-    <h3>Resumo</h3>
-    <pre>${JSON.stringify({apelido: dados.apelido, tomador: dados.tomador, valor: dados.valor, descricao: dados.descricao, chave_acesso: dados.chave_acesso}, null, 2)}</pre>
-    <h3>XML</h3>
-    <pre>${(dados.xml || '').replace(/</g, '&lt;')}</pre>
-  `;
-  carregarEnvios();
-}
-async function gerar() {
-  const div = document.getElementById('resultado');
-  const vinculoId = document.getElementById('vinculo').value;
-  const competencia = document.getElementById('competencia').value;
-  const valor = parseFloat(document.getElementById('valor').value);
-  if (!vinculoId) { div.innerHTML = '<p class="erro">Escolha um vinculo (fornecedor) na lista antes de gerar.</p>'; return; }
-  if (!competencia) { div.innerHTML = '<p class="erro">Escolha o mes de competencia.</p>'; return; }
-  if (!(valor > 0)) { div.innerHTML = '<p class="erro">Informe um valor maior que zero.</p>'; return; }
-  const corpo = {
-    vinculo_id: vinculoId,
-    competencia: competencia,
-    valor: valor,
-    ordem: document.getElementById('ordem').value || null,
-    aliq_sn: document.getElementById('aliq_sn').value ? parseFloat(document.getElementById('aliq_sn').value) : null,
-    tpAmb: document.getElementById('tpAmb').value,
-  };
-  const r = await fetch('/api/dps', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(corpo) });
-  const dados = await r.json();
-  if (!r.ok) { div.innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
-  mostrarEmissao(dados);
-}
-async function assinar() {
-  if (!emissaoAtualId) return;
-  const r = await fetch(`/api/dps/${emissaoAtualId}/assinar`, { method: 'POST' });
-  const dados = await r.json();
-  if (!r.ok) { document.getElementById('resultado').innerHTML += `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
-  mostrarEmissao(dados);
-}
-
-async function importarCsv() {
-  const arquivo = document.getElementById('csv-arquivo').files[0];
-  if (!arquivo) { alert('Selecione um arquivo .csv.'); return; }
-  const fd = new FormData();
-  fd.append('arquivo', arquivo);
-  const div = document.getElementById('csv-resultado');
-  div.innerHTML = '<p>Importando...</p>';
-  const r = await fetch('/api/dps/importar-csv', { method: 'POST', body: fd });
-  const dados = await r.json();
-  if (!r.ok) { div.innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
-  const linhasHtml = dados.linhas.map(l => `
-    <tr>
-      <td>${l.linha}</td>
-      <td>${l.apelido}</td>
-      <td>${l.ok ? '<span class="badge">ok — nDPS ' + l.n_dps + '</span>' : '<span class="erro">erro</span>'}</td>
-      <td>${l.mensagem || ''}</td>
-    </tr>`).join('');
-  div.innerHTML = `
-    <p><strong>${dados.sucesso}</strong> criada(s), <strong>${dados.erro}</strong> com erro, de ${dados.total} linha(s).</p>
-    <table style="width:100%; border-collapse: collapse; font-size: .85rem;">
-      <tr><th align="left">Linha</th><th align="left">Apelido</th><th align="left">Status</th><th align="left">Detalhe</th></tr>
-      ${linhasHtml}
-    </table>`;
-  carregarVinculos();
-}
-
-async function carregarEnvios() {
-  if (!emissaoAtualId) return;
-  const r = await fetch(`/api/dps/${emissaoAtualId}/envios`);
-  const envios = await r.json();
-  const div = document.getElementById('envio-resultado');
-  if (envios.length === 0) { div.innerHTML = ''; return; }
-  const linhas = envios.map(e => `
-    <tr>
-      <td>${e.canal}</td>
-      <td><span class="badge">${e.status}</span></td>
-      <td>${e.tentativas}</td>
-      <td>${e.status === 'pendente' ? `<button onclick="marcarEnvio('${e.id}','enviado')">Marcar enviado</button> <button onclick="marcarEnvio('${e.id}','falha')">Marcar falha</button>` : ''}</td>
-    </tr>`).join('');
-  div.innerHTML = `<table style="width:100%; border-collapse: collapse; font-size:.8rem; margin-top:.6rem;">
-    <tr><th align="left">Canal</th><th align="left">Status</th><th align="left">Tentativas</th><th></th></tr>${linhas}</table>`;
-}
-async function marcarEnvio(envioId, tipo) {
-  await fetch(`/api/envios/${envioId}/marcar-${tipo === 'enviado' ? 'enviado' : 'falha'}`, { method: 'POST' });
-  carregarEnvios();
-}
-async function baixarXml() {
-  if (!emissaoAtualId) { alert('Gere uma nota primeiro.'); return; }
-  window.open(`/api/dps/${emissaoAtualId}/download`, '_blank');
-  await fetch(`/api/dps/${emissaoAtualId}/envios`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({canal: 'download'}) });
-  carregarEnvios();
-}
-async function mostrarMensagemPronta() {
-  if (!emissaoAtualId) { alert('Gere uma nota primeiro.'); return; }
-  const r = await fetch(`/api/dps/${emissaoAtualId}/mensagem-pronta`);
-  const dados = await r.json();
-  if (!r.ok) { document.getElementById('envio-resultado').innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
-  await fetch(`/api/dps/${emissaoAtualId}/envios`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({canal: 'mensagem_pronta'}) });
-  document.getElementById('envio-resultado').innerHTML = `<pre>${dados.mensagem}</pre>`;
-  carregarEnvios();
-}
-async function registrarEnvio(canal) {
-  if (!emissaoAtualId) { alert('Gere uma nota primeiro.'); return; }
-  const r = await fetch(`/api/dps/${emissaoAtualId}/envios`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({canal}) });
-  const dados = await r.json();
-  if (!r.ok) { document.getElementById('envio-resultado').innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
-  carregarEnvios();
-}
-
-async function registrarPagamento() {
-  const corpo = {
-    vinculo_id: document.getElementById('pgto-vinculo').value,
-    competencia: document.getElementById('pgto-competencia').value,
-    valor: parseFloat(document.getElementById('pgto-valor').value),
-    data_recebimento: document.getElementById('pgto-data').value || null,
-  };
-  const r = await fetch('/api/pagamentos', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(corpo) });
-  const dados = await r.json();
-  const div = document.getElementById('pgto-resultado');
-  if (!r.ok) { div.innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
-  div.innerHTML = `<p>Registrado: ${dados.apelido} — ${dados.competencia} — R$ ${dados.valor.toFixed(2)}</p>`;
-}
-async function registrarDespesa() {
-  const corpo = {
-    categoria: document.getElementById('desp-categoria').value,
-    competencia: document.getElementById('desp-competencia').value,
-    valor: parseFloat(document.getElementById('desp-valor').value),
-  };
-  const r = await fetch('/api/despesas', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(corpo) });
-  const dados = await r.json();
-  const div = document.getElementById('desp-resultado');
-  if (!r.ok) { div.innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
-  div.innerHTML = `<p>Registrada: ${dados.categoria} — ${dados.competencia} — R$ ${dados.valor.toFixed(2)}</p>`;
-}
-const MESES_ABREV = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-function tabelaStatus(titulo, linhas) {
-  if (linhas.length === 0) return `<h3>${titulo}</h3><p style="font-size:.85rem;color:#666;">Sem lançamentos neste ano.</p>`;
-  const cabecalho = `<tr><th align="left">${titulo}</th>${MESES_ABREV.map(m => `<th align="right">${m}</th>`).join('')}<th align="right">Total</th></tr>`;
-  const corpo = linhas.map(l => `<tr><td>${l.rotulo}</td>${l.meses.map(v => `<td align="right">${v ? v.toFixed(2) : '—'}</td>`).join('')}<td align="right"><strong>${l.total.toFixed(2)}</strong></td></tr>`).join('');
-  return `<table style="width:100%; border-collapse: collapse; font-size: .78rem; margin-bottom: 1rem;">${cabecalho}${corpo}</table>`;
-}
-async function carregarStatus() {
-  const ano = document.getElementById('status-ano').value;
-  const div = document.getElementById('status-resultado');
-  div.innerHTML = '<p>Carregando...</p>';
-  const r = await fetch(`/api/painel/status?ano=${encodeURIComponent(ano)}`);
-  const dados = await r.json();
-  if (!r.ok) { div.innerHTML = `<p class="erro">Erro: ${formatarErro(dados.detail)}</p>`; return; }
-  div.innerHTML =
-    tabelaStatus('NF Geradas', dados.notas_geradas) +
-    tabelaStatus('Pagamentos recebidos', dados.pagamentos_recebidos) +
-    tabelaStatus('Despesas', dados.despesas);
-}
-
-verificarSessao();
-</script>
-</body>
-</html>"""
+    Pra tudo mais: se o caminho pedido é um arquivo real do build (JS, CSS,
+    favicon.svg, ...), devolve ele; senão devolve index.html e deixa o
+    react-router decidir no navegador — é isso que permite recarregar a
+    página em /tomadores ou compartilhar link direto pra /calendario sem
+    dar 404."""
+    if caminho_completo.startswith("api/"):
+        raise HTTPException(status_code=404, detail="Rota não encontrada.")
+    candidato = (_FRONTEND_DIST / caminho_completo).resolve()
+    if _FRONTEND_DIST.is_dir() and candidato.is_file() and _FRONTEND_DIST.resolve() in candidato.parents:
+        return FileResponse(candidato)
+    return _index_html()
