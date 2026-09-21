@@ -111,6 +111,168 @@ export interface Calendario {
   eventos: EventoCalendario[]
 }
 
+// --- Marco 14: NFS-e (lista + nova emissão + detalhe), Recebimentos, Despesas, Configurações ---
+
+export interface EmissaoListaLinha {
+  id: string
+  vinculo_id: string
+  apelido: string
+  tomador_razao_social: string
+  competencia: string
+  valor: number
+  serie: string
+  n_dps: number | null
+  estado: string
+  estado_label: string
+  criado_em: string
+}
+
+export interface GerarDpsRequest {
+  vinculo_id: string
+  competencia: string
+  valor: number
+  ordem?: string | null
+  aliq_sn?: number | null
+  tpAmb?: string
+}
+
+export interface Emissao {
+  id: string
+  estado: string
+  n_dps: number
+  serie: string
+  competencia: string
+  valor: number
+  apelido: string
+  tomador: string
+  descricao: string
+  xml: string | null
+  chave_acesso: string | null
+  erro_detalhe: string | null
+  atualizado_em: string
+}
+
+export interface PrestadorVisual {
+  razao_social: string
+  cnpj: string | null
+  inscricao_municipal: string | null
+  endereco: string | null
+  telefone: string | null
+  email: string | null
+}
+
+export interface TomadorVisual {
+  razao_social: string | null
+  cnpj: string | null
+  endereco: string | null
+}
+
+export interface ServicoVisual {
+  descricao: string | null
+  codigo_tributacao_nacional: string | null
+  codigo_tributacao_municipal: string | null
+  codigo_local_prestacao: string | null
+}
+
+export interface ValoresVisual {
+  valor_servico: number
+  issqn: string | null
+  total_tributos: string | null
+}
+
+export interface NotaVisual {
+  estado: string
+  estado_label: string
+  ambiente: string | null
+  ambiente_label: string | null
+  id_dps: string | null
+  serie: string
+  n_dps: number
+  competencia: string
+  dh_emissao: string | null
+  chave_acesso: string | null
+  prestador: PrestadorVisual
+  tomador: TomadorVisual
+  servico: ServicoVisual
+  valores: ValoresVisual
+  xml_disponivel: boolean
+}
+
+export interface ImportacaoLinha {
+  linha: number
+  apelido: string
+  ok: boolean
+  mensagem: string | null
+  emissao_id: string | null
+  n_dps: number | null
+}
+
+export interface ImportacaoCsvResultado {
+  total: number
+  sucesso: number
+  erro: number
+  linhas: ImportacaoLinha[]
+}
+
+export type CanalEnvio = "download" | "email" | "whatsapp" | "direto_fornecedor" | "mensagem_pronta"
+
+export interface Envio {
+  id: string
+  emissao_id: string
+  canal: CanalEnvio
+  status: string
+  tentativas: number
+  enviado_em: string | null
+}
+
+export interface Pagamento {
+  id: string
+  apelido: string
+  competencia: string
+  valor: number
+  data_recebimento: string | null
+}
+
+export interface RegistrarPagamentoRequest {
+  vinculo_id: string
+  competencia: string
+  valor: number
+  data_recebimento?: string | null
+}
+
+export interface Despesa {
+  id: string
+  categoria: string
+  competencia: string
+  valor: number
+}
+
+export interface RegistrarDespesaRequest {
+  categoria: string
+  competencia: string
+  valor: number
+}
+
+export interface CertificadoStatus {
+  carregado: boolean
+  validade: string | null
+  vencido: boolean
+}
+
+export interface Prestador {
+  razao_social: string
+  cpf_cnpj: string
+  inscricao_municipal: string | null
+  cod_municipio: string
+  cep: string | null
+  logradouro: string | null
+  numero: string | null
+  complemento: string | null
+  bairro: string | null
+  telefone: string | null
+  email: string | null
+}
+
 export interface DashboardResumo {
   competencia: string
   total_vinculos: number

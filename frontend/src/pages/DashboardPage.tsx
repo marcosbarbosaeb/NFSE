@@ -138,10 +138,7 @@ export function DashboardPage() {
                   <Link to="/nfse" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
                     Ver todas <ArrowRight size={14} />
                   </Link>
-                  <Link
-                    to="/nfse"
-                    title="O fluxo de nova emissão ainda vive no painel antigo — migração pendente."
-                  >
+                  <Link to="/nfse">
                     <Button variant="accent" className="text-sm">
                       <Plus size={15} /> Nova emissão
                     </Button>

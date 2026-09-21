@@ -42,12 +42,13 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import get_settings
 from app.database import definir_prestador_atual, get_db
 from app.fiscal.dps import DescricaoIncompletaError
-from app.models import Certificado, Emissao, Usuario
+from app.models import Certificado, Emissao, Prestador, Usuario
 from app.schemas import (
     CalendarioResponse,
     CertificadoStatus,
     DashboardResumoResponse,
     DespesaResponse,
+    EmissaoListaLinha,
     EmissaoResponse,
     EnvioResponse,
     ErroResponse,
@@ -58,6 +59,7 @@ from app.schemas import (
     NotaVisualResponse,
     PagamentoResponse,
     PainelStatusResponse,
+    PrestadorResponse,
     RegistrarDespesaRequest,
     RegistrarEnvioRequest,
     RegistrarPagamentoRequest,
@@ -89,6 +91,7 @@ from app.services.envios import (
     registrar_envio,
 )
 from app.services.importacao_csv import CsvInvalidoError, importar_csv
+from app.services.listagens import listar_despesas, listar_emissoes, listar_pagamentos
 from app.services.motor_emissao import (
     EmissaoJaExisteError,
     TransicaoInvalidaError,
@@ -273,6 +276,18 @@ def api_calendario(
     return {"inicio": data_inicio, "fim": data_fim, "eventos": eventos}
 
 
+@app.get("/api/prestador", response_model=PrestadorResponse)
+def api_ver_prestador(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Marco 14 — tela 'Configurações': dados básicos do prestador, somente
+    leitura (edição é administrativa por enquanto, ver DEPLOY.md). `prestador`
+    tem RLS própria (isolada por `id`, ver migração 5af6e092d5e1), então
+    `db_sessao` já garante que só o prestador logado é visível."""
+    prestador = db.query(Prestador).filter_by(id=prestador_id).one_or_none()
+    if prestador is None:
+        raise HTTPException(status_code=404, detail="Prestador não encontrado.")
+    return prestador
+
+
 @app.get("/api/certificado/status", response_model=CertificadoStatus)
 def api_status_certificado(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     registro = db.query(Certificado).filter_by(prestador_id=prestador_id).one_or_none()
@@ -329,6 +344,21 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     db.commit()
     return _para_resposta(emissao)
+
+
+@app.get("/api/dps", response_model=list[EmissaoListaLinha])
+def api_listar_dps(
+    ano: str | None = None,
+    vinculo_id: uuid.UUID | None = None,
+    estado: str | None = None,
+    db: Session = Depends(db_sessao),
+):
+    """Marco 14 — tela 'NFS-e': lista completa (todas as competências),
+    diferente de /api/painel/resumo-mes (só o mês corrente, pro dashboard).
+    Todos os filtros são opcionais. GET puro, sem efeito colateral."""
+    if ano is not None and (len(ano) != 4 or not ano.isdigit()):
+        raise HTTPException(status_code=422, detail="ano deve estar no formato AAAA")
+    return listar_emissoes(db, ano=ano, vinculo_id=vinculo_id, estado=estado)
 
 
 @app.post("/api/dps/importar-csv", response_model=ImportacaoCsvResponse, responses={400: {"model": ErroResponse}})
@@ -500,6 +530,18 @@ def api_registrar_pagamento(req: RegistrarPagamentoRequest, db: Session = Depend
     )
 
 
+@app.get("/api/pagamentos", response_model=list[PagamentoResponse])
+def api_listar_pagamentos(
+    ano: str | None = None,
+    vinculo_id: uuid.UUID | None = None,
+    db: Session = Depends(db_sessao),
+):
+    """Marco 14 — tela 'Recebimentos'. GET puro, sem efeito colateral."""
+    if ano is not None and (len(ano) != 4 or not ano.isdigit()):
+        raise HTTPException(status_code=422, detail="ano deve estar no formato AAAA")
+    return listar_pagamentos(db, ano=ano, vinculo_id=vinculo_id)
+
+
 @app.post("/api/despesas", response_model=DespesaResponse)
 def api_registrar_despesa(req: RegistrarDespesaRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     """Marco 8 — registro manual de uma despesa (por categoria, não por
@@ -507,6 +549,14 @@ def api_registrar_despesa(req: RegistrarDespesaRequest, db: Session = Depends(db
     despesa = registrar_despesa(db, prestador_id, categoria=req.categoria, competencia=req.competencia, valor=req.valor)
     db.commit()
     return DespesaResponse(id=despesa.id, categoria=despesa.categoria, competencia=despesa.competencia, valor=float(despesa.valor))
+
+
+@app.get("/api/despesas", response_model=list[DespesaResponse])
+def api_listar_despesas(ano: str | None = None, db: Session = Depends(db_sessao)):
+    """Marco 14 — tela 'Despesas'. GET puro, sem efeito colateral."""
+    if ano is not None and (len(ano) != 4 or not ano.isdigit()):
+        raise HTTPException(status_code=422, detail="ano deve estar no formato AAAA")
+    return listar_despesas(db, ano=ano)
 
 
 @app.get("/api/painel/status", response_model=PainelStatusResponse)

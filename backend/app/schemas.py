@@ -348,6 +348,42 @@ class VinculoAtualizarRequest(BaseModel):
     dias_para_recebimento: int | None = Field(default=None, ge=0)
 
 
+class PrestadorResponse(BaseModel):
+    """Marco 14 — tela de Configurações (dados básicos, somente leitura por
+    enquanto: não existe endpoint de edição ainda, é administrativo via
+    banco/scripts — ver DEPLOY.md)."""
+    razao_social: str
+    cpf_cnpj: str
+    inscricao_municipal: str | None = None
+    cod_municipio: str
+    cep: str | None = None
+    logradouro: str | None = None
+    numero: str | None = None
+    complemento: str | None = None
+    bairro: str | None = None
+    telefone: str | None = None
+    email: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class EmissaoListaLinha(BaseModel):
+    """Marco 14 — uma linha da tela 'NFS-e' (lista completa, diferente de
+    EmissaoResumoLinha do dashboard que é só o mês corrente). Mesmos rótulos
+    de estado do dashboard (ver app/services/dashboard.ESTADO_NFSE_LABEL)."""
+    id: uuid.UUID
+    vinculo_id: uuid.UUID
+    apelido: str
+    tomador_razao_social: str
+    competencia: str
+    valor: float
+    serie: str
+    n_dps: int | None
+    estado: str
+    estado_label: str
+    criado_em: datetime
+
+
 class EventoCalendarioResponse(BaseModel):
     data: date
     tipo: str

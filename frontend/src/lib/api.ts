@@ -44,10 +44,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T
 }
 
+// Upload multipart (certificado, importação de CSV) — sem Content-Type
+// manual: o browser define o boundary sozinho a partir do FormData.
+async function postForm<T>(path: string, form: FormData): Promise<T> {
+  const resp = await fetch(`/api${path}`, { method: "POST", body: form })
+  const isJson = resp.headers.get("content-type")?.includes("application/json")
+  const body = isJson ? await resp.json() : await resp.text()
+  if (!resp.ok) {
+    throw new ApiError(resp.status, isJson ? body.detail : body)
+  }
+  return body as T
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, data?: unknown) =>
     request<T>(path, { method: "POST", body: data !== undefined ? JSON.stringify(data) : undefined }),
   patch: <T>(path: string, data?: unknown) =>
     request<T>(path, { method: "PATCH", body: data !== undefined ? JSON.stringify(data) : undefined }),
+  postForm,
 }

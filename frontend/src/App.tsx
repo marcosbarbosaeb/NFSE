@@ -3,9 +3,13 @@ import { AppShell } from "./components/layout/AppShell"
 import { ProtectedRoute } from "./components/layout/ProtectedRoute"
 import { AuthProvider } from "./lib/auth"
 import { CalendarioPage } from "./pages/CalendarioPage"
+import { ConfiguracoesPage } from "./pages/ConfiguracoesPage"
 import { DashboardPage } from "./pages/DashboardPage"
+import { DespesasPage } from "./pages/DespesasPage"
+import { EmissaoDetalhePage } from "./pages/EmissaoDetalhePage"
 import { LoginPage } from "./pages/LoginPage"
-import { PlaceholderPage } from "./pages/PlaceholderPage"
+import { NfsePage } from "./pages/NfsePage"
+import { RecebimentosPage } from "./pages/RecebimentosPage"
 import { TomadoresPage } from "./pages/TomadoresPage"
 import { VinculoFormPage } from "./pages/VinculoFormPage"
 
@@ -22,14 +26,15 @@ export default function App() {
           }
         >
           <Route path="/" element={<DashboardPage />} />
-          <Route path="/nfse" element={<PlaceholderPage titulo="NFS-e" />} />
+          <Route path="/nfse" element={<NfsePage />} />
+          <Route path="/nfse/:id" element={<EmissaoDetalhePage />} />
           <Route path="/tomadores" element={<TomadoresPage />} />
           <Route path="/tomadores/novo" element={<VinculoFormPage />} />
           <Route path="/tomadores/:id" element={<VinculoFormPage />} />
           <Route path="/calendario" element={<CalendarioPage />} />
-          <Route path="/recebimentos" element={<PlaceholderPage titulo="Recebimentos" />} />
-          <Route path="/despesas" element={<PlaceholderPage titulo="Despesas" />} />
-          <Route path="/configuracoes" element={<PlaceholderPage titulo="Configurações" />} />
+          <Route path="/recebimentos" element={<RecebimentosPage />} />
+          <Route path="/despesas" element={<DespesasPage />} />
+          <Route path="/configuracoes" element={<ConfiguracoesPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
