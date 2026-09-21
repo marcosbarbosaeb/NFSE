@@ -171,3 +171,129 @@ def test_endpoint_status_ano_malformado_da_422(client, vinculo_teste):
 def test_endpoint_status_sem_parametro_ano_da_422(client, vinculo_teste):
     resp = client.get("/api/painel/status")
     assert resp.status_code == 422
+
+
+# --- Marco 12: /api/painel/resumo-mes (ver app/services/dashboard.py) ---
+
+
+def test_resumo_mes_separa_emitidas_de_aguardando(db, prestador_teste, vinculo_teste):
+    """Um vínculo ativo sem emissão na competência conta como 'aguardando';
+    com emissão ativa (não cancelada), conta como 'emitida'."""
+    from app.services.dashboard import resumo_mes
+
+    resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
+    assert resumo["total_vinculos"] == 1
+    assert resumo["aguardando"] == 1
+    assert resumo["emitidas"] == 0
+    assert resumo["emissoes"] == []
+
+    montar(db, criar_rascunho(db, vinculo_teste, competencia="2026-08", valor=150.0))
+    resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
+    assert resumo["emitidas"] == 1
+    assert resumo["aguardando"] == 0
+    assert resumo["emissoes"][0]["apelido"] == "Fornecedor Teste"
+    assert resumo["emissoes"][0]["valor"] == 150.0
+    assert resumo["emissoes"][0]["envio_status"] is None
+
+
+def test_resumo_mes_emissao_cancelada_conta_como_aguardando(db, prestador_teste, vinculo_teste):
+    from app.services.dashboard import resumo_mes
+
+    emissao = montar(db, criar_rascunho(db, vinculo_teste, competencia="2026-08", valor=150.0))
+    emissao.estado = "cancelada"
+    db.flush()
+
+    resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
+    assert resumo["aguardando"] == 1
+    assert resumo["emitidas"] == 0
+
+
+def test_resumo_mes_a_receber_soma_so_emissoes_sem_pagamento(db, prestador_teste, vinculo_teste):
+    from app.services.dashboard import resumo_mes
+
+    montar(db, criar_rascunho(db, vinculo_teste, competencia="2026-08", valor=150.0))
+    resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
+    assert resumo["a_receber"] == 150.0
+    assert resumo["pagamentos_pendentes"] == 1
+    assert resumo["emissoes"][0]["pagamento_recebido"] is False
+
+    registrar_pagamento(db, vinculo_teste, competencia="2026-08", valor=150.0)
+    resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
+    assert resumo["a_receber"] == 0.0
+    assert resumo["pagamentos_pendentes"] == 0
+    assert resumo["emissoes"][0]["pagamento_recebido"] is True
+
+
+def test_resumo_mes_recebido_no_mes_e_delta_vs_anterior(db, prestador_teste, vinculo_teste):
+    from app.services.dashboard import resumo_mes
+
+    registrar_pagamento(db, vinculo_teste, competencia="2026-07", valor=100.0)
+    registrar_pagamento(db, vinculo_teste, competencia="2026-08", valor=150.0)
+
+    resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
+    assert resumo["recebido_no_mes"] == 150.0
+    assert resumo["recebido_mes_anterior"] == 100.0
+    assert resumo["delta_recebimentos_pct"] == pytest.approx(50.0)
+    assert len(resumo["serie_recebimentos"]) == 6
+    assert resumo["serie_recebimentos"][-1] == {"competencia": "2026-08", "valor": 150.0}
+    assert resumo["serie_recebimentos"][-2] == {"competencia": "2026-07", "valor": 100.0}
+
+
+def test_resumo_mes_sem_competencia_usa_mes_corrente(db, prestador_teste):
+    import datetime
+
+    from app.services.dashboard import resumo_mes
+
+    resumo = resumo_mes(db, prestador_teste.id)
+    hoje = datetime.date.today()
+    assert resumo["competencia"] == f"{hoje.year:04d}-{hoje.month:02d}"
+
+
+def test_resumo_mes_alerta_certificado_vencendo(db, prestador_teste):
+    """A validade do alerta só depende do campo `Certificado.validade` —
+    monta a linha direto (sem passar por salvar_certificado, que extrairia
+    a validade de um .pfx de verdade) pra testar só a janela de alerta de
+    app/services/dashboard.py (<=30 dias), sem depender de gerar um
+    certificado com vencimento próximo."""
+    import datetime
+    import uuid
+
+    from app.models import Certificado
+    from app.services.dashboard import resumo_mes
+
+    db.add(Certificado(
+        id=uuid.uuid4(), prestador_id=prestador_teste.id,
+        pfx_criptografado=b"x", senha_criptografada=b"y",
+        validade=datetime.date.today() + datetime.timedelta(days=5),
+    ))
+    db.flush()
+
+    resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
+    assert len(resumo["atencao"]) == 1
+    assert resumo["atencao"][0]["tipo"] == "certificado_vencendo"
+    assert "Certificado" in resumo["atencao"][0]["titulo"]
+
+
+def test_resumo_mes_sem_alerta_quando_certificado_longe_do_vencimento(db, prestador_teste, certificado_teste):
+    from app.services.certificados import salvar_certificado
+    from app.services.dashboard import resumo_mes
+    from app.config import get_settings
+
+    salvar_certificado(db, prestador_teste.id, certificado_teste["pfx_bytes"], certificado_teste["senha"], get_settings().cert_master_key)
+    resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
+    assert resumo["atencao"] == []
+
+
+def test_endpoint_resumo_mes(client, vinculo_teste):
+    client.post("/api/dps", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08", "valor": 100.0})
+    resp = client.get("/api/painel/resumo-mes", params={"competencia": "2026-08"})
+    assert resp.status_code == 200, resp.text
+    dados = resp.json()
+    assert dados["competencia"] == "2026-08"
+    assert dados["emitidas"] == 1
+    assert dados["emissoes"][0]["valor"] == 100.0
+
+
+def test_endpoint_resumo_mes_competencia_malformada_da_422(client, vinculo_teste):
+    resp = client.get("/api/painel/resumo-mes", params={"competencia": "202608"})
+    assert resp.status_code == 422
