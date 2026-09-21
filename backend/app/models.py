@@ -90,6 +90,7 @@ class Prestador(Base):
     vinculos: Mapped[list["PrestadorTomador"]] = relationship(back_populates="prestador")
     despesas: Mapped[list["Despesa"]] = relationship(back_populates="prestador")
     usuarios: Mapped[list["Usuario"]] = relationship(back_populates="prestador")
+    eventos_manuais: Mapped[list["EventoManual"]] = relationship(back_populates="prestador")
 
 
 class Usuario(Base):
@@ -387,6 +388,31 @@ class Despesa(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     prestador: Mapped["Prestador"] = relationship(back_populates="despesas")
+
+
+class EventoManual(Base):
+    """Marco 15 — eventos de calendário criados manualmente pelo usuário
+    (reunião, lembrete, prazo específico que não é nenhum dos 3 tipos
+    computados). Diferente de 'prazo_emissao'/'recebimento_previsto'/
+    'recebimento_confirmado' (ver app/services/calendario.py), que são
+    derivados na hora a partir de Emissao/PagamentoRecebido/
+    PrestadorTomador e não têm linha própria no banco — este tipo É dado
+    de verdade, por isso tem tabela e RLS por prestador_id igual ao resto."""
+
+    __tablename__ = "evento_manual"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False
+    )
+
+    data: Mapped[date] = mapped_column(Date, nullable=False)
+    titulo: Mapped[str] = mapped_column(String(200), nullable=False)
+    descricao: Mapped[str | None] = mapped_column(Text)
+
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    prestador: Mapped["Prestador"] = relationship(back_populates="eventos_manuais")
 
 
 class Envio(Base):

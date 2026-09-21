@@ -400,9 +400,26 @@ class EventoCalendarioResponse(BaseModel):
     vinculo_id: uuid.UUID | None = None
     apelido: str | None = None
     valor: float | None = None
+    # Marco 15 — só preenchidos pra tipo="manual" (os outros 3 tipos são
+    # computados na hora, sem linha própria — ver app/services/calendario.py).
+    # `id` é o que permite editar/excluir um evento manual pelo frontend.
+    id: uuid.UUID | None = None
+    descricao: str | None = None
 
 
 class CalendarioResponse(BaseModel):
     inicio: date
     fim: date
     eventos: list[EventoCalendarioResponse]
+
+
+class EventoManualCriarRequest(BaseModel):
+    data: date
+    titulo: str = Field(min_length=1, max_length=200)
+    descricao: str | None = None
+
+
+class EventoManualAtualizarRequest(BaseModel):
+    data: date | None = None
+    titulo: str | None = Field(default=None, min_length=1, max_length=200)
+    descricao: str | None = None

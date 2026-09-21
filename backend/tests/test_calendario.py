@@ -10,7 +10,13 @@ from fastapi.testclient import TestClient
 
 from app.database import get_db
 from app.main import app, prestador_atual_id
-from app.services.calendario import eventos_calendario
+from app.services.calendario import (
+    atualizar_evento_manual,
+    buscar_evento_manual,
+    criar_evento_manual,
+    eventos_calendario,
+    excluir_evento_manual,
+)
 from app.services.motor_emissao import criar_rascunho, montar
 from app.services.pagamentos import registrar_pagamento
 from app.services.vinculos import atualizar_vinculo
@@ -84,6 +90,71 @@ def test_vinculo_sem_prazo_nem_previsao_nao_gera_evento(db, prestador_teste, vin
     assert eventos == []
 
 
+# --- Eventos manuais (Marco 15 — 'gerenciar eventos' na tela de Calendário) ---
+
+
+def test_criar_evento_manual_aparece_no_calendario(db, prestador_teste):
+    evento = criar_evento_manual(db, prestador_teste.id, data=datetime.date(2026, 8, 15), titulo="Reunião com contador")
+
+    eventos = eventos_calendario(db, prestador_teste.id, datetime.date(2026, 8, 1), datetime.date(2026, 8, 31))
+    assert len(eventos) == 1
+    assert eventos[0]["tipo"] == "manual"
+    assert eventos[0]["titulo"] == "Reunião com contador"
+    assert eventos[0]["id"] == evento.id
+    assert eventos[0]["descricao"] is None
+
+
+def test_evento_manual_com_descricao(db, prestador_teste):
+    criar_evento_manual(
+        db, prestador_teste.id, data=datetime.date(2026, 8, 15), titulo="Renovar certificado",
+        descricao="Vence dia 20, não esquecer.",
+    )
+    eventos = eventos_calendario(db, prestador_teste.id, datetime.date(2026, 8, 1), datetime.date(2026, 8, 31))
+    assert eventos[0]["descricao"] == "Vence dia 20, não esquecer."
+
+
+def test_evento_manual_fora_do_intervalo_nao_aparece(db, prestador_teste):
+    criar_evento_manual(db, prestador_teste.id, data=datetime.date(2026, 9, 1), titulo="Mês que vem")
+    eventos = eventos_calendario(db, prestador_teste.id, datetime.date(2026, 8, 1), datetime.date(2026, 8, 31))
+    assert eventos == []
+
+
+def test_atualizar_evento_manual_muda_so_os_campos_passados(db, prestador_teste):
+    evento = criar_evento_manual(db, prestador_teste.id, data=datetime.date(2026, 8, 15), titulo="Original")
+    atualizar_evento_manual(db, evento, titulo="Renomeado")
+    assert evento.titulo == "Renomeado"
+    assert evento.data == datetime.date(2026, 8, 15)  # não mudou
+
+
+def test_excluir_evento_manual_some_do_calendario(db, prestador_teste):
+    evento = criar_evento_manual(db, prestador_teste.id, data=datetime.date(2026, 8, 15), titulo="Cancelado depois")
+    excluir_evento_manual(db, evento)
+    eventos = eventos_calendario(db, prestador_teste.id, datetime.date(2026, 8, 1), datetime.date(2026, 8, 31))
+    assert eventos == []
+
+
+def test_buscar_evento_manual_de_outro_prestador_nao_acha_via_rls(db, prestador_teste):
+    """RLS isola por prestador_id: um evento manual só é visível pela sessão
+    do prestador dono, mesmo sabendo o id exato — mesma garantia testada
+    pras outras tabelas de negócio (ver test_dois_usuarios... em test_auth.py)."""
+    import uuid as uuid_mod
+
+    from app.database import definir_prestador_atual
+    from app.models import Prestador as PrestadorModel
+
+    outro_id = uuid_mod.uuid4()
+    definir_prestador_atual(db, outro_id)
+    outro_prestador = PrestadorModel(
+        id=outro_id, cpf_cnpj="33333333000188", razao_social="OUTRO PRESTADOR CALENDARIO", cod_municipio="3106200",
+    )
+    db.add(outro_prestador)
+    db.flush()
+    evento_do_outro = criar_evento_manual(db, outro_id, data=datetime.date(2026, 8, 15), titulo="Não é seu")
+
+    definir_prestador_atual(db, prestador_teste.id)
+    assert buscar_evento_manual(db, evento_do_outro.id) is None
+
+
 # --- Camada HTTP ---
 
 
@@ -118,3 +189,54 @@ def test_endpoint_calendario_datas_malformadas_da_422(client):
 def test_endpoint_calendario_fim_antes_de_inicio_da_422(client):
     resp = client.get("/api/calendario", params={"inicio": "2026-08-31", "fim": "2026-08-01"})
     assert resp.status_code == 422
+
+
+# --- POST/PATCH/DELETE /api/calendario/eventos (Marco 15) ---
+
+
+def test_endpoint_criar_evento_manual(client):
+    resp = client.post("/api/calendario/eventos", json={"data": "2026-08-15", "titulo": "Reunião com contador"})
+    assert resp.status_code == 200, resp.text
+    dados = resp.json()
+    assert dados["tipo"] == "manual"
+    assert dados["titulo"] == "Reunião com contador"
+    assert dados["id"] is not None
+
+    listagem = client.get("/api/calendario", params={"inicio": "2026-08-01", "fim": "2026-08-31"})
+    assert len(listagem.json()["eventos"]) == 1
+
+
+def test_endpoint_criar_evento_manual_titulo_vazio_da_422(client):
+    resp = client.post("/api/calendario/eventos", json={"data": "2026-08-15", "titulo": ""})
+    assert resp.status_code == 422
+
+
+def test_endpoint_atualizar_evento_manual(client):
+    criado = client.post("/api/calendario/eventos", json={"data": "2026-08-15", "titulo": "Original"}).json()
+    resp = client.patch(f"/api/calendario/eventos/{criado['id']}", json={"titulo": "Renomeado"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["titulo"] == "Renomeado"
+    assert resp.json()["data"] == "2026-08-15"  # não mudou
+
+
+def test_endpoint_atualizar_evento_manual_inexistente_da_404(client):
+    import uuid as uuid_mod
+
+    resp = client.patch(f"/api/calendario/eventos/{uuid_mod.uuid4()}", json={"titulo": "X"})
+    assert resp.status_code == 404
+
+
+def test_endpoint_excluir_evento_manual(client):
+    criado = client.post("/api/calendario/eventos", json={"data": "2026-08-15", "titulo": "Vai sumir"}).json()
+    resp = client.delete(f"/api/calendario/eventos/{criado['id']}")
+    assert resp.status_code == 200, resp.text
+
+    listagem = client.get("/api/calendario", params={"inicio": "2026-08-01", "fim": "2026-08-31"})
+    assert listagem.json()["eventos"] == []
+
+
+def test_endpoint_excluir_evento_manual_inexistente_da_404(client):
+    import uuid as uuid_mod
+
+    resp = client.delete(f"/api/calendario/eventos/{uuid_mod.uuid4()}")
+    assert resp.status_code == 404

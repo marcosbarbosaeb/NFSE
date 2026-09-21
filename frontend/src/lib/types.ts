@@ -94,7 +94,7 @@ export type VinculoAtualizarRequest = Partial<Omit<VinculoCriarRequest, "tomador
   ativo?: boolean
 }
 
-export type TipoEventoCalendario = "prazo_emissao" | "recebimento_previsto" | "recebimento_confirmado"
+export type TipoEventoCalendario = "prazo_emissao" | "recebimento_previsto" | "recebimento_confirmado" | "manual"
 
 export interface EventoCalendario {
   data: string
@@ -103,6 +103,10 @@ export interface EventoCalendario {
   vinculo_id: string | null
   apelido: string | null
   valor: number | null
+  // Marco 15 — só preenchidos pra tipo "manual" (os outros 3 tipos são
+  // computados na hora pelo backend, sem id próprio).
+  id?: string | null
+  descricao?: string | null
 }
 
 export interface Calendario {
@@ -110,6 +114,14 @@ export interface Calendario {
   fim: string
   eventos: EventoCalendario[]
 }
+
+export interface EventoManualCriarRequest {
+  data: string
+  titulo: string
+  descricao?: string | null
+}
+
+export type EventoManualAtualizarRequest = Partial<EventoManualCriarRequest>
 
 // --- Marco 14: NFS-e (lista + nova emissão + detalhe), Recebimentos, Despesas, Configurações ---
 

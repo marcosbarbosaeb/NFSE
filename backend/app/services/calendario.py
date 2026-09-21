@@ -32,7 +32,7 @@ from calendar import monthrange
 
 from sqlalchemy.orm import Session
 
-from app.models import Emissao, PagamentoRecebido
+from app.models import Emissao, EventoManual, PagamentoRecebido
 from app.services.vinculos import listar_vinculos_ativos
 
 
@@ -139,5 +139,58 @@ def eventos_calendario(db: Session, prestador_id: uuid.UUID, inicio: datetime.da
             "valor": float(pagamento.valor),
         })
 
+    # 4) Eventos manuais (Marco 15) — únicos com linha própria no banco
+    # (os 3 tipos acima são sempre recalculados, nunca guardados).
+    manuais = (
+        db.query(EventoManual)
+        .filter(
+            EventoManual.prestador_id == prestador_id,
+            EventoManual.data >= inicio,
+            EventoManual.data <= fim,
+        )
+        .all()
+    )
+    for evento in manuais:
+        eventos.append({
+            "data": evento.data,
+            "tipo": "manual",
+            "titulo": evento.titulo,
+            "vinculo_id": None,
+            "apelido": None,
+            "valor": None,
+            "id": evento.id,
+            "descricao": evento.descricao,
+        })
+
     eventos.sort(key=lambda e: e["data"])
     return eventos
+
+
+# --- CRUD de eventos manuais (Marco 15) ---
+
+
+def criar_evento_manual(
+    db: Session, prestador_id: uuid.UUID, *, data: datetime.date, titulo: str, descricao: str | None = None
+) -> EventoManual:
+    evento = EventoManual(id=uuid.uuid4(), prestador_id=prestador_id, data=data, titulo=titulo, descricao=descricao)
+    db.add(evento)
+    db.flush()
+    return evento
+
+
+def buscar_evento_manual(db: Session, evento_id: uuid.UUID) -> EventoManual | None:
+    """RLS já restringe a leitura ao prestador da sessão — não filtra por
+    prestador_id aqui de propósito, mesmo padrão de buscar_vinculo."""
+    return db.query(EventoManual).filter_by(id=evento_id).one_or_none()
+
+
+def atualizar_evento_manual(db: Session, evento: EventoManual, **campos) -> EventoManual:
+    for campo, valor in campos.items():
+        setattr(evento, campo, valor)
+    db.flush()
+    return evento
+
+
+def excluir_evento_manual(db: Session, evento: EventoManual) -> None:
+    db.delete(evento)
+    db.flush()

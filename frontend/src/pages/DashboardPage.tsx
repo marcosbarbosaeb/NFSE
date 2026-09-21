@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   ArrowRight,
+  CalendarDays,
   CheckCircle2,
   Clock,
   FileText,
@@ -19,7 +20,19 @@ import { MiniBarChart } from "../components/ui/MiniBarChart"
 import { StatCard } from "../components/ui/StatCard"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { competenciaAtual, deslocarCompetencia, formatBRL, formatCompetenciaLonga } from "../lib/format"
-import type { DashboardResumo } from "../lib/types"
+import type { Calendario, DashboardResumo, EventoCalendario, TipoEventoCalendario } from "../lib/types"
+
+const PONTO_EVENTO: Record<TipoEventoCalendario, string> = {
+  prazo_emissao: "bg-warning-600",
+  recebimento_previsto: "bg-primary-600",
+  recebimento_confirmado: "bg-success-600",
+  manual: "bg-accent-600",
+}
+
+function formatDataCurta(iso: string): string {
+  const [ano, mes, dia] = iso.split("-").map(Number)
+  return new Date(ano, mes - 1, dia).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
+}
 
 function badgeEstadoNfse(estado: string, label: string) {
   if (["confirmado", "assinado", "submetido", "montado"].includes(estado)) return <Badge variant="success">{label}</Badge>
@@ -44,6 +57,8 @@ export function DashboardPage() {
   const [erro, setErro] = useState<string | null>(null)
   const [carregando, setCarregando] = useState(true)
 
+  const [proximosEventos, setProximosEventos] = useState<EventoCalendario[] | null>(null)
+
   useEffect(() => {
     let cancelado = false
     setCarregando(true)
@@ -63,6 +78,27 @@ export function DashboardPage() {
       cancelado = true
     }
   }, [competencia])
+
+  // Mini agenda: próximos eventos a partir de hoje (independe do mês
+  // selecionado acima, que é só pro resumo de emissões/pagamentos).
+  useEffect(() => {
+    let cancelado = false
+    const hoje = new Date()
+    const daqui30dias = new Date(hoje)
+    daqui30dias.setDate(daqui30dias.getDate() + 30)
+    const paraISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+    api
+      .get<Calendario>(`/calendario?inicio=${paraISO(hoje)}&fim=${paraISO(daqui30dias)}`)
+      .then((dados) => {
+        if (!cancelado) setProximosEventos(dados.eventos.slice(0, 6))
+      })
+      .catch(() => {
+        if (!cancelado) setProximosEventos([])
+      })
+    return () => {
+      cancelado = true
+    }
+  }, [])
 
   const pctEmitidas = resumo && resumo.total_vinculos > 0 ? Math.round((resumo.emitidas / resumo.total_vinculos) * 100) : 0
   const pctAguardando = resumo && resumo.total_vinculos > 0 ? Math.round((resumo.aguardando / resumo.total_vinculos) * 100) : 0
@@ -202,7 +238,38 @@ export function DashboardPage() {
             </Card>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            <Card className="p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Próximos eventos</h2>
+                <Link to="/calendario" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
+                  Ver agenda <ArrowRight size={14} />
+                </Link>
+              </div>
+              {proximosEventos === null ? (
+                <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>
+              ) : proximosEventos.length === 0 ? (
+                <p className="flex items-center gap-2 text-sm text-slate-400 dark:text-slate-500">
+                  <CalendarDays size={16} /> Nada nos próximos 30 dias.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {proximosEventos.map((ev, i) => (
+                    <li key={i} className="flex items-start gap-2.5">
+                      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${PONTO_EVENTO[ev.tipo]}`} />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">{ev.apelido ?? ev.titulo}</p>
+                        <p className="text-xs text-slate-400 dark:text-slate-500">
+                          {formatDataCurta(ev.data)}
+                          {ev.valor != null && ` · ${formatBRL(ev.valor)}`}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+
             <Card className="p-5">
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Recebimentos</h2>

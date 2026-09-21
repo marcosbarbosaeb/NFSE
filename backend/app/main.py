@@ -52,6 +52,9 @@ from app.schemas import (
     EmissaoResponse,
     EnvioResponse,
     ErroResponse,
+    EventoCalendarioResponse,
+    EventoManualAtualizarRequest,
+    EventoManualCriarRequest,
     GerarDpsRequest,
     ImportacaoCsvResponse,
     LoginRequest,
@@ -77,7 +80,13 @@ from app.services.certificados import (
     certificado_vencido,
     salvar_certificado,
 )
-from app.services.calendario import eventos_calendario
+from app.services.calendario import (
+    atualizar_evento_manual,
+    buscar_evento_manual,
+    criar_evento_manual,
+    eventos_calendario,
+    excluir_evento_manual,
+)
 from app.services.dashboard import resumo_mes
 from app.services.despesas import registrar_despesa
 from app.services.envios import (
@@ -291,6 +300,50 @@ def api_calendario(
         raise HTTPException(status_code=422, detail="fim não pode ser anterior a inicio")
     eventos = eventos_calendario(db, prestador_id, data_inicio, data_fim)
     return {"inicio": data_inicio, "fim": data_fim, "eventos": eventos}
+
+
+@app.post("/api/calendario/eventos", response_model=EventoCalendarioResponse)
+def api_criar_evento_manual(
+    req: EventoManualCriarRequest,
+    db: Session = Depends(db_sessao),
+    prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Marco 15 — 'gerenciar eventos' na tela de Calendário: eventos criados
+    à mão pelo usuário (reunião, lembrete...), diferente dos 3 tipos
+    computados que /api/calendario também devolve (ver app/services/
+    calendario.py)."""
+    evento = criar_evento_manual(db, prestador_id, data=req.data, titulo=req.titulo, descricao=req.descricao)
+    db.commit()
+    return {
+        "data": evento.data, "tipo": "manual", "titulo": evento.titulo,
+        "id": evento.id, "descricao": evento.descricao,
+    }
+
+
+@app.patch("/api/calendario/eventos/{evento_id}", response_model=EventoCalendarioResponse, responses={404: {"model": ErroResponse}})
+def api_atualizar_evento_manual(
+    evento_id: uuid.UUID, req: EventoManualAtualizarRequest, db: Session = Depends(db_sessao),
+):
+    evento = buscar_evento_manual(db, evento_id)
+    if evento is None:
+        raise HTTPException(status_code=404, detail="Evento não encontrado (ou não pertence ao prestador ativo).")
+    campos = req.model_dump(exclude_unset=True)
+    evento = atualizar_evento_manual(db, evento, **campos)
+    db.commit()
+    return {
+        "data": evento.data, "tipo": "manual", "titulo": evento.titulo,
+        "id": evento.id, "descricao": evento.descricao,
+    }
+
+
+@app.delete("/api/calendario/eventos/{evento_id}", responses={404: {"model": ErroResponse}})
+def api_excluir_evento_manual(evento_id: uuid.UUID, db: Session = Depends(db_sessao)):
+    evento = buscar_evento_manual(db, evento_id)
+    if evento is None:
+        raise HTTPException(status_code=404, detail="Evento não encontrado (ou não pertence ao prestador ativo).")
+    excluir_evento_manual(db, evento)
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/api/prestador", response_model=PrestadorResponse)
