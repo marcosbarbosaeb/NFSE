@@ -14,6 +14,10 @@ class EmailJaCadastradoError(Exception):
     pass
 
 
+class SenhaAtualIncorretaError(Exception):
+    pass
+
+
 def autenticar(db: Session, email: str, senha: str) -> Usuario | None:
     """Devolve o Usuario se e-mail+senha baterem e a conta estiver ativa,
     senão None — nunca diz QUAL dos dois (e-mail ou senha) errou, pra não
@@ -24,6 +28,19 @@ def autenticar(db: Session, email: str, senha: str) -> Usuario | None:
     if not verificar_senha(senha, usuario.senha_hash):
         return None
     return usuario
+
+
+def trocar_senha(db: Session, usuario_id: uuid.UUID, senha_atual: str, senha_nova: str) -> None:
+    """Marco 15 — troca de senha pelo próprio usuário (painel, tela de
+    Configurações). Exige a senha atual (mesma verificação de `autenticar`,
+    tempo constante) antes de aceitar a nova — sem isso, uma sessão
+    sequestrada (cookie roubado) poderia travar o dono de fora da própria
+    conta trocando a senha sem confirmar que é quem diz ser."""
+    usuario = db.query(Usuario).filter_by(id=usuario_id, ativo=True).one_or_none()
+    if usuario is None or not verificar_senha(senha_atual, usuario.senha_hash):
+        raise SenhaAtualIncorretaError("Senha atual incorreta.")
+    usuario.senha_hash = hash_senha(senha_nova)
+    db.flush()
 
 
 def criar_usuario(db: Session, prestador_id: uuid.UUID, email: str, senha: str) -> Usuario:

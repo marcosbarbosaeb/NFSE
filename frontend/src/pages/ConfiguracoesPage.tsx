@@ -1,15 +1,17 @@
-import { CheckCircle2, Moon, ShieldAlert, Sun, UploadCloud } from "lucide-react"
+import { CheckCircle2, KeyRound, Moon, ShieldAlert, Sun, UploadCloud } from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { Field } from "../components/ui/Field"
+import { useAuth } from "../lib/auth"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useTheme } from "../lib/theme"
 import type { CertificadoStatus, Prestador } from "../lib/types"
 
 export function ConfiguracoesPage() {
   const { tema, definirTema } = useTheme()
+  const { usuario } = useAuth()
   const [prestador, setPrestador] = useState<Prestador | null>(null)
   const [certificado, setCertificado] = useState<CertificadoStatus | null>(null)
   const [carregando, setCarregando] = useState(true)
@@ -93,6 +95,15 @@ export function ConfiguracoesPage() {
       </Card>
 
       <Card className="p-5">
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Minha conta</h2>
+        <div className="mb-4">
+          <p className="text-xs text-slate-400 dark:text-slate-500">E-mail de acesso</p>
+          <p className="text-sm text-slate-800 dark:text-slate-200">{usuario?.email}</p>
+        </div>
+        <TrocarSenhaForm />
+      </Card>
+
+      <Card className="p-5">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Certificado digital (A1)</h2>
           {certificado?.carregado ? (
@@ -173,5 +184,76 @@ export function ConfiguracoesPage() {
         </Card>
       )}
     </div>
+  )
+}
+
+function TrocarSenhaForm() {
+  const [aberto, setAberto] = useState(false)
+  const [senhaAtual, setSenhaAtual] = useState("")
+  const [senhaNova, setSenhaNova] = useState("")
+  const [confirmacao, setConfirmacao] = useState("")
+  const [enviando, setEnviando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const [sucesso, setSucesso] = useState(false)
+
+  function fechar() {
+    setAberto(false)
+    setSenhaAtual("")
+    setSenhaNova("")
+    setConfirmacao("")
+    setErro(null)
+  }
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    setErro(null)
+    setSucesso(false)
+    if (senhaNova.length < 8) {
+      setErro("A nova senha precisa ter pelo menos 8 caracteres.")
+      return
+    }
+    if (senhaNova !== confirmacao) {
+      setErro("A confirmação não bate com a nova senha.")
+      return
+    }
+    setEnviando(true)
+    try {
+      await api.post("/auth/trocar-senha", { senha_atual: senhaAtual, senha_nova: senhaNova })
+      setSucesso(true)
+      setSenhaAtual("")
+      setSenhaNova("")
+      setConfirmacao("")
+      setTimeout(() => setAberto(false), 1500)
+    } catch (err) {
+      setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  if (!aberto) {
+    return (
+      <Button type="button" variant="outline" onClick={() => setAberto(true)}>
+        <KeyRound size={15} /> Trocar senha
+      </Button>
+    )
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="flex flex-col gap-3 border-t border-slate-100 dark:border-slate-700/60 pt-4">
+      {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
+      {sucesso && <p className="rounded-lg bg-success-50 px-4 py-3 text-sm text-success-700">Senha alterada com sucesso.</p>}
+      <Field label="Senha atual" type="password" required value={senhaAtual} onChange={(e) => setSenhaAtual(e.target.value)} />
+      <Field label="Nova senha" type="password" required minLength={8} value={senhaNova} onChange={(e) => setSenhaNova(e.target.value)} />
+      <Field label="Confirmar nova senha" type="password" required value={confirmacao} onChange={(e) => setConfirmacao(e.target.value)} />
+      <div className="flex gap-3">
+        <Button type="button" variant="outline" onClick={fechar}>
+          Cancelar
+        </Button>
+        <Button type="submit" variant="accent" disabled={enviando}>
+          {enviando ? "Salvando..." : "Salvar nova senha"}
+        </Button>
+      </div>
+    </form>
   )
 }

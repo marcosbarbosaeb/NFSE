@@ -256,6 +256,15 @@ class UsuarioResponse(BaseModel):
     prestador_id: uuid.UUID
 
 
+class TrocarSenhaRequest(BaseModel):
+    """Marco 15 — troca de senha pelo próprio usuário logado (antes disso,
+    só existia via scripts/criar_usuario.py, administrativo). Exige a senha
+    atual pra confirmar identidade (ver app/services/usuarios.trocar_senha)
+    — mesma regra de tamanho mínimo do script (>= 8 caracteres)."""
+    senha_atual: str
+    senha_nova: str = Field(min_length=8)
+
+
 # --- Marco 13: catálogo de tomadores + vínculo self-service, e calendário
 # de prazos/previsão de recebimento (ver app/services/tomadores.py,
 # app/services/vinculos.py e app/services/calendario.py) ---

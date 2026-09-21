@@ -64,6 +64,7 @@ from app.schemas import (
     RegistrarEnvioRequest,
     RegistrarPagamentoRequest,
     TomadorResponse,
+    TrocarSenhaRequest,
     UsuarioResponse,
     VinculoCriarRequest,
     VinculoAtualizarRequest,
@@ -103,7 +104,7 @@ from app.services.nota_visual import montar_nota_visual
 from app.services.pagamentos import registrar_pagamento
 from app.services.painel_status import painel_status_completo
 from app.services.tomadores import CnpjJaCadastradoError, buscar_tomador, criar_tomador, listar_catalogo
-from app.services.usuarios import autenticar
+from app.services.usuarios import SenhaAtualIncorretaError, autenticar, trocar_senha
 from app.services.vinculos import (
     ApelidoJaExisteError,
     atualizar_vinculo,
@@ -172,6 +173,22 @@ def api_auth_me(request: Request, db: Session = Depends(get_db)):
     if usuario is None:
         raise HTTPException(status_code=401, detail="Sessão inválida.")
     return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id)
+
+
+@app.post("/api/auth/trocar-senha", responses={400: {"model": ErroResponse}, 401: {"model": ErroResponse}})
+def api_trocar_senha(req: TrocarSenhaRequest, request: Request, db: Session = Depends(get_db)):
+    """Marco 15 — tela de Configurações. Usa `get_db` puro (não `db_sessao`)
+    porque `usuario` não tem RLS, mesmo motivo de `prestador_atual_id`
+    acima."""
+    usuario_id = request.session.get("usuario_id")
+    if usuario_id is None:
+        raise HTTPException(status_code=401, detail="Não autenticado.")
+    try:
+        trocar_senha(db, uuid.UUID(usuario_id), req.senha_atual, req.senha_nova)
+    except SenhaAtualIncorretaError:
+        raise HTTPException(status_code=400, detail="Senha atual incorreta.")
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/api/vinculos", response_model=list[VinculoResumo])

@@ -10,7 +10,13 @@ import uuid
 import pytest
 
 from app.auth import hash_senha, verificar_senha
-from app.services.usuarios import EmailJaCadastradoError, autenticar, criar_usuario
+from app.services.usuarios import (
+    EmailJaCadastradoError,
+    SenhaAtualIncorretaError,
+    autenticar,
+    criar_usuario,
+    trocar_senha,
+)
 
 
 # --- app/auth.py ---
@@ -78,6 +84,31 @@ def test_autenticar_usuario_inativo_devolve_none(db, prestador_teste):
     usuario.ativo = False
     db.flush()
     assert autenticar(db, "raiana@exemplo.com", "senhaforte123") is None
+
+
+# --- trocar_senha (Marco 15 — tela de Configurações) ---
+
+
+def test_trocar_senha_sucesso_permite_login_com_a_nova(db, prestador_teste):
+    usuario = criar_usuario(db, prestador_teste.id, "raiana@exemplo.com", "senhaoriginal123")
+    trocar_senha(db, usuario.id, "senhaoriginal123", "senhanova456")
+    assert autenticar(db, "raiana@exemplo.com", "senhaoriginal123") is None
+    assert autenticar(db, "raiana@exemplo.com", "senhanova456") is not None
+
+
+def test_trocar_senha_atual_errada_recusa_e_nao_muda_nada(db, prestador_teste):
+    usuario = criar_usuario(db, prestador_teste.id, "raiana@exemplo.com", "senhaoriginal123")
+    with pytest.raises(SenhaAtualIncorretaError):
+        trocar_senha(db, usuario.id, "senhaerrada", "senhanova456")
+    assert autenticar(db, "raiana@exemplo.com", "senhaoriginal123") is not None
+
+
+def test_trocar_senha_usuario_inativo_recusa(db, prestador_teste):
+    usuario = criar_usuario(db, prestador_teste.id, "raiana@exemplo.com", "senhaoriginal123")
+    usuario.ativo = False
+    db.flush()
+    with pytest.raises(SenhaAtualIncorretaError):
+        trocar_senha(db, usuario.id, "senhaoriginal123", "senhanova456")
 
 
 # --- scripts/criar_usuario.py (a função de negócio, sem subprocess) ---
@@ -200,3 +231,61 @@ def test_dois_usuarios_de_prestadores_diferentes_nao_veem_dados_um_do_outro(clie
     vinculos = client_sem_login.get("/api/vinculos")
     assert vinculos.status_code == 200
     assert vinculos.json() == []
+
+
+# --- POST /api/auth/trocar-senha (Marco 15) ---
+
+
+def test_trocar_senha_sem_login_da_401(client_sem_login):
+    resp = client_sem_login.post(
+        "/api/auth/trocar-senha", json={"senha_atual": "qualquer123", "senha_nova": "outraqualquer456"}
+    )
+    assert resp.status_code == 401
+
+
+def test_trocar_senha_via_http_sucesso_permite_login_com_a_nova(client_sem_login, db, prestador_teste):
+    criar_usuario(db, prestador_teste.id, "raiana@exemplo.com", "senhaoriginal123")
+    client_sem_login.post("/api/auth/login", json={"email": "raiana@exemplo.com", "senha": "senhaoriginal123"})
+
+    resp = client_sem_login.post(
+        "/api/auth/trocar-senha", json={"senha_atual": "senhaoriginal123", "senha_nova": "senhanova456"}
+    )
+    assert resp.status_code == 200, resp.text
+
+    # a sessão atual continua valendo (não desloga ao trocar)
+    assert client_sem_login.get("/api/auth/me").status_code == 200
+
+    client_sem_login.post("/api/auth/logout")
+    login_com_senha_antiga = client_sem_login.post(
+        "/api/auth/login", json={"email": "raiana@exemplo.com", "senha": "senhaoriginal123"}
+    )
+    assert login_com_senha_antiga.status_code == 401
+    login_com_senha_nova = client_sem_login.post(
+        "/api/auth/login", json={"email": "raiana@exemplo.com", "senha": "senhanova456"}
+    )
+    assert login_com_senha_nova.status_code == 200
+
+
+def test_trocar_senha_via_http_atual_errada_da_400(client_sem_login, db, prestador_teste):
+    criar_usuario(db, prestador_teste.id, "raiana@exemplo.com", "senhaoriginal123")
+    client_sem_login.post("/api/auth/login", json={"email": "raiana@exemplo.com", "senha": "senhaoriginal123"})
+
+    resp = client_sem_login.post(
+        "/api/auth/trocar-senha", json={"senha_atual": "senhaerrada", "senha_nova": "senhanova456"}
+    )
+    assert resp.status_code == 400
+
+    login_com_senha_original = client_sem_login.post(
+        "/api/auth/login", json={"email": "raiana@exemplo.com", "senha": "senhaoriginal123"}
+    )
+    assert login_com_senha_original.status_code == 200
+
+
+def test_trocar_senha_nova_curta_demais_da_422(client_sem_login, db, prestador_teste):
+    criar_usuario(db, prestador_teste.id, "raiana@exemplo.com", "senhaoriginal123")
+    client_sem_login.post("/api/auth/login", json={"email": "raiana@exemplo.com", "senha": "senhaoriginal123"})
+
+    resp = client_sem_login.post(
+        "/api/auth/trocar-senha", json={"senha_atual": "senhaoriginal123", "senha_nova": "curta"}
+    )
+    assert resp.status_code == 422
