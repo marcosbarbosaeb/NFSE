@@ -1,12 +1,22 @@
-import { CheckCircle2, Copy, Download, MessageSquareText, PenLine, XCircle } from "lucide-react"
-import { useEffect, useState } from "react"
+import { AlertTriangle, Ban, CheckCircle2, Copy, Download, MessageSquareText, PenLine, Send, XCircle } from "lucide-react"
+import { type FormEvent, useEffect, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
+import { FieldWrap } from "../components/ui/Field"
+import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { formatBRL } from "../lib/format"
 import type { CanalEnvio, Envio, NotaVisual } from "../lib/types"
+
+// Marco 16, item 7 — motivos de cancelamento aceitos pela Sefin (mesmo
+// vocabulário de app/fiscal/eventos.MOTIVOS_CANCELAMENTO no backend).
+const MOTIVOS_CANCELAMENTO: { value: string; label: string }[] = [
+  { value: "1", label: "Erro na emissão" },
+  { value: "2", label: "Serviço não prestado" },
+  { value: "9", label: "Outros" },
+]
 
 const CANAIS: { value: CanalEnvio; label: string }[] = [
   { value: "download", label: "Baixar XML" },
@@ -34,6 +44,18 @@ export function EmissaoDetalhePage() {
   const [mensagemPronta, setMensagemPronta] = useState<string | null>(null)
   const [copiado, setCopiado] = useState(false)
 
+  // Marco 16, item 7 — submeter/cancelar de verdade na Sefin. As duas são
+  // ações irreversíveis com uma chamada de rede real por trás (ao
+  // contrário de assinar, que não sai da máquina) — por isso passam por
+  // um modal de confirmação em vez de agir no clique direto do botão
+  // (mesmo padrão que o resto do painel já usa pra evitar window.confirm:
+  // ver Modal.tsx).
+  const [modalSubmeter, setModalSubmeter] = useState(false)
+  const [modalCancelar, setModalCancelar] = useState(false)
+  const [cmotivo, setCmotivo] = useState("1")
+  const [xmotivo, setXmotivo] = useState("")
+  const [erroAcao, setErroAcao] = useState<string | null>(null)
+
   function carregar() {
     if (!id) return
     setCarregando(true)
@@ -57,6 +79,38 @@ export function EmissaoDetalhePage() {
       carregar()
     } catch (err) {
       setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha ao assinar.")
+    } finally {
+      setProcessando(false)
+    }
+  }
+
+  async function submeterNota() {
+    if (!id) return
+    setErroAcao(null)
+    setProcessando(true)
+    try {
+      await api.post(`/dps/${id}/submeter`)
+      setModalSubmeter(false)
+      carregar()
+    } catch (err) {
+      setErroAcao(err instanceof ApiError ? formatarErro(err.detail) : "Falha ao submeter.")
+    } finally {
+      setProcessando(false)
+    }
+  }
+
+  async function cancelarNota(e: FormEvent) {
+    e.preventDefault()
+    if (!id) return
+    setErroAcao(null)
+    setProcessando(true)
+    try {
+      await api.post(`/dps/${id}/cancelar`, { cmotivo, xmotivo })
+      setModalCancelar(false)
+      setXmotivo("")
+      carregar()
+    } catch (err) {
+      setErroAcao(err instanceof ApiError ? formatarErro(err.detail) : "Falha ao cancelar.")
     } finally {
       setProcessando(false)
     }
@@ -133,6 +187,15 @@ export function EmissaoDetalhePage() {
       </div>
 
       {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
+      {nota.estado === "erro" && nota.erro_detalhe && (
+        <p className="flex items-start gap-2 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span>
+            A Sefin recusou a última tentativa de envio: <strong>{nota.erro_detalhe}</strong>. Corrija o que for
+            preciso e tente submeter de novo — o XML assinado não muda, só reenviamos.
+          </span>
+        </p>
+      )}
 
       <Card className="p-6">
         <div className="mb-4 flex items-center justify-between border-b border-slate-100 dark:border-slate-700/60 pb-4">
@@ -184,6 +247,16 @@ export function EmissaoDetalhePage() {
           {nota.estado === "montado" && (
             <Button variant="accent" onClick={assinar} disabled={processando}>
               <PenLine size={15} /> {processando ? "Assinando..." : "Assinar"}
+            </Button>
+          )}
+          {(nota.estado === "assinado" || nota.estado === "erro") && (
+            <Button variant="accent" onClick={() => setModalSubmeter(true)} disabled={processando}>
+              <Send size={15} /> {nota.estado === "erro" ? "Tentar submeter de novo" : "Submeter à prefeitura"}
+            </Button>
+          )}
+          {nota.estado === "confirmado" && (
+            <Button variant="outline" onClick={() => setModalCancelar(true)} disabled={processando} className="!border-danger-300 !text-danger-700 hover:!bg-danger-50">
+              <Ban size={15} /> Cancelar nota
             </Button>
           )}
           <Button variant="outline" onClick={baixarXml} disabled={!nota.xml_disponivel}>
@@ -262,6 +335,93 @@ export function EmissaoDetalhePage() {
           ← Voltar
         </Button>
       </div>
+
+      {modalSubmeter && (
+        <Modal
+          titulo={nota.estado === "erro" ? "Tentar submeter de novo à prefeitura" : "Submeter nota à prefeitura"}
+          onClose={() => (processando ? null : setModalSubmeter(false))}
+        >
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              Isso envia a DPS assinada pra Sefin de verdade — não dá pra desfazer o envio em si (só cancelar a nota
+              depois, se ela for confirmada).
+            </p>
+            <p
+              className={`rounded-lg px-3 py-2 text-sm font-medium ${
+                nota.ambiente === "1"
+                  ? "bg-danger-50 text-danger-700"
+                  : "bg-warning-50 text-warning-700"
+              }`}
+            >
+              Ambiente: {nota.ambiente_label ?? "—"}
+              {nota.ambiente === "1" && " — isso é uma nota fiscal real, com efeito legal."}
+            </p>
+            {erroAcao && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erroAcao}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setModalSubmeter(false)} disabled={processando}>
+                Cancelar
+              </Button>
+              <Button variant="accent" onClick={submeterNota} disabled={processando}>
+                <Send size={15} /> {processando ? "Enviando..." : "Confirmar envio"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {modalCancelar && (
+        <Modal titulo="Cancelar nota" onClose={() => (processando ? null : setModalCancelar(false))}>
+          <form onSubmit={cancelarNota} className="flex flex-col gap-4">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              O cancelamento é enviado pra Sefin e, se aceito, não pode ser desfeito. Use isso só quando a nota
+              realmente não deveria ter sido emitida.
+            </p>
+            <FieldWrap label="Motivo">
+              <select
+                value={cmotivo}
+                onChange={(e) => setCmotivo(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+              >
+                {MOTIVOS_CANCELAMENTO.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </FieldWrap>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Justificativa</span>
+              <textarea
+                value={xmotivo}
+                onChange={(e) => setXmotivo(e.target.value)}
+                rows={3}
+                required
+                minLength={15}
+                maxLength={255}
+                placeholder="Descreva o motivo do cancelamento (mínimo 15 caracteres)"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+              />
+              <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
+                Entre 15 e 255 caracteres ({xmotivo.length}/255)
+              </span>
+            </label>
+            {erroAcao && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erroAcao}</p>}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setModalCancelar(false)} disabled={processando}>
+                Voltar
+              </Button>
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={processando || xmotivo.length < 15}
+                className="!border-danger-300 !text-danger-700 hover:!bg-danger-50"
+              >
+                <Ban size={15} /> {processando ? "Cancelando..." : "Confirmar cancelamento"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   )
 }

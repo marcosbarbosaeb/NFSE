@@ -19,16 +19,19 @@ assinado -> ...) em vez de só montar/assinar em memória — nDPS é atribuído
 automaticamente pelo motor de emissão (nosso Postgres é a fonte de verdade
 do sequencial, não a Sefin — ver app/services/motor_emissao.py).
 
-O que o painel ainda NÃO faz, de propósito: não expõe um botão de
-"submeter pra Sefin". `motor_emissao.submeter`/`cancelar` existem e têm
-testes (com ClienteSefin mockado), mas a submissão de DPS nunca foi testada
-contra a API real (ver integracao/submit_dps.py) e este sandbox não
-alcança gov.br de qualquer forma — clicar em "assinar" aqui não é
-reversível gratuitamente do jeito que "gerar" é, mas ainda é uma etapa
-segura porque nada sai pra rede. Expor submissão de verdade no painel é
-decisão para quando isso puder ser validado de um ambiente com rede
-liberada — Marcos continua emitindo de verdade pelos scripts em
-integracao/ até lá.
+Marco 16, item 7 (a pedido do Marcos: "conseguimos fazer a emissão e o
+cancelamento funcionando real. Deixe tudo pronto, mais tarde carregarei o
+certificado A1 e faremos o teste") — o painel agora EXPÕE submeter/cancelar
+de verdade (POST /api/dps/{id}/submeter, POST /api/dps/{id}/cancelar),
+chamando `app.fiscal.cliente_sefin.ClienteSefin` com o certificado
+carregado, exatamente como os scripts em integracao/ já faziam. A ressalva
+de sempre continua valendo: submissão de DPS pela série "1" (a dos 5
+fornecedores) NUNCA foi validada contra a API real — só cancelamento foi
+(nota emitida por outro canal, série 70000-79999). E este sandbox não
+alcança gov.br de jeito nenhum (egress bloqueado por política da
+organização, confirmado por curl direto) — então nada disso pode ser
+testado ao vivo daqui, só depois de implantado em algum lugar com rede
+aberta E com um certificado A1 de verdade carregado.
 """
 import datetime
 import re
@@ -50,6 +53,7 @@ from app.schemas import (
     CadastroRequest,
     CadastroResponse,
     CalendarioResponse,
+    CancelarDpsRequest,
     CertificadoStatus,
     CheckoutSessaoResponse,
     ConfirmarEmailRequest,
@@ -140,13 +144,16 @@ from app.services.google_oauth import (
 from app.services.importacao_csv import CsvInvalidoError, importar_csv
 from app.services.importacao_extrato import ItemExtrato, confirmar_importacao_extrato
 from app.services.listagens import listar_despesas, listar_emissoes, listar_pagamentos
+from app.fiscal.cliente_sefin import ClienteSefin
 from app.services.motor_emissao import (
     EmissaoJaExisteError,
     TransicaoInvalidaError,
     assinar as assinar_emissao,
     buscar_emissao_ativa,
+    cancelar as cancelar_emissao,
     criar_rascunho,
     montar as montar_emissao,
+    submeter as submeter_emissao,
 )
 from app.services.nota_visual import montar_nota_visual
 from app.services.pagamentos import registrar_pagamento
@@ -786,6 +793,80 @@ def api_assinar_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), pre
         emissao = assinar_emissao(db, emissao, private_key, cert)
     except TransicaoInvalidaError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    return _para_resposta(emissao)
+
+
+@app.post("/api/dps/{emissao_id}/submeter", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
+def api_submeter_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Marco 16, item 7 — assinado/erro -> submetido -> confirmado (ou ->
+    erro de novo, retentável), chamando a Sefin DE VERDADE (ver
+    app/services/motor_emissao.submeter). NUNCA foi validado contra a API
+    real (rede bloqueada nesta sandbox, ver docstring do módulo) — fica
+    pronto pra quando Marcos carregar um certificado A1 de verdade num
+    ambiente com rede aberta. Uma recusa da Sefin não levanta erro HTTP:
+    a emissão volta com estado='erro' e `erro_detalhe` preenchido (200),
+    porque não é um erro do NOSSO lado — é resposta de negócio da Sefin,
+    e a pessoa pode tentar de novo depois de corrigir o que for."""
+    emissao = db.query(Emissao).filter_by(id=emissao_id).one_or_none()
+    if emissao is None:
+        raise HTTPException(status_code=404, detail="Emissão não encontrada (ou não pertence ao prestador ativo)")
+
+    settings = get_settings()
+    try:
+        private_key, cert = carregar_certificado(db, prestador_id, settings.cert_master_key)
+    except CertificadoNaoEncontradoError as exc:
+        raise HTTPException(status_code=409, detail="Nenhum certificado carregado — envie o .pfx antes de submeter.") from exc
+
+    tpAmb = (emissao.tomador_snapshot or {}).get("tpAmb", "2")
+    cliente = ClienteSefin(private_key, cert, tpAmb)
+    try:
+        emissao = submeter_emissao(db, emissao, cliente)
+    except TransicaoInvalidaError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    return _para_resposta(emissao)
+
+
+@app.post("/api/dps/{emissao_id}/cancelar", response_model=EmissaoResponse, responses={400: {"model": ErroResponse}, 404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}})
+def api_cancelar_dps(
+    emissao_id: uuid.UUID,
+    req: CancelarDpsRequest,
+    db: Session = Depends(db_sessao),
+    prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Marco 16, item 7 — confirmado -> cancelada, chamando a Sefin DE
+    VERDADE com a MESMA receita já validada em produção uma vez (ver
+    app/services/motor_emissao.cancelar e integracao/cancelar_nfse.py).
+    Ao contrário de submeter(): uma recusa da Sefin aqui LEVANTA erro
+    (400) — cancelamento é uma ação que a pessoa pediu explicitamente
+    (diferente de 'tentar emitir'), então uma recusa merece aparecer como
+    falha da ação, não só ficar registrada silenciosamente na emissão."""
+    emissao = db.query(Emissao).filter_by(id=emissao_id).one_or_none()
+    if emissao is None:
+        raise HTTPException(status_code=404, detail="Emissão não encontrada (ou não pertence ao prestador ativo)")
+
+    settings = get_settings()
+    try:
+        private_key, cert = carregar_certificado(db, prestador_id, settings.cert_master_key)
+    except CertificadoNaoEncontradoError as exc:
+        raise HTTPException(status_code=409, detail="Nenhum certificado carregado — envie o .pfx antes de cancelar.") from exc
+
+    tpAmb = (emissao.tomador_snapshot or {}).get("tpAmb", "2")
+    cliente = ClienteSefin(private_key, cert, tpAmb)
+    cnpj_autor = emissao.vinculo.prestador.cpf_cnpj
+    try:
+        emissao = cancelar_emissao(
+            db, emissao, private_key, cert, cliente,
+            cnpj_autor=cnpj_autor, cmotivo=req.cmotivo, xmotivo=req.xmotivo,
+        )
+    except TransicaoInvalidaError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        db.commit()  # erro_detalhe já foi gravado por cancelar() antes de levantar
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
     return _para_resposta(emissao)
 

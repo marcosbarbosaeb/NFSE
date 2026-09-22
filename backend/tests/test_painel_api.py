@@ -216,6 +216,149 @@ def test_assinar_dps_duas_vezes_da_409_na_segunda(client, vinculo_teste, certifi
     assert r2.status_code == 409  # já está assinado, não pode assinar de novo
 
 
+# --- submeter/cancelar de verdade (Marco 16, item 7 — ver
+# app/services/motor_emissao.submeter/cancelar). `requests.post` sempre
+# mockado no nível de app.fiscal.cliente_sefin (mesmo ponto que
+# test_cliente_sefin.py usa) — nenhum teste aqui toca rede de verdade. ---
+
+
+class _RespostaSefinFake:
+    def __init__(self, status_code, json_data):
+        self.status_code = status_code
+        self.content = b"{}"
+        self.headers = {"content-type": "application/json"}
+        self._json = json_data
+        self.text = "fake"
+
+    def json(self):
+        return self._json
+
+
+def _mockar_requests_sefin(monkeypatch, *, submissao=None, evento=None):
+    """`submissao`/`evento`: (status_code, json_data) ou None (a chamada
+    correspondente não deveria acontecer nesse teste)."""
+
+    def _post_fake(url, **kwargs):
+        if "/eventos" in url:
+            assert evento is not None, f"não esperava POST de evento de cancelamento: {url}"
+            return _RespostaSefinFake(*evento)
+        assert submissao is not None, f"não esperava POST de submissão: {url}"
+        return _RespostaSefinFake(*submissao)
+
+    monkeypatch.setattr("app.fiscal.cliente_sefin.requests.post", _post_fake)
+
+
+def _emissao_assinada(client, certificado_teste, vinculo_teste, competencia="2026-08"):
+    with open(certificado_teste["path"], "rb") as f:
+        client.post("/api/certificado", files={"pfx": ("cert.pfx", f, "application/x-pkcs12")}, data={"senha": certificado_teste["senha"]})
+    criada = client.post("/api/dps", json={"vinculo_id": str(vinculo_teste.id), "competencia": competencia, "valor": 100.0}).json()
+    client.post(f"/api/dps/{criada['id']}/assinar")
+    return criada["id"]
+
+
+def test_submeter_dps_sem_certificado_da_409(client, vinculo_teste):
+    criada = client.post("/api/dps", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08", "valor": 100.0}).json()
+    resp = client.post(f"/api/dps/{criada['id']}/submeter")
+    assert resp.status_code == 409
+
+
+def test_submeter_dps_estado_invalido_da_409(client, vinculo_teste, certificado_teste):
+    with open(certificado_teste["path"], "rb") as f:
+        client.post("/api/certificado", files={"pfx": ("cert.pfx", f, "application/x-pkcs12")}, data={"senha": certificado_teste["senha"]})
+    criada = client.post("/api/dps", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08", "valor": 100.0}).json()
+    resp = client.post(f"/api/dps/{criada['id']}/submeter")  # ainda 'montado', não assinou
+    assert resp.status_code == 409
+
+
+def test_submeter_dps_sucesso_confirma_e_grava_chave_acesso(client, vinculo_teste, certificado_teste, monkeypatch):
+    emissao_id = _emissao_assinada(client, certificado_teste, vinculo_teste)
+    _mockar_requests_sefin(monkeypatch, submissao=(201, {"chaveAcesso": "chave-fake-123", "nfseXmlGZipB64": None}))
+
+    resp = client.post(f"/api/dps/{emissao_id}/submeter")
+    assert resp.status_code == 200, resp.text
+    dados = resp.json()
+    assert dados["estado"] == "confirmado"
+    assert dados["chave_acesso"] == "chave-fake-123"
+
+
+def test_submeter_dps_recusado_pela_sefin_fica_em_erro_mas_200(client, vinculo_teste, certificado_teste, monkeypatch):
+    """Recusa de negócio da Sefin não é um erro NOSSO — a emissão fica
+    registrada em estado='erro' (retentável), a resposta HTTP continua
+    200 (ver docstring de api_submeter_dps)."""
+    emissao_id = _emissao_assinada(client, certificado_teste, vinculo_teste)
+    _mockar_requests_sefin(monkeypatch, submissao=(400, {"mensagem": "algo deu errado"}))
+
+    resp = client.post(f"/api/dps/{emissao_id}/submeter")
+    assert resp.status_code == 200, resp.text
+    dados = resp.json()
+    assert dados["estado"] == "erro"
+    assert dados["erro_detalhe"]
+
+
+def test_submeter_dps_retenta_a_partir_do_erro(client, vinculo_teste, certificado_teste, monkeypatch):
+    emissao_id = _emissao_assinada(client, certificado_teste, vinculo_teste)
+    _mockar_requests_sefin(monkeypatch, submissao=(400, {"mensagem": "fora do ar"}))
+    client.post(f"/api/dps/{emissao_id}/submeter")
+
+    _mockar_requests_sefin(monkeypatch, submissao=(201, {"chaveAcesso": "chave-na-segunda-tentativa", "nfseXmlGZipB64": None}))
+    resp = client.post(f"/api/dps/{emissao_id}/submeter")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["estado"] == "confirmado"
+
+
+def test_cancelar_dps_estado_invalido_da_409(client, vinculo_teste, certificado_teste):
+    emissao_id = _emissao_assinada(client, certificado_teste, vinculo_teste)  # só 'assinado', não confirmado
+    resp = client.post(
+        f"/api/dps/{emissao_id}/cancelar",
+        json={"cmotivo": "1", "xmotivo": "Nota emitida com valor errado por engano"},
+    )
+    assert resp.status_code == 409
+
+
+# montar_evento_cancelamento exige exatamente 50 dígitos na chave de
+# acesso (ver app/fiscal/eventos.py) — diferente do teste de submeter, que
+# não valida formato nenhum, os testes de cancelar precisam de uma chave
+# fake mas VÁLIDA nesse formato pra chegar na parte que estão testando.
+_CHAVE_ACESSO_FAKE_50_DIGITOS = "1" * 50
+
+
+def test_cancelar_dps_xmotivo_curto_demais_da_422(client, vinculo_teste, certificado_teste, monkeypatch):
+    emissao_id = _emissao_assinada(client, certificado_teste, vinculo_teste)
+    _mockar_requests_sefin(monkeypatch, submissao=(201, {"chaveAcesso": _CHAVE_ACESSO_FAKE_50_DIGITOS, "nfseXmlGZipB64": None}))
+    client.post(f"/api/dps/{emissao_id}/submeter")
+
+    resp = client.post(f"/api/dps/{emissao_id}/cancelar", json={"cmotivo": "1", "xmotivo": "curto"})
+    assert resp.status_code == 422
+
+
+def test_cancelar_dps_sucesso(client, vinculo_teste, certificado_teste, monkeypatch):
+    emissao_id = _emissao_assinada(client, certificado_teste, vinculo_teste)
+    _mockar_requests_sefin(monkeypatch, submissao=(201, {"chaveAcesso": _CHAVE_ACESSO_FAKE_50_DIGITOS, "nfseXmlGZipB64": None}))
+    client.post(f"/api/dps/{emissao_id}/submeter")
+
+    _mockar_requests_sefin(monkeypatch, evento=(201, {"alertas": []}))
+    resp = client.post(
+        f"/api/dps/{emissao_id}/cancelar",
+        json={"cmotivo": "1", "xmotivo": "Nota emitida com valor errado por engano"},
+    )
+    assert resp.status_code == 200, resp.text
+    dados = resp.json()
+    assert dados["estado"] == "cancelada"
+
+
+def test_cancelar_dps_recusado_pela_sefin_da_400(client, vinculo_teste, certificado_teste, monkeypatch):
+    emissao_id = _emissao_assinada(client, certificado_teste, vinculo_teste)
+    _mockar_requests_sefin(monkeypatch, submissao=(201, {"chaveAcesso": _CHAVE_ACESSO_FAKE_50_DIGITOS, "nfseXmlGZipB64": None}))
+    client.post(f"/api/dps/{emissao_id}/submeter")
+
+    _mockar_requests_sefin(monkeypatch, evento=(400, {"mensagem": "evento recusado"}))
+    resp = client.post(
+        f"/api/dps/{emissao_id}/cancelar",
+        json={"cmotivo": "1", "xmotivo": "Nota emitida com valor errado por engano"},
+    )
+    assert resp.status_code == 400
+
+
 def test_criar_dps_com_template_de_ordem_sem_ordem_da_422(client, db, prestador_teste):
     tomador = Tomador(
         id=uuid.uuid4(), cnpj="99888777000166", razao_social="AWIN TESTE",

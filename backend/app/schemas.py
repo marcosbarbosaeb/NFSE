@@ -54,6 +54,16 @@ class EmissaoResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CancelarDpsRequest(BaseModel):
+    """Marco 16, item 7 — cancelamento real na Sefin (ver
+    app/services/motor_emissao.cancelar). `cmotivo`: '1' (Erro na
+    Emissão) | '2' (Serviço não Prestado) | '9' (Outros) — ver
+    app/fiscal/eventos.MOTIVOS_CANCELAMENTO. `xmotivo`: 15-255 caracteres,
+    mesma regra do schema oficial."""
+    cmotivo: str
+    xmotivo: str = Field(min_length=15, max_length=255)
+
+
 class ConsultaCnpjResponse(BaseModel):
     """Marco 16 — autopreenchimento do cadastro a partir do CNPJ (ver
     app/services/cnpj_lookup.py). `cod_municipio_sugerido` é só uma
@@ -128,6 +138,7 @@ class NotaVisualResponse(BaseModel):
     competencia: str
     dh_emissao: str | None = None
     chave_acesso: str | None = None
+    erro_detalhe: str | None = None
     prestador: PrestadorVisual
     tomador: TomadorVisual
     servico: ServicoVisual

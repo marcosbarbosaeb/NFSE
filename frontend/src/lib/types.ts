@@ -287,6 +287,7 @@ export interface NotaVisual {
   competencia: string
   dh_emissao: string | null
   chave_acesso: string | null
+  erro_detalhe: string | null
   prestador: PrestadorVisual
   tomador: TomadorVisual
   servico: ServicoVisual

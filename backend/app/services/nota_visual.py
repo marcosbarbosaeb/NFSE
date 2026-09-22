@@ -147,6 +147,12 @@ def montar_nota_visual(emissao: Emissao) -> dict:
         "competencia": emissao.competencia,
         "dh_emissao": _xml("dhEmi"),
         "chave_acesso": emissao.chave_acesso,
+        # Marco 16, item 7 — só faz sentido quando estado='erro' (recusa da
+        # Sefin ao submeter, ver app/services/motor_emissao.submeter): é o
+        # que explica NA TELA por que ficou em erro, em vez da pessoa só
+        # ver o badge vermelho sem saber o motivo pra corrigir e tentar de
+        # novo.
+        "erro_detalhe": emissao.erro_detalhe,
         "prestador": {
             "razao_social": prestador.razao_social,
             "cnpj": _fmt_cnpj(prestador.cpf_cnpj),
