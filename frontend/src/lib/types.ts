@@ -9,6 +9,11 @@ export interface CadastroRequest {
   razao_social: string
   cpf_cnpj: string
   cod_municipio: string
+  cep?: string | null
+  logradouro?: string | null
+  numero?: string | null
+  complemento?: string | null
+  bairro?: string | null
 }
 
 export interface VinculoResumo {
@@ -205,6 +210,25 @@ export interface GerarDpsRequest {
   ordem?: string | null
   aliq_sn?: number | null
   tpAmb?: string
+}
+
+export interface VerificarDuplicata {
+  existe: boolean
+  emissao_id: string | null
+  estado: string | null
+}
+
+export interface ConsultaCnpj {
+  razao_social: string
+  logradouro: string | null
+  numero: string | null
+  complemento: string | null
+  bairro: string | null
+  cep: string | null
+  municipio: string
+  uf: string
+  cod_municipio_sugerido: string | null
+  situacao_cadastral: string | null
 }
 
 export interface Emissao {

@@ -125,6 +125,56 @@ def test_criar_dps_duplicada_mesma_competencia_da_409(client, vinculo_teste):
     assert r2.status_code == 409
 
 
+def test_verificar_duplicata_sem_emissao_da_existe_false(client, vinculo_teste):
+    resp = client.get(
+        "/api/dps/verificar-duplicata",
+        params={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"existe": False, "emissao_id": None, "estado": None}
+
+
+def test_verificar_duplicata_com_emissao_ativa_da_existe_true(client, vinculo_teste):
+    criada = client.post(
+        "/api/dps", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08", "valor": 100.0}
+    ).json()
+
+    resp = client.get(
+        "/api/dps/verificar-duplicata",
+        params={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08"},
+    )
+    assert resp.status_code == 200
+    dados = resp.json()
+    assert dados["existe"] is True
+    assert dados["emissao_id"] == criada["id"]
+    assert dados["estado"] == "montado"
+
+
+def test_verificar_duplicata_ignora_emissao_cancelada(client, db, vinculo_teste):
+    criada = client.post(
+        "/api/dps", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08", "valor": 100.0}
+    ).json()
+    from app.models import Emissao
+
+    emissao = db.get(Emissao, uuid.UUID(criada["id"]))
+    emissao.estado = "cancelada"
+    db.flush()
+
+    resp = client.get(
+        "/api/dps/verificar-duplicata",
+        params={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08"},
+    )
+    assert resp.json()["existe"] is False
+
+
+def test_verificar_duplicata_competencia_malformada_da_422(client, vinculo_teste):
+    resp = client.get(
+        "/api/dps/verificar-duplicata",
+        params={"vinculo_id": str(vinculo_teste.id), "competencia": "2026/08"},
+    )
+    assert resp.status_code == 422
+
+
 def test_ver_dps_por_id(client, vinculo_teste):
     criada = client.post("/api/dps", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08", "valor": 100.0}).json()
     resp = client.get(f"/api/dps/{criada['id']}")

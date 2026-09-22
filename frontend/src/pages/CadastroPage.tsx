@@ -1,11 +1,11 @@
-import { FileText } from "lucide-react"
-import { type FormEvent, useState } from "react"
+import { AlertTriangle, CheckCircle2, FileText, Loader2 } from "lucide-react"
+import { type FocusEvent, type FormEvent, useState } from "react"
 import { Link, Navigate } from "react-router-dom"
 import { Button } from "../components/ui/Button"
 import { Field } from "../components/ui/Field"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useAuth } from "../lib/auth"
-import type { CadastroRequest } from "../lib/types"
+import type { CadastroRequest, ConsultaCnpj } from "../lib/types"
 
 export function CadastroPage() {
   const { usuario } = useAuth()
@@ -19,7 +19,56 @@ export function CadastroPage() {
   const [erro, setErro] = useState<string | null>(null)
   const [enviado, setEnviado] = useState<string | null>(null)
 
+  // Marco 16 — autopreenchimento via CNPJ (pedido do Marcos: "ninguém sabe
+  // o número do IBGE do município"). `enderecoAutopreenchido` guarda o que
+  // a consulta trouxe pra mandar junto no cadastro (poupa digitar de novo
+  // em Configurações depois) — nunca é a palavra final: razão social e
+  // município continuam campos normais, editáveis, e a pessoa sempre pode
+  // simplesmente preencher tudo na mão se a consulta falhar ou vier errada.
+  const [consultandoCnpj, setConsultandoCnpj] = useState(false)
+  const [avisoCnpj, setAvisoCnpj] = useState<string | null>(null)
+  const [enderecoResolvido, setEnderecoResolvido] = useState<string | null>(null)
+  const [enderecoAutopreenchido, setEnderecoAutopreenchido] = useState<{
+    cep: string | null
+    logradouro: string | null
+    numero: string | null
+    complemento: string | null
+    bairro: string | null
+  } | null>(null)
+
   if (usuario) return <Navigate to="/app" replace />
+
+  async function onCnpjBlur(e: FocusEvent<HTMLInputElement>) {
+    const digitos = e.target.value.replace(/\D/g, "")
+    setAvisoCnpj(null)
+    setEnderecoResolvido(null)
+    setEnderecoAutopreenchido(null)
+    if (digitos.length !== 14) return
+
+    setConsultandoCnpj(true)
+    try {
+      const dados = await api.get<ConsultaCnpj>(`/cnpj/${digitos}`)
+      setRazaoSocial(dados.razao_social || razaoSocial)
+      if (dados.cod_municipio_sugerido) setCodMunicipio(dados.cod_municipio_sugerido)
+      setEnderecoAutopreenchido({
+        cep: dados.cep, logradouro: dados.logradouro, numero: dados.numero,
+        complemento: dados.complemento, bairro: dados.bairro,
+      })
+      const partes = [dados.logradouro, dados.numero, dados.bairro].filter(Boolean)
+      setEnderecoResolvido(`${partes.join(", ")}${partes.length ? " — " : ""}${dados.municipio}/${dados.uf}`)
+      if (dados.situacao_cadastral && dados.situacao_cadastral.toUpperCase() !== "ATIVA") {
+        setAvisoCnpj(`Situação cadastral deste CNPJ na Receita: ${dados.situacao_cadastral}. Confirme se está certo antes de continuar.`)
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setAvisoCnpj("Não encontramos esse CNPJ — confira se digitou certo, ou preencha os dados manualmente.")
+      } else {
+        setAvisoCnpj("Não conseguimos consultar esse CNPJ automaticamente agora — preencha os dados manualmente.")
+      }
+    } finally {
+      setConsultandoCnpj(false)
+    }
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -40,6 +89,7 @@ export function CadastroPage() {
         razao_social: razaoSocial,
         cpf_cnpj: cnpj.replace(/\D/g, ""),
         cod_municipio: codMunicipio.replace(/\D/g, ""),
+        ...(enderecoAutopreenchido ?? {}),
       }
       const resp = await api.post<{ mensagem: string; email: string }>("/cadastro", payload)
       setEnviado(resp.email)
@@ -78,17 +128,45 @@ export function CadastroPage() {
           ) : (
             <form onSubmit={onSubmit} className="flex flex-col gap-3">
               {erro && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erro}</p>}
-              <Field label="Razão social" required value={razaoSocial} onChange={(e) => setRazaoSocial(e.target.value)} />
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="CNPJ" required value={cnpj} onChange={(e) => setCnpj(e.target.value)} placeholder="14 dígitos" />
+
+              <div>
                 <Field
-                  label="Município (código IBGE)"
+                  label="CNPJ"
                   required
-                  value={codMunicipio}
-                  onChange={(e) => setCodMunicipio(e.target.value)}
-                  placeholder="7 dígitos"
+                  value={cnpj}
+                  onChange={(e) => setCnpj(e.target.value)}
+                  onBlur={onCnpjBlur}
+                  placeholder="14 dígitos"
+                  hint="Digite o CNPJ e a gente tenta preencher o resto sozinho."
                 />
+                {consultandoCnpj && (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
+                    <Loader2 size={12} className="animate-spin" /> Consultando CNPJ...
+                  </p>
+                )}
+                {enderecoResolvido && !consultandoCnpj && (
+                  <p className="mt-1.5 flex items-start gap-1.5 text-xs text-success-700">
+                    <CheckCircle2 size={13} className="mt-0.5 shrink-0" /> {enderecoResolvido}
+                  </p>
+                )}
+                {avisoCnpj && !consultandoCnpj && (
+                  <p className="mt-1.5 flex items-start gap-1.5 text-xs text-warning-700">
+                    <AlertTriangle size={13} className="mt-0.5 shrink-0" /> {avisoCnpj}
+                  </p>
+                )}
               </div>
+
+              <Field label="Razão social" required value={razaoSocial} onChange={(e) => setRazaoSocial(e.target.value)} />
+
+              <Field
+                label="Município (código IBGE)"
+                required
+                value={codMunicipio}
+                onChange={(e) => setCodMunicipio(e.target.value)}
+                placeholder="7 dígitos"
+                hint={enderecoAutopreenchido ? "Preenchido automaticamente a partir do CNPJ — confira se está certo." : undefined}
+              />
+
               <Field label="E-mail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Senha" type="password" required value={senha} onChange={(e) => setSenha(e.target.value)} />

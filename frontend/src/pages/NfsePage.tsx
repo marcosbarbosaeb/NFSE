@@ -8,7 +8,14 @@ import { Field, FieldWrap } from "../components/ui/Field"
 import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { competenciaAtual, formatBRL } from "../lib/format"
-import type { EmissaoListaLinha, Emissao, GerarDpsRequest, ImportacaoCsvResultado, VinculoResumo } from "../lib/types"
+import type {
+  EmissaoListaLinha,
+  Emissao,
+  GerarDpsRequest,
+  ImportacaoCsvResultado,
+  VerificarDuplicata,
+  VinculoResumo,
+} from "../lib/types"
 
 const ANO_ATUAL = new Date().getFullYear()
 const ANOS = [ANO_ATUAL, ANO_ATUAL - 1, ANO_ATUAL - 2]
@@ -197,9 +204,39 @@ function NovaEmissaoModal({
   const [tpAmb, setTpAmb] = useState<"1" | "2">("2")
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const [duplicata, setDuplicata] = useState<VerificarDuplicata | null>(null)
 
   const vinculo = vinculos.find((v) => v.id === vinculoId)
   const precisaOrdem = vinculo?.template_descricao.includes("{ordem}") ?? false
+
+  // Aviso proativo de nota duplicada (Marco 16, pedido do Marcos): assim que
+  // fornecedor+competência ficam preenchidos, consulta se já existe uma
+  // emissão ativa pra essa combinação — ANTES do usuário tentar gerar e
+  // tomar um erro só depois de preencher tudo. Não bloqueia o envio (a
+  // checagem de verdade continua no backend em POST /api/dps) — é só pra
+  // avisar com antecedência.
+  useEffect(() => {
+    setDuplicata(null)
+    if (!vinculoId || !competencia) return
+    const controlador = new AbortController()
+    const tempo = setTimeout(() => {
+      api
+        .get<VerificarDuplicata>(
+          `/dps/verificar-duplicata?vinculo_id=${vinculoId}&competencia=${competencia}`,
+        )
+        .then((resp) => {
+          if (!controlador.signal.aborted) setDuplicata(resp)
+        })
+        .catch(() => {
+          // silencioso de propósito — é só um aviso a mais; se falhar, o
+          // usuário ainda tem a checagem de verdade ao tentar submeter.
+        })
+    }, 300)
+    return () => {
+      controlador.abort()
+      clearTimeout(tempo)
+    }
+  }, [vinculoId, competencia])
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -266,6 +303,14 @@ function NovaEmissaoModal({
             onChange={(e) => setValor(e.target.value)}
           />
         </div>
+
+        {duplicata?.existe && (
+          <p className="rounded-lg bg-warning-50 px-4 py-3 text-sm text-warning-700">
+            Já existe uma nota <strong>{ESTADOS[duplicata.estado ?? ""]?.label.toLowerCase() ?? duplicata.estado}</strong>{" "}
+            pra {vinculo?.apelido} nessa competência. Gerar outra vai dar erro — cancele a existente primeiro se for
+            substituí-la.
+          </p>
+        )}
 
         {precisaOrdem && (
           <Field

@@ -95,6 +95,22 @@ def _proximo_ndps(db: Session, prestador_id: uuid.UUID, serie: str) -> int:
     return (maximo or 0) + 1
 
 
+def buscar_emissao_ativa(db: Session, vinculo_id: uuid.UUID, competencia: str) -> Emissao | None:
+    """Emissão ATIVA (não cancelada) pra esse vínculo+competência, se
+    existir — mesma regra do índice único parcial
+    `uq_emissao_vinculo_competencia_ativa`. Reaproveitada por
+    `criar_rascunho` (bloqueia de verdade) e por um endpoint só-leitura que a
+    tela de 'Nova emissão' consulta ANTES do usuário tentar submeter, pra
+    avisar de duplicata de forma proativa em vez de só depois de um erro
+    (pedido do Marcos no Marco 16 — 'o sistema tem que avisar pra não ter
+    nota repetida')."""
+    return (
+        db.query(Emissao)
+        .filter(Emissao.prestador_tomador_id == vinculo_id, Emissao.competencia == competencia, Emissao.estado != "cancelada")
+        .first()
+    )
+
+
 def criar_rascunho(
     db: Session,
     vinculo: PrestadorTomador,
@@ -109,11 +125,7 @@ def criar_rascunho(
     checa a idempotência mensal ANTES de tentar gravar (o índice único
     parcial é quem garante de verdade; isto aqui só dá um erro mais claro
     no caso comum, em vez de deixar estourar IntegrityError genérico)."""
-    ja_existe = (
-        db.query(Emissao)
-        .filter(Emissao.prestador_tomador_id == vinculo.id, Emissao.competencia == competencia, Emissao.estado != "cancelada")
-        .first()
-    )
+    ja_existe = buscar_emissao_ativa(db, vinculo.id, competencia)
     if ja_existe is not None:
         raise EmissaoJaExisteError(
             f"Já existe uma emissão ativa para '{vinculo.apelido}' na competência {competencia} "

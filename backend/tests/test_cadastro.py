@@ -168,6 +168,95 @@ def test_endpoint_cadastro_cnpj_com_pontuacao_da_422(client_publico):
     assert resp.status_code == 422
 
 
+def test_endpoint_cadastro_salva_endereco_opcional_do_autopreenchimento(client_publico, db):
+    """Marco 16 — campos vindos do autopreenchimento via CNPJ (ver
+    app/services/cnpj_lookup.py) são opcionais e, quando mandados, ficam
+    salvos no Prestador — poupa a pessoa de digitar de novo em
+    Configurações depois."""
+    resp = client_publico.post(
+        "/api/cadastro",
+        json={
+            "email": "comendereco@exemplo.com", "senha": "senhaforte123", "razao_social": "EMPRESA COM ENDEREÇO LTDA",
+            "cpf_cnpj": "88888888000188", "cod_municipio": "1302603",
+            "cep": "69000000", "logradouro": "RUA DAS FLORES", "numero": "123",
+            "complemento": "SALA 4", "bairro": "CENTRO",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    prestador = db.query(Prestador).filter_by(cpf_cnpj="88888888000188").one()
+    assert prestador.cep == "69000000"
+    assert prestador.logradouro == "RUA DAS FLORES"
+    assert prestador.bairro == "CENTRO"
+
+
+def test_endpoint_cadastro_sem_endereco_continua_funcionando(client_publico):
+    """Ninguém é obrigado a usar o autopreenchimento — preenchimento manual
+    (sem os campos novos) continua exatamente como antes."""
+    resp = client_publico.post(
+        "/api/cadastro",
+        json={
+            "email": "semendereco@exemplo.com", "senha": "senhaforte123", "razao_social": "X",
+            "cpf_cnpj": "77777777000177", "cod_municipio": "3106200",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+
+# --- Consulta de CNPJ (GET /api/cnpj/{cnpj}) ---
+
+
+def test_endpoint_consultar_cnpj_sucesso(client_publico, monkeypatch):
+    import requests
+
+    class _RespostaFake:
+        status_code = 200
+
+        def json(self):
+            return {
+                "razao_social": "EMPRESA TESTE LTDA", "logradouro": "RUA X", "numero": "1",
+                "bairro": "CENTRO", "cep": "69000-000", "municipio": "MANAUS", "uf": "am",
+                "codigo_municipio_ibge": 1302603, "descricao_situacao_cadastral": "ATIVA",
+            }
+
+    monkeypatch.setattr(requests, "get", lambda url, timeout: _RespostaFake())
+    resp = client_publico.get("/api/cnpj/12345678000199")
+    assert resp.status_code == 200, resp.text
+    dados = resp.json()
+    assert dados["razao_social"] == "EMPRESA TESTE LTDA"
+    assert dados["cod_municipio_sugerido"] == "1302603"
+    assert dados["uf"] == "AM"
+
+
+def test_endpoint_consultar_cnpj_invalido_da_422(client_publico):
+    resp = client_publico.get("/api/cnpj/123")
+    assert resp.status_code == 422
+
+
+def test_endpoint_consultar_cnpj_nao_encontrado_da_404(client_publico, monkeypatch):
+    import requests
+
+    class _RespostaFake:
+        status_code = 404
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(requests, "get", lambda url, timeout: _RespostaFake())
+    resp = client_publico.get("/api/cnpj/12345678000199")
+    assert resp.status_code == 404
+
+
+def test_endpoint_consultar_cnpj_indisponivel_da_503(client_publico, monkeypatch):
+    import requests
+
+    def _fake_get(url, timeout):
+        raise requests.exceptions.ConnectionError("rede fora do ar")
+
+    monkeypatch.setattr(requests, "get", _fake_get)
+    resp = client_publico.get("/api/cnpj/12345678000199")
+    assert resp.status_code == 503
+
+
 def test_endpoint_cadastro_email_duplicado_da_409(client_publico):
     payload = {
         "email": "dupe@exemplo.com", "senha": "senhaforte123", "razao_social": "X",

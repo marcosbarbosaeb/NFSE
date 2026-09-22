@@ -50,7 +50,18 @@ def _gerar_token() -> str:
 
 
 def criar_cadastro(
-    db: Session, *, email: str, senha: str, razao_social: str, cpf_cnpj: str, cod_municipio: str
+    db: Session,
+    *,
+    email: str,
+    senha: str,
+    razao_social: str,
+    cpf_cnpj: str,
+    cod_municipio: str,
+    cep: str | None = None,
+    logradouro: str | None = None,
+    numero: str | None = None,
+    complemento: str | None = None,
+    bairro: str | None = None,
 ) -> Usuario:
     email_norm = email.strip().lower()
     cnpj_norm = "".join(c for c in cpf_cnpj if c.isdigit())
@@ -75,7 +86,19 @@ def criar_cadastro(
     # acabou de gerar, antes de inserir. Mesmo padrão usado pelo fixture
     # `prestador_teste` em tests/conftest.py.
     definir_prestador_atual(db, prestador_id)
-    prestador = Prestador(id=prestador_id, cpf_cnpj=cnpj_norm, razao_social=razao_social.strip(), cod_municipio=cod_municipio)
+    prestador = Prestador(
+        id=prestador_id,
+        cpf_cnpj=cnpj_norm,
+        razao_social=razao_social.strip(),
+        cod_municipio=cod_municipio,
+        # Marco 16 — vêm do autopreenchimento via CNPJ (opcional; None
+        # quando quem cadastrou digitou tudo na mão, como sempre foi).
+        cep=cep,
+        logradouro=logradouro,
+        numero=numero,
+        complemento=complemento,
+        bairro=bairro,
+    )
     db.add(prestador)
     try:
         # SAVEPOINT (não a transação toda) — se a UniqueConstraint de

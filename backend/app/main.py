@@ -31,6 +31,7 @@ liberada — Marcos continua emitindo de verdade pelos scripts em
 integracao/ até lá.
 """
 import datetime
+import re
 import uuid
 from pathlib import Path
 
@@ -53,6 +54,7 @@ from app.schemas import (
     ConfirmarEmailRequest,
     ConfirmarExtratoRequest,
     ConfirmarExtratoResponse,
+    ConsultaCnpjResponse,
     DashboardResumoResponse,
     DespesaResponse,
     EmissaoListaLinha,
@@ -78,6 +80,7 @@ from app.schemas import (
     TomadorResponse,
     TrocarSenhaRequest,
     UsuarioResponse,
+    VerificarDuplicataResponse,
     VinculoCriarRequest,
     VinculoAtualizarRequest,
     VinculoDetalheResponse,
@@ -91,6 +94,12 @@ from app.services.billing import (
     criar_sessao_checkout,
     criar_sessao_portal,
     processar_webhook,
+)
+from app.services.cnpj_lookup import (
+    CnpjInvalidoError,
+    CnpjNaoEncontradoError,
+    ConsultaCnpjIndisponivelError,
+    consultar_cnpj,
 )
 from app.services.certificados import (
     CertificadoNaoEncontradoError,
@@ -126,6 +135,7 @@ from app.services.motor_emissao import (
     EmissaoJaExisteError,
     TransicaoInvalidaError,
     assinar as assinar_emissao,
+    buscar_emissao_ativa,
     criar_rascunho,
     montar as montar_emissao,
 )
@@ -198,6 +208,30 @@ def api_login(req: LoginRequest, request: Request, db: Session = Depends(get_db)
     return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id)
 
 
+@app.get("/api/cnpj/{cnpj}", response_model=ConsultaCnpjResponse, responses={404: {"model": ErroResponse}, 422: {"model": ErroResponse}, 503: {"model": ErroResponse}})
+def api_consultar_cnpj(cnpj: str):
+    """Marco 16 — autopreenchimento do cadastro público a partir do CNPJ
+    (rota pública, sem sessão — é usada ANTES de existir conta). Nunca deve
+    derrubar o cadastro: 503 quando a consulta externa está indisponível é
+    o sinal pro frontend cair pro preenchimento manual (ver
+    app/services/cnpj_lookup.py pra ressalva sobre o código de município
+    devolvido aqui ser só uma sugestão)."""
+    try:
+        dados = consultar_cnpj(cnpj)
+    except CnpjInvalidoError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except CnpjNaoEncontradoError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ConsultaCnpjIndisponivelError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return ConsultaCnpjResponse(
+        razao_social=dados.razao_social, logradouro=dados.logradouro, numero=dados.numero,
+        complemento=dados.complemento, bairro=dados.bairro, cep=dados.cep,
+        municipio=dados.municipio, uf=dados.uf,
+        cod_municipio_sugerido=dados.cod_municipio_sugerido, situacao_cadastral=dados.situacao_cadastral,
+    )
+
+
 @app.post("/api/cadastro", response_model=CadastroResponse, responses={409: {"model": ErroResponse}})
 def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
     """Marco 15 — cadastro público self-service (rota pública, sem sessão).
@@ -208,6 +242,8 @@ def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
         usuario = criar_cadastro(
             db, email=req.email, senha=req.senha, razao_social=req.razao_social,
             cpf_cnpj=req.cpf_cnpj, cod_municipio=req.cod_municipio,
+            cep=req.cep, logradouro=req.logradouro, numero=req.numero,
+            complemento=req.complemento, bairro=req.bairro,
         )
     except CadastroEmailJaCadastradoError:
         raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")
@@ -535,6 +571,21 @@ def _para_resposta(emissao: Emissao) -> EmissaoResponse:
         chave_acesso=emissao.chave_acesso, erro_detalhe=emissao.erro_detalhe,
         atualizado_em=emissao.atualizado_em,
     )
+
+
+@app.get("/api/dps/verificar-duplicata", response_model=VerificarDuplicataResponse)
+def api_verificar_duplicata(vinculo_id: uuid.UUID, competencia: str, db: Session = Depends(db_sessao)):
+    """Marco 16 — a tela de 'Nova emissão' chama isso assim que
+    fornecedor+competência ficam preenchidos, pra avisar de uma possível
+    duplicata ANTES do usuário tentar gerar a nota (não substitui a checagem
+    de `POST /api/dps`, que continua sendo a fonte de verdade — isto aqui é
+    só pra UX, GET puro sem efeito colateral)."""
+    if not re.fullmatch(r"\d{4}-\d{2}", competencia):
+        raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
+    existente = buscar_emissao_ativa(db, vinculo_id, competencia)
+    if existente is None:
+        return VerificarDuplicataResponse(existe=False)
+    return VerificarDuplicataResponse(existe=True, emissao_id=existente.id, estado=existente.estado)
 
 
 @app.post("/api/dps", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}})

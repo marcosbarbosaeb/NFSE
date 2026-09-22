@@ -54,6 +54,31 @@ class EmissaoResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ConsultaCnpjResponse(BaseModel):
+    """Marco 16 — autopreenchimento do cadastro a partir do CNPJ (ver
+    app/services/cnpj_lookup.py). `cod_municipio_sugerido` é só uma
+    SUGESTÃO editável — nunca aceita cegamente, ver docstring do serviço."""
+    razao_social: str
+    logradouro: str | None = None
+    numero: str | None = None
+    complemento: str | None = None
+    bairro: str | None = None
+    cep: str | None = None
+    municipio: str
+    uf: str
+    cod_municipio_sugerido: str | None = None
+    situacao_cadastral: str | None = None
+
+
+class VerificarDuplicataResponse(BaseModel):
+    """Marco 16 — aviso proativo de nota duplicada: a tela de 'Nova emissão'
+    consulta isso assim que fornecedor+competência ficam preenchidos, ANTES
+    do usuário tentar submeter (ver GET /api/dps/verificar-duplicata)."""
+    existe: bool
+    emissao_id: uuid.UUID | None = None
+    estado: str | None = None
+
+
 class ErroResponse(BaseModel):
     detalhe: str
 
@@ -266,6 +291,17 @@ class CadastroRequest(BaseModel):
     razao_social: str = Field(min_length=1, max_length=200)
     cpf_cnpj: str = Field(pattern=r"^\d{14}$", description="CNPJ, só dígitos, 14 caracteres")
     cod_municipio: str = Field(pattern=r"^\d{7}$", description="Código IBGE do município, 7 dígitos")
+
+    # Marco 16 — opcionais, preenchidos pelo autopreenchimento via CNPJ no
+    # frontend (ver app/services/cnpj_lookup.py); quem cadastra sem usar o
+    # autopreenchimento simplesmente não manda esses campos, exatamente como
+    # antes. Guardados aqui só pra a pessoa não ter que digitar de novo em
+    # Configurações depois — nada disso é exigido pra emitir nota.
+    cep: str | None = Field(default=None, max_length=8)
+    logradouro: str | None = Field(default=None, max_length=200)
+    numero: str | None = Field(default=None, max_length=20)
+    complemento: str | None = Field(default=None, max_length=100)
+    bairro: str | None = Field(default=None, max_length=100)
 
 
 class CadastroResponse(BaseModel):
