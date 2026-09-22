@@ -89,6 +89,21 @@ class Settings(BaseSettings):
     # não passam por trial — ver app/services/billing.py).
     stripe_dias_trial: int = 14
 
+    # Marco 16, item 1 — "integre o login/cadastro ao Google". Mesmo
+    # padrão do resend_api_key/stripe_secret_key acima: Marcos confirmou
+    # que quer isso pronto mas AINDA NÃO tem projeto criado no Google
+    # Cloud Console ("monta com placeholder"). Enquanto
+    # `google_oauth_client_id` estiver vazia, os endpoints de OAuth
+    # respondem com um erro "não configurado" (ver app/services/
+    # google_oauth.py) em vez de montar uma URL de autorização que ia dar
+    # erro na Google mesmo assim — troca só estes dois valores quando o
+    # projeto OAuth existir (Google Cloud Console > APIs e serviços >
+    # Credenciais > ID do cliente OAuth, tipo "Web application", com
+    # `{app_base_url}/api/auth/google/callback` cadastrado como URI de
+    # redirecionamento autorizado), sem mudar nenhuma linha de código.
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

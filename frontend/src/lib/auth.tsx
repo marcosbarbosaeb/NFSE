@@ -6,6 +6,7 @@ interface AuthState {
   usuario: Usuario | null
   carregando: boolean
   login: (email: string, senha: string) => Promise<void>
+  loginComGoogle: () => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -31,12 +32,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsuario(dados)
   }
 
+  // Marco 16, item 1 — login/cadastro via Google (ver app/services/
+  // google_oauth.py). Não seta `usuario` aqui: o passo 2 é um redirect de
+  // página inteira pra Google (window.location, não fetch — precisa ser
+  // navegação de topo pra tela de consentimento aparecer), e a sessão só
+  // fica válida depois que a Google volta pro nosso /api/auth/google/callback
+  // — a AuthProvider recarrega em /auth/me nesse próximo carregamento de
+  // página, do jeito normal.
+  async function loginComGoogle() {
+    const dados = await api.post<{ url: string }>("/auth/google/iniciar")
+    window.location.href = dados.url
+  }
+
   async function logout() {
     await api.post("/auth/logout")
     setUsuario(null)
   }
 
-  return <AuthContext.Provider value={{ usuario, carregando, login, logout }}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={{ usuario, carregando, login, loginComGoogle, logout }}>{children}</AuthContext.Provider>
+  )
 }
 
 export function useAuth(): AuthState {

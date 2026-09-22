@@ -1,23 +1,33 @@
 import { AlertTriangle, CheckCircle2, FileText, Loader2 } from "lucide-react"
 import { type FocusEvent, type FormEvent, useState } from "react"
-import { Link, Navigate } from "react-router-dom"
+import { Link, Navigate, useSearchParams } from "react-router-dom"
 import { Button } from "../components/ui/Button"
 import { Field } from "../components/ui/Field"
+import { GoogleIcon } from "../components/ui/GoogleIcon"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import type { CadastroRequest, ConsultaCnpj } from "../lib/types"
 
 export function CadastroPage() {
-  const { usuario } = useAuth()
+  const { usuario, loginComGoogle } = useAuth()
+  const [searchParams] = useSearchParams()
+  // Marco 16, item 1 — volta de /api/auth/google/callback quando a conta
+  // Google usada ainda não tem cadastro aqui (ver app/services/
+  // google_oauth.py: não dá pra criar a conta só com o que a Google manda,
+  // falta CNPJ/razão social) — só pré-preenche o e-mail, editável como
+  // qualquer outro campo.
+  const googleEmail = searchParams.get("google_email")
+  const googleNome = searchParams.get("google_nome")
   const [razaoSocial, setRazaoSocial] = useState("")
   const [cnpj, setCnpj] = useState("")
   const [codMunicipio, setCodMunicipio] = useState("")
-  const [email, setEmail] = useState("")
+  const [email, setEmail] = useState(googleEmail ?? "")
   const [senha, setSenha] = useState("")
   const [confirmacao, setConfirmacao] = useState("")
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [enviado, setEnviado] = useState<string | null>(null)
+  const [erroGoogle, setErroGoogle] = useState<string | null>(null)
 
   // Marco 16 — autopreenchimento via CNPJ (pedido do Marcos: "ninguém sabe
   // o número do IBGE do município"). `enderecoAutopreenchido` guarda o que
@@ -67,6 +77,15 @@ export function CadastroPage() {
       }
     } finally {
       setConsultandoCnpj(false)
+    }
+  }
+
+  async function onGoogleClick() {
+    setErroGoogle(null)
+    try {
+      await loginComGoogle()
+    } catch (err) {
+      setErroGoogle(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
     }
   }
 
@@ -127,6 +146,25 @@ export function CadastroPage() {
             </div>
           ) : (
             <form onSubmit={onSubmit} className="flex flex-col gap-3">
+              {googleEmail && (
+                <p className="rounded-lg bg-primary-50 px-3 py-2 text-sm text-primary-700">
+                  {googleNome ? `Oi, ${googleNome}! ` : ""}Confirme os dados da sua empresa pra terminar de criar a
+                  conta com <span className="font-medium">{googleEmail}</span>.
+                </p>
+              )}
+              {!googleEmail && (
+                <>
+                  {erroGoogle && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erroGoogle}</p>}
+                  <Button type="button" variant="outline" onClick={onGoogleClick} className="w-full">
+                    <GoogleIcon /> Continuar com Google
+                  </Button>
+                  <div className="my-1 flex items-center gap-3">
+                    <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+                    <span className="text-xs text-slate-400 dark:text-slate-500">ou</span>
+                    <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+                  </div>
+                </>
+              )}
               {erro && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erro}</p>}
 
               <div>

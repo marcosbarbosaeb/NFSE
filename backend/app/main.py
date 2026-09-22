@@ -34,9 +34,10 @@ import datetime
 import re
 import uuid
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -66,6 +67,7 @@ from app.schemas import (
     EventoManualCriarRequest,
     ExtratoExtraidoResponse,
     GerarDpsRequest,
+    GoogleOAuthUrlResponse,
     ImportacaoCsvResponse,
     LoginRequest,
     MensagemProntaResponse,
@@ -128,6 +130,13 @@ from app.services.envios import (
     registrar_envio,
 )
 from app.services.extrato_pdf import PdfInvalidoError, extrair_transacoes
+from app.services.google_oauth import (
+    GoogleOAuthFalhaError,
+    GoogleOAuthNaoConfiguradoError,
+    gerar_state,
+    montar_url_autorizacao,
+    trocar_code_por_usuario,
+)
 from app.services.importacao_csv import CsvInvalidoError, importar_csv
 from app.services.importacao_extrato import ItemExtrato, confirmar_importacao_extrato
 from app.services.listagens import listar_despesas, listar_emissoes, listar_pagamentos
@@ -206,6 +215,78 @@ def api_login(req: LoginRequest, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=403, detail="Confirme seu e-mail antes de entrar — verifique sua caixa de entrada.")
     request.session["usuario_id"] = str(usuario.id)
     return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id)
+
+
+@app.post("/api/auth/google/iniciar", response_model=GoogleOAuthUrlResponse, responses={400: {"model": ErroResponse}})
+def api_iniciar_google_oauth(request: Request):
+    """Marco 16, item 1 — primeiro passo do login/cadastro com Google (ver
+    app/services/google_oauth.py). Rota pública: roda tanto pra quem já
+    tem conta (login) quanto pra quem ainda não tem (o callback decide
+    qual dos dois é o caso, olhando se o e-mail devolvido pela Google já
+    tem Usuario). 400 enquanto GOOGLE_OAUTH_CLIENT_ID/SECRET forem
+    placeholder — mesmo padrão de /api/assinatura/checkout com Stripe não
+    configurado."""
+    settings = get_settings()
+    state = gerar_state()
+    try:
+        url = montar_url_autorizacao(settings, state)
+    except GoogleOAuthNaoConfiguradoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    request.session["google_oauth_state"] = state
+    return GoogleOAuthUrlResponse(url=url)
+
+
+@app.get("/api/auth/google/callback")
+def api_callback_google_oauth(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Volta da Google depois da pessoa autorizar (ou cancelar/negar). É a
+    própria Google que navega o browser pra cá — por isso a resposta é
+    SEMPRE um redirect de volta pro frontend (nunca JSON, não tem quem
+    leia), com o resultado sinalizado só pela URL de destino:
+
+    - conta já existe (e confirmada) → loga e manda pra /app;
+    - conta já existe mas e-mail não confirmado → manda pra /entrar com um
+      aviso (mesma trava do login por senha, ver api_login);
+    - e-mail sem conta nenhuma → manda pro /cadastro público normal,
+      pré-preenchido (não dá pra criar a conta só com o que a Google
+      manda, falta CNPJ/razão social — ver docstring de
+      app/services/google_oauth.py);
+    - qualquer falha (state não bate, code ausente, Google recusou a
+      troca) → manda pra /entrar com um erro genérico. `state` é
+      comparado contra o que foi guardado na sessão em
+      /api/auth/google/iniciar — protege contra um link de callback
+      forjado que não veio de um fluxo que a gente mesmo iniciou."""
+    settings = get_settings()
+    base = settings.app_base_url
+    state_esperado = request.session.pop("google_oauth_state", None)
+
+    if error is not None or code is None or state is None or state != state_esperado:
+        return RedirectResponse(f"{base}/entrar?erro=google")
+
+    try:
+        info = trocar_code_por_usuario(settings, code)
+    except (GoogleOAuthNaoConfiguradoError, GoogleOAuthFalhaError):
+        return RedirectResponse(f"{base}/entrar?erro=google")
+
+    usuario = db.query(Usuario).filter_by(email=info.email, ativo=True).one_or_none()
+    if usuario is None:
+        params = urlencode({"google_email": info.email, "google_nome": info.nome or ""})
+        return RedirectResponse(f"{base}/cadastro?{params}")
+
+    if not usuario.email_confirmado:
+        return RedirectResponse(f"{base}/entrar?erro=confirme-email")
+
+    if usuario.google_sub is None:
+        usuario.google_sub = info.sub
+        db.commit()
+
+    request.session["usuario_id"] = str(usuario.id)
+    return RedirectResponse(f"{base}/app")
 
 
 @app.get("/api/cnpj/{cnpj}", response_model=ConsultaCnpjResponse, responses={404: {"model": ErroResponse}, 422: {"model": ErroResponse}, 503: {"model": ErroResponse}})

@@ -1,20 +1,42 @@
 import { FileText } from "lucide-react"
 import { type FormEvent, useState } from "react"
-import { Link, Navigate } from "react-router-dom"
+import { Link, Navigate, useSearchParams } from "react-router-dom"
 import { Button } from "../components/ui/Button"
+import { GoogleIcon } from "../components/ui/GoogleIcon"
 import { ApiError, useAuth } from "../lib/auth"
 import { api, formatarErro } from "../lib/api"
 
+// Marco 16, item 1 — mensagens do redirect de volta de /api/auth/google/callback
+// (ver app/main.py: nunca JSON, sempre um redirect com ?erro=... nessa volta).
+const ERRO_GOOGLE: Record<string, string> = {
+  google: "Não conseguimos entrar com sua conta Google agora. Tente de novo ou entre com e-mail e senha.",
+  "confirme-email": "Essa conta ainda não confirmou o e-mail — confira sua caixa de entrada antes de entrar com o Google.",
+}
+
 export function LoginPage() {
-  const { usuario, login } = useAuth()
+  const { usuario, login, loginComGoogle } = useAuth()
+  const [searchParams] = useSearchParams()
   const [email, setEmail] = useState("")
   const [senha, setSenha] = useState("")
-  const [erro, setErro] = useState<string | null>(null)
+  const [erro, setErro] = useState<string | null>(() => {
+    const codigo = searchParams.get("erro")
+    return codigo ? (ERRO_GOOGLE[codigo] ?? null) : null
+  })
   const [enviando, setEnviando] = useState(false)
   const [emailNaoConfirmado, setEmailNaoConfirmado] = useState(false)
   const [reenviado, setReenviado] = useState(false)
+  const [erroGoogle, setErroGoogle] = useState<string | null>(null)
 
   if (usuario) return <Navigate to="/app" replace />
+
+  async function onGoogleClick() {
+    setErroGoogle(null)
+    try {
+      await loginComGoogle()
+    } catch (err) {
+      setErroGoogle(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
+    }
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -85,6 +107,17 @@ export function LoginPage() {
           <Button type="submit" disabled={enviando} className="w-full">
             {enviando ? "Entrando..." : "Entrar"}
           </Button>
+
+          <div className="my-4 flex items-center gap-3">
+            <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+            <span className="text-xs text-slate-400 dark:text-slate-500">ou</span>
+            <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+          </div>
+          {erroGoogle && <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erroGoogle}</p>}
+          <Button type="button" variant="outline" onClick={onGoogleClick} className="w-full">
+            <GoogleIcon /> Continuar com Google
+          </Button>
+
           <p className="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
             Ainda não tem conta?{" "}
             <Link to="/cadastro" className="font-medium text-primary-600 hover:text-primary-700">

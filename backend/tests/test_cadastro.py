@@ -314,3 +314,138 @@ def test_endpoint_confirmar_email_token_invalido_da_400(client_publico):
 def test_endpoint_reenviar_confirmacao_sempre_200(client_publico):
     resp = client_publico.post("/api/cadastro/reenviar-confirmacao", json={"email": "ninguem-de-verdade@exemplo.com"})
     assert resp.status_code == 200
+
+
+# --- Login/cadastro via Google (Marco 16, item 1 — ver app/services/google_oauth.py) ---
+# GOOGLE_OAUTH_CLIENT_ID/SECRET não configuradas no ambiente de teste (mesmo
+# estado do Marcos hoje) — testadas explicitamente configurando a settings
+# compartilhada via monkeypatch, mesmo padrão de test_billing.py pro Stripe.
+
+
+def _configurar_google_oauth(monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "google_oauth_client_id", "client-id-fake")
+    monkeypatch.setattr(get_settings(), "google_oauth_client_secret", "client-secret-fake")
+
+
+def _extrair_state(url: str) -> str:
+    from urllib.parse import parse_qs, urlparse
+
+    return parse_qs(urlparse(url).query)["state"][0]
+
+
+def _mockar_troca_google(monkeypatch, *, email: str, sub: str = "sub-fake-123", nome: str = "Fulana de Tal"):
+    import requests
+
+    class _RespostaToken:
+        status_code = 200
+
+        def json(self):
+            return {"access_token": "token-fake"}
+
+    class _RespostaUserinfo:
+        status_code = 200
+
+        def json(self):
+            return {"sub": sub, "email": email, "email_verified": True, "name": nome}
+
+    monkeypatch.setattr(requests, "post", lambda *a, **kw: _RespostaToken())
+    monkeypatch.setattr(requests, "get", lambda *a, **kw: _RespostaUserinfo())
+
+
+def test_endpoint_iniciar_google_sem_credencial_da_400(client_publico):
+    resp = client_publico.post("/api/auth/google/iniciar")
+    assert resp.status_code == 400
+
+
+def test_endpoint_iniciar_google_com_credencial_devolve_url_de_autorizacao(client_publico, monkeypatch):
+    _configurar_google_oauth(monkeypatch)
+    resp = client_publico.post("/api/auth/google/iniciar")
+    assert resp.status_code == 200, resp.text
+    url = resp.json()["url"]
+    assert "accounts.google.com" in url
+    assert "client_id=client-id-fake" in url
+
+
+def test_endpoint_callback_state_invalido_redireciona_pro_login_com_erro(client_publico, monkeypatch):
+    _configurar_google_oauth(monkeypatch)
+    client_publico.post("/api/auth/google/iniciar")  # seta um state na sessão
+    resp = client_publico.get(
+        "/api/auth/google/callback", params={"code": "code-qualquer", "state": "state-forjado"}, follow_redirects=False,
+    )
+    assert resp.status_code in (302, 307)
+    assert "/entrar?erro=google" in resp.headers["location"]
+
+
+def test_endpoint_callback_erro_da_google_redireciona_pro_login_com_erro(client_publico, monkeypatch):
+    _configurar_google_oauth(monkeypatch)
+    client_publico.post("/api/auth/google/iniciar")
+    resp = client_publico.get("/api/auth/google/callback", params={"error": "access_denied"}, follow_redirects=False)
+    assert "/entrar?erro=google" in resp.headers["location"]
+
+
+def test_endpoint_callback_email_sem_conta_redireciona_pro_cadastro_preenchido(client_publico, monkeypatch):
+    _configurar_google_oauth(monkeypatch)
+    iniciar = client_publico.post("/api/auth/google/iniciar")
+    state = _extrair_state(iniciar.json()["url"])
+    _mockar_troca_google(monkeypatch, email="novapessoa@gmail.com", nome="Nova Pessoa")
+
+    resp = client_publico.get(
+        "/api/auth/google/callback", params={"code": "code-valido", "state": state}, follow_redirects=False,
+    )
+    assert resp.status_code in (302, 307)
+    location = resp.headers["location"]
+    assert "/cadastro?" in location
+    assert "google_email=novapessoa%40gmail.com" in location
+    assert "google_nome=Nova" in location
+
+
+def test_endpoint_callback_conta_existente_confirmada_loga_e_manda_pro_app(client_publico, monkeypatch, db):
+    client_publico.post(
+        "/api/cadastro",
+        json={
+            "email": "jalogada@exemplo.com", "senha": "senhaforte123", "razao_social": "X",
+            "cpf_cnpj": "50505050000150", "cod_municipio": "3106200",
+        },
+    )
+    usuario = db.query(Usuario).filter_by(email="jalogada@exemplo.com").one()
+    client_publico.post("/api/cadastro/confirmar", json={"token": usuario.token_confirmacao})
+    client_publico.post("/api/auth/logout")
+
+    _configurar_google_oauth(monkeypatch)
+    iniciar = client_publico.post("/api/auth/google/iniciar")
+    state = _extrair_state(iniciar.json()["url"])
+    _mockar_troca_google(monkeypatch, email="jalogada@exemplo.com", sub="sub-da-jalogada")
+
+    resp = client_publico.get(
+        "/api/auth/google/callback", params={"code": "code-valido", "state": state}, follow_redirects=False,
+    )
+    assert resp.headers["location"].endswith("/app")
+
+    me = client_publico.get("/api/auth/me")
+    assert me.status_code == 200
+    assert me.json()["email"] == "jalogada@exemplo.com"
+
+    # vinculou o google_sub na primeira vez que logou com Google
+    db.refresh(usuario)
+    assert usuario.google_sub == "sub-da-jalogada"
+
+
+def test_endpoint_callback_conta_existente_nao_confirmada_redireciona_com_erro(client_publico, monkeypatch, db):
+    client_publico.post(
+        "/api/cadastro",
+        json={
+            "email": "naoconfirmada@exemplo.com", "senha": "senhaforte123", "razao_social": "X",
+            "cpf_cnpj": "60606060000160", "cod_municipio": "3106200",
+        },
+    )
+    _configurar_google_oauth(monkeypatch)
+    iniciar = client_publico.post("/api/auth/google/iniciar")
+    state = _extrair_state(iniciar.json()["url"])
+    _mockar_troca_google(monkeypatch, email="naoconfirmada@exemplo.com")
+
+    resp = client_publico.get(
+        "/api/auth/google/callback", params={"code": "code-valido", "state": state}, follow_redirects=False,
+    )
+    assert "/entrar?erro=confirme-email" in resp.headers["location"]

@@ -135,6 +135,19 @@ class Usuario(Base):
     token_confirmacao: Mapped[str | None] = mapped_column(String(64), unique=True)
     token_confirmacao_expira_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Marco 16, item 1 — login/cadastro via Google (ver app/services/
+    # google_oauth.py). Nullable: a maioria das contas continua só
+    # e-mail+senha. Guarda o `sub` (identificador estável do Google, nunca
+    # o e-mail — e-mail pode mudar) da PRIMEIRA vez que este usuário loga
+    # com Google, seja porque o cadastro nasceu assim (login novo, sem
+    # conta ainda — cai no formulário de cadastro público normal, que
+    # ainda pede CNPJ/razão social; só depois disso vincula) ou porque uma
+    # conta já existente (e-mail+senha) se vinculou depois. Nunca é o
+    # único jeito de entrar: `senha_hash` continua obrigatório pra toda
+    # conta, então uma conta vinculada ao Google sempre pode entrar pelos
+    # dois jeitos.
+    google_sub: Mapped[str | None] = mapped_column(String(64), unique=True)
+
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

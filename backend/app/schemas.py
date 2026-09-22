@@ -281,6 +281,12 @@ class UsuarioResponse(BaseModel):
     prestador_id: uuid.UUID
 
 
+class GoogleOAuthUrlResponse(BaseModel):
+    """Marco 16, item 1 — URL de autorização da Google pra POST
+    /api/auth/google/iniciar (ver app/services/google_oauth.py)."""
+    url: str
+
+
 class CadastroRequest(BaseModel):
     """Marco 15 — formulário público de cadastro (/cadastro no frontend).
     O mínimo pra já existir um Prestador+Usuario utilizáveis: o resto
