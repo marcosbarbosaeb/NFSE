@@ -43,7 +43,7 @@ from decimal import Decimal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import Certificado, Emissao, PagamentoRecebido
+from app.models import Certificado, Emissao, PagamentoRecebido, Prestador
 from app.services.envios import listar_envios
 from app.services.vinculos import listar_vinculos_ativos
 
@@ -175,6 +175,26 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
                 "titulo": "Certificado digital",
                 "mensagem": (f"Venceu há {-dias} dia(s)." if dias < 0 else f"Vence em {dias} dia(s)."),
             })
+
+    # Marco 16, item 5 — alíquota de referência do Simples Nacional ainda
+    # não foi confirmada NESTE mês (ver PATCH /api/prestador/aliquota e
+    # docstring de Prestador.aliquota_atualizada_em). Só avisa — nunca
+    # bloqueia emissão, mesma filosofia do resto desta lista.
+    prestador = db.query(Prestador).filter_by(id=prestador_id).one_or_none()
+    hoje = datetime.date.today()
+    if prestador is not None and (
+        prestador.aliquota_atualizada_em is None
+        or (prestador.aliquota_atualizada_em.year, prestador.aliquota_atualizada_em.month) != (hoje.year, hoje.month)
+    ):
+        atencao.append({
+            "tipo": "aliquota_pendente",
+            "titulo": "Alíquota do Simples Nacional",
+            "mensagem": (
+                "Ainda não confirmada este mês — revise em Configurações antes de emitir notas."
+                if prestador.aliquota_atual is not None
+                else "Nenhuma alíquota de referência definida ainda — configure em Configurações."
+            ),
+        })
 
     return {
         "competencia": competencia,

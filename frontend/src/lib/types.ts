@@ -107,7 +107,12 @@ export type VinculoAtualizarRequest = Partial<Omit<VinculoCriarRequest, "tomador
   ativo?: boolean
 }
 
-export type TipoEventoCalendario = "prazo_emissao" | "recebimento_previsto" | "recebimento_confirmado" | "manual"
+export type TipoEventoCalendario =
+  | "prazo_emissao"
+  | "recebimento_previsto"
+  | "recebimento_confirmado"
+  | "revisar_aliquota"
+  | "manual"
 
 export interface EventoCalendario {
   data: string
@@ -368,6 +373,14 @@ export interface Prestador {
   bairro: string | null
   telefone: string | null
   email: string | null
+  // Marco 16, item 5 — alíquota de referência do Simples Nacional (só pra
+  // pré-preencher a Nova emissão; confirmação continua sempre obrigatória).
+  aliquota_atual: number | null
+  aliquota_atualizada_em: string | null
+}
+
+export interface AliquotaAtualizarRequest {
+  aliquota: number
 }
 
 export interface DashboardResumo {

@@ -76,6 +76,34 @@ def test_recebimento_confirmado_aparece_com_data_de_recebimento(db, prestador_te
     assert eventos[0]["valor"] == 150.0
 
 
+# --- Lembrete de alíquota (Marco 16, item 5) ---
+
+
+def test_revisar_aliquota_aparece_quando_nao_confirmada_no_mes(db, prestador_teste):
+    hoje = datetime.date.today()
+    eventos = eventos_calendario(db, prestador_teste.id, hoje.replace(day=1), hoje)
+    revisar = [e for e in eventos if e["tipo"] == "revisar_aliquota"]
+    assert len(revisar) == 1
+    assert revisar[0]["data"] == hoje.replace(day=1)
+
+
+def test_revisar_aliquota_some_apos_confirmar_no_mes(db, prestador_teste):
+    hoje = datetime.date.today()
+    prestador_teste.aliquota_atual = 6.0
+    prestador_teste.aliquota_atualizada_em = hoje
+    db.flush()
+
+    eventos = eventos_calendario(db, prestador_teste.id, hoje.replace(day=1), hoje)
+    assert [e for e in eventos if e["tipo"] == "revisar_aliquota"] == []
+
+
+def test_revisar_aliquota_nao_aparece_fora_do_mes_corrente(db, prestador_teste):
+    """Ligado ao calendário real, não à competência navegada — consultar
+    agosto/2024 não deve trazer um lembrete de 'revisar agora'."""
+    eventos = eventos_calendario(db, prestador_teste.id, datetime.date(2024, 8, 1), datetime.date(2024, 8, 31))
+    assert [e for e in eventos if e["tipo"] == "revisar_aliquota"] == []
+
+
 def test_eventos_fora_do_intervalo_sao_descartados(db, prestador_teste, vinculo_teste):
     """O evento de prazo cai no dia 25 — pedir um intervalo que não cobre
     esse dia (mesmo dentro do mesmo mês) não deve trazer nada."""
@@ -87,6 +115,10 @@ def test_eventos_fora_do_intervalo_sao_descartados(db, prestador_teste, vinculo_
 def test_vinculo_sem_prazo_nem_previsao_nao_gera_evento(db, prestador_teste, vinculo_teste):
     montar(db, criar_rascunho(db, vinculo_teste, competencia="2026-08", valor=100.0))
     eventos = eventos_calendario(db, prestador_teste.id, datetime.date(2026, 1, 1), datetime.date(2026, 12, 31))
+    # o intervalo cobre o ano inteiro, então inclui o dia 1 do mês corrente
+    # (ver 'revisar_aliquota' em app/services/calendario.py — não é o que
+    # este teste quer verificar, então filtra fora daqui).
+    eventos = [e for e in eventos if e["tipo"] != "revisar_aliquota"]
     assert eventos == []
 
 

@@ -266,6 +266,10 @@ def test_resumo_mes_alerta_certificado_vencendo(db, prestador_teste):
         pfx_criptografado=b"x", senha_criptografada=b"y",
         validade=datetime.date.today() + datetime.timedelta(days=5),
     ))
+    # confirma a alíquota deste mês, pra isolar o alerta de certificado do
+    # alerta de alíquota pendente (Marco 16, item 5 — ver
+    # test_resumo_mes_alerta_aliquota_pendente_* mais abaixo).
+    prestador_teste.aliquota_atualizada_em = datetime.date.today()
     db.flush()
 
     resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
@@ -275,11 +279,55 @@ def test_resumo_mes_alerta_certificado_vencendo(db, prestador_teste):
 
 
 def test_resumo_mes_sem_alerta_quando_certificado_longe_do_vencimento(db, prestador_teste, certificado_teste):
+    import datetime
+
     from app.services.certificados import salvar_certificado
     from app.services.dashboard import resumo_mes
     from app.config import get_settings
 
     salvar_certificado(db, prestador_teste.id, certificado_teste["pfx_bytes"], certificado_teste["senha"], get_settings().cert_master_key)
+    prestador_teste.aliquota_atualizada_em = datetime.date.today()
+    db.flush()
+    resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
+    assert resumo["atencao"] == []
+
+
+# --- Alíquota de referência pendente (Marco 16, item 5) ---
+
+
+def test_resumo_mes_alerta_aliquota_pendente_quando_nunca_definida(db, prestador_teste):
+    from app.services.dashboard import resumo_mes
+
+    resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
+    assert len(resumo["atencao"]) == 1
+    assert resumo["atencao"][0]["tipo"] == "aliquota_pendente"
+    assert "Nenhuma alíquota" in resumo["atencao"][0]["mensagem"]
+
+
+def test_resumo_mes_alerta_aliquota_pendente_quando_desatualizada(db, prestador_teste):
+    import datetime
+
+    from app.services.dashboard import resumo_mes
+
+    prestador_teste.aliquota_atual = 6.0
+    prestador_teste.aliquota_atualizada_em = datetime.date.today() - datetime.timedelta(days=45)
+    db.flush()
+
+    resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
+    assert len(resumo["atencao"]) == 1
+    assert resumo["atencao"][0]["tipo"] == "aliquota_pendente"
+    assert "Ainda não confirmada" in resumo["atencao"][0]["mensagem"]
+
+
+def test_resumo_mes_sem_alerta_quando_aliquota_confirmada_no_mes(db, prestador_teste):
+    import datetime
+
+    from app.services.dashboard import resumo_mes
+
+    prestador_teste.aliquota_atual = 6.0
+    prestador_teste.aliquota_atualizada_em = datetime.date.today()
+    db.flush()
+
     resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
     assert resumo["atencao"] == []
 

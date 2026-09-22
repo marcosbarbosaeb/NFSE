@@ -1,4 +1,4 @@
-import { CheckCircle2, KeyRound, Moon, ShieldAlert, Sun, UploadCloud } from "lucide-react"
+import { CheckCircle2, KeyRound, Moon, Percent, ShieldAlert, Sun, UploadCloud } from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
@@ -189,7 +189,87 @@ export function ConfiguracoesPage() {
           <p className="mt-4 text-xs text-slate-400 dark:text-slate-500">
             Edição desses dados ainda é administrativa (fora do painel) — fala com quem cuida do backend se precisar mudar algo aqui.
           </p>
+
+          <AliquotaForm prestador={prestador} onAtualizado={setPrestador} />
         </Card>
+      )}
+    </div>
+  )
+}
+
+function AliquotaForm({ prestador, onAtualizado }: { prestador: Prestador; onAtualizado: (p: Prestador) => void }) {
+  const [aliquota, setAliquota] = useState(prestador.aliquota_atual != null ? String(prestador.aliquota_atual) : "")
+  const [enviando, setEnviando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const [sucesso, setSucesso] = useState(false)
+
+  const confirmadaEsteMes = (() => {
+    if (!prestador.aliquota_atualizada_em) return false
+    const hoje = new Date()
+    const data = new Date(`${prestador.aliquota_atualizada_em}T00:00:00`)
+    return data.getFullYear() === hoje.getFullYear() && data.getMonth() === hoje.getMonth()
+  })()
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    setErro(null)
+    setSucesso(false)
+    const numero = Number(aliquota.replace(",", "."))
+    if (Number.isNaN(numero) || numero < 0 || numero > 100) {
+      setErro("Informe um percentual entre 0 e 100.")
+      return
+    }
+    setEnviando(true)
+    try {
+      const atualizado = await api.patch<Prestador>("/prestador/aliquota", { aliquota: numero })
+      onAtualizado(atualizado)
+      setSucesso(true)
+    } catch (err) {
+      setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="mt-6 border-t border-slate-100 dark:border-slate-700/60 pt-4">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300">
+          <Percent size={15} /> Alíquota do Simples Nacional (referência)
+        </h3>
+        {confirmadaEsteMes ? (
+          <Badge variant="success">Confirmada este mês</Badge>
+        ) : (
+          <Badge variant="warning">{prestador.aliquota_atual == null ? "Não definida" : "Revisar este mês"}</Badge>
+        )}
+      </div>
+      <p className="mb-3 text-xs text-slate-400 dark:text-slate-500">
+        Usada só pra pré-preencher o campo de alíquota ao criar uma nova nota — não calcula nem gera boleto de
+        imposto, é só pra você não esquecer de conferir o número todo mês (ver lembrete no calendário).
+      </p>
+      {erro && <p className="mb-3 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
+      {sucesso && <p className="mb-3 rounded-lg bg-success-50 px-4 py-3 text-sm text-success-700">Alíquota confirmada.</p>}
+      <form onSubmit={onSubmit} className="flex items-end gap-3">
+        <div className="flex-1">
+          <Field
+            label="Alíquota (%)"
+            type="number"
+            step="0.01"
+            min="0"
+            max="100"
+            required
+            value={aliquota}
+            onChange={(e) => setAliquota(e.target.value)}
+          />
+        </div>
+        <Button type="submit" variant="accent" disabled={enviando}>
+          {enviando ? "Salvando..." : "Confirmar"}
+        </Button>
+      </form>
+      {prestador.aliquota_atualizada_em && (
+        <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+          Última confirmação: {new Date(`${prestador.aliquota_atualizada_em}T00:00:00`).toLocaleDateString("pt-BR")}
+        </p>
       )}
     </div>
   )

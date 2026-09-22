@@ -80,6 +80,17 @@ class Prestador(Base):
     # valor "atual" pra pré-preencher, mas a confirmação antes de emitir é
     # sempre obrigatória (ver Contingências: "Alíquota errada" no plano).
     aliquota_atual: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
+    # Marco 16, item 5 — depois da pesquisa de viabilidade de uma "aba de
+    # impostos" (DAS-MEI), Marcos decidiu não construir cálculo/boleto por
+    # enquanto (exigiria integração paga com a SERPRO): só quer poder
+    # registrar essa alíquota de referência e ser lembrado mensalmente de
+    # revisá-la. Esta data marca a última vez que `aliquota_atual` foi
+    # confirmada/alterada (ver PATCH /api/prestador/aliquota) — separada de
+    # `atualizado_em` de propósito, porque esse campo muda com QUALQUER
+    # edição do prestador, não só a alíquota. É o que permite ao dashboard
+    # e ao calendário saberem se ela já foi revisada NESTE mês (ver
+    # app/services/dashboard.py e app/services/calendario.py).
+    aliquota_atualizada_em: Mapped[date | None] = mapped_column(Date)
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(

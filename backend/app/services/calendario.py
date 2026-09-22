@@ -25,6 +25,14 @@ existem (Emissao, PagamentoRecebido, PrestadorTomador):
    `data_recebimento` preenchida dentro do intervalo — dado real, não
    previsão (por isso não depende de `dias_para_recebimento` estar
    configurado).
+4. 'revisar_aliquota' — Marco 16, item 5: um lembrete no dia 1 de cada mês
+   do intervalo pra confirmar a alíquota de referência do Simples Nacional
+   (`Prestador.aliquota_atual`), IGUAL ao 'prazo_emissao' já sai da lista
+   assim que a competência tem emissão: aqui, sai assim que
+   `aliquota_atualizada_em` cai naquele mês (ver PATCH
+   /api/prestador/aliquota). Não é cálculo de imposto nem gera boleto —
+   Marcos decidiu (22/09/2026) não construir isso agora; só quer ser
+   lembrado de revisar o número manualmente.
 """
 import datetime
 import uuid
@@ -32,7 +40,7 @@ from calendar import monthrange
 
 from sqlalchemy.orm import Session
 
-from app.models import Emissao, EventoManual, PagamentoRecebido
+from app.models import Emissao, EventoManual, PagamentoRecebido, Prestador
 from app.services.vinculos import listar_vinculos_ativos
 
 
@@ -139,8 +147,32 @@ def eventos_calendario(db: Session, prestador_id: uuid.UUID, inicio: datetime.da
             "valor": float(pagamento.valor),
         })
 
-    # 4) Eventos manuais (Marco 15) — únicos com linha própria no banco
-    # (os 3 tipos acima são sempre recalculados, nunca guardados).
+    # 4) Lembrete de revisar a alíquota de referência (Marco 16) — ao
+    # contrário de 'prazo_emissao' (um evento por competência do
+    # intervalo), este é ligado ao calendário REAL (`date.today()`), não à
+    # competência sendo consultada: não faz sentido pedir pra revisar a
+    # alíquota "de agosto de 2024" ao navegar pro passado. Só entra na
+    # resposta quando o intervalo pedido cobre o dia 1 do mês corrente.
+    prestador = db.query(Prestador).filter_by(id=prestador_id).one_or_none()
+    if prestador is not None:
+        hoje = datetime.date.today()
+        ja_confirmada_este_mes = (
+            prestador.aliquota_atualizada_em is not None
+            and (prestador.aliquota_atualizada_em.year, prestador.aliquota_atualizada_em.month) == (hoje.year, hoje.month)
+        )
+        data_evento = datetime.date(hoje.year, hoje.month, 1)
+        if not ja_confirmada_este_mes and inicio <= data_evento <= fim:
+            eventos.append({
+                "data": data_evento,
+                "tipo": "revisar_aliquota",
+                "titulo": "Revisar alíquota do Simples Nacional",
+                "vinculo_id": None,
+                "apelido": None,
+                "valor": None,
+            })
+
+    # 5) Eventos manuais (Marco 15) — únicos com linha própria no banco
+    # (os tipos acima são sempre recalculados, nunca guardados).
     manuais = (
         db.query(EventoManual)
         .filter(

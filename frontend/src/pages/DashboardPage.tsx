@@ -26,6 +26,7 @@ const PONTO_EVENTO: Record<TipoEventoCalendario, string> = {
   prazo_emissao: "bg-warning-600",
   recebimento_previsto: "bg-primary-600",
   recebimento_confirmado: "bg-success-600",
+  revisar_aliquota: "bg-slate-500",
   manual: "bg-accent-600",
 }
 

@@ -438,7 +438,9 @@ class VinculoAtualizarRequest(BaseModel):
 class PrestadorResponse(BaseModel):
     """Marco 14 — tela de Configurações (dados básicos, somente leitura por
     enquanto: não existe endpoint de edição ainda, é administrativo via
-    banco/scripts — ver DEPLOY.md)."""
+    banco/scripts — ver DEPLOY.md). Exceção: `aliquota_atual` TEM edição
+    própria (ver AliquotaAtualizarRequest / PATCH /api/prestador/aliquota),
+    porque é o único dado aqui que muda mês a mês na operação normal."""
     razao_social: str
     cpf_cnpj: str
     inscricao_municipal: str | None = None
@@ -450,8 +452,19 @@ class PrestadorResponse(BaseModel):
     bairro: str | None = None
     telefone: str | None = None
     email: str | None = None
+    # Marco 16, item 5 — alíquota de referência do Simples Nacional (só pra
+    # pré-preencher o campo aliq_sn na Nova emissão; nunca aplicada sozinha
+    # sem confirmação, ver docstring de Prestador.aliquota_atual).
+    aliquota_atual: float | None = None
+    aliquota_atualizada_em: date | None = None
 
     model_config = {"from_attributes": True}
+
+
+class AliquotaAtualizarRequest(BaseModel):
+    """Marco 16, item 5 — PATCH /api/prestador/aliquota. Alíquota do Simples
+    Nacional em %% (mesma unidade de GerarDpsRequest.aliq_sn, ex.: 12.5)."""
+    aliquota: float = Field(ge=0, le=100)
 
 
 class EmissaoListaLinha(BaseModel):

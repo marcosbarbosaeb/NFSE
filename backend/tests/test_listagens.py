@@ -194,3 +194,26 @@ def test_ver_prestador(client, prestador_teste):
     assert dados["razao_social"] == prestador_teste.razao_social
     assert dados["cpf_cnpj"] == prestador_teste.cpf_cnpj
     assert dados["cod_municipio"] == prestador_teste.cod_municipio
+    assert dados["aliquota_atual"] is None
+    assert dados["aliquota_atualizada_em"] is None
+
+
+# --- PATCH /api/prestador/aliquota (Marco 16, item 5) ---
+
+
+def test_atualizar_aliquota(client, prestador_teste):
+    import datetime
+
+    resp = client.patch("/api/prestador/aliquota", json={"aliquota": 6.5})
+    assert resp.status_code == 200, resp.text
+    dados = resp.json()
+    assert dados["aliquota_atual"] == 6.5
+    assert dados["aliquota_atualizada_em"] == datetime.date.today().isoformat()
+
+
+def test_atualizar_aliquota_fora_do_intervalo_da_422(client, prestador_teste):
+    resp = client.patch("/api/prestador/aliquota", json={"aliquota": 150})
+    assert resp.status_code == 422
+
+    resp = client.patch("/api/prestador/aliquota", json={"aliquota": -1})
+    assert resp.status_code == 422

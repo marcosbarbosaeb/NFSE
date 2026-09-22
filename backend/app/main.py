@@ -36,6 +36,7 @@ aberta E com um certificado A1 de verdade carregado.
 import datetime
 import re
 import uuid
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -49,6 +50,7 @@ from app.database import definir_prestador_atual, get_db
 from app.fiscal.dps import DescricaoIncompletaError
 from app.models import Assinatura, Certificado, Emissao, Prestador, Usuario
 from app.schemas import (
+    AliquotaAtualizarRequest,
     AssinaturaResponse,
     CadastroRequest,
     CadastroResponse,
@@ -622,6 +624,32 @@ def api_ver_prestador(db: Session = Depends(db_sessao), prestador_id: uuid.UUID 
     prestador = db.query(Prestador).filter_by(id=prestador_id).one_or_none()
     if prestador is None:
         raise HTTPException(status_code=404, detail="Prestador não encontrado.")
+    return prestador
+
+
+@app.patch("/api/prestador/aliquota", response_model=PrestadorResponse, responses={404: {"model": ErroResponse}})
+def api_atualizar_aliquota(
+    req: AliquotaAtualizarRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)
+):
+    """Marco 16, item 5 — a única edição própria de Prestador (o resto
+    continua administrativo, ver docstring de PrestadorResponse). Grava
+    `aliquota_atualizada_em = hoje` junto, pra dashboard/calendário saberem
+    que ela já foi revisada neste mês (ver app/services/dashboard.py e
+    app/services/calendario.py) — mesmo que o VALOR não tenha mudado: o
+    ponto é a CONFIRMAÇÃO mensal, não só a mudança de número."""
+    prestador = db.query(Prestador).filter_by(id=prestador_id).one_or_none()
+    if prestador is None:
+        raise HTTPException(status_code=404, detail="Prestador não encontrado.")
+    prestador.aliquota_atual = Decimal(str(req.aliquota))
+    prestador.aliquota_atualizada_em = datetime.date.today()
+    db.commit()
+    # SEM db.refresh() de propósito: a sessão usa expire_on_commit=False
+    # (ver app/database.py) — `prestador` já tem os valores que acabou de
+    # setar. Um refresh forçaria um SELECT numa transação NOVA, onde a
+    # variável de sessão da RLS (SET LOCAL, só vale durante a transação do
+    # commit) já não existe mais — foi exatamente isso que quebrou aqui
+    # (RLS rejeitando com "invalid input syntax for type uuid: ''"),
+    # mesmo padrão que api_atualizar_vinculo já evita.
     return prestador
 
 

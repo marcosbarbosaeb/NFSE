@@ -14,6 +14,7 @@ import type {
   Emissao,
   GerarDpsRequest,
   ImportacaoCsvResultado,
+  Prestador,
   VerificarDuplicata,
   VinculoResumo,
 } from "../lib/types"
@@ -55,9 +56,13 @@ export function NfsePage() {
   const [erro, setErro] = useState<string | null>(null)
   const [modalNova, setModalNova] = useState(false)
   const [modalCsv, setModalCsv] = useState(false)
+  // Marco 16, item 5 — só pra pré-preencher aliq_sn na Nova emissão (ver
+  // NovaEmissaoModal abaixo); nunca aplicada sem o usuário poder confirmar.
+  const [aliquotaReferencia, setAliquotaReferencia] = useState<number | null>(null)
 
   useEffect(() => {
     api.get<VinculoResumo[]>("/vinculos").then(setVinculos)
+    api.get<Prestador>("/prestador").then((p) => setAliquotaReferencia(p.aliquota_atual))
   }, [])
 
   function recarregar() {
@@ -242,6 +247,7 @@ export function NfsePage() {
       {modalNova && (
         <NovaEmissaoModal
           vinculos={vinculos}
+          aliquotaReferencia={aliquotaReferencia}
           onClose={() => setModalNova(false)}
           onCriada={() => {
             setModalNova(false)
@@ -261,10 +267,12 @@ export function NfsePage() {
 
 function NovaEmissaoModal({
   vinculos,
+  aliquotaReferencia,
   onClose,
   onCriada,
 }: {
   vinculos: VinculoResumo[]
+  aliquotaReferencia: number | null
   onClose: () => void
   onCriada: (emissao: Emissao) => void
 }) {
@@ -272,7 +280,10 @@ function NovaEmissaoModal({
   const [competencia, setCompetencia] = useState(competenciaAtual())
   const [valor, setValor] = useState("")
   const [ordem, setOrdem] = useState("")
-  const [aliqSn, setAliqSn] = useState("")
+  // Pré-preenchida com a alíquota de referência de Configurações, quando
+  // existir — sempre editável, nunca aplicada sem a pessoa ver/confirmar
+  // (mesma alíquota que o backend também aceita None e não assume nada).
+  const [aliqSn, setAliqSn] = useState(aliquotaReferencia != null ? String(aliquotaReferencia) : "")
   const [tpAmb, setTpAmb] = useState<"1" | "2">("2")
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -401,7 +412,7 @@ function NovaEmissaoModal({
           min="0"
           value={aliqSn}
           onChange={(e) => setAliqSn(e.target.value)}
-          hint="Opcional."
+          hint={aliquotaReferencia != null ? "Pré-preenchida com a referência de Configurações — confira antes de gerar." : "Opcional."}
         />
 
         <FieldWrap label="Ambiente">
