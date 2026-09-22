@@ -98,6 +98,48 @@ def test_listar_dps_ano_malformado_da_422(client, prestador_teste):
     assert resp.status_code == 422
 
 
+# --- Marco 16 (item 3): confronto emitidas x pagas ---
+
+
+def test_listar_dps_marca_pagamento_recebido_quando_ha_pagamento_pro_mesmo_vinculo_e_competencia(client, vinculo_teste):
+    client.post("/api/dps", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08", "valor": 100.0})
+    client.post("/api/pagamentos", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08", "valor": 100.0})
+
+    resp = client.get("/api/dps")
+    dados = resp.json()
+    assert len(dados) == 1
+    assert dados[0]["pagamento_recebido"] is True
+
+
+def test_listar_dps_pagamento_recebido_false_sem_pagamento_correspondente(client, vinculo_teste):
+    client.post("/api/dps", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08", "valor": 100.0})
+    # pagamento de OUTRA competência não deve contar
+    client.post("/api/pagamentos", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-07", "valor": 100.0})
+
+    resp = client.get("/api/dps")
+    dados = resp.json()
+    assert dados[0]["pagamento_recebido"] is False
+
+
+def test_listar_dps_filtra_pagamento_recebido(client, vinculo_teste):
+    client.post("/api/dps", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08", "valor": 100.0})
+    client.post("/api/dps", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-09", "valor": 200.0})
+    client.post("/api/pagamentos", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08", "valor": 100.0})
+
+    recebidas = client.get("/api/dps", params={"pagamento": "recebido"}).json()
+    assert len(recebidas) == 1
+    assert recebidas[0]["competencia"] == "2026-08"
+
+    pendentes = client.get("/api/dps", params={"pagamento": "pendente"}).json()
+    assert len(pendentes) == 1
+    assert pendentes[0]["competencia"] == "2026-09"
+
+
+def test_listar_dps_pagamento_invalido_da_422(client, prestador_teste):
+    resp = client.get("/api/dps", params={"pagamento": "quitada"})
+    assert resp.status_code == 422
+
+
 # --- GET /api/pagamentos (lista) ---
 
 

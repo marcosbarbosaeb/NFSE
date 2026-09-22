@@ -1,4 +1,4 @@
-import { FileUp, Plus, Search } from "lucide-react"
+import { CheckCircle2, Clock, FileText, FileUp, Plus, Search } from "lucide-react"
 import { type FormEvent, useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { Badge } from "../components/ui/Badge"
@@ -6,6 +6,7 @@ import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { Field, FieldWrap } from "../components/ui/Field"
 import { Modal } from "../components/ui/Modal"
+import { StatCard } from "../components/ui/StatCard"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { competenciaAtual, formatBRL } from "../lib/format"
 import type {
@@ -36,9 +37,17 @@ function badgeEstado(estado: string, label: string) {
   return <Badge variant={info?.variant ?? "neutral"}>{label}</Badge>
 }
 
+// Marco 16 (item 3, pedido do Marcos: "é importante a pessoa confrontar
+// notas emitidas com notas pagas") — mesmo badge do dashboard (só a
+// competência corrente), aqui aplicado à lista completa.
+function badgePagamento(recebido: boolean) {
+  return recebido ? <Badge variant="success">Recebida</Badge> : <Badge variant="warning">Pendente</Badge>
+}
+
 export function NfsePage() {
   const [ano, setAno] = useState<string>(String(ANO_ATUAL))
   const [vinculoFiltro, setVinculoFiltro] = useState("")
+  const [pagamentoFiltro, setPagamentoFiltro] = useState<"" | "recebido" | "pendente">("")
   const [busca, setBusca] = useState("")
   const [emissoes, setEmissoes] = useState<EmissaoListaLinha[] | null>(null)
   const [vinculos, setVinculos] = useState<VinculoResumo[]>([])
@@ -66,12 +75,36 @@ export function NfsePage() {
 
   useEffect(recarregar, [ano, vinculoFiltro])
 
+  // Filtro de pagamento aplicado no cliente (não no servidor, embora
+  // /api/dps aceite ?pagamento=...): assim o resumo de confronto abaixo
+  // continua mostrando emitidas x pagas lado a lado, mesmo com um dos dois
+  // lados selecionado no filtro.
   const filtradas = useMemo(() => {
     if (!emissoes) return []
     const termo = busca.trim().toLowerCase()
-    if (!termo) return emissoes
-    return emissoes.filter((e) => e.apelido.toLowerCase().includes(termo) || e.tomador_razao_social.toLowerCase().includes(termo))
-  }, [emissoes, busca])
+    return emissoes.filter((e) => {
+      if (pagamentoFiltro === "recebido" && !e.pagamento_recebido) return false
+      if (pagamentoFiltro === "pendente" && e.pagamento_recebido) return false
+      if (!termo) return true
+      return e.apelido.toLowerCase().includes(termo) || e.tomador_razao_social.toLowerCase().includes(termo)
+    })
+  }, [emissoes, busca, pagamentoFiltro])
+
+  // Confronto emitidas x pagas (item 3 do Marco 16) — sempre sobre TODAS as
+  // emissões ativas do filtro de ano/fornecedor corrente, independente do
+  // filtro de pagamento selecionado (senão o resumo ficaria só de um lado).
+  const confronto = useMemo(() => {
+    const ativas = (emissoes ?? []).filter((e) => e.estado !== "cancelada" && e.estado !== "substituida")
+    const recebidas = ativas.filter((e) => e.pagamento_recebido)
+    const pendentes = ativas.filter((e) => !e.pagamento_recebido)
+    return {
+      totalEmitidas: ativas.length,
+      totalRecebidas: recebidas.length,
+      totalPendentes: pendentes.length,
+      valorRecebido: recebidas.reduce((soma, e) => soma + e.valor, 0),
+      valorPendente: pendentes.reduce((soma, e) => soma + e.valor, 0),
+    }
+  }, [emissoes])
 
   return (
     <div className="flex flex-col gap-6">
@@ -88,6 +121,34 @@ export function NfsePage() {
             <Plus size={16} /> Nova emissão
           </Button>
         </div>
+      </div>
+
+      {/* Marco 16 (item 3) — confronto notas emitidas x notas pagas, pedido
+          do Marcos. Sempre reflete ano/fornecedor selecionados, independente
+          do filtro de pagamento abaixo (senão o resumo ficaria só de um lado). */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard
+          icon={<FileText size={18} />}
+          iconClassName="bg-primary-50 text-primary-600"
+          label="Notas emitidas"
+          value={confronto.totalEmitidas}
+          sublabel={ano ? `em ${ano}` : "no período"}
+        />
+        <StatCard
+          icon={<CheckCircle2 size={18} />}
+          iconClassName="bg-success-50 text-success-600"
+          label="Pagas"
+          value={confronto.totalRecebidas}
+          sublabel={formatBRL(confronto.valorRecebido)}
+        />
+        <StatCard
+          icon={<Clock size={18} />}
+          iconClassName="bg-warning-50 text-warning-600"
+          label="Emitidas sem pagamento"
+          value={confronto.totalPendentes}
+          sublabel={formatBRL(confronto.valorPendente)}
+          sublabelClassName="text-warning-600"
+        />
       </div>
 
       <Card className="p-5">
@@ -115,6 +176,15 @@ export function NfsePage() {
               </option>
             ))}
           </select>
+          <select
+            value={pagamentoFiltro}
+            onChange={(e) => setPagamentoFiltro(e.target.value as "" | "recebido" | "pendente")}
+            className="rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+          >
+            <option value="">Pagamento: todos</option>
+            <option value="recebido">Só pagas</option>
+            <option value="pendente">Só pendentes</option>
+          </select>
           <div className="relative ml-auto w-full max-w-xs">
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
             <input
@@ -138,6 +208,7 @@ export function NfsePage() {
                 <th className="py-2 font-medium">Valor</th>
                 <th className="py-2 font-medium">Nº DPS</th>
                 <th className="py-2 font-medium">Estado</th>
+                <th className="py-2 font-medium">Pagamento</th>
               </tr>
             </thead>
             <tbody>
@@ -153,11 +224,12 @@ export function NfsePage() {
                   <td className="py-3 text-slate-600 dark:text-slate-300">{formatBRL(e.valor)}</td>
                   <td className="py-3 text-slate-500 dark:text-slate-400">{e.n_dps ?? "—"}</td>
                   <td className="py-3">{badgeEstado(e.estado, e.estado_label)}</td>
+                  <td className="py-3">{badgePagamento(e.pagamento_recebido)}</td>
                 </tr>
               ))}
               {filtradas.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={6} className="py-8 text-center text-slate-400 dark:text-slate-500">
                     Nenhuma nota encontrada.
                   </td>
                 </tr>

@@ -201,6 +201,7 @@ export interface EmissaoListaLinha {
   estado: string
   estado_label: string
   criado_em: string
+  pagamento_recebido: boolean
 }
 
 export interface GerarDpsRequest {

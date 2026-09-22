@@ -615,14 +615,21 @@ def api_listar_dps(
     ano: str | None = None,
     vinculo_id: uuid.UUID | None = None,
     estado: str | None = None,
+    pagamento: str | None = None,
     db: Session = Depends(db_sessao),
 ):
     """Marco 14 — tela 'NFS-e': lista completa (todas as competências),
     diferente de /api/painel/resumo-mes (só o mês corrente, pro dashboard).
-    Todos os filtros são opcionais. GET puro, sem efeito colateral."""
+    Todos os filtros são opcionais. GET puro, sem efeito colateral.
+
+    `pagamento` (Marco 16, item 3 — confronto emitidas x pagas): "recebido"
+    ou "pendente"; qualquer outro valor é rejeitado pra não filtrar
+    silenciosamente errado num typo de query string."""
     if ano is not None and (len(ano) != 4 or not ano.isdigit()):
         raise HTTPException(status_code=422, detail="ano deve estar no formato AAAA")
-    return listar_emissoes(db, ano=ano, vinculo_id=vinculo_id, estado=estado)
+    if pagamento is not None and pagamento not in ("recebido", "pendente"):
+        raise HTTPException(status_code=422, detail="pagamento deve ser 'recebido' ou 'pendente'")
+    return listar_emissoes(db, ano=ano, vinculo_id=vinculo_id, estado=estado, pagamento=pagamento)
 
 
 @app.post("/api/dps/importar-csv", response_model=ImportacaoCsvResponse, responses={400: {"model": ErroResponse}})

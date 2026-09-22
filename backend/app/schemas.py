@@ -452,6 +452,7 @@ class EmissaoListaLinha(BaseModel):
     estado: str
     estado_label: str
     criado_em: datetime
+    pagamento_recebido: bool
 
 
 class EventoCalendarioResponse(BaseModel):

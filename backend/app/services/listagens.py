@@ -19,13 +19,31 @@ from app.models import Despesa, Emissao, PagamentoRecebido, PrestadorTomador
 from app.services.dashboard import ESTADO_NFSE_LABEL
 
 
+def _pares_com_pagamento(db: Session) -> set[tuple[uuid.UUID, str]]:
+    """Todos os pares (vínculo, competência) que já têm AO MENOS UM
+    PagamentoRecebido — mesma aproximação do dashboard (app/services/
+    dashboard._tem_pagamento): um pagamento parcial já conta como
+    'recebido'. Carregado uma vez só (RLS já limita ao prestador atual;
+    volume é pequeno, um prestador não tem milhares de pagamentos), em vez
+    de uma query por emissão."""
+    linhas = db.query(PagamentoRecebido.prestador_tomador_id, PagamentoRecebido.competencia).distinct()
+    return {(vinculo_id, competencia) for vinculo_id, competencia in linhas}
+
+
 def listar_emissoes(
     db: Session,
     *,
     ano: str | None = None,
     vinculo_id: uuid.UUID | None = None,
     estado: str | None = None,
+    pagamento: str | None = None,
 ) -> list[dict]:
+    """`pagamento`: None = sem filtro; "recebido" só as com algum
+    PagamentoRecebido pro mesmo vínculo+competência; "pendente" as sem
+    nenhum — item 3 do Marco 16 (Marcos: "é importante a pessoa confrontar
+    notas emitidas com notas pagas"). Aplica-se independente do estado da
+    emissão (mesmo uma cancelada mostra o cruzamento como está, sem
+    esconder inconsistência)."""
     query = (
         db.query(Emissao)
         .options(joinedload(Emissao.vinculo).joinedload(PrestadorTomador.tomador))
@@ -45,7 +63,8 @@ def listar_emissoes(
     if estado:
         query = query.filter(Emissao.estado == estado)
 
-    return [
+    pares_pagos = _pares_com_pagamento(db)
+    linhas = [
         {
             "id": e.id,
             "vinculo_id": e.prestador_tomador_id,
@@ -58,9 +77,15 @@ def listar_emissoes(
             "estado": e.estado,
             "estado_label": ESTADO_NFSE_LABEL.get(e.estado, e.estado),
             "criado_em": e.criado_em,
+            "pagamento_recebido": (e.prestador_tomador_id, e.competencia) in pares_pagos,
         }
         for e in query.all()
     ]
+    if pagamento == "recebido":
+        linhas = [l for l in linhas if l["pagamento_recebido"]]
+    elif pagamento == "pendente":
+        linhas = [l for l in linhas if not l["pagamento_recebido"]]
+    return linhas
 
 
 def listar_pagamentos(
