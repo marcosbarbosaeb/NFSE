@@ -42,6 +42,8 @@ export interface AtencaoItem {
   tipo: string
   titulo: string
   mensagem: string
+  link?: string | null
+  link_label?: string | null
 }
 
 export interface PontoSerieMensal {
@@ -224,6 +226,13 @@ export interface VerificarDuplicata {
   estado: string | null
 }
 
+export interface Municipio {
+  codigo: string
+  nome: string
+  uf: string
+  rotulo: string
+}
+
 export interface ConsultaCnpj {
   razao_social: string
   logradouro: string | null
@@ -373,6 +382,7 @@ export interface Prestador {
   bairro: string | null
   telefone: string | null
   email: string | null
+  municipio_rotulo: string | null
   // Marco 16, item 5 — alíquota de referência do Simples Nacional (só pra
   // pré-preencher a Nova emissão; confirmação continua sempre obrigatória).
   aliquota_atual: number | null

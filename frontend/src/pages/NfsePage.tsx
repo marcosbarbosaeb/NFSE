@@ -4,6 +4,7 @@ import { Link } from "react-router-dom"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
+import { CampoPercentual } from "../components/ui/CampoPercentual"
 import { Field, FieldWrap } from "../components/ui/Field"
 import { Modal } from "../components/ui/Modal"
 import { StatCard } from "../components/ui/StatCard"
@@ -283,7 +284,7 @@ function NovaEmissaoModal({
   // Pré-preenchida com a alíquota de referência de Configurações, quando
   // existir — sempre editável, nunca aplicada sem a pessoa ver/confirmar
   // (mesma alíquota que o backend também aceita None e não assume nada).
-  const [aliqSn, setAliqSn] = useState(aliquotaReferencia != null ? String(aliquotaReferencia) : "")
+  const [aliqSn, setAliqSn] = useState<number | null>(aliquotaReferencia)
   const [tpAmb, setTpAmb] = useState<"1" | "2">("2")
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -331,7 +332,7 @@ function NovaEmissaoModal({
         competencia,
         valor: Number(valor),
         ordem: ordem || null,
-        aliq_sn: aliqSn ? Number(aliqSn) : null,
+        aliq_sn: aliqSn,
         tpAmb,
       }
       const criada = await api.post<Emissao>("/dps", payload)
@@ -405,13 +406,10 @@ function NovaEmissaoModal({
           />
         )}
 
-        <Field
+        <CampoPercentual
           label="Alíquota do Simples Nacional (%)"
-          type="number"
-          step="0.01"
-          min="0"
-          value={aliqSn}
-          onChange={(e) => setAliqSn(e.target.value)}
+          valor={aliqSn}
+          onChange={setAliqSn}
           hint={aliquotaReferencia != null ? "Pré-preenchida com a referência de Configurações — confira antes de gerar." : "Opcional."}
         />
 

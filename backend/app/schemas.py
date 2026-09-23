@@ -2,7 +2,9 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, computed_field, model_validator
+
+from app.services.municipios import rotulo_municipio
 
 
 class VinculoResumo(BaseModel):
@@ -62,6 +64,15 @@ class CancelarDpsRequest(BaseModel):
     mesma regra do schema oficial."""
     cmotivo: str
     xmotivo: str = Field(min_length=15, max_length=255)
+
+
+class MunicipioResponse(BaseModel):
+    """Cidade da tabela oficial (ver app/services/municipios.py) — a tela
+    mostra `rotulo` ('Belo Horizonte/MG') e guarda `codigo` por trás."""
+    codigo: str
+    nome: str
+    uf: str
+    rotulo: str
 
 
 class ConsultaCnpjResponse(BaseModel):
@@ -235,6 +246,10 @@ class AtencaoItem(BaseModel):
     tipo: str
     titulo: str
     mensagem: str
+    # Onde resolver (rota do painel) + rótulo do botão — o card "Precisa da
+    # sua atenção" vira um atalho, não só um aviso (pedido do Marcos).
+    link: str | None = None
+    link_label: str | None = None
 
 
 class PontoSerieMensal(BaseModel):
@@ -459,6 +474,12 @@ class PrestadorResponse(BaseModel):
     aliquota_atualizada_em: date | None = None
 
     model_config = {"from_attributes": True}
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def municipio_rotulo(self) -> str | None:
+        """'Belo Horizonte/MG' em vez do código IBGE cru (pedido do Marcos)."""
+        return rotulo_municipio(self.cod_municipio)
 
 
 class AliquotaAtualizarRequest(BaseModel):

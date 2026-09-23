@@ -232,6 +232,14 @@ export function DashboardPage() {
                     <li key={i} className="rounded-lg bg-warning-50 px-3 py-2">
                       <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{item.titulo}</p>
                       <p className="text-xs text-slate-500 dark:text-slate-400">{item.mensagem}</p>
+                      {item.link && (
+                        <Link
+                          to={item.link}
+                          className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-primary-600 hover:text-primary-700"
+                        >
+                          {item.link_label ?? "Resolver"} <ArrowRight size={12} />
+                        </Link>
+                      )}
                     </li>
                   ))}
                 </ul>

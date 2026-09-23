@@ -1,8 +1,10 @@
 import { CheckCircle2, KeyRound, Moon, Percent, ShieldAlert, Sun, UploadCloud } from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
+import { useLocation } from "react-router-dom"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
+import { CampoPercentual } from "../components/ui/CampoPercentual"
 import { Field } from "../components/ui/Field"
 import { useAuth } from "../lib/auth"
 import { ApiError, api, formatarErro } from "../lib/api"
@@ -41,6 +43,21 @@ export function ConfiguracoesPage() {
   }
 
   useEffect(carregar, [])
+
+  // Atalhos do card "Precisa da sua atenção" (ex.: /app/configuracoes#aliquota)
+  // — rola até a seção e destaca por alguns segundos, já que o React Router
+  // não faz isso sozinho com âncoras.
+  const location = useLocation()
+  useEffect(() => {
+    if (carregando || !location.hash) return
+    const alvo = document.getElementById(location.hash.slice(1))
+    if (!alvo) return
+    alvo.scrollIntoView({ behavior: "smooth", block: "center" })
+    alvo.classList.add("ring-2", "ring-primary-400")
+    alvo.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true })
+    const t = setTimeout(() => alvo.classList.remove("ring-2", "ring-primary-400"), 2500)
+    return () => clearTimeout(t)
+  }, [carregando, location.hash])
 
   async function enviarCertificado(e: FormEvent) {
     e.preventDefault()
@@ -111,7 +128,7 @@ export function ConfiguracoesPage() {
 
       {assinatura && <AssinaturaCard assinatura={assinatura} />}
 
-      <Card className="p-5">
+      <Card id="certificado" className="p-5 scroll-mt-24 transition-shadow">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Certificado digital (A1)</h2>
           {certificado?.carregado ? (
@@ -174,8 +191,8 @@ export function ConfiguracoesPage() {
               </div>
             )}
             <div>
-              <dt className="text-xs text-slate-400 dark:text-slate-500">Município (IBGE)</dt>
-              <dd className="text-slate-800 dark:text-slate-200">{prestador.cod_municipio}</dd>
+              <dt className="text-xs text-slate-400 dark:text-slate-500">Cidade</dt>
+              <dd className="text-slate-800 dark:text-slate-200">{prestador.municipio_rotulo ?? prestador.cod_municipio}</dd>
             </div>
             {(prestador.logradouro || prestador.cep) && (
               <div className="sm:col-span-2">
@@ -198,7 +215,7 @@ export function ConfiguracoesPage() {
 }
 
 function AliquotaForm({ prestador, onAtualizado }: { prestador: Prestador; onAtualizado: (p: Prestador) => void }) {
-  const [aliquota, setAliquota] = useState(prestador.aliquota_atual != null ? String(prestador.aliquota_atual) : "")
+  const [aliquota, setAliquota] = useState<number | null>(prestador.aliquota_atual)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [sucesso, setSucesso] = useState(false)
@@ -214,8 +231,8 @@ function AliquotaForm({ prestador, onAtualizado }: { prestador: Prestador; onAtu
     e.preventDefault()
     setErro(null)
     setSucesso(false)
-    const numero = Number(aliquota.replace(",", "."))
-    if (Number.isNaN(numero) || numero < 0 || numero > 100) {
+    const numero = aliquota
+    if (numero == null || numero < 0 || numero > 100) {
       setErro("Informe um percentual entre 0 e 100.")
       return
     }
@@ -232,7 +249,7 @@ function AliquotaForm({ prestador, onAtualizado }: { prestador: Prestador; onAtu
   }
 
   return (
-    <div className="mt-6 border-t border-slate-100 dark:border-slate-700/60 pt-4">
+    <div id="aliquota" className="-mx-2 mt-6 scroll-mt-24 rounded-xl border-t border-slate-100 px-2 pt-4 pb-2 transition-shadow dark:border-slate-700/60">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300">
           <Percent size={15} /> Alíquota do Simples Nacional (referência)
@@ -251,16 +268,7 @@ function AliquotaForm({ prestador, onAtualizado }: { prestador: Prestador; onAtu
       {sucesso && <p className="mb-3 rounded-lg bg-success-50 px-4 py-3 text-sm text-success-700">Alíquota confirmada.</p>}
       <form onSubmit={onSubmit} className="flex items-end gap-3">
         <div className="flex-1">
-          <Field
-            label="Alíquota (%)"
-            type="number"
-            step="0.01"
-            min="0"
-            max="100"
-            required
-            value={aliquota}
-            onChange={(e) => setAliquota(e.target.value)}
-          />
+          <CampoPercentual label="Alíquota (%)" required valor={aliquota} onChange={setAliquota} />
         </div>
         <Button type="submit" variant="accent" disabled={enviando}>
           {enviando ? "Salvando..." : "Confirmar"}

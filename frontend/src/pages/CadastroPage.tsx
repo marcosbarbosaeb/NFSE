@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle2, FileText, Loader2 } from "lucide-react"
 import { type FocusEvent, type FormEvent, useState } from "react"
 import { Link, Navigate, useSearchParams } from "react-router-dom"
 import { Button } from "../components/ui/Button"
+import { CampoCidade } from "../components/ui/CampoCidade"
 import { Field } from "../components/ui/Field"
 import { GoogleIcon } from "../components/ui/GoogleIcon"
 import { ApiError, api, formatarErro } from "../lib/api"
@@ -196,13 +197,12 @@ export function CadastroPage() {
 
               <Field label="Razão social" required value={razaoSocial} onChange={(e) => setRazaoSocial(e.target.value)} />
 
-              <Field
-                label="Município (código IBGE)"
+              <CampoCidade
+                label="Cidade"
                 required
-                value={codMunicipio}
-                onChange={(e) => setCodMunicipio(e.target.value)}
-                placeholder="7 dígitos"
-                hint={enderecoAutopreenchido ? "Preenchido automaticamente a partir do CNPJ — confira se está certo." : undefined}
+                codigo={codMunicipio}
+                onChange={setCodMunicipio}
+                hint={enderecoAutopreenchido ? "Preenchida automaticamente a partir do CNPJ — confira se está certa." : undefined}
               />
 
               <Field label="E-mail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />

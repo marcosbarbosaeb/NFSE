@@ -115,3 +115,12 @@ def test_consulta_cnpj_campos_ausentes_nao_quebra(monkeypatch):
     assert dados.logradouro is None
     assert dados.cod_municipio_sugerido is None
     assert dados.situacao_cadastral is None
+
+
+def test_codigo_ibge_invalido_da_brasilapi_e_trocado_pelo_resolvido_por_nome(monkeypatch):
+    """A tela não mostra mais o código pra pessoa corrigir (pedido do
+    Marcos) — então um código fora da tabela oficial é resolvido pelo
+    nome+UF aqui mesmo."""
+    corpo = {"razao_social": "X LTDA", "municipio": "MANAUS", "uf": "AM", "codigo_municipio_ibge": 1234}
+    monkeypatch.setattr(requests, "get", lambda *a, **kw: _RespostaFake(200, corpo))
+    assert consultar_cnpj("11222333000181").cod_municipio_sugerido == "1302603"

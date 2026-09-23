@@ -32,6 +32,8 @@ from dataclasses import dataclass
 
 import requests
 
+from app.services.municipios import codigo_por_nome, municipio_por_codigo
+
 _URL_BRASILAPI = "https://brasilapi.com.br/api/cnpj/v1/{cnpj}"
 _TIMEOUT_SEGUNDOS = 8
 
@@ -96,6 +98,12 @@ def consultar_cnpj(cnpj: str) -> DadosCnpj:
     cod_municipio_str = str(cod_municipio) if cod_municipio else None
     if cod_municipio_str and not cod_municipio_str.isdigit():
         cod_municipio_str = None
+    # Confere contra a tabela oficial embutida (app/services/municipios.py):
+    # um código que não existe nela é descartado e trocado pelo resolvido a
+    # partir de nome+UF — a tela não mostra mais o código pra pessoa
+    # corrigir, então ele precisa vir certo daqui.
+    if not municipio_por_codigo(cod_municipio_str):
+        cod_municipio_str = codigo_por_nome(dados.get("municipio"), dados.get("uf"))
 
     return DadosCnpj(
         razao_social=(dados.get("razao_social") or dados.get("nome") or "").strip(),

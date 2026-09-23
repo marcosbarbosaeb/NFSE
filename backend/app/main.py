@@ -76,6 +76,7 @@ from app.schemas import (
     GoogleOAuthUrlResponse,
     ImportacaoCsvResponse,
     LoginRequest,
+    MunicipioResponse,
     MensagemProntaResponse,
     NotaVisualResponse,
     PagamentoResponse,
@@ -94,6 +95,7 @@ from app.schemas import (
     VinculoDetalheResponse,
     VinculoResumo,
 )
+from app.services.municipios import buscar_municipios, municipio_por_codigo
 from app.services.billing import (
     AssinaturaNaoEncontradaError,
     BillingNaoConfiguradoError,
@@ -296,6 +298,22 @@ def api_callback_google_oauth(
 
     request.session["usuario_id"] = str(usuario.id)
     return RedirectResponse(f"{base}/app")
+
+
+@app.get("/api/municipios", response_model=list[MunicipioResponse])
+def api_buscar_municipios(q: str = "", uf: str | None = None):
+    """Autocomplete de cidade (pedido do Marcos: esconder o código IBGE da
+    pessoa). Público de propósito — o cadastro usa antes do login. Dado é a
+    tabela oficial embutida, sem nada do prestador."""
+    return buscar_municipios(q, uf=uf)
+
+
+@app.get("/api/municipios/{codigo}", response_model=MunicipioResponse, responses={404: {"model": ErroResponse}})
+def api_ver_municipio(codigo: str):
+    m = municipio_por_codigo(codigo)
+    if m is None:
+        raise HTTPException(status_code=404, detail="Município não encontrado.")
+    return m
 
 
 @app.get("/api/cnpj/{cnpj}", response_model=ConsultaCnpjResponse, responses={404: {"model": ErroResponse}, 422: {"model": ErroResponse}, 503: {"model": ErroResponse}})

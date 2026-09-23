@@ -2,9 +2,10 @@ import { type FormEvent, useEffect, useState } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
+import { CampoCidade } from "../components/ui/CampoCidade"
 import { Field, FieldWrap } from "../components/ui/Field"
 import { ApiError, api, formatarErro } from "../lib/api"
-import type { Tomador, VinculoCriarRequest, VinculoDetalhe } from "../lib/types"
+import type { Prestador, Tomador, VinculoCriarRequest, VinculoDetalhe } from "../lib/types"
 
 const METODOS_CAPTURA = [
   { value: "manual", label: "Manual (digitar o valor)" },
@@ -85,10 +86,15 @@ export function VinculoFormPage() {
       .finally(() => setCarregando(false))
   }, [editando, id])
 
-  // Modo criação: catálogo pra escolher um tomador existente.
+  // Modo criação: catálogo pra escolher um tomador existente, e o local de
+  // prestação já começa como a cidade do próprio prestador (caso comum).
   useEffect(() => {
     if (editando) return
     api.get<Tomador[]>("/tomadores?apenas_meus=false").then(setTomadores)
+    api
+      .get<Prestador>("/prestador")
+      .then((p) => setForm((f) => (f.cod_local_prestacao ? f : { ...f, cod_local_prestacao: p.cod_municipio })))
+      .catch(() => {})
   }, [editando])
 
   useEffect(() => {
@@ -221,12 +227,11 @@ export function VinculoFormPage() {
                   value={novoTomador.razao_social}
                   onChange={(e) => setNovoTomador((t) => ({ ...t, razao_social: e.target.value }))}
                 />
-                <Field
-                  label="Município (código IBGE)"
+                <CampoCidade
+                  label="Cidade do tomador"
                   required
-                  value={novoTomador.cod_municipio}
-                  onChange={(e) => setNovoTomador((t) => ({ ...t, cod_municipio: e.target.value }))}
-                  placeholder="7 dígitos"
+                  codigo={novoTomador.cod_municipio}
+                  onChange={(codigo) => setNovoTomador((t) => ({ ...t, cod_municipio: codigo }))}
                 />
                 <Field
                   label="CEP"
@@ -274,11 +279,12 @@ export function VinculoFormPage() {
               value={form.serie}
               onChange={(e) => atualizarCampo("serie", e.target.value)}
             />
-            <Field
-              label="Código do local de prestação (IBGE)"
+            <CampoCidade
+              label="Cidade onde o serviço é prestado"
               required
-              value={form.cod_local_prestacao}
-              onChange={(e) => atualizarCampo("cod_local_prestacao", e.target.value)}
+              codigo={form.cod_local_prestacao}
+              onChange={(codigo) => atualizarCampo("cod_local_prestacao", codigo)}
+              hint="Normalmente é a sua própria cidade."
             />
             <Field
               label="Código de tributação nacional"

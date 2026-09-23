@@ -37,6 +37,7 @@ isso é proposital, não uma lacuna:
 from lxml import etree
 
 from app.models import Emissao
+from app.services.municipios import rotulo_municipio
 
 NS = "http://www.sped.fazenda.gov.br/nfse"
 
@@ -75,15 +76,14 @@ def _fmt_cnpj(valor: str | None) -> str | None:
 
 
 def _fmt_endereco(logradouro, numero, complemento, bairro, cod_municipio, cep) -> str | None:
-    """Sem tabela de municípios neste sistema (só o código IBGE é guardado
-    — ver Prestador/Tomador em app/models.py), então o código aparece cru,
-    rotulado como 'mun.' — mesma escolha que integracao/resumo_dps.py já
-    fazia ('mun {cMun}'), não uma lacuna nova desta tela."""
+    """Cidade aparece como 'Belo Horizonte/MG' (tabela oficial embutida,
+    ver app/services/municipios.py) — antes era o código IBGE cru ('mun.
+    3106200'), que ninguém reconhece."""
     via = ", ".join(p for p in [logradouro, numero] if p)
     if complemento:
         via = f"{via} - {complemento}" if via else complemento
     resto = " - ".join(
-        p for p in [bairro, f"mun. {cod_municipio}" if cod_municipio else None, f"CEP {cep}" if cep else None] if p
+        p for p in [bairro, rotulo_municipio(cod_municipio) if cod_municipio else None, f"CEP {cep}" if cep else None] if p
     )
     endereco = " - ".join(p for p in [via, resto] if p)
     return endereco or None
