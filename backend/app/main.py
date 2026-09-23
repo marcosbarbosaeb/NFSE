@@ -634,8 +634,11 @@ def api_criar_evento_manual(
         db, prestador_id, data=req.data, titulo=req.titulo, descricao=req.descricao,
         categoria=req.categoria, valor=req.valor, prestador_tomador_id=req.vinculo_id,
     )
+    # monta a resposta ANTES do commit: ela consulta o vínculo, e depois do
+    # commit a variável de RLS (SET LOCAL) já não existe mais.
+    resposta = evento_manual_para_dict(db, evento)
     db.commit()
-    return evento_manual_para_dict(db, evento)
+    return resposta
 
 
 @app.patch("/api/calendario/eventos/{evento_id}", response_model=EventoCalendarioResponse, responses={404: {"model": ErroResponse}})
@@ -650,8 +653,9 @@ def api_atualizar_evento_manual(
         _vinculo_do_evento(db, campos["vinculo_id"])
         campos["prestador_tomador_id"] = campos.pop("vinculo_id")
     evento = atualizar_evento_manual(db, evento, **campos)
+    resposta = evento_manual_para_dict(db, evento)  # antes do commit (RLS)
     db.commit()
-    return evento_manual_para_dict(db, evento)
+    return resposta
 
 
 @app.put("/api/calendario/ajustes", responses={422: {"model": ErroResponse}})
