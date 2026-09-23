@@ -33,6 +33,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -91,6 +92,9 @@ class Prestador(Base):
     # e ao calendário saberem se ela já foi revisada NESTE mês (ver
     # app/services/dashboard.py e app/services/calendario.py).
     aliquota_atualizada_em: Mapped[date | None] = mapped_column(Date)
+    # Regra do lembrete mensal de alíquota no calendário (dia do mês).
+    # Nulo = dia 1 (padrão). Ver app/services/calendario.py.
+    dia_lembrete_aliquota: Mapped[int | None] = mapped_column(SmallInteger)
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
@@ -443,10 +447,39 @@ class EventoManual(Base):
     data: Mapped[date] = mapped_column(Date, nullable=False)
     titulo: Mapped[str] = mapped_column(String(200), nullable=False)
     descricao: Mapped[str | None] = mapped_column(Text)
+    # Marco 17 — tipo do evento manual: 'lembrete' (genérico),
+    # 'recebimento_previsto' (com valor e fornecedor opcionais) ou
+    # 'prazo_emissao'. Ver migração a81c2e5d7f30.
+    categoria: Mapped[str] = mapped_column(String(30), nullable=False, default="lembrete", server_default="lembrete")
+    valor: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    prestador_tomador_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prestador_tomador.id", ondelete="SET NULL")
+    )
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     prestador: Mapped["Prestador"] = relationship(back_populates="eventos_manuais")
+
+
+class AjusteEvento(Base):
+    """Marco 17 — ajuste de UMA ocorrência de um alerta calculado do
+    calendário (mover pra outra data ou ocultar), sem mudar a regra que o
+    gera. `chave` identifica a ocorrência: 'vinculo_id:AAAA-MM' pro prazo
+    de emissão, o id da emissão pra previsão de recebimento, 'AAAA-MM' pro
+    lembrete de alíquota (ver app/services/calendario.py)."""
+
+    __tablename__ = "ajuste_evento"
+    __table_args__ = (UniqueConstraint("prestador_id", "tipo", "chave", name="uq_ajuste_evento_ocorrencia"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False
+    )
+    tipo: Mapped[str] = mapped_column(String(30), nullable=False)
+    chave: Mapped[str] = mapped_column(String(100), nullable=False)
+    nova_data: Mapped[date | None] = mapped_column(Date)
+    oculto: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Assinatura(Base):

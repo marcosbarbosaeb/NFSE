@@ -1,6 +1,7 @@
 """Schemas Pydantic da API do painel interno (Marco 5/6)."""
 import uuid
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, computed_field, model_validator
 
@@ -472,6 +473,7 @@ class PrestadorResponse(BaseModel):
     # sem confirmação, ver docstring de Prestador.aliquota_atual).
     aliquota_atual: float | None = None
     aliquota_atualizada_em: date | None = None
+    dia_lembrete_aliquota: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -518,6 +520,14 @@ class EventoCalendarioResponse(BaseModel):
     # `id` é o que permite editar/excluir um evento manual pelo frontend.
     id: uuid.UUID | None = None
     descricao: str | None = None
+    # Marco 17 — manual: categoria (lembrete | recebimento_previsto |
+    # prazo_emissao). Calculados: `chave` da ocorrência (pra mover/ocultar
+    # só ela), se já foi ajustada, a data original e o valor atual da regra.
+    categoria: str | None = None
+    chave: str | None = None
+    ajustado: bool = False
+    data_original: date | None = None
+    regra_valor: int | None = None
 
 
 class CalendarioResponse(BaseModel):
@@ -526,16 +536,40 @@ class CalendarioResponse(BaseModel):
     eventos: list[EventoCalendarioResponse]
 
 
+CategoriaEventoManual = Literal["lembrete", "recebimento_previsto", "prazo_emissao"]
+
+
 class EventoManualCriarRequest(BaseModel):
     data: date
     titulo: str = Field(min_length=1, max_length=200)
     descricao: str | None = None
+    categoria: CategoriaEventoManual = "lembrete"
+    valor: float | None = Field(default=None, gt=0)
+    vinculo_id: uuid.UUID | None = None
 
 
 class EventoManualAtualizarRequest(BaseModel):
     data: date | None = None
     titulo: str | None = Field(default=None, min_length=1, max_length=200)
     descricao: str | None = None
+    categoria: CategoriaEventoManual | None = None
+    valor: float | None = Field(default=None, gt=0)
+    vinculo_id: uuid.UUID | None = None
+
+
+class AjusteOcorrenciaRequest(BaseModel):
+    """Marco 17 — mover (nova_data) ou ocultar UMA ocorrência de um alerta
+    calculado, sem mudar a regra (ver app/services/calendario.py)."""
+    tipo: Literal["prazo_emissao", "recebimento_previsto", "revisar_aliquota"]
+    chave: str = Field(min_length=1, max_length=100)
+    nova_data: date | None = None
+    oculto: bool = False
+
+
+class LembreteAliquotaRequest(BaseModel):
+    """Regra do lembrete de alíquota: dia do mês (1-31; meses curtos caem
+    no último dia)."""
+    dia: int = Field(ge=1, le=31)
 
 
 # --- Marco 15 (item 4): assinatura/cobrança (ver app/services/billing.py) ---

@@ -272,3 +272,111 @@ def test_endpoint_excluir_evento_manual_inexistente_da_404(client):
 
     resp = client.delete(f"/api/calendario/eventos/{uuid_mod.uuid4()}")
     assert resp.status_code == 404
+
+
+# --- Marco 17: eventos manuais com categoria + ajuste de ocorrência/regra ---
+
+
+def test_evento_manual_previsao_de_recebimento_com_valor_e_fornecedor(db, prestador_teste, vinculo_teste):
+    criar_evento_manual(
+        db, prestador_teste.id, data=datetime.date(2026, 8, 20), titulo="Previsão AWIN",
+        categoria="recebimento_previsto", valor=350.0, prestador_tomador_id=vinculo_teste.id,
+    )
+    ev = [e for e in eventos_calendario(db, prestador_teste.id, datetime.date(2026, 8, 1), datetime.date(2026, 8, 31)) if e["tipo"] == "manual"][0]
+    assert ev["categoria"] == "recebimento_previsto"
+    assert ev["valor"] == 350.0
+    assert ev["apelido"] == "Fornecedor Teste"
+
+
+def test_categoria_invalida_da_erro(db, prestador_teste):
+    with pytest.raises(ValueError):
+        criar_evento_manual(db, prestador_teste.id, data=datetime.date(2026, 8, 1), titulo="x", categoria="festa")
+
+
+def _prazos_agosto(db, prestador_teste):
+    return [e for e in eventos_calendario(db, prestador_teste.id, datetime.date(2026, 8, 1), datetime.date(2026, 8, 31))
+            if e["tipo"] == "prazo_emissao"]
+
+
+def test_mover_so_uma_ocorrencia_do_prazo(db, prestador_teste, vinculo_teste):
+    from app.services.calendario import ajustar_ocorrencia, remover_ajuste
+
+    atualizar_vinculo(db, vinculo_teste, dia_limite_emissao=25)
+    prazo = _prazos_agosto(db, prestador_teste)[0]
+    assert prazo["chave"] == f"{vinculo_teste.id}:2026-08"
+    assert prazo["regra_valor"] == 25
+
+    ajustar_ocorrencia(db, prestador_teste.id, tipo="prazo_emissao", chave=prazo["chave"], nova_data=datetime.date(2026, 8, 20))
+    movido = _prazos_agosto(db, prestador_teste)[0]
+    assert movido["data"] == datetime.date(2026, 8, 20)
+    assert movido["ajustado"] is True
+    assert movido["data_original"] == datetime.date(2026, 8, 25)
+
+    # setembro continua na regra
+    set_ = [e for e in eventos_calendario(db, prestador_teste.id, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+            if e["tipo"] == "prazo_emissao"]
+    assert set_[0]["data"] == datetime.date(2026, 9, 25)
+
+    assert remover_ajuste(db, tipo="prazo_emissao", chave=prazo["chave"]) is True
+    assert _prazos_agosto(db, prestador_teste)[0]["data"] == datetime.date(2026, 8, 25)
+
+
+def test_ocorrencia_movida_pra_outro_mes_aparece_no_mes_novo(db, prestador_teste, vinculo_teste):
+    from app.services.calendario import ajustar_ocorrencia
+
+    atualizar_vinculo(db, vinculo_teste, dia_limite_emissao=5)
+    ajustar_ocorrencia(db, prestador_teste.id, tipo="prazo_emissao", chave=f"{vinculo_teste.id}:2026-09", nova_data=datetime.date(2026, 8, 30))
+    datas = sorted(e["data"] for e in _prazos_agosto(db, prestador_teste))
+    assert datas == [datetime.date(2026, 8, 5), datetime.date(2026, 8, 30)]
+
+
+def test_ocultar_ocorrencia(db, prestador_teste, vinculo_teste):
+    from app.services.calendario import ajustar_ocorrencia
+
+    atualizar_vinculo(db, vinculo_teste, dia_limite_emissao=25)
+    ajustar_ocorrencia(db, prestador_teste.id, tipo="prazo_emissao", chave=f"{vinculo_teste.id}:2026-08", oculto=True)
+    assert _prazos_agosto(db, prestador_teste) == []
+
+
+def test_regra_do_dia_do_lembrete_de_aliquota(db, prestador_teste):
+    hoje = datetime.date.today()
+    prestador_teste.dia_lembrete_aliquota = 10
+    db.flush()
+    ev = [e for e in eventos_calendario(db, prestador_teste.id, hoje.replace(day=1), hoje.replace(day=28))
+          if e["tipo"] == "revisar_aliquota"][0]
+    assert ev["data"] == hoje.replace(day=10)
+    assert ev["regra_valor"] == 10
+
+
+def test_endpoints_ajuste_e_regra(client, db, vinculo_teste):
+    atualizar_vinculo(db, vinculo_teste, dia_limite_emissao=25)
+    chave = f"{vinculo_teste.id}:2026-08"
+    r = client.put("/api/calendario/ajustes", json={"tipo": "prazo_emissao", "chave": chave, "nova_data": "2026-08-18"})
+    assert r.status_code == 200, r.text
+    evs = client.get("/api/calendario", params={"inicio": "2026-08-01", "fim": "2026-08-31"}).json()["eventos"]
+    prazo = [e for e in evs if e["tipo"] == "prazo_emissao"][0]
+    assert prazo["data"] == "2026-08-18" and prazo["ajustado"] is True
+
+    assert client.put("/api/calendario/ajustes", json={"tipo": "recebimento_confirmado", "chave": "x", "oculto": True}).status_code == 422
+    assert client.put("/api/calendario/ajustes", json={"tipo": "prazo_emissao", "chave": chave}).status_code == 422
+
+    assert client.delete("/api/calendario/ajustes", params={"tipo": "prazo_emissao", "chave": chave}).json()["removido"] is True
+
+    r = client.patch("/api/prestador/lembrete-aliquota", json={"dia": 5})
+    assert r.status_code == 200 and r.json()["dia_lembrete_aliquota"] == 5
+    assert client.patch("/api/prestador/lembrete-aliquota", json={"dia": 40}).status_code == 422
+
+
+def test_endpoint_evento_manual_com_categoria(client, vinculo_teste):
+    r = client.post("/api/calendario/eventos", json={
+        "data": "2026-08-15", "titulo": "Previsão manual", "categoria": "recebimento_previsto",
+        "valor": 120.5, "vinculo_id": str(vinculo_teste.id),
+    })
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["categoria"] == "recebimento_previsto" and d["valor"] == 120.5 and d["apelido"] == "Fornecedor Teste"
+    r = client.patch(f"/api/calendario/eventos/{d['id']}", json={"categoria": "lembrete", "valor": None})
+    assert r.json()["categoria"] == "lembrete"
+    import uuid as uuid_mod
+    assert client.post("/api/calendario/eventos", json={
+        "data": "2026-08-15", "titulo": "x", "vinculo_id": str(uuid_mod.uuid4())}).status_code == 404

@@ -50,6 +50,7 @@ from app.database import definir_prestador_atual, get_db
 from app.fiscal.dps import DescricaoIncompletaError
 from app.models import Assinatura, Certificado, Emissao, Prestador, Usuario
 from app.schemas import (
+    AjusteOcorrenciaRequest,
     AliquotaAtualizarRequest,
     AssinaturaResponse,
     CadastroRequest,
@@ -75,6 +76,7 @@ from app.schemas import (
     GerarDpsRequest,
     GoogleOAuthUrlResponse,
     ImportacaoCsvResponse,
+    LembreteAliquotaRequest,
     LoginRequest,
     MunicipioResponse,
     MensagemProntaResponse,
@@ -118,11 +120,14 @@ from app.services.certificados import (
     salvar_certificado,
 )
 from app.services.calendario import (
+    ajustar_ocorrencia,
     atualizar_evento_manual,
     buscar_evento_manual,
     criar_evento_manual,
+    evento_manual_para_dict,
     eventos_calendario,
     excluir_evento_manual,
+    remover_ajuste,
 )
 from app.services.dashboard import resumo_mes
 from app.services.despesas import registrar_despesa
@@ -589,22 +594,34 @@ def api_calendario(
     return {"inicio": data_inicio, "fim": data_fim, "eventos": eventos}
 
 
+def _vinculo_do_evento(db: Session, vinculo_id: uuid.UUID | None):
+    """Fornecedor opcional de um evento manual — RLS garante que só acha
+    vínculo do próprio prestador."""
+    if vinculo_id is None:
+        return None
+    vinculo = buscar_vinculo(db, vinculo_id)
+    if vinculo is None:
+        raise HTTPException(status_code=404, detail="Fornecedor não encontrado.")
+    return vinculo
+
+
 @app.post("/api/calendario/eventos", response_model=EventoCalendarioResponse)
 def api_criar_evento_manual(
     req: EventoManualCriarRequest,
     db: Session = Depends(db_sessao),
     prestador_id: uuid.UUID = Depends(prestador_atual_id),
 ):
-    """Marco 15 — 'gerenciar eventos' na tela de Calendário: eventos criados
-    à mão pelo usuário (reunião, lembrete...), diferente dos 3 tipos
-    computados que /api/calendario também devolve (ver app/services/
-    calendario.py)."""
-    evento = criar_evento_manual(db, prestador_id, data=req.data, titulo=req.titulo, descricao=req.descricao)
+    """Eventos criados à mão pelo usuário (Marco 15) — desde o Marco 17 com
+    categoria: lembrete, previsão de recebimento (valor/fornecedor) ou
+    prazo, diferente dos tipos calculados que /api/calendario também
+    devolve (ver app/services/calendario.py)."""
+    _vinculo_do_evento(db, req.vinculo_id)
+    evento = criar_evento_manual(
+        db, prestador_id, data=req.data, titulo=req.titulo, descricao=req.descricao,
+        categoria=req.categoria, valor=req.valor, prestador_tomador_id=req.vinculo_id,
+    )
     db.commit()
-    return {
-        "data": evento.data, "tipo": "manual", "titulo": evento.titulo,
-        "id": evento.id, "descricao": evento.descricao,
-    }
+    return evento_manual_para_dict(db, evento)
 
 
 @app.patch("/api/calendario/eventos/{evento_id}", response_model=EventoCalendarioResponse, responses={404: {"model": ErroResponse}})
@@ -615,12 +632,36 @@ def api_atualizar_evento_manual(
     if evento is None:
         raise HTTPException(status_code=404, detail="Evento não encontrado (ou não pertence ao prestador ativo).")
     campos = req.model_dump(exclude_unset=True)
+    if "vinculo_id" in campos:
+        _vinculo_do_evento(db, campos["vinculo_id"])
+        campos["prestador_tomador_id"] = campos.pop("vinculo_id")
     evento = atualizar_evento_manual(db, evento, **campos)
     db.commit()
-    return {
-        "data": evento.data, "tipo": "manual", "titulo": evento.titulo,
-        "id": evento.id, "descricao": evento.descricao,
-    }
+    return evento_manual_para_dict(db, evento)
+
+
+@app.put("/api/calendario/ajustes", responses={422: {"model": ErroResponse}})
+def api_ajustar_ocorrencia(
+    req: AjusteOcorrenciaRequest,
+    db: Session = Depends(db_sessao),
+    prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Marco 17 — move ou oculta SÓ esta ocorrência de um alerta calculado
+    (a regra dos outros meses continua igual)."""
+    try:
+        ajustar_ocorrencia(db, prestador_id, tipo=req.tipo, chave=req.chave, nova_data=req.nova_data, oculto=req.oculto)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    db.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/calendario/ajustes")
+def api_remover_ajuste(tipo: str, chave: str, db: Session = Depends(db_sessao)):
+    """Volta a ocorrência pra data calculada pela regra."""
+    removido = remover_ajuste(db, tipo=tipo, chave=chave)
+    db.commit()
+    return {"ok": True, "removido": removido}
 
 
 @app.delete("/api/calendario/eventos/{evento_id}", responses={404: {"model": ErroResponse}})
@@ -668,6 +709,21 @@ def api_atualizar_aliquota(
     # commit) já não existe mais — foi exatamente isso que quebrou aqui
     # (RLS rejeitando com "invalid input syntax for type uuid: ''"),
     # mesmo padrão que api_atualizar_vinculo já evita.
+    return prestador
+
+
+@app.patch("/api/prestador/lembrete-aliquota", response_model=PrestadorResponse, responses={404: {"model": ErroResponse}})
+def api_atualizar_lembrete_aliquota(
+    req: LembreteAliquotaRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)
+):
+    """Marco 17 — regra do lembrete mensal de alíquota no calendário (dia do
+    mês). Mesmo cuidado de api_atualizar_aliquota: sem db.refresh() depois
+    do commit (RLS)."""
+    prestador = db.query(Prestador).filter_by(id=prestador_id).one_or_none()
+    if prestador is None:
+        raise HTTPException(status_code=404, detail="Prestador não encontrado.")
+    prestador.dia_lembrete_aliquota = req.dia
+    db.commit()
     return prestador
 
 

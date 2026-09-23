@@ -127,7 +127,15 @@ export interface EventoCalendario {
   // computados na hora pelo backend, sem id próprio).
   id?: string | null
   descricao?: string | null
+  // Marco 17 — categoria (manual) e ajuste de ocorrência (calculados).
+  categoria?: CategoriaEventoManual | null
+  chave?: string | null
+  ajustado?: boolean
+  data_original?: string | null
+  regra_valor?: number | null
 }
+
+export type CategoriaEventoManual = "lembrete" | "recebimento_previsto" | "prazo_emissao"
 
 export interface Calendario {
   inicio: string
@@ -139,6 +147,9 @@ export interface EventoManualCriarRequest {
   data: string
   titulo: string
   descricao?: string | null
+  categoria?: CategoriaEventoManual
+  valor?: number | null
+  vinculo_id?: string | null
 }
 
 export type EventoManualAtualizarRequest = Partial<EventoManualCriarRequest>
@@ -383,6 +394,7 @@ export interface Prestador {
   telefone: string | null
   email: string | null
   municipio_rotulo: string | null
+  dia_lembrete_aliquota: number | null
   // Marco 16, item 5 — alíquota de referência do Simples Nacional (só pra
   // pré-preencher a Nova emissão; confirmação continua sempre obrigatória).
   aliquota_atual: number | null
