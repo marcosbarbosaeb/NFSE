@@ -22,6 +22,7 @@ Duas implementações de `EmailSender`:
 verdade liga o Resend. Nada mais no resto do código precisa saber qual das
 duas está ativa.
 """
+import base64
 import logging
 
 import requests
@@ -40,7 +41,13 @@ class EmailEnvioError(Exception):
 
 
 class EmailSender:
-    def enviar(self, *, destinatario: str, assunto: str, corpo_texto: str, corpo_html: str) -> None:
+    def enviar(
+        self, *, destinatario: str, assunto: str, corpo_texto: str, corpo_html: str,
+        remetente: str | None = None, responder_para: str | None = None,
+        anexos: list[tuple[str, bytes]] | None = None,
+    ) -> None:
+        """`anexos`: [(nome_arquivo, bytes)]. `remetente` sobrescreve o
+        padrão (e-mails de nota saem de email_remetente_notas)."""
         raise NotImplementedError
 
 
@@ -48,9 +55,15 @@ class EmailSenderConsole(EmailSender):
     """Default enquanto não existe RESEND_API_KEY configurada (dev local e
     testes) — nunca faz uma chamada de rede."""
 
-    def enviar(self, *, destinatario: str, assunto: str, corpo_texto: str, corpo_html: str) -> None:
+    def enviar(
+        self, *, destinatario: str, assunto: str, corpo_texto: str, corpo_html: str,
+        remetente: str | None = None, responder_para: str | None = None,
+        anexos: list[tuple[str, bytes]] | None = None,
+    ) -> None:
         logger.info("=== E-MAIL (modo console — RESEND_API_KEY não configurada) ===")
         logger.info("Para: %s", destinatario)
+        if anexos:
+            logger.info("Anexos: %s", ", ".join(nome for nome, _ in anexos))
         logger.info("Assunto: %s", assunto)
         logger.info("%s", corpo_texto)
         logger.info("=== fim do e-mail ===")
@@ -63,19 +76,30 @@ class EmailSenderResend(EmailSender):
         self._api_key = api_key
         self._remetente = remetente
 
-    def enviar(self, *, destinatario: str, assunto: str, corpo_texto: str, corpo_html: str) -> None:
+    def enviar(
+        self, *, destinatario: str, assunto: str, corpo_texto: str, corpo_html: str,
+        remetente: str | None = None, responder_para: str | None = None,
+        anexos: list[tuple[str, bytes]] | None = None,
+    ) -> None:
+        corpo = {
+            "from": remetente or self._remetente,
+            "to": [destinatario],
+            "subject": assunto,
+            "text": corpo_texto,
+            "html": corpo_html,
+        }
+        if responder_para:
+            corpo["reply_to"] = [responder_para]
+        if anexos:
+            corpo["attachments"] = [
+                {"filename": nome, "content": base64.b64encode(conteudo).decode("ascii")} for nome, conteudo in anexos
+            ]
         try:
             resp = requests.post(
                 self._URL,
                 headers={"Authorization": f"Bearer {self._api_key}"},
-                json={
-                    "from": self._remetente,
-                    "to": [destinatario],
-                    "subject": assunto,
-                    "text": corpo_texto,
-                    "html": corpo_html,
-                },
-                timeout=10,
+                json=corpo,
+                timeout=20,
             )
             resp.raise_for_status()
         except requests.RequestException as exc:

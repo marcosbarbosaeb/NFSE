@@ -32,6 +32,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    LargeBinary,
     Numeric,
     SmallInteger,
     String,
@@ -283,6 +284,9 @@ class PrestadorTomador(Base):
     dias_para_recebimento: Mapped[int | None] = mapped_column(
         comment="Dias corridos após a EMISSÃO em que o pagamento costuma cair (não é um dia fixo do mês)."
     )
+    # Marco 17 — pra onde mandar as notas deste fornecedor (envio direto).
+    email_contato: Mapped[str | None] = mapped_column(String(200))
+    whatsapp_contato: Mapped[str | None] = mapped_column(String(20))
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
@@ -349,6 +353,9 @@ class Emissao(Base):
     xml_dps: Mapped[str | None] = mapped_column(Text)
     xml_assinado: Mapped[str | None] = mapped_column(Text)
     xml_resposta: Mapped[str | None] = mapped_column(Text)
+    # Marco 17 — cache do DANFSe (PDF oficial do ADN) depois da confirmação;
+    # anexado no e-mail ao fornecedor e servido pelo link público.
+    danfse_pdf: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
     danfse_path: Mapped[str | None] = mapped_column(Text)
     erro_detalhe: Mapped[str | None] = mapped_column(Text)
 
@@ -547,6 +554,9 @@ class Envio(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pendente")
     tentativas: Mapped[int] = mapped_column(nullable=False, server_default="0")
     enviado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Marco 17 — e-mail/telefone usado e motivo da falha (envio direto).
+    destino: Mapped[str | None] = mapped_column(String(200))
+    erro: Mapped[str | None] = mapped_column(Text)
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

@@ -26,6 +26,8 @@ interface FormState {
   ativo: boolean
   dia_limite_emissao: string
   dias_para_recebimento: string
+  email_contato: string
+  whatsapp_contato: string
 }
 
 const ESTADO_INICIAL: FormState = {
@@ -40,6 +42,8 @@ const ESTADO_INICIAL: FormState = {
   ativo: true,
   dia_limite_emissao: "",
   dias_para_recebimento: "",
+  email_contato: "",
+  whatsapp_contato: "",
 }
 
 export function VinculoFormPage() {
@@ -79,6 +83,8 @@ export function VinculoFormPage() {
           ativo: v.ativo,
           dia_limite_emissao: v.dia_limite_emissao?.toString() ?? "",
           dias_para_recebimento: v.dias_para_recebimento?.toString() ?? "",
+          email_contato: v.email_contato ?? "",
+          whatsapp_contato: v.whatsapp_contato ?? "",
         })
         setTomadorSelecionado(v.tomador)
       })
@@ -124,6 +130,8 @@ export function VinculoFormPage() {
         requer_revisao: form.requer_revisao,
         dia_limite_emissao: form.dia_limite_emissao ? Number(form.dia_limite_emissao) : null,
         dias_para_recebimento: form.dias_para_recebimento ? Number(form.dias_para_recebimento) : null,
+        email_contato: form.email_contato.trim() || null,
+        whatsapp_contato: form.whatsapp_contato.trim() || null,
       }
 
       if (editando && id) {
@@ -368,6 +376,29 @@ export function VinculoFormPage() {
               value={form.dias_para_recebimento}
               onChange={(e) => atualizarCampo("dias_para_recebimento", e.target.value)}
               hint="Contados a partir da data de emissão da nota."
+            />
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <h2 className="mb-1 text-base font-semibold text-slate-800 dark:text-slate-200">Envio da nota</h2>
+          <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+            Pra onde mandar as notas deste fornecedor direto pelo NotaFácil.
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field
+              label="E-mail do fornecedor"
+              type="email"
+              value={form.email_contato}
+              onChange={(e) => atualizarCampo("email_contato", e.target.value)}
+              placeholder="financeiro@empresa.com"
+            />
+            <Field
+              label="WhatsApp do fornecedor"
+              type="tel"
+              value={form.whatsapp_contato}
+              onChange={(e) => atualizarCampo("whatsapp_contato", e.target.value)}
+              placeholder="(92) 99999-0000"
             />
           </div>
         </Card>

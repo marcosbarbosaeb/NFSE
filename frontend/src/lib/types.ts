@@ -88,6 +88,8 @@ export interface VinculoDetalhe {
   ativo: boolean
   dia_limite_emissao: number | null
   dias_para_recebimento: number | null
+  email_contato: string | null
+  whatsapp_contato: string | null
 }
 
 export interface VinculoCriarRequest {
@@ -103,6 +105,8 @@ export interface VinculoCriarRequest {
   requer_revisao?: boolean
   dia_limite_emissao?: number | null
   dias_para_recebimento?: number | null
+  email_contato?: string | null
+  whatsapp_contato?: string | null
 }
 
 export type VinculoAtualizarRequest = Partial<Omit<VinculoCriarRequest, "tomador_id" | "novo_tomador">> & {
@@ -345,6 +349,18 @@ export interface Envio {
   status: string
   tentativas: number
   enviado_em: string | null
+  destino?: string | null
+  erro?: string | null
+}
+
+export interface OpcoesEnvio {
+  email_habilitado: boolean
+  email_motivo_desabilitado: string | null
+  email_destino: string | null
+  whatsapp_destino: string | null
+  link_publico: string
+  tem_pdf: boolean
+  vinculo_id: string | null
 }
 
 export interface Pagamento {

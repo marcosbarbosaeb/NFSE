@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     # existir, sem mudar nenhuma linha de código.
     resend_api_key: str = ""
     email_remetente: str = "NotaFácil <onboarding@resend.dev>"
+    # Marco 17 — remetente dos e-mails de NOTA pros fornecedores (ex.:
+    # "NotaFácil <notas@notafacil.com.br>"). Fica vazio até existir um
+    # domínio próprio verificado no Resend: o endereço de teste
+    # onboarding@resend.dev só entrega pro dono da conta, então com isto
+    # vazio o envio direto por e-mail aparece desligado na tela (com aviso),
+    # em vez de "enviar" sem chegar.
+    email_remetente_notas: str = ""
 
     # Base da URL do painel usada pra montar o link de confirmação de e-mail
     # (ex.: f"{app_base_url}/confirmar-email?token=..."). Default é o Vite

@@ -280,6 +280,24 @@ class RegistrarEnvioRequest(BaseModel):
     canal: str = Field(pattern=r"^(download|email|whatsapp|direto_fornecedor|mensagem_pronta)$")
 
 
+class OpcoesEnvioResponse(BaseModel):
+    """Marco 17 — o que a tela 'Envio ao fornecedor' pode oferecer pra esta
+    nota: e-mail direto (se o domínio/Resend estiver configurado e o
+    fornecedor tiver e-mail), WhatsApp e o link público da nota."""
+    email_habilitado: bool
+    email_motivo_desabilitado: str | None = None
+    email_destino: str | None = None
+    whatsapp_destino: str | None = None
+    link_publico: str
+    tem_pdf: bool
+    vinculo_id: uuid.UUID | None = None
+
+
+class WhatsappLinkResponse(BaseModel):
+    url: str
+    envio: "EnvioResponse"
+
+
 class EnvioResponse(BaseModel):
     id: uuid.UUID
     emissao_id: uuid.UUID
@@ -287,6 +305,8 @@ class EnvioResponse(BaseModel):
     status: str
     tentativas: int
     enviado_em: datetime | None
+    destino: str | None = None
+    erro: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -406,6 +426,8 @@ class VinculoDetalheResponse(BaseModel):
     ativo: bool
     dia_limite_emissao: int | None = None
     dias_para_recebimento: int | None = None
+    email_contato: str | None = None
+    whatsapp_contato: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -427,6 +449,8 @@ class VinculoCriarRequest(BaseModel):
     requer_revisao: bool = True
     dia_limite_emissao: int | None = Field(default=None, ge=1, le=31)
     dias_para_recebimento: int | None = Field(default=None, ge=0)
+    email_contato: str | None = Field(default=None, max_length=200)
+    whatsapp_contato: str | None = Field(default=None, max_length=20)
 
     @model_validator(mode="after")
     def _exatamente_um_tomador(self):
@@ -449,6 +473,8 @@ class VinculoAtualizarRequest(BaseModel):
     ativo: bool | None = None
     dia_limite_emissao: int | None = Field(default=None, ge=1, le=31)
     dias_para_recebimento: int | None = Field(default=None, ge=0)
+    email_contato: str | None = Field(default=None, max_length=200)
+    whatsapp_contato: str | None = Field(default=None, max_length=20)
 
 
 class PrestadorResponse(BaseModel):
@@ -626,3 +652,6 @@ class ConfirmarExtratoResponse(BaseModel):
     sucesso: int
     erro: int
     itens: list[ItemConfirmadoExtratoResponse]
+
+
+WhatsappLinkResponse.model_rebuild()

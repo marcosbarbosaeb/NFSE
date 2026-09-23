@@ -1,4 +1,18 @@
-import { AlertTriangle, Ban, CheckCircle2, Copy, Download, MessageSquareText, PenLine, Send, XCircle } from "lucide-react"
+import {
+  AlertTriangle,
+  Ban,
+  CheckCircle2,
+  Copy,
+  Download,
+  FileDown,
+  Link as LinkIcon,
+  Mail,
+  MessageCircle,
+  MessageSquareText,
+  PenLine,
+  Send,
+  XCircle,
+} from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { Badge } from "../components/ui/Badge"
@@ -8,7 +22,7 @@ import { FieldWrap } from "../components/ui/Field"
 import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { formatBRL } from "../lib/format"
-import type { CanalEnvio, Envio, NotaVisual } from "../lib/types"
+import type { CanalEnvio, Envio, NotaVisual, OpcoesEnvio } from "../lib/types"
 
 // Marco 16, item 7 — motivos de cancelamento aceitos pela Sefin (mesmo
 // vocabulário de app/fiscal/eventos.MOTIVOS_CANCELAMENTO no backend).
@@ -55,6 +69,56 @@ export function EmissaoDetalhePage() {
   const [cmotivo, setCmotivo] = useState("1")
   const [xmotivo, setXmotivo] = useState("")
   const [erroAcao, setErroAcao] = useState<string | null>(null)
+
+  // Marco 17 — envio direto ao fornecedor (e-mail do NotaFácil, WhatsApp, link).
+  const [opcoes, setOpcoes] = useState<OpcoesEnvio | null>(null)
+  const [enviandoEmail, setEnviandoEmail] = useState(false)
+  const [erroEnvio, setErroEnvio] = useState<string | null>(null)
+  const [linkCopiado, setLinkCopiado] = useState(false)
+
+  useEffect(() => {
+    if (!id) return
+    api.get<OpcoesEnvio>(`/dps/${id}/envio-opcoes`).then(setOpcoes).catch(() => setOpcoes(null))
+  }, [id])
+
+  async function enviarPorEmail() {
+    if (!id) return
+    setErroEnvio(null)
+    setEnviandoEmail(true)
+    try {
+      const envio = await api.post<Envio>(`/dps/${id}/enviar-email`)
+      if (envio.status === "falha") setErroEnvio(`O e-mail não saiu: ${envio.erro ?? "erro no provedor"}. Tente de novo.`)
+      api.get<Envio[]>(`/dps/${id}/envios`).then(setEnvios)
+    } catch (err) {
+      setErroEnvio(err instanceof ApiError ? formatarErro(err.detail) : "Falha ao enviar o e-mail.")
+    } finally {
+      setEnviandoEmail(false)
+    }
+  }
+
+  async function enviarPorWhatsapp() {
+    if (!id) return
+    setErroEnvio(null)
+    // Abre a aba já no clique (senão o navegador bloqueia como pop-up) e só
+    // depois aponta pro link que o backend montou.
+    const aba = window.open("", "_blank")
+    try {
+      const { url } = await api.post<{ url: string; envio: Envio }>(`/dps/${id}/whatsapp`)
+      if (aba) aba.location.href = url
+      else window.location.href = url
+      api.get<Envio[]>(`/dps/${id}/envios`).then(setEnvios)
+    } catch (err) {
+      aba?.close()
+      setErroEnvio(err instanceof ApiError ? formatarErro(err.detail) : "Falha ao montar a mensagem do WhatsApp.")
+    }
+  }
+
+  async function copiarLink() {
+    if (!opcoes) return
+    await navigator.clipboard.writeText(opcoes.link_publico)
+    setLinkCopiado(true)
+    setTimeout(() => setLinkCopiado(false), 2000)
+  }
 
   function carregar() {
     if (!id) return
@@ -259,6 +323,14 @@ export function EmissaoDetalhePage() {
               <Ban size={15} /> Cancelar nota
             </Button>
           )}
+          {nota.estado === "confirmado" && (
+            <a
+              href={`/api/dps/${id}/pdf`}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              <FileDown size={15} /> Baixar PDF
+            </a>
+          )}
           <Button variant="outline" onClick={baixarXml} disabled={!nota.xml_disponivel}>
             <Download size={15} /> Baixar XML
           </Button>
@@ -286,13 +358,44 @@ export function EmissaoDetalhePage() {
 
       <Card className="p-5">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Envio ao fornecedor</h2>
-        <div className="mb-4 flex flex-wrap gap-2">
-          {CANAIS.filter((c) => c.value === "email" || c.value === "whatsapp" || c.value === "direto_fornecedor").map((c) => (
-            <Button key={c.value} variant="outline" onClick={() => registrarEnvio(c.value)} disabled={!nota.xml_disponivel}>
-              Registrar por {c.label}
-            </Button>
-          ))}
+        {erroEnvio && <p className="mb-3 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erroEnvio}</p>}
+        <div className="mb-2 flex flex-wrap gap-2">
+          <Button
+            variant="accent"
+            onClick={enviarPorEmail}
+            disabled={!nota.xml_disponivel || !opcoes?.email_habilitado || enviandoEmail}
+            title={opcoes?.email_motivo_desabilitado ?? undefined}
+          >
+            <Mail size={15} /> {enviandoEmail ? "Enviando..." : "Enviar por e-mail"}
+          </Button>
+          <Button variant="outline" onClick={enviarPorWhatsapp} disabled={!nota.xml_disponivel}>
+            <MessageCircle size={15} /> Enviar por WhatsApp
+          </Button>
+          <Button variant="outline" onClick={copiarLink} disabled={!nota.xml_disponivel || !opcoes}>
+            <LinkIcon size={15} /> {linkCopiado ? "Link copiado!" : "Copiar link da nota"}
+          </Button>
+          <Button variant="ghost" onClick={() => registrarEnvio("direto_fornecedor")} disabled={!nota.xml_disponivel}>
+            Registrar envio feito por fora
+          </Button>
         </div>
+        {opcoes && (
+          <p className="mb-4 text-xs text-slate-400 dark:text-slate-500">
+            {opcoes.email_habilitado
+              ? `E-mail vai para ${opcoes.email_destino}, com a nota em anexo; a resposta cai no seu e-mail.`
+              : opcoes.email_motivo_desabilitado}
+            {!opcoes.email_habilitado && opcoes.email_motivo_desabilitado?.startsWith("Cadastre") && opcoes.vinculo_id && (
+              <>
+                {" "}
+                <Link to={`/app/tomadores/${opcoes.vinculo_id}`} className="font-medium text-primary-600 hover:underline">
+                  Cadastrar agora
+                </Link>
+              </>
+            )}
+            {opcoes.whatsapp_destino
+              ? ` WhatsApp abre a conversa com ${opcoes.whatsapp_destino} com a mensagem pronta — é só apertar enviar.`
+              : " Sem WhatsApp cadastrado: você escolhe o contato ao abrir."}
+          </p>
+        )}
 
         {envios.length === 0 ? (
           <p className="text-sm text-slate-400 dark:text-slate-500">Nenhum envio registrado ainda.</p>
@@ -300,7 +403,11 @@ export function EmissaoDetalhePage() {
           <ul className="flex flex-col divide-y divide-slate-100 dark:divide-slate-700">
             {envios.map((e) => (
               <li key={e.id} className="flex items-center justify-between py-2.5 text-sm">
-                <span className="text-slate-700 dark:text-slate-300">{CANAIS.find((c) => c.value === e.canal)?.label ?? e.canal}</span>
+                <span className="min-w-0 text-slate-700 dark:text-slate-300">
+                  {CANAIS.find((c) => c.value === e.canal)?.label ?? e.canal}
+                  {e.destino && <span className="ml-1 text-xs text-slate-400">· {e.destino}</span>}
+                  {e.erro && <span className="block text-xs text-danger-600">{e.erro}</span>}
+                </span>
                 <div className="flex items-center gap-3">
                   {badgeStatusEnvio(e.status)}
                   {e.status === "pendente" && (

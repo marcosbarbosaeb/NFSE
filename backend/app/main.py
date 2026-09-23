@@ -81,6 +81,7 @@ from app.schemas import (
     MunicipioResponse,
     MensagemProntaResponse,
     NotaVisualResponse,
+    OpcoesEnvioResponse,
     PagamentoResponse,
     PainelStatusResponse,
     PrestadorResponse,
@@ -96,6 +97,7 @@ from app.schemas import (
     VinculoAtualizarRequest,
     VinculoDetalheResponse,
     VinculoResumo,
+    WhatsappLinkResponse,
 )
 from app.services.municipios import buscar_municipios, municipio_por_codigo
 from app.services.billing import (
@@ -141,6 +143,17 @@ from app.services.envios import (
     marcar_falha,
     melhor_xml_disponivel,
     registrar_envio,
+)
+from app.services.envio_direto import (
+    EmailIndisponivelError,
+    LinkInvalidoError,
+    base_url,
+    enviar_email,
+    ler_token,
+    link_whatsapp,
+    nome_pdf,
+    obter_danfse,
+    opcoes_envio,
 )
 from app.services.extrato_pdf import PdfInvalidoError, extrair_transacoes
 from app.services.google_oauth import (
@@ -538,6 +551,7 @@ def api_criar_vinculo(req: VinculoCriarRequest, db: Session = Depends(db_sessao)
             cod_trib_municipal=req.cod_trib_municipal, template_descricao=req.template_descricao,
             metodo_captura_valor=req.metodo_captura_valor, serie=req.serie, requer_revisao=req.requer_revisao,
             dia_limite_emissao=req.dia_limite_emissao, dias_para_recebimento=req.dias_para_recebimento,
+            email_contato=req.email_contato, whatsapp_contato=req.whatsapp_contato,
         )
     except ApelidoJaExisteError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -999,6 +1013,91 @@ def api_download_xml(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
         nome, conteudo = melhor_xml_disponivel(emissao)
     except EmissaoSemConteudoError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return Response(content=conteudo, media_type="application/xml", headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+def _emissao_ou_404(db: Session, emissao_id: uuid.UUID) -> Emissao:
+    emissao = db.query(Emissao).filter_by(id=emissao_id).one_or_none()
+    if emissao is None:
+        raise HTTPException(status_code=404, detail="Emissão não encontrada (ou não pertence ao prestador ativo)")
+    return emissao
+
+
+@app.get("/api/dps/{emissao_id}/envio-opcoes", response_model=OpcoesEnvioResponse, responses={404: {"model": ErroResponse}})
+def api_opcoes_envio(emissao_id: uuid.UUID, request: Request, db: Session = Depends(db_sessao)):
+    """Marco 17 — o que dá pra usar no card 'Envio ao fornecedor' desta nota
+    (e-mail direto ligado/desligado e por quê, WhatsApp, link público)."""
+    emissao = _emissao_ou_404(db, emissao_id)
+    return opcoes_envio(db, emissao, base_url(str(request.base_url)))
+
+
+@app.post("/api/dps/{emissao_id}/enviar-email", response_model=EnvioResponse, responses={400: {"model": ErroResponse}, 404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
+def api_enviar_email(
+    emissao_id: uuid.UUID, request: Request,
+    db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Marco 17 — manda a nota pro e-mail do fornecedor saindo do endereço
+    do NotaFácil (PDF oficial + XML em anexo, resposta volta pro e-mail do
+    prestador). Falha do provedor volta como envio com status 'falha'."""
+    emissao = _emissao_ou_404(db, emissao_id)
+    try:
+        envio = enviar_email(db, emissao, prestador_id, base_url(str(request.base_url)))
+    except EmailIndisponivelError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except EmissaoSemConteudoError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    return envio
+
+
+@app.post("/api/dps/{emissao_id}/whatsapp", response_model=WhatsappLinkResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
+def api_link_whatsapp(emissao_id: uuid.UUID, request: Request, db: Session = Depends(db_sessao)):
+    """Marco 17 — link do WhatsApp com a mensagem pronta (e o número do
+    fornecedor, se cadastrado). Registra o envio como pendente."""
+    emissao = _emissao_ou_404(db, emissao_id)
+    if not (emissao.xml_resposta or emissao.xml_assinado or emissao.xml_dps):
+        raise HTTPException(status_code=409, detail="Esta nota ainda não tem conteúdo pra enviar.")
+    url, envio = link_whatsapp(db, emissao, base_url(str(request.base_url)))
+    db.commit()
+    return {"url": url, "envio": envio}
+
+
+@app.get("/api/dps/{emissao_id}/pdf", responses={404: {"model": ErroResponse}})
+def api_baixar_pdf(
+    emissao_id: uuid.UUID, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Marco 17 — PDF oficial (DANFSe) da nota confirmada, baixado do ADN
+    na primeira vez e guardado."""
+    emissao = _emissao_ou_404(db, emissao_id)
+    pdf = obter_danfse(db, emissao, prestador_id)
+    if not pdf:
+        raise HTTPException(status_code=404, detail="O PDF oficial só fica disponível depois que a prefeitura confirma a nota.")
+    db.commit()
+    return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{nome_pdf(emissao)}"'})
+
+
+@app.get("/api/publico/nota/{token}", responses={404: {"model": ErroResponse}})
+def api_nota_publica(token: str, db: Session = Depends(get_db)):
+    """Marco 17 — link que vai pro fornecedor (WhatsApp/e-mail): baixa a
+    nota SEM login. O token assinado diz qual emissão e de qual prestador —
+    é daí (nunca de parâmetro solto) que sai o prestador da RLS. PDF oficial
+    quando existir, senão o XML."""
+    try:
+        emissao_id, prestador_id = ler_token(token)
+    except LinkInvalidoError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    definir_prestador_atual(db, prestador_id)
+    emissao = db.query(Emissao).filter_by(id=emissao_id).one_or_none()
+    if emissao is None or emissao.estado == "cancelada":
+        raise HTTPException(status_code=404, detail="Nota não encontrada ou cancelada.")
+    pdf = obter_danfse(db, emissao, prestador_id)
+    if pdf:
+        db.commit()
+        return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{nome_pdf(emissao)}"'})
+    try:
+        nome, conteudo = melhor_xml_disponivel(emissao)
+    except EmissaoSemConteudoError as exc:
+        raise HTTPException(status_code=404, detail="Nota ainda sem conteúdo.") from exc
     return Response(content=conteudo, media_type="application/xml", headers={"Content-Disposition": f'attachment; filename="{nome}"'})
 
 

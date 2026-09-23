@@ -51,6 +51,7 @@ def criar_vinculo(
     cod_trib_municipal: str | None = None, metodo_captura_valor: str = "manual",
     serie: str = "1", requer_revisao: bool = True,
     dia_limite_emissao: int | None = None, dias_para_recebimento: int | None = None,
+    email_contato: str | None = None, whatsapp_contato: str | None = None,
 ) -> PrestadorTomador:
     """'Usar um tomador pré-cadastrado' e 'cadastrar meu próprio tomador' na
     tela de Tomadores viram a MESMA chamada aqui — a diferença já foi
@@ -65,6 +66,7 @@ def criar_vinculo(
         cod_trib_municipal=cod_trib_municipal, template_descricao=template_descricao,
         metodo_captura_valor=metodo_captura_valor, serie=serie, requer_revisao=requer_revisao,
         dia_limite_emissao=dia_limite_emissao, dias_para_recebimento=dias_para_recebimento,
+        email_contato=email_contato, whatsapp_contato=whatsapp_contato,
         ativo=True,
     )
     db.add(vinculo)
