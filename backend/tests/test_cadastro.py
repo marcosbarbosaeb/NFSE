@@ -449,3 +449,23 @@ def test_endpoint_callback_conta_existente_nao_confirmada_redireciona_com_erro(c
         "/api/auth/google/callback", params={"code": "code-valido", "state": state}, follow_redirects=False,
     )
     assert "/entrar?erro=confirme-email" in resp.headers["location"]
+
+
+def test_email_de_confirmacao_responde_pro_suporte_e_fala_como_ana(db, monkeypatch):
+    from app.services import cadastro
+
+    enviados = []
+
+    class _Fake:
+        def enviar(self, **kw):
+            enviados.append(kw)
+
+    monkeypatch.setattr(cadastro, "get_email_sender", lambda: _Fake())
+    criar_cadastro(
+        db, email="ana-teste@exemplo.com", senha="senhaforte123", razao_social="EMPRESA ANA LTDA",
+        cpf_cnpj="12345678000155", cod_municipio="3106200",
+    )
+    assert len(enviados) == 1
+    assert enviados[0]["responder_para"] == "suporte@agenteana.com.br"
+    assert enviados[0]["assunto"] == "Confirme seu e-mail — Agente Ana"
+    assert "Eu sou a Ana" in enviados[0]["corpo_texto"]

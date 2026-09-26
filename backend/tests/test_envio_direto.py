@@ -93,6 +93,7 @@ def test_enviar_email_com_xml_anexo_e_reply_to(client, db, vinculo_teste, presta
     assert enviado["destinatario"] == "financeiro@fornecedor.com"
     assert enviado["responder_para"] == "raiana@exemplo.com"
     assert enviado["remetente"].endswith("<notas@agenteana.test>")
+    assert enviado["remetente"].startswith('"') and " via Agente Ana\" <notas@agenteana.test>" in enviado["remetente"]
     assert [n for n, _ in enviado["anexos"]][0].endswith(".xml")  # sem PDF: nota não confirmada
     assert "R$ 1.234,50" in enviado["corpo_texto"]
     assert "/api/publico/nota/" in enviado["corpo_texto"]
@@ -176,3 +177,14 @@ def test_nota_confirmada_anexa_pdf_oficial_e_guarda_em_cache(client, db, vinculo
     r = client.get(f"/api/dps/{eid}/pdf")
     assert r.status_code == 200 and r.content.startswith(b"%PDF")
     assert len(chamadas) == 1  # segunda vez veio do cache
+
+
+def test_remetente_da_nota_leva_o_nome_de_quem_emitiu(monkeypatch):
+    monkeypatch.setattr(get_settings(), "email_remetente_notas", "Agente Ana <notas@agenteana.com.br>")
+    assert envio_direto.remetente_da_nota("Álvaro Ação, ME") == '"Álvaro Ação, ME via Agente Ana" <notas@agenteana.com.br>'
+    # sem nome: usa o remetente configurado como está
+    assert envio_direto.remetente_da_nota(None) == "Agente Ana <notas@agenteana.com.br>"
+    assert envio_direto.remetente_da_nota("   ") == "Agente Ana <notas@agenteana.com.br>"
+    # nada de aspas, quebra de linha ou <> vindos do nome (não dá pra injetar cabeçalho)
+    r = envio_direto.remetente_da_nota('Fulano "X" <x@y>\nBcc: a@b')
+    assert "\n" not in r and r.count('"') == 2 and r.endswith("<notas@agenteana.com.br>")

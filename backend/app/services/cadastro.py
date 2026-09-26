@@ -146,7 +146,11 @@ def _enviar_email_confirmacao(email: str, token: str) -> None:
     )
     try:
         get_email_sender().enviar(
-            destinatario=email, assunto="Confirme seu e-mail — Agente Ana", corpo_texto=corpo_texto, corpo_html=corpo_html
+            destinatario=email,
+            assunto="Confirme seu e-mail — Agente Ana",
+            corpo_texto=corpo_texto,
+            corpo_html=corpo_html,
+            responder_para=get_settings().email_suporte or None,
         )
     except EmailEnvioError:
         # Ver docstring do módulo: a conta já foi criada, não desfaz o

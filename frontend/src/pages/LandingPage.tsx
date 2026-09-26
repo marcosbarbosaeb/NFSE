@@ -17,6 +17,7 @@ import type { ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { AnaAvatar, Marca } from "../components/brand/Marca"
 import { useAuth } from "../lib/auth"
+import { EMAIL_SUPORTE, MAILTO_SUPORTE } from "../lib/contato"
 import { ehDominioRaiz, urlEmissor } from "../lib/dominios"
 
 // Landing única da Agente Ana (agenteana.com.br). Hoje só o emissor de
@@ -140,6 +141,10 @@ const PERGUNTAS = [
   {
     p: "Quanto custa pra testar?",
     r: "Nada. São 14 dias grátis, sem precisar cadastrar cartão pra começar.",
+  },
+  {
+    p: "E se eu precisar de ajuda?",
+    r: `É só escrever pra ${EMAIL_SUPORTE}. Tem gente de verdade do outro lado pra te ajudar a configurar tudo.`,
   },
 ]
 
@@ -391,7 +396,12 @@ export function LandingPage() {
       <footer className="border-t border-slate-200/70 dark:border-slate-800">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-8 text-sm text-slate-500 sm:flex-row sm:px-6 dark:text-slate-400">
           <Marca tamanho={28} />
-          <p>Sua nota fiscal no automático. © {new Date().getFullYear()} Agente Ana</p>
+          <div className="flex flex-col items-center gap-1 sm:items-end">
+            <a href={MAILTO_SUPORTE} className="font-medium text-slate-600 hover:text-accent-600 dark:text-slate-300">
+              {EMAIL_SUPORTE}
+            </a>
+            <p>Sua nota fiscal no automático. © {new Date().getFullYear()} Agente Ana</p>
+          </div>
         </div>
       </footer>
     </div>

@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     # vazio o envio direto por e-mail aparece desligado na tela (com aviso),
     # em vez de "enviar" sem chegar.
     email_remetente_notas: str = ""
+    # Caixa de suporte (recebida pelo encaminhamento de e-mail do Cloudflare
+    # pro Gmail do Marcos). Vai como "responder para" nos e-mails da conta
+    # (confirmação de cadastro) — quem responde cai no suporte, não num
+    # endereço que ninguém lê.
+    email_suporte: str = "suporte@agenteana.com.br"
 
     # Base da URL do painel usada pra montar o link de confirmação de e-mail
     # (ex.: f"{app_base_url}/confirmar-email?token=..."). Default é o Vite

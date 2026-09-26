@@ -30,6 +30,7 @@ import datetime
 import logging
 import re
 import uuid
+from email.utils import parseaddr
 from urllib.parse import quote
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -189,6 +190,22 @@ def opcoes_envio(db: Session, emissao: Emissao, base: str) -> dict:
 # --- envio ---
 
 
+def remetente_da_nota(nome_prestador: str | None) -> str:
+    """Remetente do e-mail da nota com o nome de quem emitiu na frente:
+    "Fulano via Agente Ana <notas@agenteana.com.br>". O fornecedor reconhece
+    quem mandou, e o endereço continua sendo o do domínio verificado no
+    Resend (EMAIL_REMETENTE_NOTAS). Sem nome, usa o remetente configurado."""
+    configurado = get_settings().email_remetente_notas
+    _, endereco = parseaddr(configurado)
+    nome = re.sub(r"[\r\n\"\\<>]", " ", nome_prestador or "")
+    nome = re.sub(r"\s+", " ", nome).strip()[:60].strip()
+    if not endereco or not nome:
+        return configurado
+    # Nome entre aspas (pode ter vírgula, ponto etc.) e em UTF-8 puro — o
+    # Resend aceita acentos direto no campo "from".
+    return f'"{nome} via Agente Ana" <{endereco}>'
+
+
 def _novo_envio(db: Session, emissao: Emissao, canal: str, destino: str | None) -> Envio:
     envio = Envio(id=uuid.uuid4(), emissao_id=emissao.id, canal=canal, tentativas=1, status="pendente", destino=destino)
     db.add(envio)
@@ -220,7 +237,7 @@ def enviar_email(db: Session, emissao: Emissao, prestador_id: uuid.UUID, base: s
             assunto=mensagens.email_assunto(dados),
             corpo_texto=mensagens.email_texto(dados),
             corpo_html=mensagens.email_html(dados),
-            remetente=get_settings().email_remetente_notas,
+            remetente=remetente_da_nota(prestador.razao_social if prestador else None),
             responder_para=prestador.email if prestador and prestador.email else None,
             anexos=anexos,
         )

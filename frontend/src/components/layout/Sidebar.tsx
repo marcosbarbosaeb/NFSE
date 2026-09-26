@@ -1,5 +1,6 @@
 import { CalendarDays, FileText, Home, Settings, TrendingDown, Users, Wallet } from "lucide-react"
 import { NavLink } from "react-router-dom"
+import { MAILTO_SUPORTE } from "../../lib/contato"
 import { AnaAvatar, Marca } from "../brand/Marca"
 
 // "Calendário" não faz parte das telas originais do emissor (mockup) — foi
@@ -50,6 +51,9 @@ export function Sidebar() {
         <p className="text-xs text-slate-400">
           Cadastre cada fornecedor uma vez — todo mês eu preparo a nota e você só confere.
         </p>
+        <a href={MAILTO_SUPORTE} className="mt-3 inline-block text-xs font-medium text-accent-300 hover:text-accent-200">
+          Precisa de ajuda? Fale com o suporte
+        </a>
       </div>
     </aside>
   )
