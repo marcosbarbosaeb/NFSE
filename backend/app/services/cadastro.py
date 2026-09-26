@@ -135,18 +135,18 @@ def criar_cadastro(
 def _enviar_email_confirmacao(email: str, token: str) -> None:
     link = f"{get_settings().app_base_url}/confirmar-email?token={token}"
     corpo_texto = (
-        f"Bem-vindo(a) ao NotaFácil!\n\n"
+        f"Oi! Eu sou a Ana, sua agente de notas fiscais. Que bom ter você aqui!\n\n"
         f"Confirme seu e-mail clicando no link abaixo (válido por 24 horas):\n{link}\n\n"
         f"Se você não pediu esse cadastro, pode ignorar esta mensagem."
     )
     corpo_html = (
-        f"<p>Bem-vindo(a) ao NotaFácil!</p>"
+        f"<p>Oi! Eu sou a Ana, sua agente de notas fiscais. Que bom ter você aqui!</p>"
         f'<p>Confirme seu e-mail clicando <a href="{link}">aqui</a> (válido por 24 horas).</p>'
         f"<p>Se você não pediu esse cadastro, pode ignorar esta mensagem.</p>"
     )
     try:
         get_email_sender().enviar(
-            destinatario=email, assunto="Confirme seu e-mail — NotaFácil", corpo_texto=corpo_texto, corpo_html=corpo_html
+            destinatario=email, assunto="Confirme seu e-mail — Agente Ana", corpo_texto=corpo_texto, corpo_html=corpo_html
         )
     except EmailEnvioError:
         # Ver docstring do módulo: a conta já foi criada, não desfaz o

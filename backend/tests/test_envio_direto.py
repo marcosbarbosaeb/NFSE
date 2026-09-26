@@ -42,7 +42,7 @@ class _SenderFake:
 
 def _ligar_email(monkeypatch, sender):
     monkeypatch.setattr(get_settings(), "resend_api_key", "re_fake")
-    monkeypatch.setattr(get_settings(), "email_remetente_notas", "NotaFácil <notas@notafacil.test>")
+    monkeypatch.setattr(get_settings(), "email_remetente_notas", "Ana <notas@agenteana.test>")
     monkeypatch.setattr(envio_direto, "get_email_sender", lambda: sender)
 
 
@@ -92,7 +92,7 @@ def test_enviar_email_com_xml_anexo_e_reply_to(client, db, vinculo_teste, presta
     enviado = sender.enviados[0]
     assert enviado["destinatario"] == "financeiro@fornecedor.com"
     assert enviado["responder_para"] == "raiana@exemplo.com"
-    assert enviado["remetente"].endswith("<notas@notafacil.test>")
+    assert enviado["remetente"].endswith("<notas@agenteana.test>")
     assert [n for n, _ in enviado["anexos"]][0].endswith(".xml")  # sem PDF: nota não confirmada
     assert "R$ 1.234,50" in enviado["corpo_texto"]
     assert "/api/publico/nota/" in enviado["corpo_texto"]

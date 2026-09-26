@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, FileText, Loader2 } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react"
 import { type FocusEvent, type FormEvent, useState } from "react"
 import { Link, Navigate, useSearchParams } from "react-router-dom"
 import { Button } from "../components/ui/Button"
@@ -8,6 +8,8 @@ import { GoogleIcon } from "../components/ui/GoogleIcon"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import type { CadastroRequest, ConsultaCnpj } from "../lib/types"
+import { AnaAvatar } from "../components/brand/Marca"
+import { urlLanding } from "../lib/dominios"
 
 export function CadastroPage() {
   const { usuario, loginComGoogle } = useAuth()
@@ -124,11 +126,11 @@ export function CadastroPage() {
     <div className="flex min-h-screen items-center justify-center bg-canvas dark:bg-canvas-dark px-4 py-10">
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center gap-2">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-600 text-white">
-            <FileText size={22} />
-          </div>
-          <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-            Nota<span className="text-primary-600">Fácil</span>
+          <a href={urlLanding()} aria-label="Agente Ana — página inicial">
+            <AnaAvatar size={56} />
+          </a>
+          <p className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+            <span className="font-normal opacity-80">Agente</span> <span className="text-accent-500">Ana</span>
           </p>
           <p className="text-sm text-slate-500 dark:text-slate-400">Crie sua conta gratuita</p>
         </div>

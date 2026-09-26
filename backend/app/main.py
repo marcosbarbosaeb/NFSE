@@ -1041,7 +1041,7 @@ def api_enviar_email(
     db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
 ):
     """Marco 17 — manda a nota pro e-mail do fornecedor saindo do endereço
-    do NotaFácil (PDF oficial + XML em anexo, resposta volta pro e-mail do
+    da Agente Ana (PDF oficial + XML em anexo, resposta volta pro e-mail do
     prestador). Falha do provedor volta como envio com status 'falha'."""
     emissao = _emissao_ou_404(db, emissao_id)
     try:

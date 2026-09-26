@@ -383,7 +383,7 @@ export function VinculoFormPage() {
         <Card className="p-6">
           <h2 className="mb-1 text-base font-semibold text-slate-800 dark:text-slate-200">Envio da nota</h2>
           <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-            Pra onde mandar as notas deste fornecedor direto pelo NotaFácil.
+            Pra onde a Ana manda as notas deste fornecedor.
           </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field

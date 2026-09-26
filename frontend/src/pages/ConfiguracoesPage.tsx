@@ -339,7 +339,7 @@ function AssinaturaCard({ assinatura }: { assinatura: Assinatura }) {
         {assinatura.status === "trial" &&
           (diasRestantesTrial !== null && diasRestantesTrial > 0
             ? `Você está no período de teste gratuito — ${diasRestantesTrial} dia${diasRestantesTrial === 1 ? "" : "s"} restante${diasRestantesTrial === 1 ? "" : "s"}.`
-            : "Seu período de teste acabou. Assine pra continuar usando o NotaFácil sem interrupção.")}
+            : "Seu período de teste acabou. Assine pra continuar usando a Agente Ana sem interrupção.")}
         {assinatura.status === "ativa" && "Sua assinatura está em dia."}
         {assinatura.status === "inadimplente" && "O último pagamento não foi confirmado — atualize a forma de pagamento pra evitar interrupção."}
         {assinatura.status === "cancelada" && "Sua assinatura foi cancelada. Assine de novo pra recuperar o acesso completo."}

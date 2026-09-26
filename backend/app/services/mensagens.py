@@ -1,5 +1,5 @@
 """
-Textos das mensagens que SAEM do NotaFácil pro fornecedor (e-mail e
+Textos das mensagens que SAEM da Agente Ana pro fornecedor (e-mail e
 WhatsApp) — tudo num lugar só de propósito: Marcos avisou (23/09/2026) que
 "vamos trabalhar o formato de cada uma das mensagens de saída", então quem
 for lapidar o texto mexe só aqui, sem caçar string pelo código.
@@ -56,7 +56,7 @@ def email_texto(d: DadosMensagem) -> str:
         "Qualquer dúvida, é só responder este e-mail.",
         "",
         f"{d.prestador_nome}",
-        "— enviado pelo NotaFácil",
+        "— enviado pela Agente Ana",
     ]
     return "\n".join(linhas)
 
@@ -75,7 +75,7 @@ def email_html(d: DadosMensagem) -> str:
 <p>A nota está em anexo e também pode ser baixada
 <a href="{escape(d.link)}" style="color:#4f46e5">neste link</a>.</p>
 <p>Qualquer dúvida, é só responder este e-mail.</p>
-<p>{escape(d.prestador_nome)}<br><span style="color:#94a3b8;font-size:12px">enviado pelo NotaFácil</span></p>
+<p>{escape(d.prestador_nome)}<br><span style="color:#94a3b8;font-size:12px">enviado pela Agente Ana</span></p>
 </div>"""
 
 

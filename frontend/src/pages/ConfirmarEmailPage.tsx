@@ -1,9 +1,11 @@
-import { CheckCircle2, FileText, XCircle } from "lucide-react"
+import { CheckCircle2, XCircle } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { Button } from "../components/ui/Button"
 import { Field } from "../components/ui/Field"
 import { ApiError, api, formatarErro } from "../lib/api"
+import { AnaAvatar } from "../components/brand/Marca"
+import { urlLanding } from "../lib/dominios"
 
 type Estado = "confirmando" | "sucesso" | "erro"
 
@@ -67,11 +69,11 @@ export function ConfirmarEmailPage() {
     <div className="flex min-h-screen items-center justify-center bg-canvas dark:bg-canvas-dark px-4">
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center gap-2">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-600 text-white">
-            <FileText size={22} />
-          </div>
-          <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-            Nota<span className="text-primary-600">Fácil</span>
+          <a href={urlLanding()} aria-label="Agente Ana — página inicial">
+            <AnaAvatar size={56} />
+          </a>
+          <p className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+            <span className="font-normal opacity-80">Agente</span> <span className="text-accent-500">Ana</span>
           </p>
         </div>
 

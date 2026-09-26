@@ -1,7 +1,9 @@
 import { Navigate, Route, Routes } from "react-router-dom"
 import { AppShell } from "./components/layout/AppShell"
+import { SoNoEmissor } from "./components/layout/SoNoEmissor"
 import { ProtectedRoute } from "./components/layout/ProtectedRoute"
 import { AuthProvider } from "./lib/auth"
+import { ehDominioNotas } from "./lib/dominios"
 import { ThemeProvider } from "./lib/theme"
 import { CadastroPage } from "./pages/CadastroPage"
 import { CalendarioPage } from "./pages/CalendarioPage"
@@ -28,16 +30,20 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/entrar" element={<LoginPage />} />
-          <Route path="/cadastro" element={<CadastroPage />} />
-          <Route path="/confirmar-email" element={<ConfirmarEmailPage />} />
+          {/* No subdomínio notas.agenteana.com.br a raiz é o próprio emissor
+              (a landing mora em agenteana.com.br) — ver lib/dominios.ts. */}
+          <Route path="/" element={ehDominioNotas() ? <Navigate to="/app" replace /> : <LandingPage />} />
+          <Route path="/entrar" element={<SoNoEmissor><LoginPage /></SoNoEmissor>} />
+          <Route path="/cadastro" element={<SoNoEmissor><CadastroPage /></SoNoEmissor>} />
+          <Route path="/confirmar-email" element={<SoNoEmissor><ConfirmarEmailPage /></SoNoEmissor>} />
           <Route
             path="/app"
             element={
-              <ProtectedRoute>
-                <AppShell />
-              </ProtectedRoute>
+              <SoNoEmissor>
+                <ProtectedRoute>
+                  <AppShell />
+                </ProtectedRoute>
+              </SoNoEmissor>
             }
           >
             <Route index element={<DashboardPage />} />

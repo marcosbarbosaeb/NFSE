@@ -35,7 +35,7 @@ from app.config import get_settings
 from app.database import definir_prestador_atual
 from app.models import Assinatura, Prestador
 
-logger = logging.getLogger("notafacil.billing")
+logger = logging.getLogger("agenteana.billing")
 
 # Mapeia o `status` de uma Subscription da Stripe pro nosso vocabulário
 # (ver CheckConstraint em Assinatura). Qualquer status da Stripe que não

@@ -29,7 +29,7 @@ import requests
 
 from app.config import get_settings
 
-logger = logging.getLogger("notafacil.email")
+logger = logging.getLogger("agenteana.email")
 
 
 class EmailEnvioError(Exception):

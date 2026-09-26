@@ -7,7 +7,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * Paleta do NotaFácil — extraída a olho das duas imagens de referência que
+ * Paleta da Agente Ana (herdada do NotaFácil) — extraída a olho das duas imagens de referência que
  * o Marcos mandou (dashboard + fluxo de 12 telas, 21/09/2026), não de um
  * arquivo de design de verdade (não temos um). São valores aproximados:
  * dá pra ajustar fino depois sem tocar em nenhum componente, porque tudo

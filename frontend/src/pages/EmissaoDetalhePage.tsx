@@ -70,7 +70,7 @@ export function EmissaoDetalhePage() {
   const [xmotivo, setXmotivo] = useState("")
   const [erroAcao, setErroAcao] = useState<string | null>(null)
 
-  // Marco 17 — envio direto ao fornecedor (e-mail do NotaFácil, WhatsApp, link).
+  // Marco 17 — envio direto ao fornecedor (e-mail da Agente Ana, WhatsApp, link).
   const [opcoes, setOpcoes] = useState<OpcoesEnvio | null>(null)
   const [enviandoEmail, setEnviandoEmail] = useState(false)
   const [erroEnvio, setErroEnvio] = useState<string | null>(null)

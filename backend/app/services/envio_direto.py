@@ -11,7 +11,7 @@ Três peças:
    no WhatsApp e no corpo do e-mail. O token carrega emissão + prestador,
    então o endpoint público consegue ligar a RLS do prestador certo sem
    sessão. Vale 180 dias.
-2. E-mail do NotaFácil: via Resend (app/services/email.py), remetente
+2. E-mail da Agente Ana: via Resend (app/services/email.py), remetente
    `email_remetente_notas`, reply-to = e-mail do prestador (resposta do
    fornecedor cai na caixa da própria pessoa), PDF oficial + XML em anexo.
    Fica DESLIGADO enquanto não houver domínio próprio (ver config).
@@ -43,7 +43,7 @@ from app.services.certificados import CertificadoNaoEncontradoError, carregar_ce
 from app.services.email import EmailEnvioError, get_email_sender
 from app.services.envios import melhor_xml_disponivel
 
-logger = logging.getLogger("notafacil.envio")
+logger = logging.getLogger("agenteana.envio")
 
 _SALT = "nota-publica"
 VALIDADE_LINK = datetime.timedelta(days=180)
@@ -166,7 +166,7 @@ def _numero_whatsapp(telefone: str | None) -> str | None:
 def motivo_email_desabilitado(vinculo: PrestadorTomador | None) -> str | None:
     s = get_settings()
     if not (s.resend_api_key and s.email_remetente_notas):
-        return "O envio por e-mail do NotaFácil será ativado quando o domínio de e-mail estiver configurado."
+        return "O envio por e-mail da Ana será ativado quando o domínio de e-mail estiver configurado."
     if vinculo is None or not vinculo.email_contato:
         return "Cadastre o e-mail deste fornecedor pra enviar direto."
     return None

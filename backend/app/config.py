@@ -57,9 +57,9 @@ class Settings(BaseSettings):
     # com a API de verdade — troca por uma chave real quando a conta Resend
     # existir, sem mudar nenhuma linha de código.
     resend_api_key: str = ""
-    email_remetente: str = "NotaFácil <onboarding@resend.dev>"
+    email_remetente: str = "Agente Ana <onboarding@resend.dev>"
     # Marco 17 — remetente dos e-mails de NOTA pros fornecedores (ex.:
-    # "NotaFácil <notas@notafacil.com.br>"). Fica vazio até existir um
+    # "Ana <notas@agenteana.com.br>"). Fica vazio até existir um
     # domínio próprio verificado no Resend: o endereço de teste
     # onboarding@resend.dev só entrega pro dono da conta, então com isto
     # vazio o envio direto por e-mail aparece desligado na tela (com aviso),
