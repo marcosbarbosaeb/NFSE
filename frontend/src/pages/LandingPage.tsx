@@ -400,6 +400,10 @@ export function LandingPage() {
             <a href={MAILTO_SUPORTE} className="font-medium text-slate-600 hover:text-accent-600 dark:text-slate-300">
               {EMAIL_SUPORTE}
             </a>
+            <p className="flex gap-3">
+              <Link to="/privacidade" className="hover:text-accent-600">Privacidade</Link>
+              <Link to="/termos" className="hover:text-accent-600">Termos de uso</Link>
+            </p>
             <p>Sua nota fiscal no automático. © {new Date().getFullYear()} Agente Ana</p>
           </div>
         </div>

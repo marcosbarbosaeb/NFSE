@@ -13,6 +13,7 @@ import { DashboardPage } from "./pages/DashboardPage"
 import { DespesasPage } from "./pages/DespesasPage"
 import { EmissaoDetalhePage } from "./pages/EmissaoDetalhePage"
 import { LandingPage } from "./pages/LandingPage"
+import { PrivacidadePage, TermosPage } from "./pages/LegalPage"
 import { LoginPage } from "./pages/LoginPage"
 import { NfsePage } from "./pages/NfsePage"
 import { RecebimentosPage } from "./pages/RecebimentosPage"
@@ -33,6 +34,8 @@ export default function App() {
           {/* No subdomínio notas.agenteana.com.br a raiz é o próprio emissor
               (a landing mora em agenteana.com.br) — ver lib/dominios.ts. */}
           <Route path="/" element={ehDominioNotas() ? <Navigate to="/app" replace /> : <LandingPage />} />
+          <Route path="/privacidade" element={<PrivacidadePage />} />
+          <Route path="/termos" element={<TermosPage />} />
           <Route path="/entrar" element={<SoNoEmissor><LoginPage /></SoNoEmissor>} />
           <Route path="/cadastro" element={<SoNoEmissor><CadastroPage /></SoNoEmissor>} />
           <Route path="/confirmar-email" element={<SoNoEmissor><ConfirmarEmailPage /></SoNoEmissor>} />

@@ -215,6 +215,11 @@ export function CadastroPage() {
               <Button type="submit" disabled={enviando} className="mt-2 w-full">
                 {enviando ? "Criando conta..." : "Criar conta"}
               </Button>
+              <p className="text-center text-xs text-slate-400 dark:text-slate-500">
+                Ao criar a conta você concorda com os{" "}
+                <Link to="/termos" className="underline hover:text-accent-600">Termos de uso</Link> e a{" "}
+                <Link to="/privacidade" className="underline hover:text-accent-600">Política de privacidade</Link>.
+              </p>
               <p className="text-center text-sm text-slate-500 dark:text-slate-400">
                 Já tem conta?{" "}
                 <Link to="/entrar" className="font-medium text-primary-600 hover:text-primary-700">
