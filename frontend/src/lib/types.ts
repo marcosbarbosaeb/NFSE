@@ -38,6 +38,8 @@ export interface VinculoResumo {
   emissao_valor?: number | null
   emissao_quantidade?: number
   metodo_captura_valor?: string
+  /** Só controle de recebimento — a Ana não gera nota pra ele. */
+  sem_nota?: boolean
 }
 
 export interface VendedorShopee {
@@ -158,6 +160,7 @@ export interface VinculoDetalhe {
   incluir_intermediario?: boolean
   envio_canal?: FormaEnvio | null
   portal_url?: string | null
+  sem_nota?: boolean
 }
 
 export interface VinculoCriarRequest {
@@ -184,6 +187,7 @@ export interface VinculoCriarRequest {
   incluir_intermediario?: boolean
   envio_canal?: FormaEnvio | null
   portal_url?: string | null
+  sem_nota?: boolean
 }
 
 export type VinculoAtualizarRequest = Partial<Omit<VinculoCriarRequest, "tomador_id" | "novo_tomador">> & {
@@ -469,18 +473,38 @@ export interface RegistrarPagamentoRequest {
   data_recebimento?: string | null
 }
 
+export type TipoLancamento = "despesa" | "retirada"
+
 export interface Despesa {
   id: string
   categoria: string
   competencia: string
   valor: number
+  descricao?: string | null
+  tipo?: TipoLancamento
+  conta?: string | null
+  vencimento?: string | null
+  pago?: boolean
+  pago_em?: string | null
+  recorrente_id?: string | null
+  /** Conta fixa de valor variável ainda sem o valor do mês. */
+  valor_a_definir?: boolean
 }
 
 export interface RegistrarDespesaRequest {
   categoria: string
   competencia: string
   valor: number
+  descricao?: string | null
+  tipo?: TipoLancamento
+  conta?: string | null
+  vencimento?: string | null
+  pago?: boolean
+  pago_em?: string | null
 }
+
+/** PATCH /despesas/{id} — editar ou ticar ("pagou ✓"). DELETE /despesas/{id}. */
+export type AtualizarDespesaRequest = Partial<RegistrarDespesaRequest>
 
 export interface CertificadoStatus {
   carregado: boolean
@@ -746,4 +770,176 @@ export interface CanaisSuporte {
   email: string
   whatsapp: string | null
   formulario: boolean
+}
+
+
+// --- Financeiro (28/09/2026) ---
+// GET /financeiro/resumo?ano=AAAA
+export interface ResumoFinanceiro {
+  ano: string
+  meses: string[] // "01".."12"
+  faturado: number[]
+  recebido: number[]
+  despesas: number[]
+  impostos: number[]
+  ferramentas: number[]
+  retiradas: number[]
+  lucro: number[]
+  margem: (number | null)[] // %
+  saldo_a_distribuir: number[] // acumulado (lucro − retiradas)
+  totais: {
+    faturado: number
+    recebido: number
+    despesas: number
+    impostos: number
+    ferramentas: number
+    retiradas: number
+    lucro: number
+    margem: number | null
+    carga_impostos: number | null
+    saldo_a_distribuir: number
+    a_receber: number
+  }
+  categorias: { categoria: string; total: number }[]
+}
+
+// GET /financeiro/mes?competencia=AAAA-MM (cria os lançamentos das contas fixas do mês)
+export interface RotinaDoMes {
+  id: string
+  nome: string
+  feita: boolean
+  feita_em: string | null
+}
+
+export interface ContasDoMes {
+  competencia: string
+  contas: Despesa[]
+  rotinas: RotinaDoMes[]
+  total_previsto: number
+  total_pago: number
+  a_pagar: number
+  rotinas_feitas: number
+}
+
+// GET/POST /financeiro/contas-fixas, PATCH/DELETE /financeiro/contas-fixas/{id}
+export interface ContaFixa {
+  id: string
+  nome: string
+  categoria: string
+  tipo: TipoLancamento
+  valor_padrao: number | null
+  dia_vencimento: number | null
+  conta: string | null
+  ativa: boolean
+}
+
+export interface ContaFixaRequest {
+  nome: string
+  categoria?: string | null
+  tipo?: TipoLancamento
+  valor_padrao?: number | null
+  dia_vencimento?: number | null
+  conta?: string | null
+  ativa?: boolean
+}
+
+// GET/POST /financeiro/rotinas, PATCH /financeiro/rotinas/{id} {nome?, ativa?},
+// POST /financeiro/rotinas/{id}/check {competencia, feita}
+export interface Rotina {
+  id: string
+  nome: string
+  ativa: boolean
+}
+
+// --- Importar a planilha de controle ---
+// POST /importar/planilha/previa (multipart: arquivo, ano?) → PreviaPlanilha
+// POST /importar/planilha (multipart: arquivo, ano?, escolhas=JSON EscolhasPlanilha) → ResultadoPlanilha
+export interface ReceitaPlanilha {
+  linha: number
+  nome: string
+  valores: (number | null)[] // 12 meses
+  total: number
+  /** 0 = pagamento no mês da nota; 1 = pagamento lançado no mês anterior ao da nota. */
+  deslocamento: 0 | 1
+  nf_nome: string | null
+  acao: "vinculo" | "novo"
+  vinculo_id: string | null
+}
+
+export interface DespesaPlanilha {
+  nome: string
+  categoria: string
+  valores: (number | null)[]
+  total: number
+  recorrente: boolean
+  valor_padrao: number | null
+}
+
+export interface PreviaPlanilha {
+  ano: number
+  receitas: ReceitaPlanilha[]
+  despesas: DespesaPlanilha[]
+  retiradas: { nome: string; conta: string; valores: (number | null)[]; total: number }[]
+  rotinas: { nome: string; feitos: number[] }[]
+  notas_na_planilha: number
+}
+
+export interface EscolhasPlanilha {
+  receitas: { linha: number; acao: "vinculo" | "novo" | "ignorar"; vinculo_id?: string | null; deslocamento: number }[]
+  despesas: boolean
+  recorrentes: boolean
+  retiradas: boolean
+  rotinas: boolean
+}
+
+export interface ResultadoPlanilha {
+  pagamentos: number
+  pagamentos_existentes: number
+  tomadores_criados: number
+  despesas: number
+  contas_fixas: number
+  retiradas: number
+  rotinas: number
+  avisos: string[]
+}
+
+// --- Importar do Emissor Nacional ---
+// GET /importar/nacional → PreviaNacional (o que já foi buscado nesta sessão do servidor)
+// POST /importar/nacional/buscar {recomecar?, desde_inicio?} → PreviaNacional (chamar de novo enquanto !terminou)
+// POST /importar/nacional {mapeamento: RegraImportacao[]} → ResultadoNacional
+export type AcaoImportacao = "vinculo" | "avulsa" | "novo" | "ignorar"
+
+export interface GrupoImportacao {
+  documento: string
+  tipo: "CNPJ" | "CPF" | "NIF" | null
+  nome: string
+  quantidade: number
+  total: number
+  canceladas: number
+  competencias: string[]
+  descricao_exemplo: string | null
+  intermediario: string | null
+  sugestao: Exclude<AcaoImportacao, "ignorar">
+  vinculo_id: string | null
+}
+
+export interface PreviaNacional {
+  terminou: boolean
+  nsu: number
+  total_notas: number
+  ja_importadas: number
+  recebidas: number
+  grupos: GrupoImportacao[]
+}
+
+export interface RegraImportacao {
+  documento: string
+  acao: AcaoImportacao
+  vinculo_id?: string | null
+}
+
+export interface ResultadoNacional {
+  importadas: number
+  vinculos_criados: number
+  puladas: { chave: string; motivo: string }[]
 }
