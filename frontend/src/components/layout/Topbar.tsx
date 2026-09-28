@@ -1,11 +1,12 @@
-import { Bell, ChevronDown, CircleHelp, LogOut, Menu, Search } from "lucide-react"
+import { Bell, Building2, ChevronDown, CircleHelp, Gift, LogOut, Menu, Search, UserRound } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
+import { Link } from "react-router-dom"
 import { useAuth } from "../../lib/auth"
 import { mostrarDicasDaTela } from "../../lib/tutorial"
 
-function iniciais(email: string): string {
-  const nome = email.split("@")[0].replace(/[._-]+/g, " ")
-  const partes = nome.trim().split(" ").filter(Boolean)
+function iniciais(email: string, nomeCompleto?: string | null): string {
+  const nome = nomeCompleto?.trim() || email.split("@")[0].replace(/[._-]+/g, " ")
+  const partes = nome.trim().split(/\s+/).filter(Boolean)
   const letras = partes.slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "")
   return letras.join("") || "?"
 }
@@ -78,17 +79,44 @@ export function Topbar({ onAbrirMenu }: { onAbrirMenu?: () => void }) {
               aria-expanded={menuAberto}
               className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-900 text-xs font-semibold text-white">
-                {usuario.demo ? "V" : iniciais(usuario.email)}
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-900 text-xs font-semibold text-white" aria-hidden="true">
+                {usuario.demo ? "V" : iniciais(usuario.email, usuario.nome)}
               </div>
-              <div className="hidden text-left leading-tight sm:block">
-                <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{usuario.demo ? "Visitante" : usuario.email}</p>
-                <p className="text-xs text-slate-400 dark:text-slate-500">{usuario.demo ? "Conta de simulação" : "Prestador(a) de serviços"}</p>
+              <div className="hidden max-w-[14rem] text-left leading-tight sm:block">
+                <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
+                  {usuario.demo ? "Visitante" : usuario.nome?.trim() ? `Olá, ${usuario.nome.trim().split(/\s+/)[0]}` : usuario.email}
+                </p>
+                <p className="truncate text-xs text-slate-400 dark:text-slate-500">
+                  {usuario.demo ? "Conta de simulação" : usuario.nome?.trim() ? usuario.email : "Prestador(a) de serviços"}
+                </p>
               </div>
+              <span className="sr-only">Menu da conta</span>
               <ChevronDown size={16} className="text-slate-400 dark:text-slate-500" />
             </button>
             {menuAberto && (
-              <div className="absolute right-0 z-10 mt-2 w-44 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 py-1 shadow-lg">
+              <div className="absolute right-0 z-10 mt-2 w-60 rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                <div className="border-b border-slate-100 px-3 pb-2 pt-1.5 dark:border-slate-700 sm:hidden">
+                  <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
+                    {usuario.demo ? "Visitante" : usuario.nome?.trim() || usuario.email}
+                  </p>
+                  {!usuario.demo && usuario.nome?.trim() && <p className="truncate text-xs text-slate-400">{usuario.email}</p>}
+                </div>
+                {[
+                  { to: "/app/conta", rotulo: "Minha conta", Icone: UserRound },
+                  { to: "/app/empresa", rotulo: "Dados da empresa", Icone: Building2 },
+                  { to: "/app/conta?aba=indique", rotulo: "Indique e ganhe", Icone: Gift },
+                ].map(({ to, rotulo, Icone }) => (
+                  <Link
+                    key={to}
+                    to={to}
+                    onClick={() => setMenuAberto(false)}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700/50"
+                  >
+                    <Icone size={15} aria-hidden="true" />
+                    {rotulo}
+                  </Link>
+                ))}
+                <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
                 <button
                   type="button"
                   onClick={() => logout()}

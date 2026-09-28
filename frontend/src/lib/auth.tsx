@@ -6,6 +6,10 @@ interface AuthState {
   usuario: Usuario | null
   carregando: boolean
   login: (email: string, senha: string) => Promise<void>
+  /** Login sem senha: código de 6 dígitos mandado por e-mail (POST /auth/codigo antes). */
+  entrarComCodigo: (email: string, codigo: string) => Promise<void>
+  /** Relê /auth/me (ex.: depois de trocar o nome em Minha conta). */
+  recarregarUsuario: () => Promise<void>
   loginComGoogle: () => Promise<void>
   entrarNaSimulacao: () => Promise<void>
   logout: () => Promise<void>
@@ -39,6 +43,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsuario(dados)
   }
 
+  async function entrarComCodigo(email: string, codigo: string) {
+    const dados = await api.post<Usuario>("/auth/codigo/entrar", { email, codigo })
+    setUsuario(dados)
+  }
+
+  async function recarregarUsuario() {
+    try {
+      setUsuario(await api.get<Usuario>("/auth/me"))
+    } catch {
+      /* mantém o que já tinha; o 401 de verdade é tratado pelo evento de sessão expirada */
+    }
+  }
+
   // Marco 16, item 1 — login/cadastro via Google (ver app/services/
   // google_oauth.py). Não seta `usuario` aqui: o passo 2 é um redirect de
   // página inteira pra Google (window.location, não fetch — precisa ser
@@ -64,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ usuario, carregando, login, loginComGoogle, entrarNaSimulacao, logout }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ usuario, carregando, login, entrarComCodigo, recarregarUsuario, loginComGoogle, entrarNaSimulacao, logout }}>{children}</AuthContext.Provider>
   )
 }
 

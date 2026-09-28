@@ -256,7 +256,7 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
                 "tipo": "certificado_vencido" if dias < 0 else "certificado_vencendo",
                 "titulo": "Certificado digital",
                 "mensagem": (f"Venceu há {-dias} dia(s)." if dias < 0 else f"Vence em {dias} dia(s)."),
-                "link": "/app/configuracoes#certificado",
+                "link": "/app/empresa?aba=certificado",
                 "link_label": "Enviar novo certificado",
             })
 
@@ -278,7 +278,7 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
                 if prestador.aliquota_atual is not None
                 else "Nenhuma alíquota de referência definida ainda — configure em Configurações."
             ),
-            "link": "/app/configuracoes#aliquota",
+            "link": "/app/empresa?aba=aliquotas",
             "link_label": "Revisar alíquota" if prestador.aliquota_atual is not None else "Definir alíquota",
         })
 

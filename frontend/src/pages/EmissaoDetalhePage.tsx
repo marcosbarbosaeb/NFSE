@@ -6,8 +6,6 @@ import {
   Download,
   FileDown,
   Link as LinkIcon,
-  Mail,
-  MessageCircle,
   MessageSquareText,
   PenLine,
   Send,
@@ -15,6 +13,8 @@ import {
 } from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
+import type { NotaParaAcoes } from "../components/AcoesNota"
+import { EnvioNota } from "../components/EnvioNota"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
@@ -36,8 +36,9 @@ const CANAIS: { value: CanalEnvio; label: string }[] = [
   { value: "download", label: "Baixar XML" },
   { value: "mensagem_pronta", label: "Mensagem pronta" },
   { value: "email", label: "E-mail" },
+  { value: "email_geral", label: "E-mail geral (contador)" },
   { value: "whatsapp", label: "WhatsApp" },
-  { value: "direto_fornecedor", label: "Direto com o fornecedor" },
+  { value: "direto_fornecedor", label: "Marcada como enviada" },
 ]
 
 function badgeStatusEnvio(status: string) {
@@ -70,10 +71,10 @@ export function EmissaoDetalhePage() {
   const [xmotivo, setXmotivo] = useState("")
   const [erroAcao, setErroAcao] = useState<string | null>(null)
 
-  // Marco 17 — envio direto ao fornecedor (e-mail da Agente Ana, WhatsApp, link).
+  // Marco 17 — envio ao tomador. 29/09/2026: o painel (e-mail, WhatsApp,
+  // portal, contador) é o mesmo do selo "Fornecedor" das listas — aqui a
+  // pessoa entra na nota e configura o envio dela.
   const [opcoes, setOpcoes] = useState<OpcoesEnvio | null>(null)
-  const [enviandoEmail, setEnviandoEmail] = useState(false)
-  const [erroEnvio, setErroEnvio] = useState<string | null>(null)
   const [linkCopiado, setLinkCopiado] = useState(false)
 
   useEffect(() => {
@@ -81,36 +82,9 @@ export function EmissaoDetalhePage() {
     api.get<OpcoesEnvio>(`/dps/${id}/envio-opcoes`).then(setOpcoes).catch(() => setOpcoes(null))
   }, [id])
 
-  async function enviarPorEmail() {
+  function recarregarEnvios() {
     if (!id) return
-    setErroEnvio(null)
-    setEnviandoEmail(true)
-    try {
-      const envio = await api.post<Envio>(`/dps/${id}/enviar-email`)
-      if (envio.status === "falha") setErroEnvio(`O e-mail não saiu: ${envio.erro ?? "erro no provedor"}. Tente de novo.`)
-      api.get<Envio[]>(`/dps/${id}/envios`).then(setEnvios)
-    } catch (err) {
-      setErroEnvio(err instanceof ApiError ? formatarErro(err.detail) : "Falha ao enviar o e-mail.")
-    } finally {
-      setEnviandoEmail(false)
-    }
-  }
-
-  async function enviarPorWhatsapp() {
-    if (!id) return
-    setErroEnvio(null)
-    // Abre a aba já no clique (senão o navegador bloqueia como pop-up) e só
-    // depois aponta pro link que o backend montou.
-    const aba = window.open("", "_blank")
-    try {
-      const { url } = await api.post<{ url: string; envio: Envio }>(`/dps/${id}/whatsapp`)
-      if (aba) aba.location.href = url
-      else window.location.href = url
-      api.get<Envio[]>(`/dps/${id}/envios`).then(setEnvios)
-    } catch (err) {
-      aba?.close()
-      setErroEnvio(err instanceof ApiError ? formatarErro(err.detail) : "Falha ao montar a mensagem do WhatsApp.")
-    }
+    api.get<Envio[]>(`/dps/${id}/envios`).then(setEnvios).catch(() => {})
   }
 
   async function copiarLink() {
@@ -233,6 +207,16 @@ export function EmissaoDetalhePage() {
 
   if (carregando) return <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>
   if (!nota) return <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro ?? "Nota não encontrada."}</p>
+
+  const entregue = envios.some((e) => ["email", "whatsapp", "direto_fornecedor"].includes(e.canal) && e.status === "enviado")
+  const notaParaEnvio: NotaParaAcoes = {
+    id: id ?? "",
+    estado: nota.estado,
+    envio_status: entregue ? "enviado" : null,
+    tem_pdf: nota.estado === "confirmado",
+    homologacao: nota.ambiente === "2",
+    vinculo_id: opcoes?.vinculo_id ?? null,
+  }
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
@@ -357,53 +341,34 @@ export function EmissaoDetalhePage() {
       </Card>
 
       <Card className="p-5">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Envio ao fornecedor</h2>
-        {erroEnvio && <p className="mb-3 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erroEnvio}</p>}
-        <div className="mb-2 flex flex-wrap gap-2">
-          <Button
-            variant="accent"
-            onClick={enviarPorEmail}
-            disabled={!nota.xml_disponivel || !opcoes?.email_habilitado || enviandoEmail}
-            title={opcoes?.email_motivo_desabilitado ?? undefined}
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Envio desta nota</h2>
+            <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
+              Escolha como esta nota chega ao tomador — por e-mail, WhatsApp, no portal dele — ou mande pro contador.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={copiarLink}
+            disabled={!nota.xml_disponivel || !opcoes}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-300 dark:hover:bg-primary-900/30"
           >
-            <Mail size={15} /> {enviandoEmail ? "Enviando..." : "Enviar por e-mail"}
-          </Button>
-          <Button variant="outline" onClick={enviarPorWhatsapp} disabled={!nota.xml_disponivel}>
-            <MessageCircle size={15} /> Enviar por WhatsApp
-          </Button>
-          <Button variant="outline" onClick={copiarLink} disabled={!nota.xml_disponivel || !opcoes}>
-            <LinkIcon size={15} /> {linkCopiado ? "Link copiado!" : "Copiar link da nota"}
-          </Button>
-          <Button variant="ghost" onClick={() => registrarEnvio("direto_fornecedor")} disabled={!nota.xml_disponivel}>
-            Registrar envio feito por fora
-          </Button>
+            <LinkIcon size={13} /> {linkCopiado ? "Link copiado!" : "Copiar link da nota"}
+          </button>
         </div>
-        {opcoes && (
-          <p className="mb-4 text-xs text-slate-400 dark:text-slate-500">
-            {opcoes.email_habilitado
-              ? `E-mail vai para ${opcoes.email_destino}, com a nota em anexo; a resposta cai no seu e-mail.`
-              : opcoes.email_motivo_desabilitado}
-            {!opcoes.email_habilitado && opcoes.email_motivo_desabilitado?.startsWith("Cadastre") && opcoes.vinculo_id && (
-              <>
-                {" "}
-                <Link to={`/app/tomadores/${opcoes.vinculo_id}`} className="font-medium text-primary-600 hover:underline">
-                  Cadastrar agora
-                </Link>
-              </>
-            )}
-            {opcoes.whatsapp_destino
-              ? ` WhatsApp abre a conversa com ${opcoes.whatsapp_destino} com a mensagem pronta — é só apertar enviar.`
-              : " Sem WhatsApp cadastrado: você escolhe o contato ao abrir."}
-          </p>
-        )}
+        {id && <EnvioNota nota={notaParaEnvio} onMudou={recarregarEnvios} modo="card" />}
 
+        <h3 className="mb-1 mt-6 border-t border-slate-100 pt-4 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:border-slate-700/60 dark:text-slate-500">
+          Histórico de envios
+        </h3>
         {envios.length === 0 ? (
           <p className="text-sm text-slate-400 dark:text-slate-500">Nenhum envio registrado ainda.</p>
         ) : (
           <ul className="flex flex-col divide-y divide-slate-100 dark:divide-slate-700">
             {envios.map((e) => (
               <li key={e.id} className="flex items-center justify-between py-2.5 text-sm">
-                <span className="min-w-0 text-slate-700 dark:text-slate-300">
+                <span className="min-w-0 break-words text-slate-700 dark:text-slate-300">
                   {CANAIS.find((c) => c.value === e.canal)?.label ?? e.canal}
                   {e.destino && <span className="ml-1 text-xs text-slate-400">· {e.destino}</span>}
                   {e.erro && <span className="block text-xs text-danger-600">{e.erro}</span>}
@@ -415,6 +380,7 @@ export function EmissaoDetalhePage() {
                       <button
                         type="button"
                         title="Marcar como enviado"
+                        aria-label="Marcar como enviado"
                         onClick={() => marcarEnvio(e.id, "marcar-enviado")}
                         className="rounded p-1 text-success-600 hover:bg-success-50"
                       >
@@ -423,6 +389,7 @@ export function EmissaoDetalhePage() {
                       <button
                         type="button"
                         title="Marcar falha"
+                        aria-label="Marcar falha"
                         onClick={() => marcarEnvio(e.id, "marcar-falha")}
                         className="rounded p-1 text-danger-600 hover:bg-danger-50"
                       >

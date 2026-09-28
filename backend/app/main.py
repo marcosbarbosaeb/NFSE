@@ -48,7 +48,7 @@ from urllib.parse import urlencode
 
 from starlette.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
@@ -1581,12 +1581,17 @@ def api_refazer_falhas(
 
 
 @app.get("/api/envios/resumo", response_model=ResumoEnviosResponse)
-def api_resumo_envios(ano: str | None = None, vinculo_id: uuid.UUID | None = None, db: Session = Depends(db_sessao)):
+def api_resumo_envios(
+    ano: str | None = Query(default=None, pattern=r"^\d{4}$"), vinculo_id: uuid.UUID | None = None,
+    competencia: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"), db: Session = Depends(db_sessao),
+):
     """E-mails/WhatsApp entregues x falhas (último status de cada nota), como
     o "757 entregues · 35 falhas" do MandaNotas."""
     query = db.query(Emissao.id).filter(Emissao.estado != "cancelada")
     if ano:
         query = query.filter(Emissao.competencia.like(f"{ano}-%"))
+    if competencia:
+        query = query.filter(Emissao.competencia == competencia)
     if vinculo_id:
         query = query.filter(Emissao.prestador_tomador_id == vinculo_id)
     ids = [i for (i,) in query]

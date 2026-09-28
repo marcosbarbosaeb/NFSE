@@ -1,7 +1,8 @@
 import { FileCode2, FileDown } from "lucide-react"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { ApiError, api, formatarErro } from "../lib/api"
-import type { FormaEnvio, PreviaEmail } from "../lib/types"
+import type { FormaEnvio } from "../lib/types"
+import { EnvioNota, envioLiberado } from "./EnvioNota"
 import { Badge } from "./ui/Badge"
 
 // Pedido do Marcos (28/09/2026): "na aba NFS-e, além do estado, vamos deixar
@@ -24,6 +25,8 @@ export interface NotaParaAcoes {
   avulsa?: boolean
   /** Como o tomador recebe a nota (null = e-mail). */
   envio_forma?: FormaEnvio | null
+  /** Tomador da nota — pro atalho "cadastrar o link do portal". */
+  vinculo_id?: string | null
 }
 
 /** Selo com confirmação em popover (position:fixed — tabelas com overflow cortariam um popover comum). */
@@ -34,6 +37,7 @@ export function SeloAcao({
   titulo,
   desabilitado,
   larguraPainel = 272,
+  alturaPainel = 260,
   onAbrir,
   children,
 }: {
@@ -43,11 +47,13 @@ export function SeloAcao({
   titulo?: string
   desabilitado?: boolean
   larguraPainel?: number
+  /** Altura esperada do painel — decide se abre pra baixo ou pra cima (ele rola se não couber). */
+  alturaPainel?: number
   onAbrir?: () => void
   children?: (fechar: () => void) => ReactNode
 }) {
   const [aberto, setAberto] = useState(false)
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; largura: number; alturaMax: number } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -55,7 +61,9 @@ export function SeloAcao({
     const fora = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setAberto(false)
     // Rolar a página fecha (o painel é fixo e ficaria solto) — menos quando
     // a pessoa está digitando nele: no celular o teclado rola a tela.
-    const fechar = () => {
+    const fechar = (e: Event) => {
+      // Rolar dentro do próprio painel (ele tem barra de rolagem) não fecha.
+      if (e.target instanceof Node && ref.current?.contains(e.target)) return
       if (ref.current?.contains(document.activeElement)) return
       setAberto(false)
     }
@@ -86,8 +94,16 @@ export function SeloAcao({
         onClick={(e) => {
           e.stopPropagation()
           const r = e.currentTarget.getBoundingClientRect()
-          const top = r.bottom + 8 + 260 > window.innerHeight ? Math.max(8, r.top - 268) : r.bottom + 8
-          setPos({ top, left: Math.max(8, Math.min(r.left, window.innerWidth - larguraPainel - 8)) })
+          const largura = Math.min(larguraPainel, window.innerWidth - 16)
+          const left = Math.max(8, Math.min(r.left, window.innerWidth - largura - 8))
+          const abaixo = window.innerHeight - r.bottom - 16
+          const acima = r.top - 16
+          // Abre pra baixo se couber (ou se embaixo tem mais espaço); senão pra cima, colado no selo.
+          setPos(
+            abaixo >= alturaPainel || abaixo >= acima
+              ? { top: r.bottom + 8, left, largura, alturaMax: Math.max(160, abaixo) }
+              : { bottom: window.innerHeight - r.top + 8, left, largura, alturaMax: Math.max(160, acima) },
+          )
           if (!aberto) onAbrir?.()
           setAberto((a) => !a)
         }}
@@ -109,8 +125,8 @@ export function SeloAcao({
       {aberto && pos && (
         <div
           onClick={(e) => e.stopPropagation()}
-          style={{ top: pos.top, left: pos.left, width: larguraPainel }}
-          className="fixed z-50 rounded-xl border border-slate-200 bg-white p-3 text-left text-sm shadow-xl dark:border-slate-700 dark:bg-slate-800"
+          style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.largura, maxHeight: pos.alturaMax }}
+          className="fixed z-50 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white p-3 text-left text-sm shadow-xl dark:border-slate-700 dark:bg-slate-800"
         >
           {children(() => setAberto(false))}
         </div>
@@ -234,90 +250,56 @@ export function SeloPrefeitura({ nota, onMudou }: { nota: NotaParaAcoes; onMudou
 }
 
 export function SeloTomador({ nota, onMudou }: { nota: NotaParaAcoes; onMudou: () => void }) {
-  const [previa, setPrevia] = useState<PreviaEmail | null>(null)
-  const [erroPrevia, setErroPrevia] = useState<string | null>(null)
-  // Destinatário e cópia editáveis na hora (valem só pra este envio).
-  const [para, setPara] = useState("")
-  const [copia, setCopia] = useState("")
-  const liberado = nota.estado === "confirmado" || (nota.homologacao && ["montado", "assinado", "submetido"].includes(nota.estado))
+  const liberado = envioLiberado(nota)
   const enviada = nota.envio_status === "enviado"
+  const falhou = nota.envio_status === "falha"
 
   if (nota.estado === "cancelada" || nota.estado === "substituida") return <SeloAcao rotulo="—" variante="neutral" desabilitado />
-  if (!nota.tem_email) {
-    return <SeloAcao rotulo="Sem e-mail" variante="neutral" desabilitado titulo="Cadastre o e-mail deste tomador (Tomadores › editar) pra enviar direto" />
-  }
   if (!liberado && !enviada) {
     return <SeloAcao rotulo="—" variante="neutral" desabilitado titulo="Dá pra enviar depois que a prefeitura autorizar a nota" />
   }
 
+  // E-mail não é obrigatório (29/09/2026): sem e-mail o painel abre no WhatsApp.
+  const forma = nota.avulsa ? "email" : nota.envio_forma ?? (nota.tem_email === false ? "whatsapp" : "email")
+  let rotulo: string
+  let rotuloHover: string
+  let variante: Variante
+  let titulo: string
+  if (enviada) {
+    ;[rotulo, rotuloHover, variante, titulo] = ["Enviada ✓", "Reenviar", "success", "Já enviada — clique pra reenviar (e-mail, WhatsApp...)"]
+  } else if (falhou) {
+    ;[rotulo, rotuloHover, variante, titulo] = ["Falhou", "Tentar de novo", "danger", "O último envio falhou — clique pra tentar de novo"]
+  } else if (forma === "nenhum") {
+    ;[rotulo, rotuloHover, variante, titulo] = ["Não precisa", "Enviar", "neutral", "Este tomador não precisa receber a nota — clique se quiser mandar mesmo assim"]
+  } else if (forma === "portal") {
+    ;[rotulo, rotuloHover, variante, titulo] = ["Enviar no portal", "Abrir", "warning", "Este tomador recebe pelo sistema dele — baixe a nota e marque como enviada"]
+  } else {
+    const porZap = forma === "whatsapp"
+    ;[rotulo, rotuloHover, variante, titulo] = [
+      "A enviar",
+      "Enviar",
+      "warning",
+      porZap ? "Clique pra mandar a nota pelo WhatsApp (ou e-mail)" : "Clique pra mandar a nota por e-mail (ou WhatsApp)",
+    ]
+  }
+
   return (
-    <SeloAcao
-      rotulo={enviada ? "Enviada ✓" : nota.envio_status === "falha" ? "Falhou" : "A enviar"}
-      rotuloHover={enviada ? "Reenviar" : "Enviar"}
-      variante={enviada ? "success" : nota.envio_status === "falha" ? "danger" : "warning"}
-      titulo={enviada ? "Já enviada — clique pra reenviar" : "Clique pra mandar a nota por e-mail"}
-      larguraPainel={320}
-      onAbrir={() => {
-        setPrevia(null)
-        setErroPrevia(null)
-        api
-          .get<PreviaEmail>(`/dps/${nota.id}/email-previa`)
-          .then((p) => {
-            setPrevia(p)
-            setPara(p.destinos.join(", "))
-            setCopia(p.copia.join(", "))
-          })
-          .catch((err) => setErroPrevia(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão."))
-      }}
-    >
+    <SeloAcao rotulo={rotulo} rotuloHover={rotuloHover} variante={variante} titulo={titulo} larguraPainel={380} alturaPainel={460}>
       {(fechar) => (
-        <Confirmar
-          botao={enviada ? "Reenviar" : "Enviar e-mail"}
-          fechar={fechar}
-          onConfirmar={async () => {
-            const lista = (t: string) => t.split(/[,;\s]+/).map((e) => e.trim()).filter(Boolean)
-            if (lista(para).length === 0) throw new ApiError(400, "Informe pelo menos um destinatário.")
-            const envio = await api.post<{ status: string; erro: string | null }>(`/dps/${nota.id}/enviar-email`, {
-              para: lista(para),
-              copia: lista(copia),
-            })
-            if (envio.status === "falha") throw new ApiError(400, envio.erro ?? "O envio falhou.")
-            onMudou()
-          }}
-        >
-          {erroPrevia && <p className="text-xs text-danger-600">{erroPrevia}</p>}
-          {!previa && !erroPrevia && <p className="text-xs text-slate-400">Carregando o e-mail...</p>}
-          {previa && (
-            <div className="flex flex-col gap-1.5 text-xs text-slate-600 dark:text-slate-300">
-              <label className="flex flex-col gap-0.5">
-                <span className="text-slate-400">Para</span>
-                <input
-                  value={para}
-                  readOnly={nota.avulsa && nota.estado === "confirmado"}
-                  title={nota.avulsa ? "Nota da Shopee: vai pro e-mail do vendedor que veio no relatório" : undefined}
-                  onChange={(e) => setPara(e.target.value)}
-                  className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                />
-              </label>
-              <label className="flex flex-col gap-0.5">
-                <span className="text-slate-400">Cópia</span>
-                <input
-                  value={copia}
-                  onChange={(e) => setCopia(e.target.value)}
-                  placeholder="opcional"
-                  className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                />
-              </label>
-              <p>
-                <span className="text-slate-400">Assunto:</span> {previa.assunto}
-              </p>
-              <p>
-                <span className="text-slate-400">Anexos:</span> {previa.arquivos.join(", ")}
-              </p>
-              {previa.motivo_desabilitado && previa.destinos.length > 0 && <p className="text-danger-600">{previa.motivo_desabilitado}</p>}
-            </div>
-          )}
-        </Confirmar>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Enviar a nota</p>
+            <button
+              type="button"
+              onClick={fechar}
+              aria-label="Fechar"
+              className="rounded-md px-1.5 text-lg leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700"
+            >
+              ×
+            </button>
+          </div>
+          <EnvioNota nota={nota} onMudou={onMudou} onConcluido={fechar} modo="popover" />
+        </div>
       )}
     </SeloAcao>
   )

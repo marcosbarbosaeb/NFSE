@@ -44,7 +44,7 @@ function badgeEnvio(status: string | null) {
 
 
 function notaDaLinha(l: EmissaoResumoLinha): NotaParaAcoes {
-  return { id: l.emissao_id, estado: l.estado, envio_status: l.envio_status, tem_pdf: l.tem_pdf, tem_email: l.tem_email, homologacao: l.homologacao, envio_forma: l.envio_forma }
+  return { id: l.emissao_id, estado: l.estado, envio_status: l.envio_status, tem_pdf: l.tem_pdf, tem_email: l.tem_email, homologacao: l.homologacao, envio_forma: l.envio_forma, vinculo_id: l.vinculo_id }
 }
 
 const COR_PENDENCIA: Record<string, string> = {
@@ -216,7 +216,7 @@ export function DashboardPage() {
                         <th className="py-2 font-medium">Valor</th>
                         <th className="py-2 font-medium">Assinatura</th>
                         <th className="py-2 font-medium">Prefeitura</th>
-                        <th className="py-2 font-medium">Envio</th>
+                        <th className="py-2 font-medium">Fornecedor</th>
                         <th className="py-2 font-medium">Pagamento</th>
                       </tr>
                     </thead>

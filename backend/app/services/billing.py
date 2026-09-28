@@ -186,8 +186,8 @@ def criar_sessao_checkout(db: Session, prestador_id: uuid.UUID, email: str) -> s
         mode="subscription",
         customer=customer_id,
         line_items=[{"price": settings.stripe_price_id_mensal, "quantity": 1}],
-        success_url=f"{base}/app/configuracoes?assinatura=sucesso",
-        cancel_url=f"{base}/app/configuracoes?assinatura=cancelado",
+        success_url=f"{base}/app/conta?aba=assinatura&assinatura=sucesso",
+        cancel_url=f"{base}/app/conta?aba=assinatura&assinatura=cancelado",
         metadata={"prestador_id": str(prestador_id)},
         subscription_data={"metadata": {"prestador_id": str(prestador_id)}},
         api_key=settings.stripe_secret_key,
@@ -206,7 +206,7 @@ def criar_sessao_portal(db: Session, prestador_id: uuid.UUID) -> str:
         raise AssinaturaNaoEncontradaError("Nenhuma assinatura Stripe iniciada ainda — assine primeiro.")
     sessao = stripe.billing_portal.Session.create(
         customer=assinatura.stripe_customer_id,
-        return_url=f"{settings.app_base_url}/app/configuracoes",
+        return_url=f"{settings.app_base_url}/app/conta?aba=assinatura",
         api_key=settings.stripe_secret_key,
     )
     return sessao["url"]

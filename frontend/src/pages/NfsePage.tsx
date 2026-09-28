@@ -1,6 +1,23 @@
-import { CheckCircle2, Clock, FileSpreadsheet, FileText, FileUp, Plus, Search } from "lucide-react"
+import {
+  CheckCircle2,
+  Clock,
+  FileArchive,
+  FileSpreadsheet,
+  FileText,
+  FileUp,
+  Landmark,
+  Mail,
+  PenLine,
+  Plus,
+  RotateCcw,
+  Search,
+  Send,
+  X,
+} from "lucide-react"
 import { DownloadsNota, SeloAssinatura, SeloPrefeitura, SeloTomador } from "../components/AcoesNota"
 import { BaixaPagamento } from "../components/BaixaPagamento"
+import { CampoData } from "../components/CampoData"
+import { ConfirmarLoteModal, LotePainel } from "../components/LotePainel"
 import { ShopeeModal } from "../components/ShopeeModal"
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
@@ -12,9 +29,14 @@ import { Field, FieldWrap } from "../components/ui/Field"
 import { Modal } from "../components/ui/Modal"
 import { StatCard } from "../components/ui/StatCard"
 import { ApiError, api, formatarErro } from "../lib/api"
-import { competenciaAtual, formatBRL } from "../lib/format"
+import { dataPadraoDaCompetencia, hojeLocal } from "../lib/datas"
+import { LOTE_RODANDO } from "../lib/lotes"
+import { formatBRL, formatCompetenciaLonga } from "../lib/format"
 import type {
+  AcaoLote,
+  CriarLoteBody,
   EmissaoListaLinha,
+  Lote,
   Emissao,
   GerarDpsRequest,
   ImportacaoCsvResultado,
@@ -26,6 +48,43 @@ import type {
 
 const ANO_ATUAL = new Date().getFullYear()
 const ANOS = [ANO_ATUAL, ANO_ATUAL - 1, ANO_ATUAL - 2]
+const MESES = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+]
+
+// .zip por ids vai na URL (GET /api/dps/zip?ids=a,b,c) — acima disso a URL
+// fica grande demais pro servidor; aí só por mês inteiro.
+const MAX_IDS_ZIP = 250
+
+// Painel de lote fechado pela pessoa não volta a aparecer ao recarregar a página.
+const CHAVE_LOTES_FECHADOS = "agenteana:lotes-fechados"
+function lotesFechados(): string[] {
+  try {
+    return JSON.parse(sessionStorage.getItem(CHAVE_LOTES_FECHADOS) ?? "[]")
+  } catch {
+    return []
+  }
+}
+function marcarLoteFechado(id: string) {
+  try {
+    sessionStorage.setItem(CHAVE_LOTES_FECHADOS, JSON.stringify([...lotesFechados(), id].slice(-20)))
+  } catch {
+    // sem storage (aba privada etc.) — só não lembra
+  }
+}
+
+interface Confirmacao {
+  body: CriarLoteBody
+  titulo?: string
+  totalSelecionadas?: number
+  alvo?: string
+  permitirReenviar?: boolean
+  aviso?: string
+}
+
+const SELECT_FILTRO =
+  "rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
 
 const ESTADOS: Record<string, { label: string; variant: "success" | "warning" | "danger" | "neutral" }> = {
   rascunho: { label: "Rascunho", variant: "neutral" },
@@ -53,6 +112,8 @@ function badgePagamento(recebido: boolean) {
 export function NfsePage() {
   const [ano, setAno] = useState<string>(String(ANO_ATUAL))
   const [vinculoFiltro, setVinculoFiltro] = useState("")
+  // Mês da competência (01..12) dentro do ano escolhido — filtro no cliente.
+  const [mesFiltro, setMesFiltro] = useState("")
   const [pagamentoFiltro, setPagamentoFiltro] = useState<"" | "recebido" | "pendente">("")
   const [busca, setBusca] = useState("")
   const [emissoes, setEmissoes] = useState<EmissaoListaLinha[] | null>(null)
@@ -69,6 +130,26 @@ export function NfsePage() {
   // NovaEmissaoModal abaixo); nunca aplicada sem o usuário poder confirmar.
   const [aliquotaReferencia, setAliquotaReferencia] = useState<number | null>(null)
   const [ambienteTeste, setAmbienteTeste] = useState(false)
+  // Ações em lote (29/09/2026): seleção múltipla + "enviar todas".
+  const [selecionadas, setSelecionadas] = useState<Set<string>>(() => new Set())
+  const [confirmacao, setConfirmacao] = useState<Confirmacao | null>(null)
+  const [lote, setLote] = useState<Lote | null>(null)
+  const [erroLote, setErroLote] = useState<string | null>(null)
+  const [baixandoZip, setBaixandoZip] = useState(false)
+  const checkTodas = useRef<HTMLInputElement>(null)
+
+  // Um lote que ainda roda (ou parou no meio) aparece ao abrir a página.
+  useEffect(() => {
+    api
+      .get<Lote[]>("/lotes")
+      .then((recentes) => {
+        const ultimo = recentes[0]
+        if (!ultimo || lotesFechados().includes(ultimo.id)) return
+        const recente = !ultimo.criado_em || Date.now() - new Date(ultimo.criado_em).getTime() < 24 * 3600 * 1000
+        if (LOTE_RODANDO(ultimo) || (ultimo.status === "interrompido" && recente)) setLote(ultimo)
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     api.get<VinculoResumo[]>("/vinculos").then(setVinculos).catch(() => {})
@@ -100,6 +181,19 @@ export function NfsePage() {
 
   useEffect(recarregar, [ano, vinculoFiltro])
 
+  // Trocar ano/tomador recarrega a lista — a seleção anterior não vale mais.
+  function trocarAno(valor: string) {
+    setAno(valor)
+    setSelecionadas(new Set())
+  }
+  function trocarVinculo(valor: string) {
+    setVinculoFiltro(valor)
+    setSelecionadas(new Set())
+  }
+
+  const competenciaFiltro = ano && mesFiltro ? `${ano}-${mesFiltro}` : ""
+  const vinculoSelecionado = vinculos.find((v) => v.id === vinculoFiltro) ?? null
+
   // Filtro de pagamento aplicado no cliente (não no servidor, embora
   // /api/dps aceite ?pagamento=...): assim o resumo de confronto abaixo
   // continua mostrando emitidas x pagas lado a lado, mesmo com um dos dois
@@ -108,18 +202,21 @@ export function NfsePage() {
     if (!emissoes) return []
     const termo = busca.trim().toLowerCase()
     return emissoes.filter((e) => {
+      if (competenciaFiltro && e.competencia !== competenciaFiltro) return false
       if (pagamentoFiltro === "recebido" && !e.pagamento_recebido) return false
       if (pagamentoFiltro === "pendente" && e.pagamento_recebido) return false
       if (!termo) return true
       return e.apelido.toLowerCase().includes(termo) || e.tomador_razao_social.toLowerCase().includes(termo)
     })
-  }, [emissoes, busca, pagamentoFiltro])
+  }, [emissoes, busca, pagamentoFiltro, competenciaFiltro])
 
   // Confronto emitidas x pagas (item 3 do Marco 16) — sempre sobre TODAS as
   // emissões ativas do filtro de ano/fornecedor corrente, independente do
   // filtro de pagamento selecionado (senão o resumo ficaria só de um lado).
   const confronto = useMemo(() => {
-    const ativas = (emissoes ?? []).filter((e) => e.estado !== "cancelada" && e.estado !== "substituida")
+    const ativas = (emissoes ?? []).filter(
+      (e) => e.estado !== "cancelada" && e.estado !== "substituida" && (!competenciaFiltro || e.competencia === competenciaFiltro),
+    )
     const recebidas = ativas.filter((e) => e.pagamento_recebido)
     const pendentes = ativas.filter((e) => !e.pagamento_recebido)
     return {
@@ -129,10 +226,121 @@ export function NfsePage() {
       valorRecebido: recebidas.reduce((soma, e) => soma + e.valor, 0),
       valorPendente: pendentes.reduce((soma, e) => soma + e.valor, 0),
     }
-  }, [emissoes])
+  }, [emissoes, competenciaFiltro])
+
+  // Envios ao fornecedor no filtro tomador+mês ("757 entregues · 35 falhas",
+  // como no MandaNotas). Mesma regra de GET /api/envios/resumo (último
+  // status de cada nota, canceladas fora) calculada sobre a lista já
+  // carregada — o endpoint só filtra por ano, não por mês.
+  const resumoEnvios = useMemo(() => {
+    if (!vinculoFiltro || !competenciaFiltro || !emissoes) return null
+    const doMes = emissoes.filter(
+      (e) => e.vinculo_id === vinculoFiltro && e.competencia === competenciaFiltro && e.estado !== "cancelada",
+    )
+    const enviados = doMes.filter((e) => e.envio_status === "enviado").length
+    const falhas = doMes.filter((e) => e.envio_status === "falha").length
+    return { total: doMes.length, enviados, falhas, semEnvio: doMes.length - enviados - falhas }
+  }, [emissoes, vinculoFiltro, competenciaFiltro])
+
+  // Só conta (e age sobre) o que está visível: esconder uma nota com a busca
+  // tira ela da ação, sem surpresa.
+  const selecionadasVisiveis = useMemo(() => filtradas.filter((e) => selecionadas.has(e.id)), [filtradas, selecionadas])
+  const todasVisiveisSelecionadas = filtradas.length > 0 && selecionadasVisiveis.length === filtradas.length
+  useEffect(() => {
+    if (checkTodas.current) {
+      checkTodas.current.indeterminate = selecionadasVisiveis.length > 0 && !todasVisiveisSelecionadas
+    }
+  }, [selecionadasVisiveis.length, todasVisiveisSelecionadas])
+
+  function alternarSelecao(id: string) {
+    setSelecionadas((atual) => {
+      const nova = new Set(atual)
+      if (nova.has(id)) nova.delete(id)
+      else nova.add(id)
+      return nova
+    })
+  }
+
+  function alternarTodas() {
+    setSelecionadas((atual) => {
+      const nova = new Set(atual)
+      if (todasVisiveisSelecionadas) filtradas.forEach((e) => nova.delete(e.id))
+      else filtradas.forEach((e) => nova.add(e.id))
+      return nova
+    })
+  }
+
+  const loteRodando = lote != null && LOTE_RODANDO(lote)
+
+  function acaoNaSelecao(acao: AcaoLote) {
+    setErroLote(null)
+    setConfirmacao({
+      body: { acao, emissao_ids: selecionadasVisiveis.map((e) => e.id) },
+      totalSelecionadas: selecionadasVisiveis.length,
+      permitirReenviar: acao === "email" || acao === "email_geral",
+      aviso:
+        acao === "email_geral"
+          ? "Vai pros e-mails gerais configurados em Empresa › E-mails (contador, você mesmo...)."
+          : undefined,
+    })
+  }
+
+  function enviarTodasDoFiltro(soFalhas: boolean) {
+    if (!vinculoSelecionado || !competenciaFiltro) return
+    setErroLote(null)
+    setConfirmacao({
+      titulo: soFalhas ? "Reenviar falhas" : "Enviar todas por e-mail",
+      body: { acao: "email", vinculo_id: vinculoSelecionado.id, competencia: competenciaFiltro, reenviar: false },
+      alvo: `de ${vinculoSelecionado.apelido} em ${formatCompetenciaLonga(competenciaFiltro)}`,
+      permitirReenviar: !soFalhas,
+      aviso: soFalhas
+        ? "Vão de novo as que falharam — e também as que ainda não tinham sido enviadas. As já entregues ficam de fora."
+        : undefined,
+    })
+  }
+
+  async function baixarZip() {
+    setErroLote(null)
+    const params = new URLSearchParams()
+    // Mês inteiro selecionado (sem busca/pagamento escondendo nada): pede por
+    // competência — URL curta e o .zip sai com o nome do mês.
+    if (competenciaFiltro && todasVisiveisSelecionadas && !busca.trim() && !pagamentoFiltro) {
+      params.set("competencia", competenciaFiltro)
+      if (vinculoFiltro) params.set("vinculo_id", vinculoFiltro)
+    } else if (selecionadasVisiveis.length > MAX_IDS_ZIP) {
+      setErroLote(
+        `Dá pra baixar até ${MAX_IDS_ZIP} notas por .zip. Filtre por mês e selecione todas pra baixar o mês inteiro de uma vez.`,
+      )
+      return
+    } else {
+      params.set("ids", selecionadasVisiveis.map((e) => e.id).join(","))
+    }
+    setBaixandoZip(true)
+    try {
+      const resp = await fetch(`/api/dps/zip?${params.toString()}`, { credentials: "include" })
+      if (!resp.ok) {
+        const corpo = await resp.json().catch(() => null)
+        throw new ApiError(resp.status, corpo?.detail ?? "Não foi possível gerar o .zip.")
+      }
+      const blob = await resp.blob()
+      const nome = /filename="([^"]+)"/.exec(resp.headers.get("content-disposition") ?? "")?.[1] ?? "notas.zip"
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = nome
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 2000)
+    } catch (err) {
+      setErroLote(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão ao baixar o .zip.")
+    } finally {
+      setBaixandoZip(false)
+    }
+  }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className={`flex flex-col gap-6 ${lote ? "pb-56 sm:pb-40" : ""}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">NFS-e</h1>
@@ -170,7 +378,7 @@ export function NfsePage() {
           iconClassName="bg-primary-50 text-primary-600"
           label="Notas emitidas"
           value={confronto.totalEmitidas}
-          sublabel={ano ? `em ${ano}` : "no período"}
+          sublabel={competenciaFiltro ? `em ${formatCompetenciaLonga(competenciaFiltro)}` : ano ? `em ${ano}` : "no período"}
         />
         <StatCard
           icon={<CheckCircle2 size={18} />}
@@ -191,23 +399,23 @@ export function NfsePage() {
 
       <Card className="p-5">
         <div className="mb-4 flex flex-wrap items-center gap-3">
-          <select
-            value={ano}
-            onChange={(e) => setAno(e.target.value)}
-            className="rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-          >
+          <select value={ano} onChange={(e) => trocarAno(e.target.value)} aria-label="Ano" className={SELECT_FILTRO}>
             {ANOS.map((a) => (
               <option key={a} value={a}>
                 {a}
               </option>
             ))}
           </select>
-          <select
-            value={vinculoFiltro}
-            onChange={(e) => setVinculoFiltro(e.target.value)}
-            className="rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-          >
-            <option value="">Todos os fornecedores</option>
+          <select value={mesFiltro} onChange={(e) => setMesFiltro(e.target.value)} aria-label="Mês da competência" className={SELECT_FILTRO}>
+            <option value="">Todos os meses</option>
+            {MESES.map((nome, i) => (
+              <option key={nome} value={String(i + 1).padStart(2, "0")}>
+                {nome}
+              </option>
+            ))}
+          </select>
+          <select value={vinculoFiltro} onChange={(e) => trocarVinculo(e.target.value)} aria-label="Tomador" className={SELECT_FILTRO}>
+            <option value="">Todos os tomadores</option>
             {vinculos.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.apelido}
@@ -217,7 +425,8 @@ export function NfsePage() {
           <select
             value={pagamentoFiltro}
             onChange={(e) => setPagamentoFiltro(e.target.value as "" | "recebido" | "pendente")}
-            className="rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+            aria-label="Pagamento"
+            className={SELECT_FILTRO}
           >
             <option value="">Pagamento: todos</option>
             <option value="recebido">Só pagas</option>
@@ -228,33 +437,158 @@ export function NfsePage() {
             <input
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              placeholder="Buscar fornecedor..."
+              placeholder="Buscar tomador..."
+              aria-label="Buscar tomador"
               className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 py-1.5 pl-9 pr-3 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
             />
           </div>
         </div>
 
+        {/* "Enviar todas" (29/09/2026) — tomador + mês filtrados: manda todas
+            as notas prontas daquele mês por e-mail, num lote em segundo plano.
+            Pensado pra Shopee (uma nota por vendedor, centenas por mês). */}
+        {vinculoSelecionado && !competenciaFiltro && (
+          <p className="mb-4 flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-2.5 text-sm text-slate-600 dark:bg-slate-900/40 dark:text-slate-300">
+            <Send size={15} className="shrink-0 text-primary-500" />
+            Escolha um mês pra enviar todas as notas de {vinculoSelecionado.apelido} por e-mail de uma vez.
+          </p>
+        )}
+        {vinculoSelecionado && competenciaFiltro && resumoEnvios && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-primary-100 bg-primary-50/60 px-4 py-3 dark:border-primary-900/40 dark:bg-primary-900/20">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                Envios ao fornecedor · {vinculoSelecionado.apelido}, {formatCompetenciaLonga(competenciaFiltro)}
+              </p>
+              <p className="mt-0.5 flex flex-wrap gap-x-2 text-sm text-slate-600 dark:text-slate-300">
+                <span>
+                  Entregues <strong className="text-success-700 dark:text-success-300">{resumoEnvios.enviados}</strong>
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  Falhas{" "}
+                  <strong className={resumoEnvios.falhas > 0 ? "text-danger-600 dark:text-danger-300" : ""}>{resumoEnvios.falhas}</strong>
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  Sem envio <strong>{resumoEnvios.semEnvio}</strong>
+                </span>
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {resumoEnvios.falhas > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="px-3 py-1.5"
+                  disabled={loteRodando}
+                  onClick={() => enviarTodasDoFiltro(true)}
+                >
+                  <RotateCcw size={15} /> Reenviar falhas ({resumoEnvios.falhas})
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="accent"
+                className="px-3 py-1.5"
+                disabled={loteRodando || resumoEnvios.total === 0}
+                title={loteRodando ? "Espere a ação em lote em andamento terminar" : undefined}
+                onClick={() => enviarTodasDoFiltro(false)}
+              >
+                <Send size={15} /> Enviar todas por e-mail
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {selecionadasVisiveis.length > 0 && (
+          <div
+            role="toolbar"
+            aria-label="Ações nas notas selecionadas"
+            className="sticky top-0 z-20 -mx-5 mb-3 flex flex-wrap items-center gap-2 border-y border-primary-100 bg-primary-50 px-5 py-2.5 dark:border-primary-900/40 dark:bg-slate-900"
+          >
+            <span className="mr-1 text-sm font-semibold text-primary-800 dark:text-primary-200" aria-live="polite">
+              {selecionadasVisiveis.length} selecionada{selecionadasVisiveis.length === 1 ? "" : "s"}
+            </span>
+            <Button type="button" variant="outline" className="bg-white px-3 py-1.5 dark:bg-slate-800" disabled={loteRodando} onClick={() => acaoNaSelecao("assinar")}>
+              <PenLine size={15} /> Assinar
+            </Button>
+            <Button type="button" variant="outline" className="bg-white px-3 py-1.5 dark:bg-slate-800" disabled={loteRodando} onClick={() => acaoNaSelecao("submeter")}>
+              <Landmark size={15} /> Enviar à prefeitura
+            </Button>
+            <Button type="button" variant="outline" className="bg-white px-3 py-1.5 dark:bg-slate-800" disabled={loteRodando} onClick={() => acaoNaSelecao("email")}>
+              <Mail size={15} /> Enviar ao fornecedor por e-mail
+            </Button>
+            <Button type="button" variant="outline" className="bg-white px-3 py-1.5 dark:bg-slate-800" disabled={loteRodando} onClick={() => acaoNaSelecao("email_geral")}>
+              <Send size={15} /> Enviar aos e-mails gerais
+            </Button>
+            <Button type="button" variant="outline" className="bg-white px-3 py-1.5 dark:bg-slate-800" disabled={baixandoZip} onClick={baixarZip}>
+              <FileArchive size={15} /> {baixandoZip ? "Gerando .zip..." : "Baixar XMLs (.zip)"}
+            </Button>
+            <Button type="button" variant="ghost" className="px-3 py-1.5" onClick={() => setSelecionadas(new Set())}>
+              <X size={15} /> Limpar
+            </Button>
+            {loteRodando && (
+              <span className="w-full text-xs text-slate-500 dark:text-slate-400">
+                Tem uma ação em lote em andamento — espere terminar (ou cancele) pra começar outra.
+              </span>
+            )}
+          </div>
+        )}
+
+        {erroLote && (
+          <p role="alert" className="mb-3 flex items-start justify-between gap-3 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">
+            {erroLote}
+            <button type="button" onClick={() => setErroLote(null)} aria-label="Fechar aviso" className="shrink-0 rounded p-0.5 hover:bg-danger-100">
+              <X size={16} />
+            </button>
+          </p>
+        )}
         {erro && <p className="mb-3 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
         {carregando && emissoes === null && <p className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</p>}
 
         {emissoes !== null && (
           <div className={`-mx-5 overflow-x-auto px-5 transition-opacity ${carregando ? "opacity-60" : ""}`}>
-          <table className="w-full min-w-[860px] text-left text-sm">
+          <table className="w-full min-w-[900px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-100 dark:border-slate-700/60 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                <th className="py-2 font-medium">Fornecedor</th>
+                <th className="w-10 py-2 pr-2 font-medium">
+                  <input
+                    ref={checkTodas}
+                    type="checkbox"
+                    checked={todasVisiveisSelecionadas}
+                    onChange={alternarTodas}
+                    disabled={filtradas.length === 0}
+                    aria-label={todasVisiveisSelecionadas ? "Desmarcar todas as notas visíveis" : "Selecionar todas as notas visíveis"}
+                    className="h-4 w-4 cursor-pointer accent-primary-600"
+                  />
+                </th>
+                <th className="py-2 font-medium">Tomador</th>
                 <th className="py-2 font-medium">Competência</th>
                 <th className="py-2 font-medium">Valor</th>
                 <th className="py-2 font-medium">Assinatura</th>
                 <th className="py-2 font-medium">Prefeitura</th>
-                <th className="py-2 font-medium">Envio</th>
+                <th className="py-2 font-medium" title="Envio da nota ao fornecedor (tomador)">Fornecedor</th>
                 <th className="py-2 font-medium">Pagamento</th>
                 <th className="py-2 font-medium">Arquivos</th>
               </tr>
             </thead>
             <tbody>
               {filtradas.map((e) => (
-                <tr key={e.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                <tr
+                  key={e.id}
+                  className={`border-b border-slate-50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/50 ${
+                    selecionadas.has(e.id) ? "bg-primary-50/50 dark:bg-primary-900/15" : ""
+                  }`}
+                >
+                  <td className="py-3 pr-2 align-top">
+                    <input
+                      type="checkbox"
+                      checked={selecionadas.has(e.id)}
+                      onChange={() => alternarSelecao(e.id)}
+                      aria-label={`Selecionar nota de ${e.tomador_razao_social || e.apelido}, ${e.competencia}`}
+                      className="mt-0.5 h-4 w-4 cursor-pointer accent-primary-600"
+                    />
+                  </td>
                   <td className="py-3">
                     <Link to={`/app/nfse/${e.id}`} className="font-medium text-primary-700 hover:underline">
                       {e.apelido}
@@ -298,7 +632,7 @@ export function NfsePage() {
               ))}
               {filtradas.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={9} className="py-8 text-center text-slate-400 dark:text-slate-500">
                     Nenhuma nota encontrada.
                   </td>
                 </tr>
@@ -340,6 +674,40 @@ export function NfsePage() {
             if (searchParams.get("gerar")) navigate("/app/nfse", { replace: true })
           }}
           onGeradas={recarregar}
+          onVerNotas={(comp) => {
+            const [anoComp, mesComp] = comp.split("-")
+            if (ANOS.map(String).includes(anoComp)) {
+              trocarAno(anoComp)
+              setMesFiltro(mesComp)
+            }
+            trocarVinculo(shopee.id)
+            setBusca("")
+            setPagamentoFiltro("")
+            setShopee(null)
+            if (searchParams.get("gerar")) navigate("/app/nfse", { replace: true })
+          }}
+        />
+      )}
+      {confirmacao && (
+        <ConfirmarLoteModal
+          {...confirmacao}
+          onClose={() => setConfirmacao(null)}
+          onCriado={(novo) => {
+            setConfirmacao(null)
+            setLote(novo)
+            if (confirmacao.body.emissao_ids) setSelecionadas(new Set())
+          }}
+        />
+      )}
+      {lote && (
+        <LotePainel
+          lote={lote}
+          onMudou={setLote}
+          onTerminou={recarregar}
+          onFechar={() => {
+            marcarLoteFechado(lote.id)
+            setLote(null)
+          }}
         />
       )}
       {modalCsv && (
@@ -374,9 +742,12 @@ function NovaEmissaoModal({
   const [vinculoId, setVinculoId] = useState(
     vinculoInicial && vinculos.some((v) => v.id === vinculoInicial) ? vinculoInicial : (vinculos[0]?.id ?? ""),
   )
-  const [competencia, setCompetencia] = useState(
-    competenciaInicial && /^\d{4}-\d{2}$/.test(competenciaInicial) ? competenciaInicial : competenciaAtual(),
-  )
+  // Data de competência (29/09/2026): calendário, padrão hoje. Vindo do
+  // atalho "Gerar" de um mês passado (?competencia=AAAA-MM), começa no último
+  // dia daquele mês. A competência (AAAA-MM) sai da data escolhida.
+  const [dataCompetencia, setDataCompetencia] = useState(() => dataPadraoDaCompetencia(competenciaInicial))
+  const dataEfetiva = /^\d{4}-\d{2}-\d{2}$/.test(dataCompetencia) ? dataCompetencia : hojeLocal()
+  const competencia = dataEfetiva.slice(0, 7)
   const [valor, setValor] = useState("")
   const [ordem, setOrdem] = useState("")
   // Pré-preenchida com a alíquota de referência de Configurações, quando
@@ -444,6 +815,7 @@ function NovaEmissaoModal({
       const payload: GerarDpsRequest = {
         vinculo_id: vinculoId,
         competencia,
+        data_competencia: dataEfetiva,
         valor: Number(valor),
         ordem: ordem || null,
         aliq_sn: aliqSn,
@@ -508,7 +880,7 @@ function NovaEmissaoModal({
           <LerOrdemAwin
             vinculo={vinculo}
             onLida={(o) => {
-              if (o.competencia_sugerida) setCompetencia(o.competencia_sugerida)
+              if (o.competencia_sugerida) setDataCompetencia(dataPadraoDaCompetencia(o.competencia_sugerida))
               if (o.valor != null) setValor(o.valor.toFixed(2))
               if (o.numero) setOrdem(o.numero)
             }}
@@ -517,16 +889,8 @@ function NovaEmissaoModal({
 
         {vinculo?.metodo_captura_valor !== "csv" && (
           <>
-        <div className="grid grid-cols-2 gap-3">
-          <FieldWrap label="Competência">
-            <input
-              required
-              type="month"
-              value={competencia}
-              onChange={(e) => setCompetencia(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-            />
-          </FieldWrap>
+        <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
+          <CampoData valor={dataCompetencia} onChange={setDataCompetencia} />
           <Field
             label="Valor (R$)"
             required
@@ -560,7 +924,7 @@ function NovaEmissaoModal({
           label="Alíquota do Simples Nacional (%)"
           valor={aliqSn}
           onChange={setAliqSn}
-          hint={aliquotaReferencia != null ? "Pré-preenchida com a referência de Configurações — confira antes de gerar." : "Opcional."}
+          hint={aliquotaReferencia != null ? "Pré-preenchida com a referência de Empresa › Alíquotas — confira antes de gerar." : "Opcional."}
         />
 
 
@@ -570,7 +934,7 @@ function NovaEmissaoModal({
         {ambienteTeste && vinculo?.metodo_captura_valor !== "csv" && (
           <p className="rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
             Sua conta está gerando notas de <strong>teste</strong> (homologação). Pra emitir de verdade, desligue em
-            Configurações › Ambiente das notas.
+            Empresa › Notas.
           </p>
         )}
 
@@ -770,7 +1134,7 @@ function LerOrdemAwin({ vinculo, onLida }: { vinculo: VinculoResumo; onLida: (o:
               {a}
             </p>
           ))}
-          <p className="text-slate-500">Confira a competência abaixo antes de gerar.</p>
+          <p className="text-slate-500">Confira a data de competência abaixo antes de gerar.</p>
         </div>
       )}
     </div>

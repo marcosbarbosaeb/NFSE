@@ -21,7 +21,8 @@ export function tourDoCaminho(caminho: string): TourDaTela | null {
   if (c === "/app/nfse") return { tela: "nfse", passos: NFSE }
   if (c === "/app/calendario") return { tela: "calendario", passos: CALENDARIO }
   if (c === "/app/financeiro") return { tela: "financeiro", passos: FINANCEIRO }
-  if (c === "/app/configuracoes") return { tela: "configuracoes", passos: CONFIGURACOES }
+  if (c === "/app/empresa") return { tela: "empresa", passos: EMPRESA }
+  if (c === "/app/conta") return { tela: "conta", passos: CONTA }
   return null
 }
 
@@ -35,7 +36,7 @@ const VISAO_GERAL: PassoTour[] = [
     alvo: "menu",
     titulo: "Suas abas",
     texto:
-      "NFS-e (suas notas), Tomadores (quem você fatura), Calendário (dias de gerar e de receber), Financeiro (o que entrou e saiu) e Configurações.",
+      "NFS-e (suas notas), Tomadores (quem você fatura), Calendário (dias de gerar e de receber), Financeiro (o que entrou e saiu) e Empresa (dados, e-mails e certificado).",
   },
   {
     titulo: "Visão geral",
@@ -44,7 +45,7 @@ const VISAO_GERAL: PassoTour[] = [
   {
     alvo: "ajuda",
     titulo: "Rever as dicas",
-    texto: "Esqueceu alguma coisa? Clique aqui pra ver de novo as dicas da tela em que você estiver. Dá pra desligar em Configurações.",
+    texto: "Esqueceu alguma coisa? Clique aqui pra ver de novo as dicas da tela em que você estiver. Dá pra desligar em Minha conta › Preferências.",
   },
 ]
 
@@ -140,19 +141,22 @@ const FINANCEIRO: PassoTour[] = [
   },
 ]
 
-const CONFIGURACOES: PassoTour[] = [
+const EMPRESA: PassoTour[] = [
   {
-    titulo: "Configurações",
-    texto: "Seus dados, o certificado digital, a alíquota do Simples Nacional e a sua senha.",
+    titulo: "Empresa",
+    texto:
+      "Tudo da empresa que emite as notas: dados do emitente, e-mails das notas (inclusive os gerais, pro seu contador), alíquota, ambiente e certificado digital. Tem mais de uma empresa? Troque ou adicione no topo do menu.",
+  },
+]
+
+const CONTA: PassoTour[] = [
+  {
+    titulo: "Minha conta",
+    texto: "Seu perfil, senha e dispositivos conectados, assinatura e o Indique e ganhe.",
   },
   {
     alvo: "config-tutorial",
     titulo: "Dicas ligadas ou desligadas",
     texto: "Aqui você desliga estas dicas, ou pede pra ver todas de novo.",
-  },
-  {
-    alvo: "config-limpar",
-    titulo: "Limpar dados",
-    texto: "Pra apagar dados de teste por categoria. Cuidado: não tem desfazer.",
   },
 ]

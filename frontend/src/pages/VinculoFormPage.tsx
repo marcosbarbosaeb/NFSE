@@ -1,4 +1,4 @@
-import { Check, Loader2, Sparkles } from "lucide-react"
+import { Check, ExternalLink, Loader2, Mail, MessageCircle, MinusCircle, Sparkles } from "lucide-react"
 import { type FormEvent, useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { EditorModeloEmail, type ValorModeloEmail } from "../components/EditorModeloEmail"
@@ -9,7 +9,7 @@ import { CampoServico, formatarCodigoServico } from "../components/ui/CampoServi
 import { Field, FieldWrap } from "../components/ui/Field"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { competenciaAtual } from "../lib/format"
-import type { ConsultaCnpj, Prestador, Tomador, VinculoCriarRequest, VinculoDetalhe, VinculoResumo } from "../lib/types"
+import type { ConsultaCnpj, FormaEnvio, Prestador, Tomador, VinculoCriarRequest, VinculoDetalhe, VinculoResumo } from "../lib/types"
 
 // Pedido do Marcos (28/09/2026):
 // - "usar tomador existente": todos os dados com prévia de sugestão de
@@ -65,6 +65,11 @@ interface FormState {
   email_contato: string
   whatsapp_contato: string
   email_modelo: ValorModeloEmail
+  /** Como recebe a nota — null = e-mail (padrão). */
+  envio_canal: FormaEnvio | null
+  portal_url: string
+  cod_nbs: string
+  incluir_intermediario: boolean
 }
 
 const ESTADO_INICIAL: FormState = {
@@ -82,6 +87,32 @@ const ESTADO_INICIAL: FormState = {
   email_contato: "",
   whatsapp_contato: "",
   email_modelo: { assunto: "", mensagem: "", anexos: "", copia: "", para: "" },
+  envio_canal: null,
+  portal_url: "",
+  cod_nbs: "",
+  incluir_intermediario: false,
+}
+
+// 29/09/2026: "cada tomador pede a nota de um jeito" — portal próprio,
+// e-mail, WhatsApp, ou nem precisa.
+const FORMAS_ENVIO: { valor: FormaEnvio; titulo: string; icone: typeof Mail }[] = [
+  { valor: "email", titulo: "E-mail", icone: Mail },
+  { valor: "whatsapp", titulo: "WhatsApp", icone: MessageCircle },
+  { valor: "portal", titulo: "Portal do tomador", icone: ExternalLink },
+  { valor: "nenhum", titulo: "Não precisa enviar", icone: MinusCircle },
+]
+
+const DICA_FORMA: Record<FormaEnvio, string> = {
+  email: "A Ana manda a nota por e-mail com PDF/XML em anexo (dá pra ajustar o e-mail abaixo).",
+  whatsapp: "O envio abre o WhatsApp com a mensagem e o link da nota — é só apertar enviar.",
+  portal: "Você baixa o PDF/XML e sobe no sistema do tomador; depois marca a nota como enviada.",
+  nenhum: "A nota não aparece como pendente de envio. Dá pra mandar pro contador mesmo assim.",
+}
+
+/** NBS: 9 dígitos, exibido como 1.1406.20.00. */
+function mascaraNbs(valor: string): string {
+  const d = valor.replace(/\D/g, "").slice(0, 9)
+  return [d.slice(0, 1), d.slice(1, 5), d.slice(5, 7), d.slice(7, 9)].filter(Boolean).join(".")
 }
 
 // Quem manda o valor de um jeito próprio (28/09/2026): AWIN em PDF, Shopee
@@ -161,6 +192,10 @@ export function VinculoFormPage() {
             copia: v.email_copia ?? "",
             para: v.email_para ?? "",
           },
+          envio_canal: v.envio_canal ?? null,
+          portal_url: v.portal_url ?? "",
+          cod_nbs: mascaraNbs(v.cod_nbs ?? ""),
+          incluir_intermediario: Boolean(v.incluir_intermediario),
         })
         setTomadorSelecionado(v.tomador)
         // Abre a seção do e-mail se o tomador já tem algo personalizado.
@@ -301,6 +336,11 @@ export function VinculoFormPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setErro(null)
+    const nbs = form.cod_nbs.replace(/\D/g, "")
+    if (nbs && nbs.length !== 9) {
+      setErro("Código NBS tem 9 dígitos (ex.: 1.1406.20.00).")
+      return
+    }
     setEnviando(true)
     try {
       const base = {
@@ -321,6 +361,10 @@ export function VinculoFormPage() {
         email_anexos: form.email_modelo.anexos || null,
         email_copia: (form.email_modelo.copia ?? "").trim() || null,
         email_para: (form.email_modelo.para ?? "").trim() || null,
+        envio_canal: form.envio_canal,
+        portal_url: form.portal_url.trim() || null,
+        cod_nbs: nbs || null,
+        incluir_intermediario: form.incluir_intermediario,
       }
 
       if (editando && id) {
@@ -555,6 +599,14 @@ export function VinculoFormPage() {
               onChange={(e) => atualizarCampo("cod_trib_municipal", e.target.value)}
               hint="Opcional — só se a sua prefeitura exigir."
             />
+            <Field
+              label="Código NBS"
+              inputMode="numeric"
+              value={form.cod_nbs}
+              onChange={(e) => atualizarCampo("cod_nbs", mascaraNbs(e.target.value))}
+              placeholder="1.1406.20.00"
+              hint="Opcional. Alguns municípios/tomadores exigem. Nomenclatura Brasileira de Serviços, 9 dígitos."
+            />
             <Field label="Série" required value={form.serie} onChange={(e) => atualizarCampo("serie", e.target.value)} hint="Deixe 1 se não souber." />
           </div>
 
@@ -630,6 +682,26 @@ export function VinculoFormPage() {
             Quero revisar cada nota antes de assinar
           </label>
 
+          <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={form.incluir_intermediario}
+              onChange={(e) => atualizarCampo("incluir_intermediario", e.target.checked)}
+              className="peer sr-only"
+            />
+            <span
+              aria-hidden
+              className="relative mt-0.5 inline-flex h-5 w-9 shrink-0 rounded-full bg-slate-300 transition-colors peer-checked:bg-primary-600 peer-focus-visible:ring-2 peer-focus-visible:ring-primary-300 dark:bg-slate-600 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-4"
+            />
+            <span className="text-sm text-slate-700 dark:text-slate-300">
+              Declarar o marketplace como intermediário
+              <span className="mt-0.5 block text-xs text-slate-400 dark:text-slate-500">
+                Nas notas emitidas para vendedores (ex.: Shopee), o tomador cadastrado aqui entra como intermediário na NFS-e.
+              </span>
+            </span>
+          </label>
+
           {editando && (
             <label className="mt-2 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
               <input
@@ -695,7 +767,50 @@ export function VinculoFormPage() {
 
         <Card className="p-6">
           <h2 className="mb-1 text-base font-semibold text-slate-800 dark:text-slate-200">Envio da nota</h2>
-          <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">Pra onde a Ana manda as notas deste tomador. Opcional.</p>
+          <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+            Como a nota chega a este tomador. Em cada nota dá pra mudar na hora — e o último jeito usado fica lembrado.
+          </p>
+
+          <fieldset className="mb-5">
+            <legend className="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-300">Como este tomador recebe a nota</legend>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {FORMAS_ENVIO.map((f) => {
+                const Icone = f.icone
+                return (
+                  <label key={f.valor} className="relative cursor-pointer">
+                    <input
+                      type="radio"
+                      name="envio_canal"
+                      value={f.valor}
+                      checked={(form.envio_canal ?? "email") === f.valor}
+                      onChange={() => atualizarCampo("envio_canal", f.valor)}
+                      className="peer sr-only"
+                    />
+                    <span className="flex h-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-primary-300 peer-checked:border-primary-500 peer-checked:bg-primary-50 peer-checked:text-primary-800 peer-focus-visible:ring-2 peer-focus-visible:ring-primary-300 dark:border-slate-600 dark:text-slate-300 dark:peer-checked:bg-primary-900/30 dark:peer-checked:text-primary-200">
+                      <Icone size={15} className="shrink-0" aria-hidden />
+                      {f.titulo}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+            <p className="mt-1.5 text-xs text-slate-400 dark:text-slate-500">{DICA_FORMA[form.envio_canal ?? "email"]}</p>
+            {form.envio_canal === "portal" && (
+              <div className="mt-3">
+                <Field
+                  label="Link do portal"
+                  inputMode="url"
+                  autoComplete="url"
+                  value={form.portal_url}
+                  onChange={(e) => atualizarCampo("portal_url", e.target.value)}
+                  placeholder="https://fornecedores.empresa.com.br"
+                  maxLength={400}
+                  hint="Aparece como “Abrir portal” na hora de enviar cada nota."
+                />
+              </div>
+            )}
+          </fieldset>
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field
               label="E-mail do tomador"
@@ -730,12 +845,12 @@ export function VinculoFormPage() {
                   assunto: prestadorModelo?.email_assunto_padrao,
                   mensagem: prestadorModelo?.email_mensagem_padrao,
                   anexos: prestadorModelo?.email_anexos_padrao ?? null,
-                  rotulo: "o modelo padrão de Configurações",
+                  rotulo: "o modelo padrão de Empresa › E-mails",
                 }}
                 mostrarCopia
                 dicaCopia={
                   prestadorModelo?.email_copia_padrao
-                    ? `Além destes, vai cópia pra ${prestadorModelo.email_copia_padrao} (Configurações).`
+                    ? `Além destes, vai cópia pra ${prestadorModelo.email_copia_padrao} (Empresa › E-mails).`
                     : undefined
                 }
                 mostrarPara

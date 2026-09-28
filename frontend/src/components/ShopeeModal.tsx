@@ -3,6 +3,8 @@ import { type FormEvent, useEffect, useMemo, useState } from "react"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { formatBRL, formatCompetenciaLonga, parseBRL } from "../lib/format"
 import type { GeracaoShopee, PreviaShopee, VinculoResumo } from "../lib/types"
+import { hojeLocal } from "../lib/datas"
+import { CampoData } from "./CampoData"
 import { Button } from "./ui/Button"
 import { CampoPercentual } from "./ui/CampoPercentual"
 import { Field } from "./ui/Field"
@@ -24,17 +26,23 @@ export function ShopeeModal({
   aliquotaReferencia,
   onClose,
   onGeradas,
+  onVerNotas,
 }: {
   vinculo: VinculoResumo
   aliquotaReferencia: number | null
   onClose: () => void
   onGeradas: () => void
+  /** "Ver as notas na lista": filtra a lista pela Shopee + mês gerado. */
+  onVerNotas?: (competencia: string) => void
 }) {
   const [arquivo, setArquivo] = useState<File | null>(null)
   const [previa, setPrevia] = useState<PreviaShopee | null>(null)
   const [competencia, setCompetencia] = useState("")
   const [valorMinimo, setValorMinimo] = useState("0")
   const [incluirEstrangeiros, setIncluirEstrangeiros] = useState(false)
+  // Data de competência que vai em cada nota (29/09/2026); padrão hoje. A
+  // competência da lista continua sendo o mês do relatório.
+  const [dataCompetencia, setDataCompetencia] = useState(hojeLocal)
   const [aliqSn, setAliqSn] = useState<number | null>(aliquotaReferencia)
   // A referência pode chegar depois do modal abrir.
   useEffect(() => {
@@ -87,6 +95,7 @@ export function ShopeeModal({
       form.append("valor_minimo", String(minimo))
       form.append("incluir_estrangeiros", String(incluirEstrangeiros))
       if (aliqSn != null) form.append("aliq_sn", String(aliqSn))
+      form.append("data_competencia", /^\d{4}-\d{2}-\d{2}$/.test(dataCompetencia) ? dataCompetencia : hojeLocal())
       const resp = await api.postForm<GeracaoShopee>("/shopee/gerar", form)
       setResultado(resp)
       if (resp.geradas > 0) onGeradas()
@@ -156,6 +165,16 @@ export function ShopeeModal({
               hint={abaixoMinimo ? `${abaixoMinimo} vendedor(es) ficam de fora` : "0 = gera todas"}
             />
             <CampoPercentual label="Alíquota do Simples (%)" valor={aliqSn} onChange={setAliqSn} />
+            <CampoData
+              valor={dataCompetencia}
+              onChange={setDataCompetencia}
+              mostrarCompetencia={false}
+              hint={
+                competencia
+                  ? `Vai em cada nota. Na lista, elas continuam em ${formatCompetenciaLonga(competencia)} (mês do relatório).`
+                  : "Vai em cada nota."
+              }
+            />
           </div>
 
           {estrangeiros > 0 && (
@@ -263,12 +282,18 @@ export function ShopeeModal({
             </ul>
           )}
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            As notas estão na lista da aba NFS-e, prontas pra revisar e assinar.
+            As notas estão na lista da aba NFS-e, prontas pra revisar e assinar. Na lista, marque todas pra assinar e enviar à
+            prefeitura de uma vez — depois é só usar “Enviar todas por e-mail”.
           </p>
-          <div className="flex justify-end">
-            <Button type="button" variant="accent" onClick={onClose}>
+          <div className="flex flex-wrap justify-end gap-3">
+            <Button type="button" variant={onVerNotas ? "outline" : "accent"} onClick={onClose}>
               Fechar
             </Button>
+            {onVerNotas && competencia && (
+              <Button type="button" variant="accent" onClick={() => onVerNotas(competencia)}>
+                Ver as notas na lista
+              </Button>
+            )}
           </div>
         </div>
       )}

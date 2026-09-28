@@ -683,6 +683,7 @@ class PreviaEmailResponse(BaseModel):
     whatsapp_texto: str = ""
     canal_preferido: str = "email"
     portal_url: str | None = None
+    avulsa: bool = False
     geral_destinos: list[str] = []
     geral_assunto: str = ""
     geral_texto: str = ""

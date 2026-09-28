@@ -18,7 +18,18 @@ const STATUS: Record<string, { rotulo: string; variante: "success" | "warning" |
   cortesia: { rotulo: "Cortesia", variante: "neutral" },
 }
 
+/** Página avulsa (antigo /app/indique). Hoje a rota redireciona pra
+ * Minha conta › Indique e ganhe, que usa só o <IndiqueConteudo />. */
 export function IndiquePage() {
+  return (
+    <div className="flex flex-col gap-6">
+      <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Indique e ganhe</h1>
+      <IndiqueConteudo />
+    </div>
+  )
+}
+
+export function IndiqueConteudo() {
   const [dados, setDados] = useState<Indicacao | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [copiado, setCopiado] = useState(false)
@@ -51,7 +62,6 @@ export function IndiquePage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Indique e ganhe</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Cada pessoa que assinar pelo seu link vale <strong>{dados?.pct_por_indicado ?? 10}% de desconto</strong> na sua
           mensalidade, enquanto ela continuar assinante. Com {dados ? dados.pct_maximo / dados.pct_por_indicado : 10}{" "}

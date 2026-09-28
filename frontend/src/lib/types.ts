@@ -611,6 +611,7 @@ export interface PreviaEmail {
   whatsapp_texto?: string
   canal_preferido?: FormaEnvio
   portal_url?: string | null
+  avulsa?: boolean
   geral_destinos?: string[]
   geral_assunto?: string
   geral_texto?: string

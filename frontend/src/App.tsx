@@ -16,8 +16,9 @@ import { LoginPage } from "./pages/LoginPage"
 // Telas do painel carregadas sob demanda (o site institucional e o login
 // não baixam o app inteiro).
 const CalendarioPage = lazy(() => import("./pages/CalendarioPage").then((m) => ({ default: m.CalendarioPage })))
-const IndiquePage = lazy(() => import("./pages/IndiquePage").then((m) => ({ default: m.IndiquePage })))
 const ConfiguracoesPage = lazy(() => import("./pages/ConfiguracoesPage").then((m) => ({ default: m.ConfiguracoesPage })))
+const ContaPage = lazy(() => import("./pages/ContaPage").then((m) => ({ default: m.ContaPage })))
+const EmpresaPage = lazy(() => import("./pages/EmpresaPage").then((m) => ({ default: m.EmpresaPage })))
 const DashboardPage = lazy(() => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardPage })))
 const EmissaoDetalhePage = lazy(() => import("./pages/EmissaoDetalhePage").then((m) => ({ default: m.EmissaoDetalhePage })))
 const FinanceiroPage = lazy(() => import("./pages/FinanceiroPage").then((m) => ({ default: m.FinanceiroPage })))
@@ -66,8 +67,12 @@ export default function App() {
             {/* Recebimentos e Despesas viraram uma aba só (28/09/2026). */}
             <Route path="recebimentos" element={<Navigate to="/app/financeiro" replace />} />
             <Route path="despesas" element={<Navigate to="/app/financeiro?aba=despesas" replace />} />
+            {/* Configurações virou duas áreas (29/09/2026): Minha conta e Empresa.
+                /configuracoes só redireciona (links antigos, âncoras e volta do Stripe). */}
+            <Route path="conta" element={<ContaPage />} />
+            <Route path="empresa" element={<EmpresaPage />} />
             <Route path="configuracoes" element={<ConfiguracoesPage />} />
-            <Route path="indique" element={<IndiquePage />} />
+            <Route path="indique" element={<Navigate to="/app/conta?aba=indique" replace />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

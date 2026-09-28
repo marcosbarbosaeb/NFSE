@@ -320,6 +320,7 @@ def previa_email(db: Session, emissao: Emissao, base: str) -> dict:
             else (vinculo.envio_canal if vinculo else None) or ("email" if destinos or not whatsapp else "whatsapp")
         ),
         "portal_url": vinculo.portal_url if vinculo and not emissao.tomador_documento else None,
+        "avulsa": bool(emissao.tomador_documento),
         **_previa_geral(db, emissao, dados),
         "destino": destino,
         "destinos": destinos,
@@ -381,10 +382,11 @@ def enviar_email(
     # Assunto/texto editados na hora (29/09/2026: "permita alterar o assunto
     # e o corpo se a pessoa quiser").
     dados = _dados(db, emissao, base)
+    # Códigos ({numero}, {competencia}...) digitados na hora também valem.
     if assunto and assunto.strip():
-        modelo["assunto"] = re.sub(r"[\r\n]+", " ", assunto).strip()[:300]
+        modelo["assunto"] = re.sub(r"[\r\n]+", " ", mensagens.renderizar_modelo(assunto, dados)).strip()[:300]
     if texto and texto.strip() and texto.strip() != modelo["texto"].strip():
-        modelo["texto"] = texto.strip()
+        modelo["texto"] = mensagens.renderizar_modelo(texto.strip(), dados)
         modelo["html"] = mensagens.email_html_de_texto(modelo["texto"], dados)
     if salvar_padrao and vinculo is not None and not emissao.tomador_documento:
         _lembrar_email(db, vinculo, emissao, destinos, copias, modelo, dados)
@@ -456,7 +458,8 @@ def link_whatsapp(
     dados = _dados(db, emissao, base)
     telefone = numero if numero is not None else (vinculo.whatsapp_contato if vinculo else None)
     digitos = _numero_whatsapp(telefone)
-    mensagem = (texto or "").strip() or mensagens.whatsapp_de_modelo(vinculo.whatsapp_mensagem if vinculo else None, dados)
+    mensagem = mensagens.renderizar_modelo((texto or "").strip(), dados) if (texto or "").strip() else None
+    mensagem = mensagem or mensagens.whatsapp_de_modelo(vinculo.whatsapp_mensagem if vinculo else None, dados)
     url = f"https://wa.me/{digitos}?text={quote(mensagem)}" if digitos else f"https://wa.me/?text={quote(mensagem)}"
     envio = _novo_envio(db, emissao, "whatsapp", (telefone or "")[:200] or None)
     envio.status = "enviado"
@@ -522,9 +525,9 @@ def enviar_geral(
     if not destinos:
         raise EmailIndisponivelError("Cadastre os e-mails gerais (contador, o seu) em Empresa › E-mails.")
     if assunto and assunto.strip():
-        modelo["assunto"] = re.sub(r"[\r\n]+", " ", assunto).strip()[:300]
+        modelo["assunto"] = re.sub(r"[\r\n]+", " ", mensagens.renderizar_modelo(assunto, dados)).strip()[:300]
     if texto and texto.strip():
-        modelo["texto"] = texto.strip()
+        modelo["texto"] = mensagens.renderizar_modelo(texto.strip(), dados)
     anexos = _anexos_da_nota(db, emissao, prestador_id, modelo["anexos"])
     prestador = db.get(Prestador, prestador_id)
     envio = _novo_envio(db, emissao, "email_geral", ", ".join(destinos)[:200])
