@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # (confirmação de cadastro) — quem responde cai no suporte, não num
     # endereço que ninguém lê.
     email_suporte: str = "suporte@agenteana.com.br"
+    # WhatsApp do suporte (só dígitos, com DDI/DDD, ex.: 5592999990000).
+    # Vazio = o botão de WhatsApp não aparece.
+    suporte_whatsapp: str = ""
 
     # Base da URL do painel usada pra montar o link de confirmação de e-mail
     # (ex.: f"{app_base_url}/confirmar-email?token=..."). Default é o Vite

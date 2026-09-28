@@ -7,6 +7,7 @@ import { ehDominioNotas } from "./lib/dominios"
 import { ThemeProvider } from "./lib/theme"
 import { CadastroPage } from "./pages/CadastroPage"
 import { CalendarioPage } from "./pages/CalendarioPage"
+import { IndiquePage } from "./pages/IndiquePage"
 import { ConfiguracoesPage } from "./pages/ConfiguracoesPage"
 import { ConfirmarEmailPage } from "./pages/ConfirmarEmailPage"
 import { DashboardPage } from "./pages/DashboardPage"
@@ -62,6 +63,7 @@ export default function App() {
             <Route path="recebimentos" element={<Navigate to="/app/financeiro" replace />} />
             <Route path="despesas" element={<Navigate to="/app/financeiro?aba=despesas" replace />} />
             <Route path="configuracoes" element={<ConfiguracoesPage />} />
+            <Route path="indique" element={<IndiquePage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

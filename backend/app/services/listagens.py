@@ -15,7 +15,7 @@ import uuid
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Despesa, Emissao, PagamentoRecebido, PrestadorTomador
+from app.models import Despesa, Emissao, Envio, PagamentoRecebido, PrestadorTomador
 from app.services.dashboard import ESTADO_NFSE_LABEL
 
 
@@ -64,6 +64,17 @@ def listar_emissoes(
         query = query.filter(Emissao.estado == estado)
 
     pares_pagos = _pares_com_pagamento(db)
+    emissoes = query.all()
+    # Último envio de cada nota (e-mail/WhatsApp/...) numa query só.
+    ultimo_envio: dict[uuid.UUID, str] = {}
+    if emissoes:
+        for emissao_id, status in (
+            db.query(Envio.emissao_id, Envio.status)
+            .filter(Envio.emissao_id.in_([e.id for e in emissoes]))
+            .order_by(Envio.criado_em)
+        ):
+            if ultimo_envio.get(emissao_id) != "enviado":
+                ultimo_envio[emissao_id] = status
     linhas = [
         {
             "id": e.id,
@@ -79,8 +90,12 @@ def listar_emissoes(
             "estado_label": ESTADO_NFSE_LABEL.get(e.estado, e.estado),
             "criado_em": e.criado_em,
             "pagamento_recebido": (e.prestador_tomador_id, e.competencia) in pares_pagos,
+            "envio_status": ultimo_envio.get(e.id),
+            "tem_pdf": e.estado == "confirmado",
+            "tem_email": bool((e.tomador_snapshot or {}).get("email") if e.tomador_documento else e.vinculo.email_contato),
+            "homologacao": (e.tomador_snapshot or {}).get("tpAmb") == "2",
         }
-        for e in query.all()
+        for e in emissoes
     ]
     if pagamento == "recebido":
         linhas = [l for l in linhas if l["pagamento_recebido"]]

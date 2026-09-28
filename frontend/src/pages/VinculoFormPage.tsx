@@ -1,6 +1,7 @@
 import { Check, Loader2, Sparkles } from "lucide-react"
 import { type FormEvent, useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
+import { EditorModeloEmail, type ValorModeloEmail } from "../components/EditorModeloEmail"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { CampoCidade } from "../components/ui/CampoCidade"
@@ -63,6 +64,7 @@ interface FormState {
   dias_para_recebimento: string
   email_contato: string
   whatsapp_contato: string
+  email_modelo: ValorModeloEmail
 }
 
 const ESTADO_INICIAL: FormState = {
@@ -79,6 +81,7 @@ const ESTADO_INICIAL: FormState = {
   dias_para_recebimento: "",
   email_contato: "",
   whatsapp_contato: "",
+  email_modelo: { assunto: "", mensagem: "", anexos: "", copia: "" },
 }
 
 // Quem manda o valor de um jeito próprio (28/09/2026): AWIN em PDF, Shopee
@@ -125,6 +128,10 @@ export function VinculoFormPage() {
   const [carregando, setCarregando] = useState(editando)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const [prestadorModelo, setPrestadorModelo] = useState<Prestador | null>(null)
+  useEffect(() => {
+    api.get<Prestador>("/prestador").then(setPrestadorModelo).catch(() => {})
+  }, [])
 
   // Modo edição: carrega o vínculo existente.
   useEffect(() => {
@@ -146,6 +153,12 @@ export function VinculoFormPage() {
           dias_para_recebimento: v.dias_para_recebimento?.toString() ?? "",
           email_contato: v.email_contato ?? "",
           whatsapp_contato: v.whatsapp_contato ?? "",
+          email_modelo: {
+            assunto: v.email_assunto ?? "",
+            mensagem: v.email_mensagem ?? "",
+            anexos: v.email_anexos ?? "",
+            copia: v.email_copia ?? "",
+          },
         })
         setTomadorSelecionado(v.tomador)
       })
@@ -299,6 +312,10 @@ export function VinculoFormPage() {
         dias_para_recebimento: form.dias_para_recebimento ? Number(form.dias_para_recebimento) : null,
         email_contato: form.email_contato.trim() || null,
         whatsapp_contato: form.whatsapp_contato.trim() || null,
+        email_assunto: form.email_modelo.assunto.trim() || null,
+        email_mensagem: form.email_modelo.mensagem.trim() || null,
+        email_anexos: form.email_modelo.anexos || null,
+        email_copia: (form.email_modelo.copia ?? "").trim() || null,
       }
 
       if (editando && id) {
@@ -690,6 +707,26 @@ export function VinculoFormPage() {
               placeholder="(92) 99999-0000"
             />
           </div>
+
+          <details className="group mt-5 rounded-xl border border-slate-200 dark:border-slate-700" open={Boolean(form.email_modelo.assunto || form.email_modelo.mensagem || form.email_modelo.anexos || form.email_modelo.copia)}>
+            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+              E-mail da nota pra este tomador
+              <span className="ml-2 text-xs font-normal text-slate-400">assunto, texto, anexos e cópia — se ele pedir algo específico</span>
+            </summary>
+            <div className="border-t border-slate-200 p-4 dark:border-slate-700">
+              <EditorModeloEmail
+                valor={form.email_modelo}
+                onChange={(v) => setForm((f) => ({ ...f, email_modelo: v }))}
+                herdado={{
+                  assunto: prestadorModelo?.email_assunto_padrao,
+                  mensagem: prestadorModelo?.email_mensagem_padrao,
+                  anexos: prestadorModelo?.email_anexos_padrao ?? null,
+                  rotulo: "o modelo padrão de Configurações",
+                }}
+                mostrarCopia
+              />
+            </div>
+          </details>
         </Card>
 
         <div className="flex justify-end gap-3">

@@ -1,4 +1,5 @@
 import { CheckCircle2, Clock, FileSpreadsheet, FileText, FileUp, Plus, Search } from "lucide-react"
+import { DownloadsNota, SeloAssinatura, SeloPrefeitura, SeloTomador } from "../components/AcoesNota"
 import { BaixaPagamento } from "../components/BaixaPagamento"
 import { ShopeeModal } from "../components/ShopeeModal"
 import { type FormEvent, useEffect, useMemo, useState } from "react"
@@ -17,6 +18,7 @@ import type {
   Emissao,
   GerarDpsRequest,
   ImportacaoCsvResultado,
+  OrdemAwin,
   Prestador,
   VerificarDuplicata,
   VinculoResumo,
@@ -66,10 +68,14 @@ export function NfsePage() {
   // Marco 16, item 5 — só pra pré-preencher aliq_sn na Nova emissão (ver
   // NovaEmissaoModal abaixo); nunca aplicada sem o usuário poder confirmar.
   const [aliquotaReferencia, setAliquotaReferencia] = useState<number | null>(null)
+  const [ambienteTeste, setAmbienteTeste] = useState(false)
 
   useEffect(() => {
     api.get<VinculoResumo[]>("/vinculos").then(setVinculos)
-    api.get<Prestador>("/prestador").then((p) => setAliquotaReferencia(p.aliquota_atual))
+    api.get<Prestador>("/prestador").then((p) => {
+      setAliquotaReferencia(p.aliquota_atual)
+      setAmbienteTeste(p.tp_amb_padrao === "2")
+    })
   }, [])
 
   function recarregar() {
@@ -220,15 +226,18 @@ export function NfsePage() {
         {carregando && <p className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</p>}
 
         {!carregando && (
-          <table className="w-full text-left text-sm">
+          <div className="-mx-5 overflow-x-auto px-5">
+          <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-100 dark:border-slate-700/60 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                 <th className="py-2 font-medium">Fornecedor</th>
                 <th className="py-2 font-medium">Competência</th>
                 <th className="py-2 font-medium">Valor</th>
-                <th className="py-2 font-medium">Nº DPS</th>
-                <th className="py-2 font-medium">Estado</th>
+                <th className="py-2 font-medium">Assinatura</th>
+                <th className="py-2 font-medium">Prefeitura</th>
+                <th className="py-2 font-medium">Envio</th>
                 <th className="py-2 font-medium">Pagamento</th>
+                <th className="py-2 font-medium">Arquivos</th>
               </tr>
             </thead>
             <tbody>
@@ -240,10 +249,23 @@ export function NfsePage() {
                     </Link>
                     <p className="text-xs text-slate-400 dark:text-slate-500">{e.tomador_razao_social}</p>
                   </td>
-                  <td className="py-3 text-slate-600 dark:text-slate-300">{e.competencia}</td>
+                  <td className="py-3 text-slate-600 dark:text-slate-300">
+                    {e.competencia}
+                    <p className="text-xs text-slate-400 dark:text-slate-500">
+                      DPS {e.n_dps ?? "—"}
+                      {e.homologacao && " · teste"}
+                    </p>
+                  </td>
                   <td className="py-3 text-slate-600 dark:text-slate-300">{formatBRL(e.valor)}</td>
-                  <td className="py-3 text-slate-500 dark:text-slate-400">{e.n_dps ?? "—"}</td>
-                  <td className="py-3">{badgeEstado(e.estado, e.estado_label)}</td>
+                  <td className="py-3">
+                    {e.estado === "cancelada" || e.estado === "substituida" ? badgeEstado(e.estado, e.estado_label) : <SeloAssinatura nota={e} onMudou={recarregar} />}
+                  </td>
+                  <td className="py-3">
+                    <SeloPrefeitura nota={e} onMudou={recarregar} />
+                  </td>
+                  <td className="py-3">
+                    <SeloTomador nota={e} onMudou={recarregar} />
+                  </td>
                   <td className="py-3">
                     {e.estado === "cancelada" || e.estado === "substituida" ? (
                       badgePagamento(e.pagamento_recebido)
@@ -257,17 +279,21 @@ export function NfsePage() {
                       />
                     )}
                   </td>
+                  <td className="py-3">
+                    <DownloadsNota nota={e} />
+                  </td>
                 </tr>
               ))}
               {filtradas.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={8} className="py-8 text-center text-slate-400 dark:text-slate-500">
                     Nenhuma nota encontrada.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 
@@ -275,6 +301,7 @@ export function NfsePage() {
         <NovaEmissaoModal
           vinculos={vinculos}
           aliquotaReferencia={aliquotaReferencia}
+          ambienteTeste={ambienteTeste}
           vinculoInicial={searchParams.get("gerar")}
           competenciaInicial={searchParams.get("competencia")}
           onClose={() => {
@@ -316,6 +343,7 @@ export function NfsePage() {
 function NovaEmissaoModal({
   vinculos,
   aliquotaReferencia,
+  ambienteTeste,
   vinculoInicial,
   competenciaInicial,
   onClose,
@@ -324,6 +352,7 @@ function NovaEmissaoModal({
 }: {
   vinculos: VinculoResumo[]
   aliquotaReferencia: number | null
+  ambienteTeste?: boolean
   vinculoInicial?: string | null
   competenciaInicial?: string | null
   onClose: () => void
@@ -346,13 +375,13 @@ function NovaEmissaoModal({
   useEffect(() => {
     if (aliquotaReferencia != null) setAliqSn((atual) => atual ?? aliquotaReferencia)
   }, [aliquotaReferencia])
-  const [tpAmb, setTpAmb] = useState<"1" | "2">("2")
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [duplicata, setDuplicata] = useState<VerificarDuplicata | null>(null)
 
   const vinculo = vinculos.find((v) => v.id === vinculoId)
   const precisaOrdem = vinculo?.template_descricao.includes("{ordem}") ?? false
+  const mostrarOrdem = precisaOrdem || vinculo?.metodo_captura_valor === "pdf"
 
   // Aviso proativo de nota duplicada (Marco 16, pedido do Marcos): assim que
   // fornecedor+competência ficam preenchidos, consulta se já existe uma
@@ -385,8 +414,11 @@ function NovaEmissaoModal({
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
+    // Botão clicado: "Gerar rascunho" ou "Gerar e assinar" (28/09/2026).
+    const assinarJunto = ((e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null)?.value === "assinar"
     setErro(null)
     setEnviando(true)
+    let criada: Emissao | null = null
     try {
       const payload: GerarDpsRequest = {
         vinculo_id: vinculoId,
@@ -394,9 +426,21 @@ function NovaEmissaoModal({
         valor: Number(valor),
         ordem: ordem || null,
         aliq_sn: aliqSn,
-        tpAmb,
       }
-      const criada = await api.post<Emissao>("/dps", payload)
+      criada = await api.post<Emissao>("/dps", payload)
+      if (assinarJunto) {
+        // "Gerar e assinar": se a assinatura falhar (sem certificado, p.ex.),
+        // a nota fica gerada e a pessoa vê o motivo na página dela.
+        try {
+          criada = await api.post<Emissao>(`/dps/${criada.id}/assinar`, {})
+        } catch (err) {
+          setErro(
+            `Nota gerada, mas não deu pra assinar: ${err instanceof ApiError ? formatarErro(err.detail) : "falha de conexão"}.`,
+          )
+          setTimeout(() => criada && onCriada(criada), 2500)
+          return
+        }
+      }
       onCriada(criada)
     } catch (err) {
       setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
@@ -440,11 +484,14 @@ function NovaEmissaoModal({
           </div>
         )}
         {vinculo?.metodo_captura_valor === "pdf" && (
-          <p className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
-            <FileText size={14} className="mt-0.5 shrink-0" />
-            {vinculo.apelido} manda o valor em PDF. A leitura automática do PDF está sendo preparada — por enquanto, digite o
-            valor do relatório.
-          </p>
+          <LerOrdemAwin
+            vinculo={vinculo}
+            onLida={(o) => {
+              if (o.competencia_sugerida) setCompetencia(o.competencia_sugerida)
+              if (o.valor != null) setValor(o.valor.toFixed(2))
+              if (o.numero) setOrdem(o.numero)
+            }}
+          />
         )}
 
         {vinculo?.metodo_captura_valor !== "csv" && (
@@ -478,13 +525,13 @@ function NovaEmissaoModal({
           </p>
         )}
 
-        {precisaOrdem && (
+        {mostrarOrdem && (
           <Field
             label="Número da ordem de pagamento"
-            required
+            required={precisaOrdem}
             value={ordem}
             onChange={(e) => setOrdem(e.target.value)}
-            hint="Esse fornecedor usa {ordem} na descrição do serviço — obrigatório."
+            hint={precisaOrdem ? "Vai na descrição do serviço — obrigatório pra esse tomador." : "Opcional."}
           />
         )}
 
@@ -495,46 +542,30 @@ function NovaEmissaoModal({
           hint={aliquotaReferencia != null ? "Pré-preenchida com a referência de Configurações — confira antes de gerar." : "Opcional."}
         />
 
-        <FieldWrap label="Ambiente">
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setTpAmb("2")}
-              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                tpAmb === "2" ? "border-primary-500 bg-primary-50 text-primary-700" : "border-slate-300 text-slate-600 dark:text-slate-300"
-              }`}
-            >
-              Homologação (teste)
-            </button>
-            <button
-              type="button"
-              onClick={() => setTpAmb("1")}
-              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                tpAmb === "1" ? "border-danger-500 bg-danger-50 text-danger-700" : "border-slate-300 text-slate-600 dark:text-slate-300"
-              }`}
-            >
-              Produção
-            </button>
-          </div>
-          {tpAmb === "1" && (
-            <p className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
-              Produção fica marcada na nota, mas este painel ainda não submete de verdade à prefeitura — a emissão real
-              continua pelos scripts que o Marcos já usa.
-            </p>
-          )}
-        </FieldWrap>
 
           </>
         )}
 
-        <div className="flex justify-end gap-3 pt-2">
-          <Button type="button" variant="outline" onClick={onClose}>
+        {ambienteTeste && vinculo?.metodo_captura_valor !== "csv" && (
+          <p className="rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
+            Sua conta está gerando notas de <strong>teste</strong> (homologação). Pra emitir de verdade, desligue em
+            Configurações › Ambiente das notas.
+          </p>
+        )}
+
+        <div className="flex flex-wrap justify-end gap-3 pt-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
           {vinculo?.metodo_captura_valor !== "csv" && (
-            <Button type="submit" variant="accent" disabled={enviando || !vinculoId}>
-              {enviando ? "Gerando..." : "Gerar nota"}
-            </Button>
+            <>
+              <Button type="submit" name="acao" value="rascunho" variant="outline" disabled={enviando || !vinculoId}>
+                Gerar rascunho
+              </Button>
+              <Button type="submit" name="acao" value="assinar" variant="accent" disabled={enviando || !vinculoId}>
+                {enviando ? "Gerando..." : "Gerar e assinar"}
+              </Button>
+            </>
           )}
         </div>
       </form>
@@ -628,5 +659,79 @@ function ImportarCsvModal({ onClose, onImportado }: { onClose: () => void; onImp
         </div>
       )}
     </Modal>
+  )
+}
+
+/** Ordem de pagamento da Awin (28/09/2026): lê o PDF e preenche competência,
+ * valor e número da ordem. Nada é gravado até a pessoa gerar a nota. */
+function LerOrdemAwin({ vinculo, onLida }: { vinculo: VinculoResumo; onLida: (o: OrdemAwin) => void }) {
+  const [lendo, setLendo] = useState(false)
+  const [ordem, setOrdemLida] = useState<OrdemAwin | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
+
+  async function ler(arquivo: File) {
+    setLendo(true)
+    setErro(null)
+    setOrdemLida(null)
+    const dados = new FormData()
+    dados.append("arquivo", arquivo)
+    dados.append("vinculo_id", vinculo.id)
+    try {
+      const resp = await fetch("/api/awin/ordem", { method: "POST", body: dados, credentials: "include" })
+      const corpo = await resp.json().catch(() => null)
+      if (!resp.ok) throw new ApiError(resp.status, corpo?.detail ?? "Não foi possível ler o PDF.")
+      setOrdemLida(corpo)
+      onLida(corpo)
+    } catch (err) {
+      setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão.")
+    } finally {
+      setLendo(false)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-primary-100 bg-primary-50/60 p-4 text-sm text-slate-700 dark:border-primary-900/40 dark:bg-primary-900/20 dark:text-slate-200">
+      <p>
+        <strong>{vinculo.apelido}</strong> manda uma ordem de pagamento em PDF. Envie o arquivo que a Ana preenche o
+        número da ordem, o valor e a competência.
+      </p>
+      <label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-primary-700 shadow-sm ring-1 ring-primary-200 hover:bg-primary-50 dark:bg-slate-800 dark:text-primary-300 dark:ring-primary-800">
+        <FileText size={16} /> {lendo ? "Lendo..." : ordem ? "Trocar PDF" : "Enviar o PDF da ordem"}
+        <input
+          type="file"
+          accept="application/pdf,.pdf"
+          className="hidden"
+          disabled={lendo}
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) ler(f)
+            e.target.value = ""
+          }}
+        />
+      </label>
+      {erro && <p className="mt-2 text-xs text-danger-600">{erro}</p>}
+      {ordem && (
+        <div className="mt-3 flex flex-col gap-1 text-xs">
+          <p className="text-success-700 dark:text-success-300">
+            Ordem {ordem.numero ?? "?"} · {ordem.valor != null ? formatBRL(ordem.valor) : "valor não encontrado"}
+            {ordem.data && ` · emitida em ${new Date(`${ordem.data}T00:00:00`).toLocaleDateString("pt-BR")}`}
+          </p>
+          {ordem.ja_usada && (
+            <p className="text-warning-700">
+              Essa ordem já tem nota ({ordem.ja_usada.apelido}, {ordem.ja_usada.competencia}).{" "}
+              <Link to={`/app/nfse/${ordem.ja_usada.emissao_id}`} className="font-semibold underline">
+                Ver nota
+              </Link>
+            </p>
+          )}
+          {ordem.avisos.map((a) => (
+            <p key={a} className="text-warning-700">
+              {a}
+            </p>
+          ))}
+          <p className="text-slate-500">Confira a competência abaixo antes de gerar.</p>
+        </div>
+      )}
+    </div>
   )
 }

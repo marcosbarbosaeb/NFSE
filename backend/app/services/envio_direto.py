@@ -144,6 +144,8 @@ def _dados(db: Session, emissao: Emissao, base: str) -> mensagens.DadosMensagem:
         n_dps=emissao.n_dps,
         chave_acesso=emissao.chave_acesso,
         link=link_publico(emissao, base),
+        tomador_razao_social=snap.get("razao_social") or "",
+        ordem=snap.get("ordem"),
     )
 
 
@@ -225,34 +227,99 @@ def _novo_envio(db: Session, emissao: Emissao, canal: str, destino: str | None) 
     return envio
 
 
+def _copias(texto: str | None) -> list[str]:
+    return [c.strip() for c in re.split(r"[,;\s]+", texto or "") if "@" in c.strip()]
+
+
+def modelo_email(db: Session, emissao: Emissao, base: str) -> dict:
+    """Assunto, texto, cópias e anexos que esta nota vai usar — tomador >
+    padrão do prestador > texto de sempre da Ana (28/09/2026)."""
+    vinculo = db.get(PrestadorTomador, emissao.prestador_tomador_id)
+    prestador = db.get(Prestador, emissao.prestador_id)
+    dados = _dados(db, emissao, base)
+    assunto_modelo = (vinculo.email_assunto if vinculo else None) or (prestador.email_assunto_padrao if prestador else None)
+    mensagem_modelo = (vinculo.email_mensagem if vinculo else None) or (prestador.email_mensagem_padrao if prestador else None)
+    anexos = (vinculo.email_anexos if vinculo else None) or (prestador.email_anexos_padrao if prestador else None) or "pdf_xml"
+    if anexos not in mensagens.ANEXOS_VALIDOS:
+        anexos = "pdf_xml"
+    assunto = mensagens.renderizar_modelo(assunto_modelo, dados) if assunto_modelo else mensagens.email_assunto(dados)
+    if mensagem_modelo:
+        texto = mensagens.renderizar_modelo(mensagem_modelo, dados)
+        html = mensagens.email_html_de_texto(texto, dados)
+    else:
+        texto, html = mensagens.email_texto(dados), mensagens.email_html(dados)
+    return {
+        "assunto": re.sub(r"[\r\n]+", " ", assunto).strip()[:300],
+        "texto": texto,
+        "html": html,
+        "anexos": anexos,
+        "copia": _copias(vinculo.email_copia if vinculo else None),
+    }
+
+
+def previa_email(db: Session, emissao: Emissao, base: str) -> dict:
+    """O que vai sair se apertar "Enviar ao tomador" — pra tela confirmar."""
+    vinculo = db.get(PrestadorTomador, emissao.prestador_tomador_id)
+    modelo = modelo_email(db, emissao, base)
+    tem_pdf = bool(emissao.danfse_pdf) or emissao.estado == "confirmado"
+    arquivos = []
+    if modelo["anexos"] in ("pdf_xml", "pdf") and tem_pdf:
+        arquivos.append(nome_pdf(emissao))
+    if modelo["anexos"] in ("pdf_xml", "xml") or not tem_pdf:
+        arquivos.append(f"nfse_{emissao.n_dps}_{emissao.competencia}.xml")
+    destino = email_destino(emissao, vinculo)
+    return {
+        "destino": destino,
+        "copia": modelo["copia"],
+        "assunto": modelo["assunto"],
+        "texto": modelo["texto"],
+        "anexos": modelo["anexos"],
+        "arquivos": arquivos,
+        "motivo_desabilitado": motivo_email_desabilitado(vinculo, destino),
+    }
+
+
 def enviar_email(db: Session, emissao: Emissao, prestador_id: uuid.UUID, base: str) -> Envio:
     """Manda de verdade (Resend). Falha do provedor vira envio com status
-    'falha' + motivo (não exceção) — a tela mostra e a pessoa tenta de novo."""
+    'falha' + motivo (não exceção) — a tela mostra e a pessoa tenta de novo.
+    Assunto, texto, cópias e anexos vêm do modelo configurado (tomador >
+    padrão do prestador > texto de sempre)."""
     vinculo = db.get(PrestadorTomador, emissao.prestador_tomador_id)
     destino = email_destino(emissao, vinculo)
     motivo = motivo_email_desabilitado(vinculo, destino)
     if motivo:
         raise EmailIndisponivelError(motivo)
 
-    nome_xml, conteudo_xml = melhor_xml_disponivel(emissao)
+    modelo = modelo_email(db, emissao, base)
+    quer_pdf = modelo["anexos"] in ("pdf_xml", "pdf")
+    quer_xml = modelo["anexos"] in ("pdf_xml", "xml")
     anexos: list[tuple[str, bytes]] = []
-    pdf = obter_danfse(db, emissao, prestador_id)
+    pdf = obter_danfse(db, emissao, prestador_id) if quer_pdf else None
+    if quer_pdf and pdf is None and emissao.estado == "confirmado":
+        # Nota autorizada e o tomador pediu o PDF: não manda sem ele.
+        raise EmailIndisponivelError(
+            "Não consegui baixar o PDF oficial da nota agora. Tente de novo em alguns minutos."
+        )
     if pdf:
         anexos.append((nome_pdf(emissao), pdf))
-    anexos.append((nome_xml, conteudo_xml.encode("utf-8")))
+    if quer_xml or not pdf:
+        # Sem PDF (nota ainda não autorizada) o XML vai de qualquer jeito —
+        # e-mail de nota sem a nota não serve pra nada.
+        nome_xml, conteudo_xml = melhor_xml_disponivel(emissao)
+        anexos.append((nome_xml, conteudo_xml.encode("utf-8")))
 
-    dados = _dados(db, emissao, base)
     prestador = db.get(Prestador, prestador_id)
     envio = _novo_envio(db, emissao, "email", destino)
     try:
         get_email_sender().enviar(
             destinatario=destino,
-            assunto=mensagens.email_assunto(dados),
-            corpo_texto=mensagens.email_texto(dados),
-            corpo_html=mensagens.email_html(dados),
+            assunto=modelo["assunto"],
+            corpo_texto=modelo["texto"],
+            corpo_html=modelo["html"],
             remetente=remetente_da_nota(prestador.razao_social if prestador else None),
             responder_para=prestador.email if prestador and prestador.email else None,
             anexos=anexos,
+            copia=modelo["copia"] or None,
         )
     except EmailEnvioError as exc:
         envio.status = "falha"

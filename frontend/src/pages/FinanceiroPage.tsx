@@ -1,13 +1,14 @@
 import { ArrowDownCircle, ArrowUpCircle, FileUp, Plus, Scale } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
-import { useSearchParams } from "react-router-dom"
+import { Link, useLocation, useSearchParams } from "react-router-dom"
+import { BaixaPagamento } from "../components/BaixaPagamento"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { StatCard } from "../components/ui/StatCard"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { formatBRL, formatCompetenciaAbrev } from "../lib/format"
-import type { Despesa, Pagamento, VinculoResumo } from "../lib/types"
+import type { Despesa, NotaAberta, Pagamento, VinculoResumo } from "../lib/types"
 import { RegistrarDespesaModal } from "./DespesasPage"
 import { ImportarExtratoModal, RegistrarPagamentoModal } from "./RecebimentosPage"
 
@@ -35,6 +36,7 @@ export function FinanceiroPage() {
   const [mes, setMes] = useState("") // "" = ano inteiro; "01".."12"
   const [pagamentos, setPagamentos] = useState<Pagamento[] | null>(null)
   const [despesas, setDespesas] = useState<Despesa[] | null>(null)
+  const [abertas, setAbertas] = useState<NotaAberta[] | null>(null)
   const [vinculos, setVinculos] = useState<VinculoResumo[]>([])
   const [erro, setErro] = useState<string | null>(null)
   const [modal, setModal] = useState<"recebimento" | "extrato" | "despesa" | null>(
@@ -52,6 +54,7 @@ export function FinanceiroPage() {
 
   function recarregar() {
     setErro(null)
+    api.get<NotaAberta[]>("/notas-a-receber").then(setAbertas).catch(() => setAbertas([]))
     Promise.all([api.get<Pagamento[]>(`/pagamentos?ano=${ano}`), api.get<Despesa[]>(`/despesas?ano=${ano}`)])
       .then(([p, d]) => {
         setPagamentos(p)
@@ -61,6 +64,12 @@ export function FinanceiroPage() {
   }
 
   useEffect(recarregar, [ano])
+
+  // Links "#a-receber" (Visão geral, Precisa da sua atenção) rolam até a lista.
+  const { hash } = useLocation()
+  useEffect(() => {
+    if (hash === "#a-receber" && abertas !== null) document.getElementById("a-receber")?.scrollIntoView({ behavior: "smooth" })
+  }, [hash, abertas !== null])
 
   const meses = useMemo(() => {
     const linhas = Array.from({ length: 12 }, (_, i) => {
@@ -190,6 +199,60 @@ export function FinanceiroPage() {
                         <div className="h-1.5 rounded-full bg-success-400" style={{ width: `${(m.recebido / maior) * 100}%` }} />
                         <div className="h-1.5 rounded-full bg-danger-400" style={{ width: `${(m.gasto / maior) * 100}%` }} />
                       </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* "Nos recebimentos coloque os pagamentos também" (28/09/2026): as
+          notas que ainda não foram pagas, de todos os meses, com a baixa ali
+          mesmo (passa o mouse em "Pendente"). */}
+      <Card className="scroll-mt-20 p-5" id="a-receber">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">A receber</h2>
+            <p className="text-xs text-slate-400 dark:text-slate-500">Notas emitidas sem pagamento registrado, de todos os meses.</p>
+          </div>
+          <span className="text-sm font-semibold text-warning-700 dark:text-warning-300">
+            {formatBRL((abertas ?? []).reduce((s, n) => s + n.valor, 0))}
+          </span>
+        </div>
+        {abertas === null ? (
+          <p className="py-4 text-center text-sm text-slate-400">Carregando...</p>
+        ) : abertas.length === 0 ? (
+          <p className="py-4 text-center text-sm text-slate-400">Nenhuma nota em aberto. Tudo recebido!</p>
+        ) : (
+          <div className="-mx-5 max-h-[420px] overflow-auto px-5">
+            <table className="w-full min-w-[520px] text-left text-sm">
+              <thead className="sticky top-0 bg-white dark:bg-slate-800">
+                <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-700/60 dark:text-slate-500">
+                  <th className="py-2 font-medium">Tomador</th>
+                  <th className="py-2 font-medium">Nota de</th>
+                  <th className="py-2 font-medium">Em aberto há</th>
+                  <th className="py-2 text-right font-medium">Valor</th>
+                  <th className="py-2 text-right font-medium">Pagamento</th>
+                </tr>
+              </thead>
+              <tbody>
+                {abertas.map((n) => (
+                  <tr key={`${n.vinculo_id}-${n.competencia}`} className="border-b border-slate-50 last:border-0 dark:border-slate-700/40">
+                    <td className="py-2.5">
+                      <Link to={n.quantidade > 1 ? "/app/nfse" : `/app/nfse/${n.emissao_id}`} className="font-medium text-slate-800 hover:text-primary-600 dark:text-slate-200">
+                        {n.apelido}
+                      </Link>
+                      {n.quantidade > 1 && <span className="block text-xs text-slate-400">{n.quantidade} notas</span>}
+                    </td>
+                    <td className="py-2.5 text-slate-500 dark:text-slate-400">{formatCompetenciaAbrev(n.competencia)}</td>
+                    <td className={`py-2.5 ${n.dias_em_aberto > 60 ? "font-semibold text-danger-600" : "text-slate-500 dark:text-slate-400"}`}>
+                      {n.dias_em_aberto} dia(s)
+                    </td>
+                    <td className="py-2.5 text-right text-slate-700 dark:text-slate-200">{formatBRL(n.valor)}</td>
+                    <td className="py-2.5 text-right">
+                      <BaixaPagamento vinculoId={n.vinculo_id} competencia={n.competencia} valor={n.valor} recebido={false} onMudou={recarregar} />
                     </td>
                   </tr>
                 ))}

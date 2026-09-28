@@ -406,7 +406,7 @@ def test_nota_visual_apos_montar_traz_prestador_tomador_e_servico(client, vincul
     assert nota["serie"] == vinculo_teste.serie
     assert nota["n_dps"] == criada["n_dps"]
     assert nota["competencia"] == "2026-08"
-    assert nota["ambiente"] == "2"  # default de GerarDpsRequest.tpAmb
+    assert nota["ambiente"] == "1"  # sem tpAmb: ambiente da conta (prestador.tp_amb_padrao, padrão produção)
     assert nota["xml_disponivel"] is True
     assert nota["id_dps"]  # nasce na montagem
 

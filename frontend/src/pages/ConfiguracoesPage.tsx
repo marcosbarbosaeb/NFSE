@@ -1,6 +1,7 @@
-import { CheckCircle2, GraduationCap, KeyRound, Moon, Percent, ShieldAlert, Sun, Trash2, UploadCloud } from "lucide-react"
+import { CheckCircle2, FlaskConical, GraduationCap, KeyRound, Mail, Moon, Percent, ShieldAlert, Sun, Trash2, UploadCloud } from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
 import { useLocation } from "react-router-dom"
+import { EditorModeloEmail, type ValorModeloEmail } from "../components/EditorModeloEmail"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
@@ -225,9 +226,104 @@ export function ConfiguracoesPage() {
         </Card>
       )}
 
+      {prestador && <AmbienteNotasCard prestador={prestador} onAtualizado={setPrestador} />}
+      {prestador && <ModeloEmailCard prestador={prestador} onAtualizado={setPrestador} />}
       <TutorialCard />
       <LimparDadosCard />
     </div>
+  )
+}
+
+// "Troque isso de produção e homologação" (28/09/2026): saiu da tela de gerar
+// nota e virou uma chave da conta. Padrão: produção (notas de verdade).
+function AmbienteNotasCard({ prestador, onAtualizado }: { prestador: Prestador; onAtualizado: (p: Prestador) => void }) {
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const teste = prestador.tp_amb_padrao === "2"
+  async function mudar(valor: "1" | "2") {
+    setSalvando(true)
+    setErro(null)
+    try {
+      onAtualizado(await api.patch<Prestador>("/prestador/preferencias", { tp_amb_padrao: valor }))
+    } catch (err) {
+      setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão.")
+    } finally {
+      setSalvando(false)
+    }
+  }
+  return (
+    <Card id="ambiente" className="scroll-mt-24 p-5 transition-shadow">
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+        <FlaskConical size={16} /> Ambiente das notas
+      </h2>
+      <label className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-300">
+        <input
+          type="checkbox"
+          checked={teste}
+          disabled={salvando}
+          onChange={(e) => mudar(e.target.checked ? "2" : "1")}
+          className="mt-0.5 rounded border-slate-300 dark:border-slate-600 dark:bg-slate-900"
+        />
+        <span>
+          Gerar notas de teste (homologação)
+          <span className="block text-xs text-slate-400 dark:text-slate-500">
+            {teste
+              ? "Ligado: as notas novas vão pro ambiente de teste da Receita e não valem como nota fiscal."
+              : "Desligado: as notas novas são de verdade (produção). Ligue só pra testar."}
+          </span>
+        </span>
+      </label>
+      {erro && <p className="mt-2 text-xs text-danger-600">{erro}</p>}
+    </Card>
+  )
+}
+
+function ModeloEmailCard({ prestador, onAtualizado }: { prestador: Prestador; onAtualizado: (p: Prestador) => void }) {
+  const inicial = (): ValorModeloEmail => ({
+    assunto: prestador.email_assunto_padrao ?? "",
+    mensagem: prestador.email_mensagem_padrao ?? "",
+    anexos: prestador.email_anexos_padrao ?? "",
+  })
+  const [valor, setValor] = useState<ValorModeloEmail>(inicial)
+  const [salvando, setSalvando] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null)
+  async function salvar() {
+    setSalvando(true)
+    setMsg(null)
+    try {
+      const p = await api.patch<Prestador>("/prestador/preferencias", {
+        email_assunto_padrao: valor.assunto,
+        email_mensagem_padrao: valor.mensagem,
+        email_anexos_padrao: valor.anexos || "pdf_xml",
+      })
+      onAtualizado(p)
+      setMsg({ ok: true, texto: "Modelo salvo." })
+    } catch (err) {
+      setMsg({ ok: false, texto: err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão." })
+    } finally {
+      setSalvando(false)
+    }
+  }
+  return (
+    <Card id="email-nota" className="scroll-mt-24 p-5 transition-shadow">
+      <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+        <Mail size={16} /> E-mail da nota
+      </h2>
+      <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+        O e-mail que vai pro tomador junto com a nota. Se algum tomador pedir um assunto ou texto diferente, ajuste na ficha
+        dele (Tomadores › editar).
+      </p>
+      <EditorModeloEmail valor={valor} onChange={setValor} herdado={{ rotulo: "o texto padrão da Ana" }} />
+      <div className="mt-4 flex items-center gap-3">
+        <Button type="button" variant="accent" onClick={salvar} disabled={salvando}>
+          {salvando ? "Salvando..." : "Salvar modelo"}
+        </Button>
+        <Button type="button" variant="ghost" onClick={() => setValor({ assunto: "", mensagem: "", anexos: "" })}>
+          Voltar ao texto padrão
+        </Button>
+        {msg && <span className={`text-xs ${msg.ok ? "text-success-700" : "text-danger-600"}`}>{msg.texto}</span>}
+      </div>
+    </Card>
   )
 }
 

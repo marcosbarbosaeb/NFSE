@@ -26,6 +26,7 @@ from app.config import get_settings
 from app.database import definir_prestador_atual
 from app.models import Prestador, Usuario
 from app.services.billing import criar_assinatura_trial
+from app.services.indicacao import registrar_indicacao
 from app.services.email import EmailEnvioError, get_email_sender
 
 _VALIDADE_TOKEN = datetime.timedelta(hours=24)
@@ -62,6 +63,7 @@ def criar_cadastro(
     numero: str | None = None,
     complemento: str | None = None,
     bairro: str | None = None,
+    codigo_indicacao: str | None = None,
 ) -> Usuario:
     email_norm = email.strip().lower()
     cnpj_norm = "".join(c for c in cpf_cnpj if c.isdigit())
@@ -114,6 +116,9 @@ def criar_cadastro(
     # `assinatura` já enxerga este prestador_id porque `definir_prestador_atual`
     # foi chamado acima, antes do INSERT de `prestador`.
     criar_assinatura_trial(db, prestador_id)
+    # Veio por um link de indicação (?ref=CODIGO): conta pro desconto de quem
+    # indicou quando esta conta assinar (ver app/services/indicacao.py).
+    registrar_indicacao(db, codigo_indicacao, prestador_id, razao_social)
 
     token = _gerar_token()
     usuario = Usuario(

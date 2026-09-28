@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
+import { type NotaParaAcoes, SeloAssinatura, SeloPrefeitura, SeloTomador } from "../components/AcoesNota"
 import { BaixaPagamento } from "../components/BaixaPagamento"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
@@ -21,15 +22,8 @@ import { MiniBarChart } from "../components/ui/MiniBarChart"
 import { StatCard } from "../components/ui/StatCard"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { competenciaAtual, deslocarCompetencia, formatBRL, formatCompetenciaLonga } from "../lib/format"
-import type { Calendario, DashboardResumo, EventoCalendario, TipoEventoCalendario } from "../lib/types"
+import type { DashboardResumo, EmissaoResumoLinha, Proximos } from "../lib/types"
 
-const PONTO_EVENTO: Record<TipoEventoCalendario, string> = {
-  prazo_emissao: "bg-warning-600",
-  recebimento_previsto: "bg-primary-600",
-  recebimento_confirmado: "bg-success-600",
-  revisar_aliquota: "bg-slate-500",
-  manual: "bg-accent-600",
-}
 
 function formatDataCurta(iso: string): string {
   const [ano, mes, dia] = iso.split("-").map(Number)
@@ -50,13 +44,26 @@ function badgeEnvio(status: string | null) {
 }
 
 
+function notaDaLinha(l: EmissaoResumoLinha): NotaParaAcoes {
+  return { id: l.emissao_id, estado: l.estado, envio_status: l.envio_status, tem_pdf: l.tem_pdf, tem_email: l.tem_email, homologacao: l.homologacao }
+}
+
+const COR_PENDENCIA: Record<string, string> = {
+  erro: "bg-danger-600",
+  prefeitura: "bg-warning-600",
+  assinar: "bg-warning-600",
+  enviar_tomador: "bg-primary-600",
+  gerar: "bg-accent-600",
+  receber: "bg-success-600",
+}
+
 export function DashboardPage() {
   const [competencia, setCompetencia] = useState(competenciaAtual())
   const [resumo, setResumo] = useState<DashboardResumo | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [carregando, setCarregando] = useState(true)
 
-  const [proximosEventos, setProximosEventos] = useState<EventoCalendario[] | null>(null)
+  const [proximos, setProximos] = useState<Proximos | null>(null)
   const [recarga, setRecarga] = useState(0)
   const navigate = useNavigate()
 
@@ -80,26 +87,22 @@ export function DashboardPage() {
     }
   }, [competencia, recarga])
 
-  // Mini agenda: próximos eventos a partir de hoje (independe do mês
-  // selecionado acima, que é só pro resumo de emissões/pagamentos).
+  // "Próximos eventos não está aparecendo, pode aparecer além de somente
+  // eventos" (28/09/2026): o que tem pra fazer agora + agenda de 30 dias.
   useEffect(() => {
     let cancelado = false
-    const hoje = new Date()
-    const daqui30dias = new Date(hoje)
-    daqui30dias.setDate(daqui30dias.getDate() + 30)
-    const paraISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
     api
-      .get<Calendario>(`/calendario?inicio=${paraISO(hoje)}&fim=${paraISO(daqui30dias)}`)
+      .get<Proximos>("/painel/proximos")
       .then((dados) => {
-        if (!cancelado) setProximosEventos(dados.eventos.slice(0, 6))
+        if (!cancelado) setProximos(dados)
       })
       .catch(() => {
-        if (!cancelado) setProximosEventos([])
+        if (!cancelado) setProximos({ pendencias: [], total_pendencias: 0, agenda: [] })
       })
     return () => {
       cancelado = true
     }
-  }, [])
+  }, [recarga])
 
   const pctEmitidas = resumo && resumo.total_vinculos > 0 ? Math.round((resumo.emitidas / resumo.total_vinculos) * 100) : 0
   const pctAguardando = resumo && resumo.total_vinculos > 0 ? Math.round((resumo.aguardando / resumo.total_vinculos) * 100) : 0
@@ -138,14 +141,14 @@ export function DashboardPage() {
         <>
           {/* "Ligar a visão geral com as abas" (28/09/2026): cada número leva
               pra tela onde ele é resolvido. */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <Link to="/app/tomadores" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
               <StatCard
                 icon={<FileText size={18} />}
                 iconClassName="bg-primary-50 text-primary-600"
                 label="Notas deste mês"
                 value={resumo.total_vinculos}
-                sublabel="tomadores ativos · ver tomadores"
+                sublabel="tomadores ativos"
               />
             </Link>
             <Link to="/app/nfse" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
@@ -154,7 +157,7 @@ export function DashboardPage() {
                 iconClassName="bg-success-50 text-success-600"
                 label="Emitidas"
                 value={resumo.emitidas}
-                sublabel={`${pctEmitidas}% do total · ver notas`}
+                sublabel={`${pctEmitidas}% do mês`}
               />
             </Link>
             <Link to="/app/tomadores" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
@@ -163,16 +166,25 @@ export function DashboardPage() {
                 iconClassName="bg-warning-50 text-warning-600"
                 label="Aguardando emissão"
                 value={resumo.aguardando}
-                sublabel={`${pctAguardando}% do total · gerar agora`}
+                sublabel={`${pctAguardando}% do mês · gerar`}
+              />
+            </Link>
+            <Link to="/app/financeiro#a-receber" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
+              <StatCard
+                icon={<Wallet size={18} />}
+                iconClassName="bg-accent-50 text-accent-600"
+                label="Notas a receber"
+                value={formatBRL(resumo.a_receber_total ?? resumo.a_receber)}
+                sublabel={`${resumo.notas_a_receber ?? resumo.pagamentos_pendentes} nota(s) em aberto · todos os meses`}
               />
             </Link>
             <Link to="/app/financeiro" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
               <StatCard
-                icon={<Wallet size={18} />}
-                iconClassName="bg-accent-50 text-accent-600"
-                label="A receber"
-                value={formatBRL(resumo.a_receber)}
-                sublabel={`${resumo.pagamentos_pendentes} pagamento(s) pendente(s) · ver financeiro`}
+                icon={<TrendingUp size={18} />}
+                iconClassName="bg-success-50 text-success-600"
+                label="Notas recebidas"
+                value={formatBRL(resumo.recebido_total ?? 0)}
+                sublabel={`${resumo.notas_recebidas ?? 0} nota(s) pagas · total`}
               />
             </Link>
           </div>
@@ -197,13 +209,13 @@ export function DashboardPage() {
                 <p className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">Nenhuma nota emitida nesta competência ainda.</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
+                  <table className="w-full min-w-[640px] text-left text-sm">
                     <thead>
                       <tr className="border-b border-slate-100 dark:border-slate-700/60 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                         <th className="py-2 font-medium">Tomador</th>
-                        <th className="py-2 font-medium">Competência</th>
                         <th className="py-2 font-medium">Valor</th>
-                        <th className="py-2 font-medium">NFS-e</th>
+                        <th className="py-2 font-medium">Assinatura</th>
+                        <th className="py-2 font-medium">Prefeitura</th>
                         <th className="py-2 font-medium">Envio</th>
                         <th className="py-2 font-medium">Pagamento</th>
                       </tr>
@@ -219,10 +231,27 @@ export function DashboardPage() {
                             <p className="font-medium text-slate-800 dark:text-slate-200">{linha.apelido}</p>
                             <p className="text-xs text-slate-400 dark:text-slate-500">{linha.tomador_razao_social}</p>
                           </td>
-                          <td className="py-3 text-slate-600 dark:text-slate-300">{linha.competencia}</td>
                           <td className="py-3 text-slate-600 dark:text-slate-300">{formatBRL(linha.valor)}</td>
-                          <td className="py-3">{badgeEstadoNfse(linha.estado, linha.estado_label)}</td>
-                          <td className="py-3">{badgeEnvio(linha.envio_status)}</td>
+                          {(linha.quantidade ?? 1) > 1 ? (
+                            <>
+                              <td className="py-3" colSpan={2}>
+                                {badgeEstadoNfse(linha.estado, linha.estado_label)}
+                              </td>
+                              <td className="py-3">{badgeEnvio(linha.envio_status)}</td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="py-3">
+                                <SeloAssinatura nota={notaDaLinha(linha)} onMudou={() => setRecarga((n) => n + 1)} />
+                              </td>
+                              <td className="py-3">
+                                <SeloPrefeitura nota={notaDaLinha(linha)} onMudou={() => setRecarga((n) => n + 1)} />
+                              </td>
+                              <td className="py-3">
+                                <SeloTomador nota={notaDaLinha(linha)} onMudou={() => setRecarga((n) => n + 1)} />
+                              </td>
+                            </>
+                          )}
                           <td className="py-3">
                             <BaixaPagamento
                               vinculoId={linha.vinculo_id}
@@ -272,36 +301,66 @@ export function DashboardPage() {
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
             <Card className="p-5">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Próximos eventos</h2>
+                <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Próximos passos</h2>
                 <Link to="/app/calendario" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
                   Ver agenda <ArrowRight size={14} />
                 </Link>
               </div>
-              {proximosEventos === null ? (
+              {proximos === null ? (
                 <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>
-              ) : proximosEventos.length === 0 ? (
+              ) : proximos.pendencias.length === 0 && proximos.agenda.length === 0 ? (
                 <p className="flex items-center gap-2 text-sm text-slate-400 dark:text-slate-500">
-                  <CalendarDays size={16} /> Nada nos próximos 30 dias.
+                  <CalendarDays size={16} /> Nada pendente nem na agenda dos próximos 30 dias.
                 </p>
               ) : (
-                <ul className="flex flex-col gap-3">
-                  {proximosEventos.map((ev, i) => (
-                    <li
-                      key={i}
-                      onClick={() => navigate("/app/calendario")}
-                      className="-mx-2 flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-700/40"
-                    >
-                      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${PONTO_EVENTO[ev.tipo]}`} />
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">{ev.apelido ?? ev.titulo}</p>
-                        <p className="text-xs text-slate-400 dark:text-slate-500">
-                          {formatDataCurta(ev.data)}
-                          {ev.valor != null && ` · ${formatBRL(ev.valor)}`}
-                        </p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                <div className="flex flex-col gap-4">
+                  {proximos.pendencias.length > 0 && (
+                    <ul className="flex flex-col gap-1.5">
+                      {proximos.pendencias.map((p, i) => (
+                        <li key={`p${i}`}>
+                          <Link
+                            to={p.link}
+                            className="-mx-2 flex items-start gap-2.5 rounded-lg px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-700/40"
+                          >
+                            <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${COR_PENDENCIA[p.tipo] ?? "bg-slate-400"}`} />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">{p.titulo}</p>
+                              <p className="text-xs text-slate-400 dark:text-slate-500">
+                                {[p.competencia ? formatCompetenciaLonga(p.competencia) : null, p.valor != null ? formatBRL(p.valor) : null]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </p>
+                            </div>
+                            <span className="shrink-0 text-xs font-semibold text-primary-600">{p.acao} →</span>
+                          </Link>
+                        </li>
+                      ))}
+                      {proximos.total_pendencias > proximos.pendencias.length && (
+                        <li className="text-xs text-slate-400">+ {proximos.total_pendencias - proximos.pendencias.length} outras pendências</li>
+                      )}
+                    </ul>
+                  )}
+                  {proximos.agenda.length > 0 && (
+                    <div>
+                      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Agenda</p>
+                      <ul className="flex flex-col gap-2">
+                        {proximos.agenda.map((ev, i) => (
+                          <li
+                            key={`a${i}`}
+                            onClick={() => navigate("/app/calendario")}
+                            className="-mx-2 flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-700/40"
+                          >
+                            <span className="mt-0.5 w-12 shrink-0 text-xs font-semibold text-slate-500">{formatDataCurta(ev.data)}</span>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm text-slate-700 dark:text-slate-200">{ev.detalhe ?? ev.titulo}</p>
+                              {ev.valor != null && <p className="text-xs text-slate-400">{formatBRL(ev.valor)}</p>}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               )}
             </Card>
 

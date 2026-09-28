@@ -45,6 +45,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import AjusteEvento, Certificado, Emissao, PagamentoRecebido, Prestador
+from app.services import a_receber as notas_abertas
 from app.services.envios import listar_envios
 from app.services.vinculos import listar_vinculos_ativos
 
@@ -212,6 +213,9 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
             "estado_label": ESTADO_NFSE_LABEL.get(emissao.estado, emissao.estado),
             "envio_status": _status_envio(db, emissao),
             "pagamento_recebido": recebido,
+            "tem_pdf": bool(emissao.danfse_pdf) or emissao.estado == "confirmado",
+            "tem_email": bool(vinculo.email_contato) if len(do_mes) == 1 else False,
+            "homologacao": (emissao.tomador_snapshot or {}).get("tpAmb") == "2",
         })
 
     recebido_no_mes = _soma_pagamentos(db, prestador_id, competencia)
@@ -221,6 +225,7 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
         delta_recebimentos_pct = float((recebido_no_mes - recebido_mes_anterior) / recebido_mes_anterior * 100)
 
     atencao: list[dict] = _avisos_dia_de_gerar(db, vinculos)
+    atencao += notas_abertas.avisos_abertas_ha_muito(db)
     cert = db.query(Certificado).filter_by(prestador_id=prestador_id).one_or_none()
     if cert is not None and cert.validade is not None:
         dias = (cert.validade - datetime.date.today()).days
@@ -266,6 +271,87 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
         "recebido_mes_anterior": float(recebido_mes_anterior),
         "delta_recebimentos_pct": delta_recebimentos_pct,
         "serie_recebimentos": _serie_recebimentos(db, prestador_id, competencia),
+        **notas_abertas.totais(db),
         "emissoes": emissoes,
         "atencao": atencao,
     }
+
+
+def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = None) -> dict:
+    """Card "Próximos eventos" da Visão geral (28/09/2026: "não está
+    aparecendo, pode aparecer além de somente eventos"): o que tem pra fazer
+    agora (assinar, mandar pra prefeitura, mandar pro tomador, gerar a nota
+    do mês, cobrar) + a agenda dos próximos 30 dias."""
+    from app.services.calendario import eventos_calendario
+
+    hoje = hoje or datetime.date.today()
+    competencia = f"{hoje.year:04d}-{hoje.month:02d}"
+    pendencias: list[dict] = []
+
+    ativas = (
+        db.query(Emissao)
+        .filter(Emissao.estado.in_(("montado", "assinado", "erro", "confirmado")))
+        .order_by(Emissao.criado_em.desc())
+        .limit(200)
+        .all()
+    )
+    for e in ativas:
+        snap = e.tomador_snapshot or {}
+        nome = snap.get("razao_social") if e.tomador_documento else snap.get("apelido")
+        base = {"emissao_id": e.id, "valor": float(e.valor), "competencia": e.competencia, "link": f"/app/nfse/{e.id}"}
+        if e.estado == "montado":
+            pendencias.append({**base, "tipo": "assinar", "titulo": f"Assinar a nota de {nome}", "acao": "Assinar"})
+        elif e.estado == "assinado":
+            pendencias.append({**base, "tipo": "prefeitura", "titulo": f"Enviar à prefeitura a nota de {nome}", "acao": "Enviar"})
+        elif e.estado == "erro":
+            pendencias.append({**base, "tipo": "erro", "titulo": f"A prefeitura recusou a nota de {nome}", "acao": "Ver erro"})
+        elif e.estado == "confirmado" and not any(v.status == "enviado" for v in listar_envios(db, e)):
+            pendencias.append({**base, "tipo": "enviar_tomador", "titulo": f"Mandar a nota pra {nome}", "acao": "Enviar"})
+
+    for v in listar_vinculos_ativos(db):
+        tem = (
+            db.query(Emissao.id)
+            .filter(Emissao.prestador_tomador_id == v.id, Emissao.competencia == competencia, Emissao.estado != "cancelada")
+            .first()
+        )
+        if tem is None:
+            quando = f" (dia {v.dia_limite_emissao})" if v.dia_limite_emissao else ""
+            pendencias.append({
+                "tipo": "gerar", "titulo": f"Gerar a nota de {v.apelido}{quando}", "acao": "Gerar",
+                "competencia": competencia, "link": f"/app/nfse?gerar={v.id}&competencia={competencia}",
+            })
+
+    for g in notas_abertas.notas_em_aberto(db, hoje)[:5]:
+        pendencias.append({
+            "tipo": "receber", "titulo": f"Receber de {g['apelido']}", "acao": "Dar baixa",
+            "valor": g["valor"], "competencia": g["competencia"], "vinculo_id": g["vinculo_id"],
+            "link": "/app/financeiro#a-receber",
+        })
+
+    eventos = eventos_calendario(db, prestador_id, hoje, hoje + datetime.timedelta(days=30))
+    agenda = [
+        {"data": ev["data"], "tipo": ev.get("categoria") or ev["tipo"], "titulo": ev.get("apelido") or ev["titulo"],
+         "detalhe": ev["titulo"], "valor": ev.get("valor")}
+        for ev in eventos
+    ][:8]
+    # Muitas notas na mesma etapa viram uma linha só ("Assinar 8 notas").
+    agrupaveis = {
+        "erro": ("{n} notas recusadas pela prefeitura", "Ver"),
+        "prefeitura": ("Enviar {n} notas à prefeitura", "Enviar"),
+        "assinar": ("Assinar {n} notas", "Assinar"),
+        "enviar_tomador": ("Mandar {n} notas pros tomadores", "Enviar"),
+    }
+    agrupadas: list[dict] = []
+    for tipo, (titulo, acao) in agrupaveis.items():
+        do_tipo = [p for p in pendencias if p["tipo"] == tipo]
+        if len(do_tipo) > 2:
+            agrupadas.append({
+                "tipo": tipo, "titulo": titulo.format(n=len(do_tipo)), "acao": acao, "link": "/app/nfse",
+                "valor": round(sum(p.get("valor") or 0 for p in do_tipo), 2),
+            })
+        else:
+            agrupadas += do_tipo
+    agrupadas += [p for p in pendencias if p["tipo"] not in agrupaveis]
+    ordem = {"erro": 0, "prefeitura": 1, "assinar": 2, "enviar_tomador": 3, "gerar": 4, "receber": 5}
+    agrupadas.sort(key=lambda p: ordem.get(p["tipo"], 9))
+    return {"pendencias": agrupadas[:10], "total_pendencias": len(agrupadas), "agenda": agenda}

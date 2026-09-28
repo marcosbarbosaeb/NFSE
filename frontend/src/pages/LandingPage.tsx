@@ -17,7 +17,8 @@ import type { ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { AnaAvatar, Marca } from "../components/brand/Marca"
 import { useAuth } from "../lib/auth"
-import { EMAIL_SUPORTE, MAILTO_SUPORTE } from "../lib/contato"
+import { BotaoSuporte } from "../components/SuporteModal"
+import { EMAIL_SUPORTE } from "../lib/contato"
 import { ehDominioRaiz, urlEmissor } from "../lib/dominios"
 
 // Landing única da Agente Ana (agenteana.com.br). Hoje só o emissor de
@@ -408,9 +409,9 @@ export function LandingPage() {
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-8 text-sm text-slate-500 sm:flex-row sm:px-6 dark:text-slate-400">
           <Marca tamanho={28} />
           <div className="flex flex-col items-center gap-1 sm:items-end">
-            <a href={MAILTO_SUPORTE} className="font-medium text-slate-600 hover:text-accent-600 dark:text-slate-300">
-              {EMAIL_SUPORTE}
-            </a>
+            <BotaoSuporte className="font-medium text-slate-600 hover:text-accent-600 dark:text-slate-300">
+              Fale com o suporte · {EMAIL_SUPORTE}
+            </BotaoSuporte>
             <p className="flex gap-3">
               <Link to="/privacidade" className="hover:text-accent-600">Privacidade</Link>
               <Link to="/termos" className="hover:text-accent-600">Termos de uso</Link>

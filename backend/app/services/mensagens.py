@@ -7,6 +7,7 @@ for lapidar o texto mexe só aqui, sem caçar string pelo código.
 Cada função recebe só dados já prontos (nada de banco aqui), então dá pra
 testar/ajustar o texto isolado.
 """
+import re
 from dataclasses import dataclass
 from html import escape
 
@@ -21,6 +22,8 @@ class DadosMensagem:
     n_dps: int
     chave_acesso: str | None
     link: str
+    tomador_razao_social: str = ""
+    ordem: str | None = None
 
 
 def _competencia_br(competencia: str) -> str:
@@ -31,6 +34,89 @@ def _competencia_br(competencia: str) -> str:
 def _valor_br(valor: float) -> str:
     inteiro, centavos = f"{valor:,.2f}".split(".")
     return f"R$ {inteiro.replace(',', '.')},{centavos}"
+
+
+_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+
+# --- Modelo configurável (28/09/2026) ----------------------------------------
+# "É importante que os campos dessa mensagem sejam configuráveis. Tem tomador
+# que pede que o assunto seja específico": o prestador define assunto/texto
+# padrão e cada tomador pode ter os seus. Os códigos entre chaves abaixo são
+# trocados pelos dados da nota; qualquer outro texto entre chaves fica como
+# está (nada de erro por um "{" digitado sem querer).
+
+CODIGOS_MODELO: list[tuple[str, str, str]] = [
+    # (código, o que vira, exemplo)
+    ("prestador", "Seu nome ou empresa", "Maria Silva ME"),
+    ("tomador", "Nome do tomador (como você chama)", "Awin"),
+    ("razao_social_tomador", "Razão social do tomador", "AWIN VEICULAÇÃO DE PUBLICIDADE LTDA"),
+    ("competencia", "Mês/ano da nota", "09/2026"),
+    ("mes", "Nome do mês", "Setembro"),
+    ("ano", "Ano", "2026"),
+    ("valor", "Valor da nota", "R$ 1.234,56"),
+    ("descricao", "Descrição do serviço", "Locação de espaço virtual..."),
+    ("ordem", "Número da ordem de pagamento", "15496516"),
+    ("numero_nota", "Número da nota (DPS)", "42"),
+    ("chave_acesso", "Chave de acesso da NFS-e", "3106200..."),
+    ("link", "Link pra baixar a nota", "https://notas.agenteana.com.br/..."),
+]
+
+ASSUNTO_PADRAO = "Nota fiscal de serviço — {prestador} — {competencia}"
+MENSAGEM_PADRAO = """Olá!
+
+Segue a nota fiscal de serviço emitida por {prestador}.
+
+Referente a: {descricao}
+Competência: {competencia}
+Valor: {valor}
+
+A nota está em anexo e também pode ser baixada aqui: {link}
+
+Qualquer dúvida, é só responder este e-mail.
+
+{prestador}"""
+
+ANEXOS_VALIDOS = ("pdf_xml", "pdf", "xml")
+
+
+def valores_modelo(d: DadosMensagem) -> dict[str, str]:
+    ano, mes = d.competencia.split("-")
+    return {
+        "prestador": d.prestador_nome,
+        "tomador": d.fornecedor_apelido,
+        "razao_social_tomador": d.tomador_razao_social or d.fornecedor_apelido,
+        "competencia": f"{mes}/{ano}",
+        "mes": _MESES[int(mes) - 1],
+        "ano": ano,
+        "valor": _valor_br(d.valor),
+        "descricao": d.descricao,
+        "ordem": d.ordem or "",
+        "numero_nota": str(d.n_dps or ""),
+        "chave_acesso": d.chave_acesso or "",
+        "link": d.link,
+    }
+
+
+def renderizar_modelo(modelo: str, d: DadosMensagem) -> str:
+    valores = valores_modelo(d)
+    return re.sub(r"\{(\w+)\}", lambda m: valores.get(m.group(1), m.group(0)), modelo)
+
+
+def email_html_de_texto(texto: str, d: DadosMensagem) -> str:
+    """HTML simples a partir do texto que a pessoa escreveu: parágrafos,
+    quebras de linha e o link da nota clicável."""
+    blocos = [b for b in re.split(r"\n\s*\n", texto.strip()) if b.strip()]
+    partes = []
+    for bloco in blocos:
+        html = escape(bloco).replace("\n", "<br>")
+        if d.link:
+            html = html.replace(escape(d.link), f'<a href="{escape(d.link)}" style="color:#4f46e5">{escape(d.link)}</a>')
+        partes.append(f"<p>{html}</p>")
+    return (
+        '<div style="font-family:Arial,sans-serif;font-size:14px;color:#1e293b;line-height:1.5">'
+        + "".join(partes)
+        + '<p style="color:#94a3b8;font-size:12px">enviado pela Agente Ana</p></div>'
+    )
 
 
 def email_assunto(d: DadosMensagem) -> str:

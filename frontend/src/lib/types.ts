@@ -15,6 +15,7 @@ export interface CadastroRequest {
   numero?: string | null
   complemento?: string | null
   bairro?: string | null
+  codigo_indicacao?: string | null
 }
 
 export interface VinculoResumo {
@@ -85,6 +86,9 @@ export interface EmissaoResumoLinha {
   estado_label: string
   envio_status: string | null
   pagamento_recebido: boolean
+  tem_pdf?: boolean
+  tem_email?: boolean
+  homologacao?: boolean
 }
 
 export interface AtencaoItem {
@@ -143,6 +147,10 @@ export interface VinculoDetalhe {
   dias_para_recebimento: number | null
   email_contato: string | null
   whatsapp_contato: string | null
+  email_assunto?: string | null
+  email_mensagem?: string | null
+  email_anexos?: "pdf_xml" | "pdf" | "xml" | null
+  email_copia?: string | null
 }
 
 export interface VinculoCriarRequest {
@@ -160,6 +168,10 @@ export interface VinculoCriarRequest {
   dias_para_recebimento?: number | null
   email_contato?: string | null
   whatsapp_contato?: string | null
+  email_assunto?: string | null
+  email_mensagem?: string | null
+  email_anexos?: string | null
+  email_copia?: string | null
 }
 
 export type VinculoAtualizarRequest = Partial<Omit<VinculoCriarRequest, "tomador_id" | "novo_tomador">> & {
@@ -280,6 +292,10 @@ export interface EmissaoListaLinha {
   estado_label: string
   criado_em: string
   pagamento_recebido: boolean
+  envio_status?: string | null
+  tem_pdf?: boolean
+  tem_email?: boolean
+  homologacao?: boolean
 }
 
 export interface GerarDpsRequest {
@@ -471,6 +487,10 @@ export interface Prestador {
   // pré-preencher a Nova emissão; confirmação continua sempre obrigatória).
   aliquota_atual: number | null
   aliquota_atualizada_em: string | null
+  tp_amb_padrao?: "1" | "2"
+  email_assunto_padrao?: string | null
+  email_mensagem_padrao?: string | null
+  email_anexos_padrao?: "pdf_xml" | "pdf" | "xml" | null
 }
 
 export interface AliquotaAtualizarRequest {
@@ -490,4 +510,90 @@ export interface DashboardResumo {
   serie_recebimentos: PontoSerieMensal[]
   emissoes: EmissaoResumoLinha[]
   atencao: AtencaoItem[]
+  a_receber_total?: number
+  notas_a_receber?: number
+  recebido_total?: number
+  notas_recebidas?: number
+}
+
+export interface PendenciaItem {
+  tipo: "assinar" | "prefeitura" | "erro" | "enviar_tomador" | "gerar" | "receber" | string
+  titulo: string
+  acao: string
+  link: string
+  emissao_id?: string | null
+  vinculo_id?: string | null
+  valor?: number | null
+  competencia?: string | null
+}
+
+export interface AgendaItem {
+  data: string
+  tipo: string
+  titulo: string
+  detalhe?: string | null
+  valor?: number | null
+}
+
+export interface Proximos {
+  pendencias: PendenciaItem[]
+  total_pendencias: number
+  agenda: AgendaItem[]
+}
+
+export interface NotaAberta {
+  vinculo_id: string
+  apelido: string
+  competencia: string
+  emissao_id: string
+  estado: string
+  valor: number
+  quantidade: number
+  emitida_em: string
+  dias_em_aberto: number
+}
+
+export interface PreviaEmail {
+  destino: string | null
+  copia: string[]
+  assunto: string
+  texto: string
+  anexos: "pdf_xml" | "pdf" | "xml"
+  arquivos: string[]
+  motivo_desabilitado: string | null
+}
+
+export interface ModeloEmailPadrao {
+  assunto: string
+  mensagem: string
+  codigos: { codigo: string; descricao: string; exemplo: string }[]
+}
+
+export interface OrdemAwin {
+  numero: string | null
+  valor: number | null
+  data: string | null
+  moeda: string | null
+  competencia_sugerida: string | null
+  avisos: string[]
+  ja_usada: { emissao_id: string; apelido: string; competencia: string; estado: string } | null
+}
+
+export interface Indicacao {
+  codigo: string
+  link: string
+  ativos: number
+  total: number
+  desconto_pct: number
+  desconto_aplicado_pct: number
+  pct_por_indicado: number
+  pct_maximo: number
+  cobranca_ativa: boolean
+  indicados: { nome: string; status: string; desde: string }[]
+}
+
+export interface CanaisSuporte {
+  email: string
+  whatsapp: string | null
+  formulario: boolean
 }

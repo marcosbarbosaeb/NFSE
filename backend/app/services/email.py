@@ -44,7 +44,7 @@ class EmailSender:
     def enviar(
         self, *, destinatario: str, assunto: str, corpo_texto: str, corpo_html: str,
         remetente: str | None = None, responder_para: str | None = None,
-        anexos: list[tuple[str, bytes]] | None = None,
+        anexos: list[tuple[str, bytes]] | None = None, copia: list[str] | None = None,
     ) -> None:
         """`anexos`: [(nome_arquivo, bytes)]. `remetente` sobrescreve o
         padrão (e-mails de nota saem de email_remetente_notas)."""
@@ -58,10 +58,12 @@ class EmailSenderConsole(EmailSender):
     def enviar(
         self, *, destinatario: str, assunto: str, corpo_texto: str, corpo_html: str,
         remetente: str | None = None, responder_para: str | None = None,
-        anexos: list[tuple[str, bytes]] | None = None,
+        anexos: list[tuple[str, bytes]] | None = None, copia: list[str] | None = None,
     ) -> None:
         logger.info("=== E-MAIL (modo console — RESEND_API_KEY não configurada) ===")
         logger.info("Para: %s", destinatario)
+        if copia:
+            logger.info("Cópia: %s", ", ".join(copia))
         if anexos:
             logger.info("Anexos: %s", ", ".join(nome for nome, _ in anexos))
         logger.info("Assunto: %s", assunto)
@@ -79,7 +81,7 @@ class EmailSenderResend(EmailSender):
     def enviar(
         self, *, destinatario: str, assunto: str, corpo_texto: str, corpo_html: str,
         remetente: str | None = None, responder_para: str | None = None,
-        anexos: list[tuple[str, bytes]] | None = None,
+        anexos: list[tuple[str, bytes]] | None = None, copia: list[str] | None = None,
     ) -> None:
         corpo = {
             "from": remetente or self._remetente,
@@ -90,6 +92,8 @@ class EmailSenderResend(EmailSender):
         }
         if responder_para:
             corpo["reply_to"] = [responder_para]
+        if copia:
+            corpo["cc"] = copia
         if anexos:
             corpo["attachments"] = [
                 {"filename": nome, "content": base64.b64encode(conteudo).decode("ascii")} for nome, conteudo in anexos

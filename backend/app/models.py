@@ -99,6 +99,14 @@ class Prestador(Base):
     # Conta do ambiente de simulação (ver app/services/demo.py): nunca fala
     # com a Receita nem manda e-mail, e é apagada sozinha depois de um tempo.
     demo: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
+    # Modelo do e-mail da nota (28/09/2026) — nulo = texto padrão da Ana
+    # (ver app/services/mensagens.py). Cada tomador pode sobrescrever.
+    email_assunto_padrao: Mapped[str | None] = mapped_column(String(300))
+    email_mensagem_padrao: Mapped[str | None] = mapped_column(Text)
+    email_anexos_padrao: Mapped[str | None] = mapped_column(String(10))
+    # Ambiente das notas novas: "1" produção, "2" homologação (teste). Saiu
+    # da tela de gerar nota em 28/09/2026 e virou configuração da conta.
+    tp_amb_padrao: Mapped[str] = mapped_column(String(1), nullable=False, default="1", server_default="1")
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
@@ -299,6 +307,14 @@ class PrestadorTomador(Base):
     # Marco 17 — pra onde mandar as notas deste fornecedor (envio direto).
     email_contato: Mapped[str | None] = mapped_column(String(200))
     whatsapp_contato: Mapped[str | None] = mapped_column(String(20))
+    # E-mail da nota só pra este tomador (28/09/2026: "tem tomador que pede
+    # que o assunto seja específico"). Nulo = usa o padrão do prestador.
+    # email_anexos: "pdf_xml" | "pdf" | "xml". email_copia: e-mails em cópia,
+    # separados por vírgula.
+    email_assunto: Mapped[str | None] = mapped_column(String(300))
+    email_mensagem: Mapped[str | None] = mapped_column(Text)
+    email_anexos: Mapped[str | None] = mapped_column(String(10))
+    email_copia: Mapped[str | None] = mapped_column(String(400))
     # "Excluir tomador": vínculo com notas não pode sumir do banco (a nota
     # aponta pra ele), então é marcado aqui e sai de todas as listas.
     excluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -544,6 +560,8 @@ class Assinatura(Base):
 
     stripe_customer_id: Mapped[str | None] = mapped_column(String(100), unique=True)
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(100), unique=True)
+    # Programa de indicação: % de desconto aplicado hoje no Stripe.
+    desconto_indicacao_pct: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
@@ -590,3 +608,38 @@ class Envio(Base):
         ),
         CheckConstraint("status IN ('pendente','enviado','falha')", name="ck_envio_status"),
     )
+
+
+class CodigoIndicacao(Base):
+    """Código público de indicação de cada prestador (ver
+    app/services/indicacao.py). Sem RLS: quem se cadastra com um código
+    precisa achar o dono antes de ter conta."""
+
+    __tablename__ = "codigo_indicacao"
+
+    codigo: Mapped[str] = mapped_column(String(20), primary_key=True)
+    prestador_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Indicacao(Base):
+    """Quem indicou quem. `status` espelha a assinatura do indicado
+    (trial/ativa/inadimplente/cancelada) — só "ativa" conta pro desconto.
+    RLS: visível pro indicador e pro indicado."""
+
+    __tablename__ = "indicacao"
+
+    indicado_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), primary_key=True
+    )
+    indicador_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False
+    )
+    indicado_nome: Mapped[str | None] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="trial", server_default="trial")
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (Index("ix_indicacao_indicador", "indicador_id"),)

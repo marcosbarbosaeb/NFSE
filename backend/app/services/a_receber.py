@@ -1,0 +1,113 @@
+"""Notas a receber x recebidas, de TODOS os meses — pedido do Marcos
+(28/09/2026): "Notas a receber / Notas recebidas (total), existem diversos
+pagamentos que ficam pendentes"; "notas abertas há mais de dois meses também
+devem entrar no Precisa da sua atenção"; "nos recebimentos coloque os
+pagamentos também".
+
+Mesma aproximação do resto do sistema (ver app/services/dashboard.py): o
+pagamento é por tomador + competência, então uma competência com qualquer
+pagamento registrado conta como recebida. Notas de um mesmo tomador na mesma
+competência (Shopee: uma por vendedor) viram um grupo só.
+"""
+import datetime
+import uuid
+from decimal import Decimal
+
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.models import Emissao, PagamentoRecebido, PrestadorTomador
+
+# O que já saiu como nota (montado = gerada, ainda sem assinar). Rascunho,
+# erro, cancelada e substituída não entram na conta de "a receber".
+ESTADOS_COBRAVEIS = ("montado", "assinado", "submetido", "confirmado")
+DIAS_ABERTA_ALERTA = 60
+
+
+def _pares_pagos(db: Session) -> set[tuple[uuid.UUID, str]]:
+    linhas = db.query(PagamentoRecebido.prestador_tomador_id, PagamentoRecebido.competencia).distinct()
+    return {(v, c) for v, c in linhas}
+
+
+def _grupos(db: Session) -> list[dict]:
+    grupos: dict[tuple[uuid.UUID, str], dict] = {}
+    emissoes = (
+        db.query(Emissao, PrestadorTomador.apelido)
+        .join(PrestadorTomador, PrestadorTomador.id == Emissao.prestador_tomador_id)
+        .filter(Emissao.estado.in_(ESTADOS_COBRAVEIS))
+        .order_by(Emissao.criado_em)
+        .all()
+    )
+    for e, apelido in emissoes:
+        chave = (e.prestador_tomador_id, e.competencia)
+        g = grupos.get(chave)
+        if g is None:
+            g = grupos[chave] = {
+                "vinculo_id": e.prestador_tomador_id,
+                "apelido": apelido,
+                "competencia": e.competencia,
+                "emissao_id": e.id,
+                "estado": e.estado,
+                "valor": Decimal(0),
+                "quantidade": 0,
+                "emitida_em": e.criado_em,
+            }
+        g["valor"] += e.valor
+        g["quantidade"] += 1
+    return list(grupos.values())
+
+
+def notas_em_aberto(db: Session, hoje: datetime.date | None = None) -> list[dict]:
+    """Grupos (tomador + competência) sem nenhum pagamento, do mais antigo
+    pro mais novo."""
+    hoje = hoje or datetime.date.today()
+    pagos = _pares_pagos(db)
+    abertas = []
+    for g in _grupos(db):
+        if (g["vinculo_id"], g["competencia"]) in pagos:
+            continue
+        emitida = g["emitida_em"].date() if g["emitida_em"] else hoje
+        abertas.append({**g, "valor": float(g["valor"]), "emitida_em": emitida, "dias_em_aberto": (hoje - emitida).days})
+    return sorted(abertas, key=lambda g: (g["competencia"], g["apelido"]))
+
+
+def totais(db: Session) -> dict:
+    pagos = _pares_pagos(db)
+    a_receber, qtd_aberta, qtd_recebida = Decimal(0), 0, 0
+    for g in _grupos(db):
+        if (g["vinculo_id"], g["competencia"]) in pagos:
+            qtd_recebida += g["quantidade"]
+        else:
+            a_receber += g["valor"]
+            qtd_aberta += g["quantidade"]
+    recebido = db.query(func.coalesce(func.sum(PagamentoRecebido.valor), 0)).scalar()
+    return {
+        "a_receber_total": float(a_receber),
+        "notas_a_receber": qtd_aberta,
+        "recebido_total": float(recebido or 0),
+        "notas_recebidas": qtd_recebida,
+    }
+
+
+def avisos_abertas_ha_muito(db: Session, hoje: datetime.date | None = None, limite: int = 5) -> list[dict]:
+    antigas = [g for g in notas_em_aberto(db, hoje) if g["dias_em_aberto"] > DIAS_ABERTA_ALERTA]
+    avisos = []
+    for g in antigas[:limite]:
+        ano, mes = g["competencia"].split("-")
+        valor = f"R$ {g['valor']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        avisos.append({
+            "tipo": "nota_aberta_antiga",
+            "titulo": g["apelido"],
+            "mensagem": f"Nota de {mes}/{ano} ({valor}) sem pagamento há {g['dias_em_aberto']} dias.",
+            "link": "/app/financeiro#a-receber",
+            "link_label": "Dar baixa ou cobrar",
+        })
+    if len(antigas) > limite:
+        avisos.append({
+            "tipo": "nota_aberta_antiga",
+            "titulo": f"Mais {len(antigas) - limite} nota(s) em aberto há mais de dois meses",
+            "mensagem": "Veja a lista completa em Financeiro › A receber.",
+            "link": "/app/financeiro#a-receber",
+            "link_label": "Ver todas",
+        })
+    return avisos

@@ -1,6 +1,6 @@
-import { CalendarDays, FileText, Home, Settings, Users, Wallet } from "lucide-react"
+import { CalendarDays, FileText, Gift, Home, Settings, Users, Wallet } from "lucide-react"
 import { NavLink } from "react-router-dom"
-import { MAILTO_SUPORTE } from "../../lib/contato"
+import { BotaoSuporte } from "../SuporteModal"
 import { AnaAvatar, Marca } from "../brand/Marca"
 
 // "Calendário" não faz parte das telas originais do emissor (mockup) — foi
@@ -12,6 +12,7 @@ const ITENS = [
   { to: "/app/tomadores", label: "Tomadores", icon: Users },
   { to: "/app/calendario", label: "Calendário", icon: CalendarDays },
   { to: "/app/financeiro", label: "Financeiro", icon: Wallet },
+  { to: "/app/indique", label: "Indique e ganhe", icon: Gift },
   { to: "/app/configuracoes", label: "Configurações", icon: Settings },
 ]
 
@@ -50,9 +51,9 @@ export function Sidebar() {
         <p className="text-xs text-slate-400">
           Cadastre cada fornecedor uma vez — todo mês eu preparo a nota e você só confere.
         </p>
-        <a href={MAILTO_SUPORTE} className="mt-3 inline-block text-xs font-medium text-accent-300 hover:text-accent-200">
+        <BotaoSuporte logado className="mt-3 inline-block text-left text-xs font-medium text-accent-300 hover:text-accent-200">
           Precisa de ajuda? Fale com o suporte
-        </a>
+        </BotaoSuporte>
       </div>
     </aside>
   )

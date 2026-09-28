@@ -173,7 +173,16 @@ def criar_sessao_checkout(db: Session, prestador_id: uuid.UUID, email: str) -> s
     # current_prestador_id setado ANTES de qualquer SELECT/UPDATE, e este é
     # o único jeito seguro de obter esse id a partir de um evento
     # assinado/verificado da própria Stripe).
+    # Programa de indicação: quem já tem indicados ativos assina com o
+    # desconto aplicado (ver app/services/indicacao.py).
+    from app.services.indicacao import desconto_no_checkout
+
+    extras = {}
+    descontos = desconto_no_checkout(db, prestador_id)
+    if descontos:
+        extras["discounts"] = descontos
     sessao = stripe.checkout.Session.create(
+        **extras,
         mode="subscription",
         customer=customer_id,
         line_items=[{"price": settings.stripe_price_id_mensal, "quantity": 1}],
@@ -273,4 +282,12 @@ def processar_webhook(db: Session, payload: bytes, assinatura_header: str) -> st
         assinatura.status = "cancelada"
 
     db.flush()
+    # Programa de indicação: o status deste prestador conta pro desconto de
+    # quem o indicou; e se ele mesmo acabou de assinar, já leva o desconto
+    # dos indicados dele.
+    from app.services.indicacao import atualizar_status_indicado, sincronizar_desconto
+
+    atualizar_status_indicado(db, prestador_id, assinatura.status)
+    if assinatura.stripe_subscription_id:
+        sincronizar_desconto(db, prestador_id)
     return tipo

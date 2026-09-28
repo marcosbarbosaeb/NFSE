@@ -70,7 +70,9 @@ class GerarDpsRequest(BaseModel):
     valor: float = Field(gt=0)
     ordem: str | None = Field(default=None, description="Número da ordem de pagamento (AWIN/AWIN Rchlo)")
     aliq_sn: float | None = Field(default=None, description="Alíquota do Simples Nacional em %% (ex.: 12.5)")
-    tpAmb: str = Field(default="2", pattern=r"^[12]$", description="1=Produção 2=Homologação")
+    # Sem valor = ambiente configurado na conta (prestador.tp_amb_padrao) —
+    # a escolha saiu da tela de gerar nota em 28/09/2026.
+    tpAmb: str | None = Field(default=None, pattern=r"^[12]$", description="1=Produção 2=Homologação")
 
 
 class EmissaoResponse(BaseModel):
@@ -277,6 +279,9 @@ class EmissaoResumoLinha(BaseModel):
     estado_label: str
     envio_status: str | None = None
     pagamento_recebido: bool
+    tem_pdf: bool = False
+    tem_email: bool = False
+    homologacao: bool = False
 
 
 class AtencaoItem(BaseModel):
@@ -307,6 +312,48 @@ class DashboardResumoResponse(BaseModel):
     serie_recebimentos: list[PontoSerieMensal]
     emissoes: list[EmissaoResumoLinha]
     atencao: list[AtencaoItem]
+    # Todos os meses (28/09/2026) — ver app/services/a_receber.py.
+    a_receber_total: float = 0
+    notas_a_receber: int = 0
+    recebido_total: float = 0
+    notas_recebidas: int = 0
+
+
+class PendenciaItem(BaseModel):
+    tipo: str
+    titulo: str
+    acao: str
+    link: str
+    emissao_id: uuid.UUID | None = None
+    vinculo_id: uuid.UUID | None = None
+    valor: float | None = None
+    competencia: str | None = None
+
+
+class AgendaItem(BaseModel):
+    data: date
+    tipo: str
+    titulo: str
+    detalhe: str | None = None
+    valor: float | None = None
+
+
+class ProximosResponse(BaseModel):
+    pendencias: list[PendenciaItem]
+    total_pendencias: int
+    agenda: list[AgendaItem]
+
+
+class NotaAbertaResponse(BaseModel):
+    vinculo_id: uuid.UUID
+    apelido: str
+    competencia: str
+    emissao_id: uuid.UUID
+    estado: str
+    valor: float
+    quantidade: int
+    emitida_em: date
+    dias_em_aberto: int
 
 
 # --- Marco 9: canais de envio ---
@@ -382,6 +429,8 @@ class CadastroRequest(BaseModel):
     razao_social: str = Field(min_length=1, max_length=200)
     cpf_cnpj: str = Field(pattern=r"^\d{14}$", description="CNPJ, só dígitos, 14 caracteres")
     cod_municipio: str = Field(pattern=r"^\d{7}$", description="Código IBGE do município, 7 dígitos")
+    # Programa de indicação: código do link /cadastro?ref=CODIGO (opcional).
+    codigo_indicacao: str | None = Field(default=None, max_length=20)
 
     # Marco 16 — opcionais, preenchidos pelo autopreenchimento via CNPJ no
     # frontend (ver app/services/cnpj_lookup.py); quem cadastra sem usar o
@@ -471,6 +520,10 @@ class VinculoDetalheResponse(BaseModel):
     dias_para_recebimento: int | None = None
     email_contato: str | None = None
     whatsapp_contato: str | None = None
+    email_assunto: str | None = None
+    email_mensagem: str | None = None
+    email_anexos: str | None = None
+    email_copia: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -494,6 +547,11 @@ class VinculoCriarRequest(BaseModel):
     dias_para_recebimento: int | None = Field(default=None, ge=0)
     email_contato: str | None = Field(default=None, max_length=200)
     whatsapp_contato: str | None = Field(default=None, max_length=20)
+    # Modelo do e-mail da nota só pra este tomador (28/09/2026). Nulo = padrão.
+    email_assunto: str | None = Field(default=None, max_length=300)
+    email_mensagem: str | None = Field(default=None, max_length=5000)
+    email_anexos: str | None = Field(default=None, pattern=r"^(pdf_xml|pdf|xml)$")
+    email_copia: str | None = Field(default=None, max_length=400)
 
     @model_validator(mode="after")
     def _exatamente_um_tomador(self):
@@ -518,6 +576,11 @@ class VinculoAtualizarRequest(BaseModel):
     dias_para_recebimento: int | None = Field(default=None, ge=0)
     email_contato: str | None = Field(default=None, max_length=200)
     whatsapp_contato: str | None = Field(default=None, max_length=20)
+    # Modelo do e-mail da nota só pra este tomador (28/09/2026). Nulo = padrão.
+    email_assunto: str | None = Field(default=None, max_length=300)
+    email_mensagem: str | None = Field(default=None, max_length=5000)
+    email_anexos: str | None = Field(default=None, pattern=r"^(pdf_xml|pdf|xml)$")
+    email_copia: str | None = Field(default=None, max_length=400)
 
 
 class PrestadorResponse(BaseModel):
@@ -543,8 +606,44 @@ class PrestadorResponse(BaseModel):
     aliquota_atual: float | None = None
     aliquota_atualizada_em: date | None = None
     dia_lembrete_aliquota: int | None = None
+    tp_amb_padrao: str = "1"
+    email_assunto_padrao: str | None = None
+    email_mensagem_padrao: str | None = None
+    email_anexos_padrao: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class PreferenciasPrestadorRequest(BaseModel):
+    """PATCH /api/prestador/preferencias (28/09/2026): ambiente das notas
+    novas e o modelo padrão do e-mail da nota. PATCH parcial; string vazia
+    nos textos volta pro texto de sempre."""
+    tp_amb_padrao: str | None = Field(default=None, pattern=r"^[12]$")
+    email_assunto_padrao: str | None = Field(default=None, max_length=300)
+    email_mensagem_padrao: str | None = Field(default=None, max_length=5000)
+    email_anexos_padrao: str | None = Field(default=None, pattern=r"^(pdf_xml|pdf|xml)$")
+
+
+class CodigoModeloResponse(BaseModel):
+    codigo: str
+    descricao: str
+    exemplo: str
+
+
+class ModeloEmailPadraoResponse(BaseModel):
+    assunto: str
+    mensagem: str
+    codigos: list[CodigoModeloResponse]
+
+
+class PreviaEmailResponse(BaseModel):
+    destino: str | None
+    copia: list[str]
+    assunto: str
+    texto: str
+    anexos: str
+    arquivos: list[str]
+    motivo_desabilitado: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -575,6 +674,10 @@ class EmissaoListaLinha(BaseModel):
     estado_label: str
     criado_em: datetime
     pagamento_recebido: bool
+    envio_status: str | None = None
+    tem_pdf: bool = False
+    tem_email: bool = False
+    homologacao: bool = False
 
 
 class EventoCalendarioResponse(BaseModel):
@@ -738,6 +841,25 @@ class PreviaShopeeResponse(BaseModel):
     vendedores: list[VendedorShopeeResponse]
 
 
+class OrdemAwinUsadaResponse(BaseModel):
+    emissao_id: uuid.UUID
+    apelido: str
+    competencia: str
+    estado: str
+
+
+class OrdemAwinResponse(BaseModel):
+    """Leitura da ordem de pagamento da Awin em PDF (28/09/2026) — nada é
+    gravado; a tela usa pra preencher competência, valor e número da ordem."""
+    numero: str | None
+    valor: float | None
+    data: date | None
+    moeda: str | None
+    competencia_sugerida: str | None
+    avisos: list[str]
+    ja_usada: OrdemAwinUsadaResponse | None = None
+
+
 class GeracaoShopeeResponse(BaseModel):
     geradas: int
     ja_existiam: int
@@ -747,3 +869,41 @@ class GeracaoShopeeResponse(BaseModel):
 
 
 WhatsappLinkResponse.model_rebuild()
+
+
+class CanaisSuporteResponse(BaseModel):
+    email: str
+    whatsapp: str | None = None
+    formulario: bool
+
+
+class MensagemSuporteRequest(BaseModel):
+    """Formulário "Fale com o suporte" (28/09/2026) — o botão com mailto:
+    não abria nada em quem não tem programa de e-mail configurado. Logado,
+    o e-mail de resposta é o da conta; fora do painel, precisa informar."""
+    assunto: str = Field(min_length=2, max_length=150)
+    mensagem: str = Field(min_length=5, max_length=5000)
+    nome: str | None = Field(default=None, max_length=120)
+    email: str | None = Field(default=None, max_length=200)
+    pagina: str | None = Field(default=None, max_length=300)
+    # Campo escondido na tela: robô preenche, gente não.
+    site: str | None = None
+
+
+class IndicadoResponse(BaseModel):
+    nome: str
+    status: str
+    desde: date
+
+
+class IndicacaoResponse(BaseModel):
+    codigo: str
+    link: str
+    ativos: int
+    total: int
+    desconto_pct: int
+    desconto_aplicado_pct: int
+    pct_por_indicado: int
+    pct_maximo: int
+    cobranca_ativa: bool
+    indicados: list[IndicadoResponse]

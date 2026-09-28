@@ -35,6 +35,7 @@ aberta E com um certificado A1 de verdade carregado.
 """
 import datetime
 import re
+from html import escape
 import uuid
 from decimal import Decimal
 from pathlib import Path
@@ -76,7 +77,16 @@ from app.schemas import (
     ExtratoExtraidoResponse,
     GerarDpsRequest,
     GeracaoShopeeResponse,
+    OrdemAwinResponse,
+    PreferenciasPrestadorRequest,
+    PreviaEmailResponse,
+    ModeloEmailPadraoResponse,
     PreviaShopeeResponse,
+    IndicacaoResponse,
+    CanaisSuporteResponse,
+    MensagemSuporteRequest,
+    ProximosResponse,
+    NotaAbertaResponse,
     GoogleOAuthUrlResponse,
     ImportacaoCsvResponse,
     LembreteAliquotaRequest,
@@ -150,11 +160,17 @@ from app.services.envios import (
     melhor_xml_disponivel,
     registrar_envio,
 )
+from app.services import mensagens
+from app.services.indicacao import resumo as resumo_indicacao
+from app.services.email import EmailEnvioError, get_email_sender
+from app.services.a_receber import notas_em_aberto
+from app.services.dashboard import proximos as proximos_do_painel
 from app.services.envio_direto import (
     EmailIndisponivelError,
     LinkInvalidoError,
     base_url,
     enviar_email,
+    previa_email,
     ler_token,
     link_whatsapp,
     nome_pdf,
@@ -164,6 +180,7 @@ from app.services.envio_direto import (
 from app.services.demo import criar_conta_demo, eh_email_demo
 from app.services.extrato_pdf import PdfInvalidoError, extrair_extrato
 from app.services.limpeza import limpar_dados
+from app.services.ordem_awin import CNPJ_AWIN, OrdemAwinInvalidaError, ler_ordem_awin
 from app.services.relatorio_shopee import RelatorioShopeeInvalidoError, gerar_notas, ler_relatorio
 from app.services.servicos_nacionais import buscar_servicos, listar_servicos, servico_por_codigo
 from app.services.google_oauth import (
@@ -413,7 +430,7 @@ def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
             db, email=req.email, senha=req.senha, razao_social=req.razao_social,
             cpf_cnpj=req.cpf_cnpj, cod_municipio=req.cod_municipio,
             cep=req.cep, logradouro=req.logradouro, numero=req.numero,
-            complemento=req.complemento, bairro=req.bairro,
+            complemento=req.complemento, bairro=req.bairro, codigo_indicacao=req.codigo_indicacao,
         )
     except CadastroEmailJaCadastradoError:
         raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")
@@ -464,6 +481,63 @@ def api_auth_me(request: Request, db: Session = Depends(get_db)):
     if usuario is None:
         raise HTTPException(status_code=401, detail="Sessão inválida.")
     return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id, demo=eh_email_demo(usuario.email))
+
+
+@app.get("/api/indicacao", response_model=IndicacaoResponse)
+def api_indicacao(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Programa de indicação: link, indicados e desconto (10% por indicado
+    ativo, até 100% — ver app/services/indicacao.py)."""
+    dados = resumo_indicacao(db, prestador_id)
+    db.commit()
+    return dados
+
+
+@app.get("/api/suporte", response_model=CanaisSuporteResponse)
+def api_canais_suporte():
+    s = get_settings()
+    return {
+        "email": s.email_suporte,
+        "whatsapp": re.sub(r"\D", "", s.suporte_whatsapp) or None,
+        "formulario": bool(s.resend_api_key),
+    }
+
+
+@app.post("/api/suporte", responses={400: {"model": ErroResponse}, 503: {"model": ErroResponse}})
+def api_mensagem_suporte(req: MensagemSuporteRequest, request: Request, db: Session = Depends(get_db)):
+    """Manda a mensagem pro e-mail do suporte (que o Cloudflare encaminha
+    pro Gmail), com "responder para" = quem escreveu."""
+    if req.site:
+        return {"ok": True}  # robô: finge que foi
+    usuario = None
+    usuario_id = request.session.get("usuario_id")
+    if usuario_id:
+        usuario = db.query(Usuario).filter_by(id=uuid.UUID(usuario_id), ativo=True).one_or_none()
+    responder = usuario.email if usuario and not eh_email_demo(usuario.email) else (req.email or "").strip()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", responder or ""):
+        raise HTTPException(status_code=400, detail="Informe um e-mail válido pra gente te responder.")
+    s = get_settings()
+    if not s.resend_api_key:
+        raise HTTPException(status_code=503, detail=f"O formulário ainda não está ativo — escreva para {s.email_suporte}.")
+    linhas = [
+        f"De: {req.nome or '-'} <{responder}>",
+        f"Conta: {usuario.email if usuario else 'não logado'}",
+        f"Página: {req.pagina or '-'}",
+        "",
+        req.mensagem.strip(),
+    ]
+    texto = "\n".join(linhas)
+    html = "<div style='font-family:Arial,sans-serif;font-size:14px'>" + "<br>".join(escape(l) for l in linhas) + "</div>"
+    try:
+        get_email_sender().enviar(
+            destinatario=s.email_suporte,
+            assunto=f"[Suporte] {req.assunto.strip()}",
+            corpo_texto=texto,
+            corpo_html=html,
+            responder_para=responder,
+        )
+    except EmailEnvioError as exc:
+        raise HTTPException(status_code=503, detail=f"Não deu pra enviar agora — escreva para {s.email_suporte}.") from exc
+    return {"ok": True}
 
 
 @app.post("/api/auth/trocar-senha", responses={400: {"model": ErroResponse}, 401: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
@@ -658,6 +732,8 @@ def api_criar_vinculo(req: VinculoCriarRequest, db: Session = Depends(db_sessao)
         )
     except ApelidoJaExisteError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    for campo in ("email_assunto", "email_mensagem", "email_anexos", "email_copia"):
+        setattr(vinculo, campo, (getattr(req, campo) or "").strip() or None)
     db.commit()
     return vinculo
 
@@ -671,6 +747,9 @@ def api_atualizar_vinculo(vinculo_id: uuid.UUID, req: VinculoAtualizarRequest, d
     if vinculo is None:
         raise HTTPException(status_code=404, detail="Vínculo não encontrado (ou não pertence ao prestador ativo)")
     campos = req.model_dump(exclude_unset=True)
+    for campo in ("email_assunto", "email_mensagem", "email_anexos", "email_copia"):
+        if campo in campos:
+            campos[campo] = (campos[campo] or "").strip() or None
     if campos.get("cod_trib_nacional") is not None and campos["cod_trib_nacional"] != vinculo.cod_trib_nacional:
         campos["cod_trib_nacional"] = _validar_codigo_servico(campos["cod_trib_nacional"])
     try:
@@ -810,6 +889,34 @@ def api_ver_prestador(db: Session = Depends(db_sessao), prestador_id: uuid.UUID 
     return prestador
 
 
+@app.patch("/api/prestador/preferencias", response_model=PrestadorResponse, responses={404: {"model": ErroResponse}})
+def api_preferencias_prestador(
+    req: PreferenciasPrestadorRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Ambiente das notas novas e modelo padrão do e-mail da nota (28/09/2026)."""
+    prestador = db.query(Prestador).filter_by(id=prestador_id).one_or_none()
+    if prestador is None:
+        raise HTTPException(status_code=404, detail="Prestador não encontrado.")
+    for campo, valor in req.model_dump(exclude_unset=True).items():
+        if campo == "tp_amb_padrao":
+            if valor:
+                prestador.tp_amb_padrao = valor
+        else:
+            setattr(prestador, campo, (valor or "").strip() or None)
+    db.commit()
+    return prestador
+
+
+@app.get("/api/email-modelo", response_model=ModeloEmailPadraoResponse)
+def api_modelo_email_padrao():
+    """Texto de sempre do e-mail da nota e os códigos que dá pra usar."""
+    return {
+        "assunto": mensagens.ASSUNTO_PADRAO,
+        "mensagem": mensagens.MENSAGEM_PADRAO,
+        "codigos": [{"codigo": c, "descricao": d, "exemplo": e} for c, d, e in mensagens.CODIGOS_MODELO],
+    }
+
+
 @app.patch("/api/prestador/aliquota", response_model=PrestadorResponse, responses={404: {"model": ErroResponse}})
 def api_atualizar_aliquota(
     req: AliquotaAtualizarRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)
@@ -902,6 +1009,11 @@ def api_verificar_duplicata(vinculo_id: uuid.UUID, competencia: str, db: Session
     return VerificarDuplicataResponse(existe=True, emissao_id=existente.id, estado=existente.estado)
 
 
+def _tp_amb_da_conta(db: Session, prestador_id: uuid.UUID) -> str:
+    prestador = db.get(Prestador, prestador_id)
+    return (prestador.tp_amb_padrao if prestador else None) or "1"
+
+
 @app.post("/api/dps", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}})
 def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
     """Cria e monta (rascunho -> montado) — persiste de verdade, com nDPS
@@ -913,7 +1025,7 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
     try:
         emissao = criar_rascunho(
             db, vinculo, competencia=req.competencia, valor=req.valor,
-            ordem=req.ordem, aliq_sn=req.aliq_sn, tpAmb=req.tpAmb,
+            ordem=req.ordem, aliq_sn=req.aliq_sn, tpAmb=req.tpAmb or _tp_amb_da_conta(db, vinculo.prestador_id),
         )
         emissao = montar_emissao(db, emissao)
     except EmissaoJaExisteError as exc:
@@ -1141,6 +1253,13 @@ def api_opcoes_envio(emissao_id: uuid.UUID, request: Request, db: Session = Depe
     return opcoes_envio(db, emissao, base_url(str(request.base_url)))
 
 
+@app.get("/api/dps/{emissao_id}/email-previa", response_model=PreviaEmailResponse, responses={404: {"model": ErroResponse}})
+def api_previa_email(emissao_id: uuid.UUID, request: Request, db: Session = Depends(db_sessao)):
+    """Como o e-mail desta nota vai sair (destino, assunto, texto, anexos)."""
+    emissao = _emissao_ou_404(db, emissao_id)
+    return previa_email(db, emissao, base_url(str(request.base_url)))
+
+
 @app.post("/api/dps/{emissao_id}/enviar-email", response_model=EnvioResponse, responses={400: {"model": ErroResponse}, 404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
 def api_enviar_email(
     emissao_id: uuid.UUID, request: Request,
@@ -1362,6 +1481,54 @@ def _vinculo_shopee(db: Session, vinculo_id: uuid.UUID):
     return vinculo
 
 
+@app.post("/api/awin/ordem", response_model=OrdemAwinResponse, responses={400: {"model": ErroResponse}})
+async def api_ler_ordem_awin(
+    arquivo: UploadFile = File(...), vinculo_id: uuid.UUID | None = Form(default=None),
+    db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Ordem de pagamento da Awin em PDF (28/09/2026) — devolve número da
+    ordem, valor e competência sugerida pra tela preencher, com avisos se o
+    PDF for de outro CNPJ ou se a ordem já tiver nota. Não grava nada (ver
+    app/services/ordem_awin.py)."""
+    try:
+        ordem = ler_ordem_awin(await arquivo.read(), arquivo.filename)
+    except OrdemAwinInvalidaError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    avisos: list[str] = []
+    if not ordem.numero:
+        avisos.append("Não achei o número da ordem de pagamento no PDF — digite no campo abaixo.")
+    if not ordem.valor:
+        avisos.append("Não achei o valor (Total Bruto) no PDF — digite no campo abaixo.")
+    if ordem.moeda and ordem.moeda.upper() != "BRL":
+        avisos.append(f"A ordem está em {ordem.moeda}, não em reais — confira o valor antes de gerar.")
+    prestador = db.get(Prestador, prestador_id)
+    if prestador and ordem.cnpj_beneficiario and ordem.cnpj_beneficiario != prestador.cpf_cnpj:
+        avisos.append("Essa ordem de pagamento é pra outro CNPJ, não o da sua empresa — confira se é o arquivo certo.")
+    if vinculo_id is not None:
+        vinculo = buscar_vinculo(db, vinculo_id)
+        if vinculo is not None and vinculo.tomador is not None and vinculo.tomador.cnpj != CNPJ_AWIN:
+            avisos.append(f"{vinculo.apelido} não é a Awin — esse PDF é uma ordem de pagamento da Awin.")
+
+    ja_usada = None
+    if ordem.numero:
+        emissao = (
+            db.query(Emissao)
+            .filter(Emissao.estado != "cancelada", Emissao.tomador_snapshot["ordem"].astext == ordem.numero)
+            .order_by(Emissao.criado_em.desc())
+            .first()
+        )
+        if emissao is not None:
+            ja_usada = {
+                "emissao_id": emissao.id, "apelido": (emissao.tomador_snapshot or {}).get("apelido") or "",
+                "competencia": emissao.competencia, "estado": emissao.estado,
+            }
+    return {
+        "numero": ordem.numero, "valor": float(ordem.valor) if ordem.valor else None, "data": ordem.data,
+        "moeda": ordem.moeda, "competencia_sugerida": ordem.competencia_sugerida, "avisos": avisos, "ja_usada": ja_usada,
+    }
+
+
 @app.post("/api/shopee/previa", response_model=PreviaShopeeResponse, responses={400: {"model": ErroResponse}})
 async def api_previa_shopee(
     vinculo_id: uuid.UUID = Form(...), arquivo: UploadFile = File(...), db: Session = Depends(db_sessao),
@@ -1412,7 +1579,7 @@ async def api_gerar_shopee(
     valor_minimo: float = Form(0),
     incluir_estrangeiros: bool = Form(False),
     aliq_sn: float | None = Form(None),
-    tpAmb: str = Form("2"),
+    tpAmb: str | None = Form(None),
     db: Session = Depends(db_sessao),
 ):
     """Gera uma nota por vendedor do mês escolhido — os vendedores NÃO viram
@@ -1420,9 +1587,10 @@ async def api_gerar_shopee(
     própria nota. Reenviar o mesmo relatório não duplica."""
     if not re.fullmatch(r"\d{4}-\d{2}", competencia):
         raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
-    if tpAmb not in ("1", "2"):
+    if tpAmb is not None and tpAmb not in ("1", "2"):
         raise HTTPException(status_code=422, detail="tpAmb deve ser 1 ou 2")
     vinculo = _vinculo_shopee(db, vinculo_id)
+    tpAmb = tpAmb or _tp_amb_da_conta(db, vinculo.prestador_id)
     try:
         relatorio = ler_relatorio(await arquivo.read())
     except RelatorioShopeeInvalidoError as exc:
@@ -1481,6 +1649,18 @@ def api_painel_status(ano: str, db: Session = Depends(db_sessao), prestador_id: 
     if len(ano) != 4 or not ano.isdigit():
         raise HTTPException(status_code=422, detail="ano deve estar no formato AAAA")
     return painel_status_completo(db, prestador_id, ano)
+
+
+@app.get("/api/painel/proximos", response_model=ProximosResponse)
+def api_painel_proximos(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """O que fazer agora + agenda dos próximos 30 dias (Visão geral)."""
+    return proximos_do_painel(db, prestador_id)
+
+
+@app.get("/api/notas-a-receber", response_model=list[NotaAbertaResponse])
+def api_notas_a_receber(db: Session = Depends(db_sessao)):
+    """Notas sem pagamento registrado, de todos os meses (Financeiro)."""
+    return notas_em_aberto(db)
 
 
 @app.get("/api/painel/resumo-mes", response_model=DashboardResumoResponse)

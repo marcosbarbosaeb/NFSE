@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react"
 import { type FocusEvent, type FormEvent, useState } from "react"
 import { Link, Navigate, useSearchParams } from "react-router-dom"
+import { esquecerCodigoIndicacao, guardarCodigoIndicacao } from "../lib/indicacao"
 import { Button } from "../components/ui/Button"
 import { CampoCidade } from "../components/ui/CampoCidade"
 import { Field } from "../components/ui/Field"
@@ -14,6 +15,7 @@ import { urlLanding } from "../lib/dominios"
 export function CadastroPage() {
   const { usuario, loginComGoogle } = useAuth()
   const [searchParams] = useSearchParams()
+  const [codigoIndicacao] = useState(() => guardarCodigoIndicacao(searchParams))
   // Marco 16, item 1 — volta de /api/auth/google/callback quando a conta
   // Google usada ainda não tem cadastro aqui (ver app/services/
   // google_oauth.py: não dá pra criar a conta só com o que a Google manda,
@@ -112,8 +114,10 @@ export function CadastroPage() {
         cpf_cnpj: cnpj.replace(/\D/g, ""),
         cod_municipio: codMunicipio.replace(/\D/g, ""),
         ...(enderecoAutopreenchido ?? {}),
+        codigo_indicacao: codigoIndicacao,
       }
       const resp = await api.post<{ mensagem: string; email: string }>("/cadastro", payload)
+      esquecerCodigoIndicacao()
       setEnviado(resp.email)
     } catch (err) {
       setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
@@ -149,6 +153,11 @@ export function CadastroPage() {
             </div>
           ) : (
             <form onSubmit={onSubmit} className="flex flex-col gap-3">
+              {codigoIndicacao && (
+                <p className="rounded-lg bg-success-50 px-3 py-2 text-sm text-success-700">
+                  Você chegou por indicação de um amigo (código {codigoIndicacao.toUpperCase()}).
+                </p>
+              )}
               {googleEmail && (
                 <p className="rounded-lg bg-primary-50 px-3 py-2 text-sm text-primary-700">
                   {googleNome ? `Oi, ${googleNome}! ` : ""}Confirme os dados da sua empresa pra terminar de criar a
