@@ -145,8 +145,15 @@ def eventos_calendario(db: Session, prestador_id: uuid.UUID, inicio: datetime.da
             }, ajustes, inicio, fim)
 
     # 2) Previsão de recebimento
-    emissoes_ativas = db.query(Emissao).filter(Emissao.estado != "cancelada").all()
+    emissoes_ativas = db.query(Emissao).filter(Emissao.estado != "cancelada").order_by(Emissao.criado_em).all()
+    # Shopee: várias notas por mês (uma por vendedor) — uma previsão só,
+    # somando os valores, ancorada na primeira nota do mês.
+    agrupadas: dict[tuple, list] = {}
     for emissao in emissoes_ativas:
+        chave = (emissao.prestador_tomador_id, emissao.competencia) if emissao.tomador_documento else (emissao.id,)
+        agrupadas.setdefault(chave, []).append(emissao)
+    for grupo in agrupadas.values():
+        emissao = grupo[0]
         vinculo = vinculos_por_id.get(emissao.prestador_tomador_id)
         if vinculo is None or vinculo.dias_para_recebimento is None:
             continue
@@ -158,7 +165,7 @@ def eventos_calendario(db: Session, prestador_id: uuid.UUID, inicio: datetime.da
             "titulo": f"Previsão de recebimento — {vinculo.apelido}",
             "vinculo_id": vinculo.id,
             "apelido": vinculo.apelido,
-            "valor": float(emissao.valor),
+            "valor": float(sum(e.valor for e in grupo)),
             "chave": str(emissao.id),
             "regra_valor": vinculo.dias_para_recebimento,
         }, ajustes, inicio, fim)

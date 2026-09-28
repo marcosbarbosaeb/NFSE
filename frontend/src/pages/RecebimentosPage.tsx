@@ -1,5 +1,5 @@
 import { FileUp, Plus } from "lucide-react"
-import { type FormEvent, useEffect, useState } from "react"
+import { type FormEvent, Fragment, useEffect, useState } from "react"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
@@ -246,7 +246,22 @@ interface LinhaRevisao {
   competencia: string
   valor: string
   dataRecebimento: string
+  categoria: string
 }
+
+/** Categoria sugerida pra uma saída do extrato (vira despesa). */
+function categoriaSugerida(descricao: string): string {
+  const d = semAcento(descricao)
+  if (/tarifa|pacote de servico|anuidade|manutencao conta/.test(d)) return "Tarifas bancárias"
+  if (/\bdas\b|simples nacional|receita federal/.test(d)) return "Simples Nacional"
+  if (/inss|gps/.test(d)) return "INSS"
+  if (/pro.?labore/.test(d)) return "Pró-labore"
+  if (/contab|contador/.test(d)) return "Contador"
+  if (/google|meta|facebook|ads|hotmart|canva|chatgpt|openai/.test(d)) return "Ferramentas e anúncios"
+  return "Outras despesas"
+}
+
+const CATEGORIAS_DESPESA = ["Tarifas bancárias", "Simples Nacional", "INSS", "Pró-labore", "Contador", "Ferramentas e anúncios", "Outras despesas"]
 
 /** Chute de vínculo a partir da descrição da transação (substring
  * case-insensitive contra o apelido do fornecedor) — só pré-preenche
@@ -288,7 +303,6 @@ export function ImportarExtratoModal({
   const [enviando, setEnviando] = useState(false)
   const [resultado, setResultado] = useState<ConfirmarExtratoResultado | null>(null)
   const [info, setInfo] = useState<{ formato?: string; linhas_lidas?: number } | null>(null)
-  const [soEntradas, setSoEntradas] = useState(true)
 
   async function extrair(e: FormEvent) {
     e.preventDefault()
@@ -303,13 +317,14 @@ export function ImportarExtratoModal({
       setLinhas(
         resp.transacoes.map((t: TransacaoExtraida) => ({
           linha: t.linha,
-          incluir: t.credito,
+          incluir: true,
           descricao: t.descricao,
           credito: t.credito,
           vinculoId: chutarVinculo(t.descricao, vinculos),
           competencia: t.data ? t.data.slice(0, 7) : competenciaAtual(),
           valor: String(t.valor),
           dataRecebimento: t.data ?? "",
+          categoria: t.credito ? "" : categoriaSugerida(t.descricao),
         })),
       )
     } catch (err) {
@@ -323,23 +338,33 @@ export function ImportarExtratoModal({
     setLinhas((atuais) => atuais?.map((l) => (l.linha === linha ? { ...l, ...mudancas } : l)) ?? null)
   }
 
-  const selecionadas = (linhas ?? []).filter((l) => l.incluir)
-  const prontasParaConfirmar = selecionadas.length > 0 && selecionadas.every((l) => l.vinculoId && l.competencia && Number(l.valor) > 0)
+  // Entradas viram recebimentos (como sempre); saídas, logo abaixo, viram
+  // despesas (28/09/2026).
+  const entradas = (linhas ?? []).filter((l) => l.credito)
+  const saidas = (linhas ?? []).filter((l) => !l.credito)
+  const entradasMarcadas = entradas.filter((l) => l.incluir)
+  const saidasMarcadas = saidas.filter((l) => l.incluir)
+  const selecionadas = [...entradasMarcadas, ...saidasMarcadas]
+  const prontasParaConfirmar =
+    selecionadas.length > 0 &&
+    entradasMarcadas.every((l) => l.vinculoId && l.competencia && Number(l.valor) > 0) &&
+    saidasMarcadas.every((l) => l.categoria.trim() && l.competencia && Number(l.valor) > 0)
 
   async function confirmar() {
     if (!linhas) return
     setEnviando(true)
     setErroExtracao(null)
     try {
-      const itens: ItemConfirmarExtrato[] = selecionadas.map((l) => ({
+      const itens: ItemConfirmarExtrato[] = entradasMarcadas.map((l) => ({
         vinculo_id: l.vinculoId,
         competencia: l.competencia,
         valor: Number(l.valor),
         data_recebimento: l.dataRecebimento || null,
       }))
-      const resp = await api.post<ConfirmarExtratoResultado>("/recebimentos/extrato/confirmar", { itens })
+      const despesas = saidasMarcadas.map((l) => ({ categoria: l.categoria.trim(), competencia: l.competencia, valor: Number(l.valor) }))
+      const resp = await api.post<ConfirmarExtratoResultado>("/recebimentos/extrato/confirmar", { itens, despesas })
       setResultado(resp)
-      if (resp.sucesso > 0) onImportado()
+      if (resp.sucesso > 0 || (resp.despesas_registradas ?? 0) > 0) onImportado()
     } catch (err) {
       setErroExtracao(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
     } finally {
@@ -389,74 +414,111 @@ export function ImportarExtratoModal({
           ) : (
             <>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Encontramos {linhas.length} transaç{linhas.length === 1 ? "ão" : "ões"} ({linhas.filter((l) => l.credito).length} entradas).
-                Marque as que são pagamentos dos seus tomadores e escolha de quem é cada uma antes de confirmar.
+                Encontramos {entradas.length} entrada{entradas.length === 1 ? "" : "s"} e {saidas.length} saída{saidas.length === 1 ? "" : "s"}.
+                As entradas viram recebimentos (escolha de qual tomador é cada uma); as saídas viram despesas.
               </p>
-              <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-                <input type="checkbox" checked={soEntradas} onChange={(e) => setSoEntradas(e.target.checked)} />
-                Mostrar só entradas (dinheiro que chegou)
-              </label>
               {erroExtracao && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erroExtracao}</p>}
-              <div className="max-h-96 overflow-y-auto rounded-lg border border-slate-100 dark:border-slate-700/60">
+              <div className="max-h-[60vh] overflow-y-auto rounded-lg border border-slate-100 dark:border-slate-700/60">
                 <table className="w-full text-left text-sm">
-                  <thead className="sticky top-0 bg-white dark:bg-slate-800">
-                    <tr className="border-b border-slate-100 dark:border-slate-700/60 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                  <thead className="sticky top-0 z-10 bg-white dark:bg-slate-800">
+                    <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-700/60 dark:text-slate-500">
                       <th className="py-2 pl-3 font-medium"></th>
                       <th className="py-2 font-medium">Descrição</th>
-                      <th className="py-2 font-medium">Tomador</th>
+                      <th className="py-2 font-medium">Tomador / categoria</th>
                       <th className="py-2 font-medium">Competência</th>
                       <th className="py-2 pr-3 font-medium">Valor (R$)</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {linhas.filter((l) => !soEntradas || l.credito || l.incluir).map((l) => (
-                      <tr key={l.linha} className="border-b border-slate-50 dark:border-slate-700/40 last:border-0 align-top">
-                        <td className="py-2 pl-3">
-                          <input type="checkbox" checked={l.incluir} onChange={(e) => atualizarLinha(l.linha, { incluir: e.target.checked })} />
-                        </td>
-                        <td className="max-w-[220px] py-2 pr-2 text-slate-700 dark:text-slate-300">
-                          <span className="line-clamp-2">{l.descricao}</span>
-                          {!l.credito && <Badge variant="neutral">Débito</Badge>}
-                        </td>
-                        <td className="py-2 pr-2">
-                          <select
-                            value={l.vinculoId}
-                            onChange={(e) => atualizarLinha(l.linha, { vinculoId: e.target.value })}
-                            disabled={!l.incluir}
-                            className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-900 dark:text-slate-100 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                          >
-                            <option value="">Selecione...</option>
-                            {vinculos.map((v) => (
-                              <option key={v.id} value={v.id}>
-                                {v.apelido}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-2 pr-2">
-                          <input
-                            type="month"
-                            value={l.competencia}
-                            onChange={(e) => atualizarLinha(l.linha, { competencia: e.target.value })}
-                            disabled={!l.incluir}
-                            className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-900 dark:text-slate-100 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                          />
-                        </td>
-                        <td className="py-2 pr-3">
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0.01"
-                            value={l.valor}
-                            onChange={(e) => atualizarLinha(l.linha, { valor: e.target.value })}
-                            disabled={!l.incluir}
-                            className="w-24 rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-900 dark:text-slate-100 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                          />
-                        </td>
-                      </tr>
-                    ))}
+                    {[
+                      { titulo: `Entradas → recebimentos (${entradasMarcadas.length} de ${entradas.length})`, lista: entradas, cor: "text-success-700 bg-success-50/70 dark:bg-success-900/20 dark:text-success-300" },
+                      { titulo: `Saídas → despesas (${saidasMarcadas.length} de ${saidas.length})`, lista: saidas, cor: "text-danger-700 bg-danger-50/70 dark:bg-danger-900/20 dark:text-danger-300" },
+                    ].map((grupo) =>
+                      grupo.lista.length === 0 ? null : (
+                        <Fragment key={grupo.titulo}>
+                          <tr>
+                            <td colSpan={5} className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${grupo.cor}`}>
+                              <span>{grupo.titulo}</span>
+                              <button
+                                type="button"
+                                className="ml-3 font-medium normal-case underline"
+                                onClick={() => {
+                                  const marcar = grupo.lista.some((l) => !l.incluir)
+                                  grupo.lista.forEach((l) => atualizarLinha(l.linha, { incluir: marcar }))
+                                }}
+                              >
+                                {grupo.lista.some((l) => !l.incluir) ? "marcar todas" : "desmarcar todas"}
+                              </button>
+                            </td>
+                          </tr>
+                          {grupo.lista.map((l) => (
+                            <tr key={l.linha} className={`border-b border-slate-50 align-top last:border-0 dark:border-slate-700/40 ${l.incluir ? "" : "opacity-50"}`}>
+                              <td className="py-2 pl-3">
+                                <input type="checkbox" checked={l.incluir} onChange={(e) => atualizarLinha(l.linha, { incluir: e.target.checked })} />
+                              </td>
+                              <td className="max-w-[220px] py-2 pr-2 text-slate-700 dark:text-slate-300">
+                                <span className="line-clamp-2">{l.descricao}</span>
+                                {l.dataRecebimento && (
+                                  <span className="text-xs text-slate-400">{new Date(`${l.dataRecebimento}T00:00:00`).toLocaleDateString("pt-BR")}</span>
+                                )}
+                              </td>
+                              <td className="py-2 pr-2">
+                                {l.credito ? (
+                                  <select
+                                    value={l.vinculoId}
+                                    onChange={(e) => atualizarLinha(l.linha, { vinculoId: e.target.value })}
+                                    disabled={!l.incluir}
+                                    className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                                  >
+                                    <option value="">Selecione...</option>
+                                    {vinculos.map((v) => (
+                                      <option key={v.id} value={v.id}>
+                                        {v.apelido}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <input
+                                    list="categorias-despesa"
+                                    value={l.categoria}
+                                    onChange={(e) => atualizarLinha(l.linha, { categoria: e.target.value })}
+                                    disabled={!l.incluir}
+                                    className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                                  />
+                                )}
+                              </td>
+                              <td className="py-2 pr-2">
+                                <input
+                                  type="month"
+                                  value={l.competencia}
+                                  onChange={(e) => atualizarLinha(l.linha, { competencia: e.target.value })}
+                                  disabled={!l.incluir}
+                                  className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                                />
+                              </td>
+                              <td className="py-2 pr-3">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0.01"
+                                  value={l.valor}
+                                  onChange={(e) => atualizarLinha(l.linha, { valor: e.target.value })}
+                                  disabled={!l.incluir}
+                                  className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </Fragment>
+                      ),
+                    )}
                   </tbody>
                 </table>
+                <datalist id="categorias-despesa">
+                  {CATEGORIAS_DESPESA.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
               </div>
             </>
           )}
@@ -466,7 +528,7 @@ export function ImportarExtratoModal({
             </Button>
             {linhas.length > 0 && (
               <Button type="button" variant="accent" disabled={enviando || !prontasParaConfirmar} onClick={confirmar}>
-                {enviando ? "Importando..." : `Confirmar importação (${selecionadas.length})`}
+                {enviando ? "Importando..." : `Importar ${entradasMarcadas.length} recebimento(s) e ${saidasMarcadas.length} despesa(s)`}
               </Button>
             )}
           </div>
@@ -477,7 +539,8 @@ export function ImportarExtratoModal({
         <div className="flex flex-col gap-4">
           <p className="rounded-lg bg-success-50 px-4 py-3 text-sm text-success-700">
             {resultado.sucesso} de {resultado.total} recebimento{resultado.total === 1 ? "" : "s"} importado
-            {resultado.sucesso === 1 ? "" : "s"} com sucesso.
+            {resultado.sucesso === 1 ? "" : "s"}
+            {(resultado.despesas_registradas ?? 0) > 0 && ` e ${resultado.despesas_registradas} despesa(s) registrada(s)`}.
           </p>
           {resultado.erro > 0 && (
             <ul className="flex flex-col gap-1 text-sm text-danger-700">

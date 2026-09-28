@@ -164,22 +164,34 @@ def _numero_whatsapp(telefone: str | None) -> str | None:
 # --- opções da tela ---
 
 
-def motivo_email_desabilitado(vinculo: PrestadorTomador | None) -> str | None:
+def email_destino(emissao: Emissao, vinculo: PrestadorTomador | None) -> str | None:
+    """Shopee: a nota é pro vendedor da linha do relatório — o e-mail dele
+    veio no snapshot. No resto, o e-mail cadastrado no tomador."""
+    snap = emissao.tomador_snapshot or {}
+    if emissao.tomador_documento:
+        return snap.get("email")
+    return vinculo.email_contato if vinculo else None
+
+
+def motivo_email_desabilitado(vinculo: PrestadorTomador | None, destino: str | None = None) -> str | None:
     s = get_settings()
     if not (s.resend_api_key and s.email_remetente_notas):
         return "O envio por e-mail da Ana será ativado quando o domínio de e-mail estiver configurado."
-    if vinculo is None or not vinculo.email_contato:
+    if destino is None and vinculo is not None:
+        destino = vinculo.email_contato
+    if not destino:
         return "Cadastre o e-mail deste fornecedor pra enviar direto."
     return None
 
 
 def opcoes_envio(db: Session, emissao: Emissao, base: str) -> dict:
     vinculo = db.get(PrestadorTomador, emissao.prestador_tomador_id)
-    motivo = motivo_email_desabilitado(vinculo)
+    destino = email_destino(emissao, vinculo)
+    motivo = motivo_email_desabilitado(vinculo, destino)
     return {
         "email_habilitado": motivo is None,
         "email_motivo_desabilitado": motivo,
-        "email_destino": vinculo.email_contato if vinculo else None,
+        "email_destino": destino,
         "whatsapp_destino": vinculo.whatsapp_contato if vinculo else None,
         "link_publico": link_publico(emissao, base),
         "tem_pdf": bool(emissao.danfse_pdf) or emissao.estado == "confirmado",
@@ -217,7 +229,8 @@ def enviar_email(db: Session, emissao: Emissao, prestador_id: uuid.UUID, base: s
     """Manda de verdade (Resend). Falha do provedor vira envio com status
     'falha' + motivo (não exceção) — a tela mostra e a pessoa tenta de novo."""
     vinculo = db.get(PrestadorTomador, emissao.prestador_tomador_id)
-    motivo = motivo_email_desabilitado(vinculo)
+    destino = email_destino(emissao, vinculo)
+    motivo = motivo_email_desabilitado(vinculo, destino)
     if motivo:
         raise EmailIndisponivelError(motivo)
 
@@ -230,10 +243,10 @@ def enviar_email(db: Session, emissao: Emissao, prestador_id: uuid.UUID, base: s
 
     dados = _dados(db, emissao, base)
     prestador = db.get(Prestador, prestador_id)
-    envio = _novo_envio(db, emissao, "email", vinculo.email_contato)
+    envio = _novo_envio(db, emissao, "email", destino)
     try:
         get_email_sender().enviar(
-            destinatario=vinculo.email_contato,
+            destinatario=destino,
             assunto=mensagens.email_assunto(dados),
             corpo_texto=mensagens.email_texto(dados),
             corpo_html=mensagens.email_html(dados),

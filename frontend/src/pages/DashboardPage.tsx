@@ -12,7 +12,8 @@ import {
   Wallet,
 } from "lucide-react"
 import { useEffect, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
+import { BaixaPagamento } from "../components/BaixaPagamento"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
@@ -48,9 +49,6 @@ function badgeEnvio(status: string | null) {
   return <Badge variant="neutral">Não enviado</Badge>
 }
 
-function badgePagamento(recebido: boolean) {
-  return recebido ? <Badge variant="success">Recebida</Badge> : <Badge variant="warning">Pendente</Badge>
-}
 
 export function DashboardPage() {
   const [competencia, setCompetencia] = useState(competenciaAtual())
@@ -59,6 +57,8 @@ export function DashboardPage() {
   const [carregando, setCarregando] = useState(true)
 
   const [proximosEventos, setProximosEventos] = useState<EventoCalendario[] | null>(null)
+  const [recarga, setRecarga] = useState(0)
+  const navigate = useNavigate()
 
   useEffect(() => {
     let cancelado = false
@@ -78,7 +78,7 @@ export function DashboardPage() {
     return () => {
       cancelado = true
     }
-  }, [competencia])
+  }, [competencia, recarga])
 
   // Mini agenda: próximos eventos a partir de hoje (independe do mês
   // selecionado acima, que é só pro resumo de emissões/pagamentos).
@@ -136,35 +136,45 @@ export function DashboardPage() {
 
       {resumo && (
         <>
+          {/* "Ligar a visão geral com as abas" (28/09/2026): cada número leva
+              pra tela onde ele é resolvido. */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              icon={<FileText size={18} />}
-              iconClassName="bg-primary-50 text-primary-600"
-              label="Notas deste mês"
-              value={resumo.total_vinculos}
-              sublabel="fornecedores ativos"
-            />
-            <StatCard
-              icon={<CheckCircle2 size={18} />}
-              iconClassName="bg-success-50 text-success-600"
-              label="Emitidas"
-              value={resumo.emitidas}
-              sublabel={`${pctEmitidas}% do total`}
-            />
-            <StatCard
-              icon={<Clock size={18} />}
-              iconClassName="bg-warning-50 text-warning-600"
-              label="Aguardando emissão"
-              value={resumo.aguardando}
-              sublabel={`${pctAguardando}% do total`}
-            />
-            <StatCard
-              icon={<Wallet size={18} />}
-              iconClassName="bg-accent-50 text-accent-600"
-              label="A receber"
-              value={formatBRL(resumo.a_receber)}
-              sublabel={`${resumo.pagamentos_pendentes} pagamento(s) pendente(s)`}
-            />
+            <Link to="/app/tomadores" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
+              <StatCard
+                icon={<FileText size={18} />}
+                iconClassName="bg-primary-50 text-primary-600"
+                label="Notas deste mês"
+                value={resumo.total_vinculos}
+                sublabel="tomadores ativos · ver tomadores"
+              />
+            </Link>
+            <Link to="/app/nfse" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
+              <StatCard
+                icon={<CheckCircle2 size={18} />}
+                iconClassName="bg-success-50 text-success-600"
+                label="Emitidas"
+                value={resumo.emitidas}
+                sublabel={`${pctEmitidas}% do total · ver notas`}
+              />
+            </Link>
+            <Link to="/app/tomadores" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
+              <StatCard
+                icon={<Clock size={18} />}
+                iconClassName="bg-warning-50 text-warning-600"
+                label="Aguardando emissão"
+                value={resumo.aguardando}
+                sublabel={`${pctAguardando}% do total · gerar agora`}
+              />
+            </Link>
+            <Link to="/app/financeiro" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
+              <StatCard
+                icon={<Wallet size={18} />}
+                iconClassName="bg-accent-50 text-accent-600"
+                label="A receber"
+                value={formatBRL(resumo.a_receber)}
+                sublabel={`${resumo.pagamentos_pendentes} pagamento(s) pendente(s) · ver financeiro`}
+              />
+            </Link>
           </div>
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -175,7 +185,7 @@ export function DashboardPage() {
                   <Link to="/app/nfse" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
                     Ver todas <ArrowRight size={14} />
                   </Link>
-                  <Link to="/app/nfse">
+                  <Link to="/app/nfse?nova=1">
                     <Button variant="accent" className="text-sm">
                       <Plus size={15} /> Nova emissão
                     </Button>
@@ -200,7 +210,11 @@ export function DashboardPage() {
                     </thead>
                     <tbody>
                       {resumo.emissoes.map((linha) => (
-                        <tr key={linha.emissao_id} className="border-b border-slate-50 last:border-0">
+                        <tr
+                          key={linha.emissao_id}
+                          onClick={() => navigate((linha.quantidade ?? 1) > 1 ? "/app/nfse" : `/app/nfse/${linha.emissao_id}`)}
+                          className="cursor-pointer border-b border-slate-50 last:border-0 hover:bg-slate-50 dark:border-slate-700/40 dark:hover:bg-slate-700/40"
+                        >
                           <td className="py-3">
                             <p className="font-medium text-slate-800 dark:text-slate-200">{linha.apelido}</p>
                             <p className="text-xs text-slate-400 dark:text-slate-500">{linha.tomador_razao_social}</p>
@@ -209,7 +223,15 @@ export function DashboardPage() {
                           <td className="py-3 text-slate-600 dark:text-slate-300">{formatBRL(linha.valor)}</td>
                           <td className="py-3">{badgeEstadoNfse(linha.estado, linha.estado_label)}</td>
                           <td className="py-3">{badgeEnvio(linha.envio_status)}</td>
-                          <td className="py-3">{badgePagamento(linha.pagamento_recebido)}</td>
+                          <td className="py-3">
+                            <BaixaPagamento
+                              vinculoId={linha.vinculo_id}
+                              competencia={linha.competencia}
+                              valor={linha.valor}
+                              recebido={linha.pagamento_recebido}
+                              onMudou={() => setRecarga((n) => n + 1)}
+                            />
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -264,7 +286,11 @@ export function DashboardPage() {
               ) : (
                 <ul className="flex flex-col gap-3">
                   {proximosEventos.map((ev, i) => (
-                    <li key={i} className="flex items-start gap-2.5">
+                    <li
+                      key={i}
+                      onClick={() => navigate("/app/calendario")}
+                      className="-mx-2 flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-700/40"
+                    >
                       <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${PONTO_EVENTO[ev.tipo]}`} />
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">{ev.apelido ?? ev.titulo}</p>
@@ -305,10 +331,11 @@ export function DashboardPage() {
               <h2 className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-200">Atalhos rápidos</h2>
               <div className="flex flex-col divide-y divide-slate-100 dark:divide-slate-700">
                 {[
-                  { to: "/app/nfse", label: "Nova emissão", icon: FileText },
-                  { to: "/app/tomadores", label: "Adicionar tomador", icon: UserPlus },
-                  { to: "/app/financeiro", label: "Registrar recebimento", icon: Wallet },
-                  { to: "/app/financeiro?aba=despesas", label: "Registrar despesa", icon: TrendingDown },
+                  { to: "/app/nfse?nova=1", label: "Nova emissão", icon: FileText },
+                  { to: "/app/tomadores/novo", label: "Adicionar tomador", icon: UserPlus },
+                  { to: "/app/financeiro?novo=recebimento", label: "Registrar recebimento", icon: Wallet },
+                  { to: "/app/financeiro?novo=despesa", label: "Registrar despesa", icon: TrendingDown },
+                  { to: "/app/calendario", label: "Ver calendário", icon: CalendarDays },
                 ].map(({ to, label, icon: Icon }) => (
                   <Link key={to} to={to} className="flex items-center justify-between py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:text-primary-600">
                     <span className="flex items-center gap-2">

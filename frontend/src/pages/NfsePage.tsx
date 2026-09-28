@@ -1,4 +1,6 @@
-import { CheckCircle2, Clock, FileSpreadsheet, FileText, FileUp, Keyboard, Plus, Search } from "lucide-react"
+import { CheckCircle2, Clock, FileSpreadsheet, FileText, FileUp, Plus, Search } from "lucide-react"
+import { BaixaPagamento } from "../components/BaixaPagamento"
+import { ShopeeModal } from "../components/ShopeeModal"
 import { type FormEvent, useEffect, useMemo, useState } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { Badge } from "../components/ui/Badge"
@@ -58,8 +60,9 @@ export function NfsePage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   // Vindo do botão "Gerar" da aba Tomadores: ?gerar=<vínculo>&competencia=AAAA-MM
-  const [modalNova, setModalNova] = useState(Boolean(searchParams.get("gerar")))
+  const [modalNova, setModalNova] = useState(Boolean(searchParams.get("gerar") || searchParams.get("nova")))
   const [modalCsv, setModalCsv] = useState(false)
+  const [shopee, setShopee] = useState<VinculoResumo | null>(null)
   // Marco 16, item 5 — só pra pré-preencher aliq_sn na Nova emissão (ver
   // NovaEmissaoModal abaixo); nunca aplicada sem o usuário poder confirmar.
   const [aliquotaReferencia, setAliquotaReferencia] = useState<number | null>(null)
@@ -123,9 +126,17 @@ export function NfsePage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">Todas as notas emitidas, por competência.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setModalCsv(true)} data-tour="nfse-csv">
-            <FileUp size={16} /> Importar CSV
-          </Button>
+          {/* CSV só pra quem usa relatório em planilha (Shopee) — ver
+              "Como o valor chega" no cadastro do tomador (28/09/2026). */}
+          {vinculos.some((v) => v.metodo_captura_valor === "csv") && (
+            <Button
+              variant="outline"
+              onClick={() => setShopee(vinculos.find((v) => v.metodo_captura_valor === "csv") ?? null)}
+              data-tour="nfse-csv"
+            >
+              <FileUp size={16} /> Relatório da Shopee
+            </Button>
+          )}
           <Button variant="accent" onClick={() => setModalNova(true)} data-tour="nfse-nova">
             <Plus size={16} /> Nova emissão
           </Button>
@@ -233,7 +244,19 @@ export function NfsePage() {
                   <td className="py-3 text-slate-600 dark:text-slate-300">{formatBRL(e.valor)}</td>
                   <td className="py-3 text-slate-500 dark:text-slate-400">{e.n_dps ?? "—"}</td>
                   <td className="py-3">{badgeEstado(e.estado, e.estado_label)}</td>
-                  <td className="py-3">{badgePagamento(e.pagamento_recebido)}</td>
+                  <td className="py-3">
+                    {e.estado === "cancelada" || e.estado === "substituida" ? (
+                      badgePagamento(e.pagamento_recebido)
+                    ) : (
+                      <BaixaPagamento
+                        vinculoId={e.vinculo_id}
+                        competencia={e.competencia}
+                        valor={e.valor}
+                        recebido={e.pagamento_recebido}
+                        onMudou={recarregar}
+                      />
+                    )}
+                  </td>
                 </tr>
               ))}
               {filtradas.length === 0 && (
@@ -256,17 +279,28 @@ export function NfsePage() {
           competenciaInicial={searchParams.get("competencia")}
           onClose={() => {
             setModalNova(false)
-            if (searchParams.get("gerar")) navigate("/app/nfse", { replace: true })
+            if (searchParams.get("gerar") || searchParams.get("nova")) navigate("/app/nfse", { replace: true })
           }}
-          onEscolherCsv={() => {
+          onEscolherShopee={(v) => {
             setModalNova(false)
-            setModalCsv(true)
+            setShopee(v)
           }}
           onCriada={(emissao) => {
             setModalNova(false)
             if (searchParams.get("gerar")) navigate(`/app/nfse/${emissao.id}`)
             else recarregar()
           }}
+        />
+      )}
+      {shopee && (
+        <ShopeeModal
+          vinculo={shopee}
+          aliquotaReferencia={aliquotaReferencia}
+          onClose={() => {
+            setShopee(null)
+            if (searchParams.get("gerar")) navigate("/app/nfse", { replace: true })
+          }}
+          onGeradas={recarregar}
         />
       )}
       {modalCsv && (
@@ -285,7 +319,7 @@ function NovaEmissaoModal({
   vinculoInicial,
   competenciaInicial,
   onClose,
-  onEscolherCsv,
+  onEscolherShopee,
   onCriada,
 }: {
   vinculos: VinculoResumo[]
@@ -293,7 +327,7 @@ function NovaEmissaoModal({
   vinculoInicial?: string | null
   competenciaInicial?: string | null
   onClose: () => void
-  onEscolherCsv: () => void
+  onEscolherShopee: (vinculo: VinculoResumo) => void
   onCriada: (emissao: Emissao) => void
 }) {
   const [vinculoId, setVinculoId] = useState(
@@ -376,34 +410,6 @@ function NovaEmissaoModal({
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
 
-        {/* "Na hora da geração a pessoa pode escolher como carregar" (28/09/2026)
-            — o método deixou de ser fixo no cadastro do tomador. */}
-        <FieldWrap label="Como você quer informar o valor?">
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              className="flex flex-col items-center gap-1 rounded-lg border border-primary-500 bg-primary-50 px-2 py-2 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-200"
-            >
-              <Keyboard size={16} /> Digitar
-            </button>
-            <button
-              type="button"
-              onClick={onEscolherCsv}
-              className="flex flex-col items-center gap-1 rounded-lg border border-slate-300 px-2 py-2 text-xs font-medium text-slate-600 hover:border-primary-300 hover:text-primary-700 dark:border-slate-600 dark:text-slate-300"
-            >
-              <FileSpreadsheet size={16} /> Planilha (CSV)
-            </button>
-            <button
-              type="button"
-              disabled
-              title="Em breve: mande o PDF do relatório de comissões e a Ana lê o valor"
-              className="flex flex-col items-center gap-1 rounded-lg border border-dashed border-slate-300 px-2 py-2 text-xs font-medium text-slate-400 dark:border-slate-600"
-            >
-              <FileText size={16} /> PDF (em breve)
-            </button>
-          </div>
-        </FieldWrap>
-
         <FieldWrap label="Tomador">
           <select
             required
@@ -422,6 +428,27 @@ function NovaEmissaoModal({
           </select>
         </FieldWrap>
 
+        {vinculo?.metodo_captura_valor === "csv" && (
+          <div className="rounded-xl border border-primary-100 bg-primary-50/60 p-4 text-sm text-slate-700 dark:border-primary-900/40 dark:bg-primary-900/20 dark:text-slate-200">
+            <p>
+              <strong>{vinculo.apelido}</strong> usa o relatório mensal em planilha: sai uma nota pra cada vendedor que te pagou
+              comissão, direto do arquivo.
+            </p>
+            <Button type="button" variant="accent" className="mt-3" onClick={() => onEscolherShopee(vinculo)}>
+              <FileSpreadsheet size={16} /> Enviar o relatório
+            </Button>
+          </div>
+        )}
+        {vinculo?.metodo_captura_valor === "pdf" && (
+          <p className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
+            <FileText size={14} className="mt-0.5 shrink-0" />
+            {vinculo.apelido} manda o valor em PDF. A leitura automática do PDF está sendo preparada — por enquanto, digite o
+            valor do relatório.
+          </p>
+        )}
+
+        {vinculo?.metodo_captura_valor !== "csv" && (
+          <>
         <div className="grid grid-cols-2 gap-3">
           <FieldWrap label="Competência">
             <input
@@ -497,13 +524,18 @@ function NovaEmissaoModal({
           )}
         </FieldWrap>
 
+          </>
+        )}
+
         <div className="flex justify-end gap-3 pt-2">
           <Button type="button" variant="outline" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" variant="accent" disabled={enviando || !vinculoId}>
-            {enviando ? "Gerando..." : "Gerar nota"}
-          </Button>
+          {vinculo?.metodo_captura_valor !== "csv" && (
+            <Button type="submit" variant="accent" disabled={enviando || !vinculoId}>
+              {enviando ? "Gerando..." : "Gerar nota"}
+            </Button>
+          )}
         </div>
       </form>
     </Modal>

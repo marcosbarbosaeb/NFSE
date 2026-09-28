@@ -51,9 +51,9 @@ function BadgeSituacao({ v, competencia }: { v: VinculoResumo; competencia: stri
   switch (s) {
     case "gerada":
       return (
-        <Link to={`/app/nfse/${v.emissao_id}`} title="Abrir a nota">
+        <Link to={(v.emissao_quantidade ?? 1) > 1 ? `/app/nfse` : `/app/nfse/${v.emissao_id}`} title="Abrir a nota">
           <Badge variant="success">
-            {v.emissao_estado === "confirmado" ? "Emitida" : "Gerada"}
+            {(v.emissao_quantidade ?? 1) > 1 ? `${v.emissao_quantidade} notas` : v.emissao_estado === "confirmado" ? "Emitida" : "Gerada"}
             {v.emissao_valor != null && <span className="font-normal">· {formatBRL(v.emissao_valor)}</span>}
           </Badge>
         </Link>

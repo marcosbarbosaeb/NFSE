@@ -56,6 +56,7 @@ interface FormState {
   cod_trib_municipal: string
   template_descricao: string
   serie: string
+  metodo_captura_valor: string
   requer_revisao: boolean
   ativo: boolean
   dia_limite_emissao: string
@@ -71,6 +72,7 @@ const ESTADO_INICIAL: FormState = {
   cod_trib_municipal: "",
   template_descricao: "",
   serie: "1",
+  metodo_captura_valor: "manual",
   requer_revisao: true,
   ativo: true,
   dia_limite_emissao: "",
@@ -78,6 +80,19 @@ const ESTADO_INICIAL: FormState = {
   email_contato: "",
   whatsapp_contato: "",
 }
+
+// Quem manda o valor de um jeito próprio (28/09/2026): AWIN em PDF, Shopee
+// no relatório mensal em planilha. O resto, digitado.
+const METODO_POR_CNPJ: Record<string, string> = {
+  "14182871000188": "pdf", // AWIN
+  "35635824000112": "csv", // Shopee
+}
+
+const METODOS = [
+  { value: "manual", titulo: "Digitar o valor", texto: "Você informa o valor na hora de gerar." },
+  { value: "csv", titulo: "Relatório em planilha (Shopee)", texto: "Uma nota pra cada vendedor do relatório mensal." },
+  { value: "pdf", titulo: "Relatório em PDF (Awin)", texto: "O valor vem do PDF de comissões." },
+]
 
 const NOVO_TOMADOR_VAZIO = { cnpj: "", razao_social: "", cod_municipio: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "" }
 
@@ -124,6 +139,7 @@ export function VinculoFormPage() {
           cod_trib_municipal: v.cod_trib_municipal ?? "",
           template_descricao: v.template_descricao,
           serie: v.serie,
+          metodo_captura_valor: v.metodo_captura_valor,
           requer_revisao: v.requer_revisao,
           ativo: v.ativo,
           dia_limite_emissao: v.dia_limite_emissao?.toString() ?? "",
@@ -212,7 +228,7 @@ export function VinculoFormPage() {
   useEffect(() => {
     if (editando || !tomadorSelecionado) return
     setForm((f) => {
-      const novo = { ...f }
+      const novo = { ...f, metodo_captura_valor: METODO_POR_CNPJ[tomadorSelecionado.cnpj] ?? "manual" }
       sugestoes.forEach((s) => {
         if (!f[s.campo]) (novo[s.campo] as string) = s.valor
       })
@@ -247,6 +263,7 @@ export function VinculoFormPage() {
       }))
       setForm((f) => ({
         ...f,
+        metodo_captura_valor: METODO_POR_CNPJ[digitos] ?? f.metodo_captura_valor,
         apelido: f.apelido || apelidoDe(d.razao_social),
         cod_trib_nacional: f.cod_trib_nacional || meusCodigos[0] || "",
         template_descricao: f.template_descricao || MODELOS_PADRAO[0],
@@ -276,6 +293,7 @@ export function VinculoFormPage() {
         cod_trib_municipal: form.cod_trib_municipal || null,
         template_descricao: form.template_descricao,
         serie: form.serie,
+        metodo_captura_valor: form.metodo_captura_valor,
         requer_revisao: form.requer_revisao,
         dia_limite_emissao: form.dia_limite_emissao ? Number(form.dia_limite_emissao) : null,
         dias_para_recebimento: form.dias_para_recebimento ? Number(form.dias_para_recebimento) : null,
@@ -602,6 +620,30 @@ export function VinculoFormPage() {
             </label>
           )}
         </Card>
+
+        {editando && (
+          <Card className="p-5">
+            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Como o valor chega</h2>
+            <p className="mb-3 text-xs text-slate-400 dark:text-slate-500">Define o que aparece na hora de gerar a nota deste tomador.</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {METODOS.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => atualizarCampo("metodo_captura_valor", m.value)}
+                  className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                    form.metodo_captura_valor === m.value
+                      ? "border-primary-500 bg-primary-50 text-primary-800 dark:bg-primary-900/30 dark:text-primary-200"
+                      : "border-slate-200 text-slate-600 hover:border-primary-300 dark:border-slate-600 dark:text-slate-300"
+                  }`}
+                >
+                  <span className="block font-medium">{m.titulo}</span>
+                  <span className="text-xs opacity-80">{m.texto}</span>
+                </button>
+              ))}
+            </div>
+          </Card>
+        )}
 
         {editando && (
           <Card className="p-5">

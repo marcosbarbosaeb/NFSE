@@ -52,16 +52,23 @@ def ordenar_para_tela(vinculos: list[PrestadorTomador]) -> list[PrestadorTomador
     )
 
 
-def emissoes_da_competencia(db: Session, competencia: str) -> dict[uuid.UUID, Emissao]:
-    """Emissão ATIVA (não cancelada) de cada vínculo na competência — o
+def emissoes_da_competencia(db: Session, competencia: str) -> dict[uuid.UUID, dict]:
+    """Nota(s) ATIVA(s) (não canceladas) de cada vínculo na competência — o
     "gerado / não gerado" da aba Tomadores (mesmo critério do calendário e
-    do dashboard)."""
+    do dashboard). A Shopee tem várias no mês (uma por vendedor), por isso
+    devolve a primeira + quantidade + soma."""
     emissoes = (
         db.query(Emissao)
         .filter(Emissao.competencia == competencia, Emissao.estado != "cancelada")
+        .order_by(Emissao.criado_em)
         .all()
     )
-    return {e.prestador_tomador_id: e for e in emissoes}
+    resumo: dict[uuid.UUID, dict] = {}
+    for e in emissoes:
+        atual = resumo.setdefault(e.prestador_tomador_id, {"id": e.id, "estado": e.estado, "valor": 0.0, "quantidade": 0})
+        atual["valor"] += float(e.valor)
+        atual["quantidade"] += 1
+    return resumo
 
 
 def excluir_vinculo(db: Session, vinculo: PrestadorTomador) -> str:

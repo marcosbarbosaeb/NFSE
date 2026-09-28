@@ -118,7 +118,7 @@ def montar_dps_xml(
         vai pro XML; nome/endereço do prestador NÃO são enviados de
         propósito (a Sefin preenche a partir do cadastro/CNC e REJEITA se
         vierem na DPS — erro E0121, descoberto em produção 09/09/2026).
-    toma: {CNPJ, xNome, cMun, CEP, xLgr, nro, xCpl?, xBairro}.
+    toma: {CNPJ | CPF | NIF, xNome, cMun?, CEP, xLgr, nro, xCpl?, xBairro}.
     serv: {cLocPrestacao, cTribNac, cTribMun, descricao} — `descricao` já
         deve vir renderizada (ver `renderizar_descricao` acima); esta
         função não sabe nada sobre templates/placeholders.
@@ -149,14 +149,26 @@ def montar_dps_xml(
         regTrib,
     ])
 
-    end_nac_toma = _el("endNac", [_leaf("cMun", toma["cMun"]), _leaf("CEP", toma["CEP"])])
-    toma_end_children = [end_nac_toma, _leaf("xLgr", toma["xLgr"]), _leaf("nro", toma["nro"])]
-    if toma.get("xCpl"):
-        toma_end_children.append(_leaf("xCpl", toma["xCpl"]))
-    toma_end_children.append(_leaf("xBairro", toma["xBairro"]))
-    end_toma = _el("end", toma_end_children)
+    # Tomador: CNPJ (o caso de sempre), CPF ou NIF (estrangeiro) — os dois
+    # últimos entraram com o relatório da Shopee (28/09/2026), onde a nota
+    # vai pra cada vendedor. O endereço do tomador é opcional na DPS: sem
+    # cMun (endereço não reconhecido / estrangeiro) o <end> não é enviado.
+    if toma.get("CNPJ"):
+        doc_toma = _leaf("CNPJ", toma["CNPJ"])
+    elif toma.get("CPF"):
+        doc_toma = _leaf("CPF", toma["CPF"])
+    else:
+        doc_toma = _leaf("NIF", toma["NIF"])
+    end_toma = None
+    if toma.get("cMun"):
+        end_nac_toma = _el("endNac", [_leaf("cMun", toma["cMun"]), _leaf("CEP", toma["CEP"])])
+        toma_end_children = [end_nac_toma, _leaf("xLgr", toma["xLgr"]), _leaf("nro", toma["nro"])]
+        if toma.get("xCpl"):
+            toma_end_children.append(_leaf("xCpl", toma["xCpl"]))
+        toma_end_children.append(_leaf("xBairro", toma["xBairro"]))
+        end_toma = _el("end", toma_end_children)
     toma_el = _el("toma", [
-        _leaf("CNPJ", toma["CNPJ"]),
+        doc_toma,
         _leaf("xNome", toma["xNome"]),
         end_toma,
     ])

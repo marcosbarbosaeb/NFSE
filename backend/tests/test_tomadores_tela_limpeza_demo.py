@@ -202,3 +202,27 @@ def test_endpoint_demo_entra_e_bloqueia_o_que_sai_do_sistema(db):
         assert client.post("/api/auth/trocar-senha", json={"senha_atual": "a", "senha_nova": "bbbbbbbb"}).status_code == 403
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+# --- Aviso do dia de gerar (28/09/2026) ---------------------------------------
+
+
+def test_aviso_na_vespera_no_dia_e_depois(db, prestador_teste):
+    from app.services.dashboard import _avisos_dia_de_gerar
+
+    v = _novo_vinculo(db, prestador_teste, "Aviso", dia=10)
+    def tipos(dia):
+        return [a["tipo"] for a in _avisos_dia_de_gerar(db, [v], datetime.date(2026, 9, dia))]
+    assert tipos(8) == []
+    assert tipos(9) == ["gerar_amanha"]
+    assert tipos(10) == ["gerar_hoje"]
+    assert tipos(15) == ["gerar_atrasada"]
+    emissao = criar_rascunho(db, v, competencia="2026-09", valor=10)
+    assert tipos(10) == []
+
+
+def test_baixa_e_desfazer_pagamento(client, vinculo_teste):
+    resp = client.post("/api/pagamentos", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-09", "valor": 10})
+    assert resp.status_code == 200
+    resp = client.delete(f"/api/pagamentos?vinculo_id={vinculo_teste.id}&competencia=2026-09")
+    assert resp.json()["removidos"] == 1

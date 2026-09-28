@@ -34,6 +34,37 @@ export interface VinculoResumo {
   emissao_id?: string | null
   emissao_estado?: string | null
   emissao_valor?: number | null
+  emissao_quantidade?: number
+  metodo_captura_valor?: string
+}
+
+export interface VendedorShopee {
+  competencia: string
+  documento: string
+  tipo_documento: "CNPJ" | "CPF" | "NIF"
+  razao_social: string
+  lojas: string[]
+  valor: number
+  cidade: string | null
+  uf: string | null
+  estrangeiro: boolean
+  avisos: string[]
+  ja_gerada: boolean
+}
+
+export interface PreviaShopee {
+  linhas_lidas: number
+  linhas_ignoradas: string[]
+  competencias: { competencia: string; vendedores: number; total: number; estrangeiros: number; ja_geradas: number }[]
+  vendedores: VendedorShopee[]
+}
+
+export interface GeracaoShopee {
+  geradas: number
+  ja_existiam: number
+  puladas: number
+  total: number
+  erros: string[]
 }
 
 export interface ServicoNacional {
@@ -44,6 +75,8 @@ export interface ServicoNacional {
 
 export interface EmissaoResumoLinha {
   emissao_id: string
+  vinculo_id?: string | null
+  quantidade?: number
   apelido: string
   tomador_razao_social: string
   competencia: string
@@ -228,6 +261,7 @@ export interface ConfirmarExtratoResultado {
   total: number
   sucesso: number
   erro: number
+  despesas_registradas?: number
   itens: ItemConfirmadoExtrato[]
 }
 

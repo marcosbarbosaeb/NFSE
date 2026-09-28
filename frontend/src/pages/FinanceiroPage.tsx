@@ -18,20 +18,33 @@ import { ImportarExtratoModal, RegistrarPagamentoModal } from "./RecebimentosPag
 const ANO_ATUAL = new Date().getFullYear()
 const ANOS = [ANO_ATUAL, ANO_ATUAL - 1, ANO_ATUAL - 2]
 
-type Aba = "recebimentos" | "despesas"
+const NOMES_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+
+/** Mês em que o dinheiro caiu (ou o de competência, sem data). */
+function mesDoRecebimento(p: Pagamento): string {
+  return p.data_recebimento ? p.data_recebimento.slice(0, 7) : p.competencia
+}
 
 const classeSelect =
   "rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
 
 export function FinanceiroPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const aba: Aba = searchParams.get("aba") === "despesas" ? "despesas" : "recebimentos"
   const [ano, setAno] = useState(String(ANO_ATUAL))
+  // "Permita selecionar por mês, além de selecionar por ano" (28/09/2026).
+  const [mes, setMes] = useState("") // "" = ano inteiro; "01".."12"
   const [pagamentos, setPagamentos] = useState<Pagamento[] | null>(null)
   const [despesas, setDespesas] = useState<Despesa[] | null>(null)
   const [vinculos, setVinculos] = useState<VinculoResumo[]>([])
   const [erro, setErro] = useState<string | null>(null)
-  const [modal, setModal] = useState<"recebimento" | "extrato" | "despesa" | null>(null)
+  const [modal, setModal] = useState<"recebimento" | "extrato" | "despesa" | null>(
+    searchParams.get("novo") === "despesa" ? "despesa" : searchParams.get("novo") === "recebimento" ? "recebimento" : null,
+  )
+
+  function fecharModal() {
+    setModal(null)
+    if (searchParams.get("novo")) setSearchParams({}, { replace: true })
+  }
 
   useEffect(() => {
     api.get<VinculoResumo[]>("/vinculos").then(setVinculos).catch(() => {})
@@ -63,7 +76,13 @@ export function FinanceiroPage() {
     return linhas
   }, [ano, pagamentos, despesas])
 
-  const totais = meses.reduce((t, m) => ({ recebido: t.recebido + m.recebido, gasto: t.gasto + m.gasto }), { recebido: 0, gasto: 0 })
+  const periodo = mes ? `${ano}-${mes}` : null
+  const rotuloPeriodo = mes ? `${NOMES_MESES[Number(mes) - 1]} de ${ano}` : `em ${ano}`
+  const totais = meses
+    .filter((m) => !periodo || m.competencia === periodo)
+    .reduce((t, m) => ({ recebido: t.recebido + m.recebido, gasto: t.gasto + m.gasto }), { recebido: 0, gasto: 0 })
+  const pagamentosDoPeriodo = (pagamentos ?? []).filter((p) => !periodo || mesDoRecebimento(p) === periodo)
+  const despesasDoPeriodo = (despesas ?? []).filter((d) => !periodo || d.competencia === periodo)
   const maior = Math.max(1, ...meses.map((m) => Math.max(m.recebido, m.gasto)))
   const mesesComMovimento = meses.filter((m) => m.recebido || m.gasto)
   const carregando = pagamentos === null || despesas === null
@@ -89,7 +108,15 @@ export function FinanceiroPage() {
       </div>
 
       <div className="flex items-center gap-3">
-        <select value={ano} onChange={(e) => setAno(e.target.value)} className={classeSelect}>
+        <select value={mes} onChange={(e) => setMes(e.target.value)} className={classeSelect} aria-label="Mês">
+          <option value="">Ano inteiro</option>
+          {NOMES_MESES.map((nome, i) => (
+            <option key={nome} value={String(i + 1).padStart(2, "0")}>
+              {nome}
+            </option>
+          ))}
+        </select>
+        <select value={ano} onChange={(e) => setAno(e.target.value)} className={classeSelect} aria-label="Ano">
           {ANOS.map((a) => (
             <option key={a} value={a}>
               {a}
@@ -106,14 +133,14 @@ export function FinanceiroPage() {
           iconClassName="bg-success-50 text-success-600"
           label="Recebido"
           value={formatBRL(totais.recebido)}
-          sublabel={`em ${ano}`}
+          sublabel={rotuloPeriodo}
         />
         <StatCard
           icon={<ArrowUpCircle size={18} />}
           iconClassName="bg-danger-50 text-danger-600"
           label="Despesas"
           value={formatBRL(totais.gasto)}
-          sublabel={`em ${ano}`}
+          sublabel={rotuloPeriodo}
         />
         <StatCard
           icon={<Scale size={18} />}
@@ -146,7 +173,14 @@ export function FinanceiroPage() {
               </thead>
               <tbody>
                 {mesesComMovimento.map((m) => (
-                  <tr key={m.competencia} className="border-b border-slate-50 last:border-0 dark:border-slate-700/40">
+                  <tr
+                    key={m.competencia}
+                    onClick={() => setMes(m.competencia === periodo ? "" : m.competencia.slice(5))}
+                    title="Clique pra ver só este mês"
+                    className={`cursor-pointer border-b border-slate-50 last:border-0 dark:border-slate-700/40 ${
+                      m.competencia === periodo ? "bg-primary-50/70 dark:bg-primary-900/20" : "hover:bg-slate-50 dark:hover:bg-slate-700/40"
+                    }`}
+                  >
                     <td className="py-2.5 font-medium text-slate-700 dark:text-slate-200">{formatCompetenciaAbrev(m.competencia)}</td>
                     <td className="py-2.5 text-success-700 dark:text-success-300">{formatBRL(m.recebido)}</td>
                     <td className="py-2.5 text-danger-600">{formatBRL(m.gasto)}</td>
@@ -165,101 +199,100 @@ export function FinanceiroPage() {
         )}
       </Card>
 
-      <Card className="p-5">
-        <div className="mb-4 flex rounded-lg bg-slate-100 p-1 text-sm sm:w-fit dark:bg-slate-700">
-          {(["recebimentos", "despesas"] as Aba[]).map((a) => (
-            <button
-              key={a}
-              type="button"
-              onClick={() => setSearchParams(a === "recebimentos" ? {} : { aba: a }, { replace: true })}
-              className={`flex-1 whitespace-nowrap rounded-md px-4 py-1.5 font-medium transition-colors ${
-                aba === a ? "bg-white text-primary-700 shadow-sm dark:bg-slate-800" : "text-slate-500 dark:text-slate-400"
-              }`}
-            >
-              {a === "recebimentos" ? `Recebimentos (${pagamentos?.length ?? 0})` : `Despesas (${despesas?.length ?? 0})`}
-            </button>
-          ))}
-        </div>
-
-        {aba === "recebimentos" ? (
-          <div className="-mx-5 overflow-x-auto px-5">
-            <table className="w-full min-w-[520px] text-left text-sm">
-              <thead>
+      {/* Recebimentos e despesas lado a lado (28/09/2026). */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card className="p-5">
+          <div className="mb-3 flex items-baseline justify-between gap-2">
+            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Recebimentos</h2>
+            <span className="text-sm font-semibold text-success-700 dark:text-success-300">
+              {formatBRL(pagamentosDoPeriodo.reduce((s, p) => s + p.valor, 0))}
+            </span>
+          </div>
+          <div className="max-h-[480px] overflow-y-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="sticky top-0 bg-white dark:bg-slate-800">
                 <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-700/60 dark:text-slate-500">
                   <th className="py-2 font-medium">Tomador</th>
-                  <th className="py-2 font-medium">Competência</th>
-                  <th className="py-2 font-medium">Valor</th>
-                  <th className="py-2 font-medium">Recebido em</th>
+                  <th className="py-2 font-medium">Caiu em</th>
+                  <th className="py-2 text-right font-medium">Valor</th>
                 </tr>
               </thead>
               <tbody>
-                {pagamentos?.map((p) => (
+                {pagamentosDoPeriodo.map((p) => (
                   <tr key={p.id} className="border-b border-slate-50 last:border-0 dark:border-slate-700/40">
-                    <td className="py-3 font-medium text-slate-800 dark:text-slate-200">{p.apelido}</td>
-                    <td className="py-3 text-slate-600 dark:text-slate-300">{p.competencia}</td>
-                    <td className="py-3 text-slate-600 dark:text-slate-300">{formatBRL(p.valor)}</td>
-                    <td className="py-3 text-slate-500 dark:text-slate-400">
-                      {p.data_recebimento ? new Date(`${p.data_recebimento}T00:00:00`).toLocaleDateString("pt-BR") : <Badge variant="neutral">Não informada</Badge>}
+                    <td className="py-2.5">
+                      <span className="font-medium text-slate-800 dark:text-slate-200">{p.apelido}</span>
+                      <span className="block text-xs text-slate-400">nota de {p.competencia}</span>
                     </td>
+                    <td className="py-2.5 text-slate-500 dark:text-slate-400">
+                      {p.data_recebimento ? new Date(`${p.data_recebimento}T00:00:00`).toLocaleDateString("pt-BR") : <Badge variant="neutral">sem data</Badge>}
+                    </td>
+                    <td className="py-2.5 text-right text-slate-700 dark:text-slate-200">{formatBRL(p.valor)}</td>
                   </tr>
                 ))}
-                {pagamentos?.length === 0 && (
+                {pagamentos !== null && pagamentosDoPeriodo.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-slate-400 dark:text-slate-500">
-                      Nenhum recebimento em {ano}.
+                    <td colSpan={3} className="py-8 text-center text-slate-400 dark:text-slate-500">
+                      Nenhum recebimento {rotuloPeriodo.startsWith("em") ? rotuloPeriodo : `em ${rotuloPeriodo}`}.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-        ) : (
-          <div className="-mx-5 overflow-x-auto px-5">
-            <table className="w-full min-w-[420px] text-left text-sm">
-              <thead>
+        </Card>
+
+        <Card className="p-5">
+          <div className="mb-3 flex items-baseline justify-between gap-2">
+            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Despesas</h2>
+            <span className="text-sm font-semibold text-danger-600">{formatBRL(despesasDoPeriodo.reduce((s, d) => s + d.valor, 0))}</span>
+          </div>
+          <div className="max-h-[480px] overflow-y-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="sticky top-0 bg-white dark:bg-slate-800">
                 <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-700/60 dark:text-slate-500">
                   <th className="py-2 font-medium">Categoria</th>
                   <th className="py-2 font-medium">Competência</th>
-                  <th className="py-2 font-medium">Valor</th>
+                  <th className="py-2 text-right font-medium">Valor</th>
                 </tr>
               </thead>
               <tbody>
-                {despesas?.map((d) => (
+                {despesasDoPeriodo.map((d) => (
                   <tr key={d.id} className="border-b border-slate-50 last:border-0 dark:border-slate-700/40">
-                    <td className="py-3 font-medium text-slate-800 dark:text-slate-200">{d.categoria}</td>
-                    <td className="py-3 text-slate-600 dark:text-slate-300">{d.competencia}</td>
-                    <td className="py-3 text-slate-600 dark:text-slate-300">{formatBRL(d.valor)}</td>
+                    <td className="py-2.5 font-medium text-slate-800 dark:text-slate-200">{d.categoria}</td>
+                    <td className="py-2.5 text-slate-500 dark:text-slate-400">{d.competencia}</td>
+                    <td className="py-2.5 text-right text-slate-700 dark:text-slate-200">{formatBRL(d.valor)}</td>
                   </tr>
                 ))}
-                {despesas?.length === 0 && (
+                {despesas !== null && despesasDoPeriodo.length === 0 && (
                   <tr>
                     <td colSpan={3} className="py-8 text-center text-slate-400 dark:text-slate-500">
-                      Nenhuma despesa em {ano}.
+                      Nenhuma despesa {rotuloPeriodo.startsWith("em") ? rotuloPeriodo : `em ${rotuloPeriodo}`}.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-        )}
-      </Card>
+        </Card>
+      </div>
 
       {modal === "recebimento" && (
         <RegistrarPagamentoModal
           vinculos={vinculos}
-          onClose={() => setModal(null)}
+          onClose={fecharModal}
           onRegistrado={() => {
-            setModal(null)
+            fecharModal()
             recarregar()
           }}
         />
       )}
-      {modal === "extrato" && <ImportarExtratoModal vinculos={vinculos} onClose={() => setModal(null)} onImportado={recarregar} />}
+      {modal === "extrato" && <ImportarExtratoModal vinculos={vinculos} onClose={fecharModal} onImportado={recarregar} />}
       {modal === "despesa" && (
         <RegistrarDespesaModal
-          onClose={() => setModal(null)}
+          onClose={fecharModal}
           onRegistrada={() => {
-            setModal(null)
+            fecharModal()
             recarregar()
           }}
         />

@@ -48,7 +48,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import get_settings
 from app.database import definir_prestador_atual, get_db
 from app.fiscal.dps import DescricaoIncompletaError
-from app.models import Assinatura, Certificado, Emissao, Prestador, Usuario
+from app.models import Assinatura, Certificado, Emissao, PagamentoRecebido, Prestador, Usuario
 from app.schemas import (
     AjusteOcorrenciaRequest,
     AliquotaAtualizarRequest,
@@ -75,6 +75,8 @@ from app.schemas import (
     EventoManualCriarRequest,
     ExtratoExtraidoResponse,
     GerarDpsRequest,
+    GeracaoShopeeResponse,
+    PreviaShopeeResponse,
     GoogleOAuthUrlResponse,
     ImportacaoCsvResponse,
     LembreteAliquotaRequest,
@@ -162,6 +164,7 @@ from app.services.envio_direto import (
 from app.services.demo import criar_conta_demo, eh_email_demo
 from app.services.extrato_pdf import PdfInvalidoError, extrair_extrato
 from app.services.limpeza import limpar_dados
+from app.services.relatorio_shopee import RelatorioShopeeInvalidoError, gerar_notas, ler_relatorio
 from app.services.servicos_nacionais import buscar_servicos, listar_servicos, servico_por_codigo
 from app.services.google_oauth import (
     GoogleOAuthFalhaError,
@@ -570,8 +573,10 @@ def api_listar_vinculos(todos: bool = False, competencia: str | None = None, db:
             requer_revisao=v.requer_revisao, ativo=v.ativo, tomador_id=v.tomador_id,
             cod_trib_nacional=v.cod_trib_nacional, cod_local_prestacao=v.cod_local_prestacao,
             dia_limite_emissao=v.dia_limite_emissao, dias_para_recebimento=v.dias_para_recebimento,
-            emissao_id=emissao.id if emissao else None, emissao_estado=emissao.estado if emissao else None,
-            emissao_valor=float(emissao.valor) if emissao else None,
+            emissao_id=emissao["id"] if emissao else None, emissao_estado=emissao["estado"] if emissao else None,
+            emissao_valor=round(emissao["valor"], 2) if emissao else None,
+            emissao_quantidade=emissao["quantidade"] if emissao else 0,
+            metodo_captura_valor=v.metodo_captura_valor,
         ))
     return resposta
 
@@ -1269,6 +1274,21 @@ def api_registrar_pagamento(req: RegistrarPagamentoRequest, db: Session = Depend
     )
 
 
+@app.delete("/api/pagamentos")
+def api_desfazer_pagamento(vinculo_id: uuid.UUID, competencia: str, db: Session = Depends(db_sessao)):
+    """Desfaz a baixa (28/09/2026): apaga o(s) recebimento(s) daquele
+    tomador+competência — a nota volta a aparecer como pendente."""
+    if not re.fullmatch(r"\d{4}-\d{2}", competencia):
+        raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
+    removidos = (
+        db.query(PagamentoRecebido)
+        .filter(PagamentoRecebido.prestador_tomador_id == vinculo_id, PagamentoRecebido.competencia == competencia)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"removidos": removidos}
+
+
 @app.get("/api/pagamentos", response_model=list[PagamentoResponse])
 def api_listar_pagamentos(
     ano: str | None = None,
@@ -1308,7 +1328,9 @@ async def api_extrair_extrato(arquivo: UploadFile = File(...), db: Session = Dep
 
 
 @app.post("/api/recebimentos/extrato/confirmar", response_model=ConfirmarExtratoResponse)
-def api_confirmar_extrato(req: ConfirmarExtratoRequest, db: Session = Depends(db_sessao)):
+def api_confirmar_extrato(
+    req: ConfirmarExtratoRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
     """Segunda metade do fluxo acima — grava um PagamentoRecebido por item
     que a pessoa confirmou na revisão (cada um casado com um vínculo à
     mão). Mesmo padrão de isolamento por item do /api/dps/importar-csv:
@@ -1318,14 +1340,102 @@ def api_confirmar_extrato(req: ConfirmarExtratoRequest, db: Session = Depends(db
         ItemExtrato(vinculo_id=i.vinculo_id, competencia=i.competencia, valor=i.valor, data_recebimento=i.data_recebimento)
         for i in req.itens
     ]
-    resultados = confirmar_importacao_extrato(db, itens)
+    resultados = confirmar_importacao_extrato(db, itens) if itens else []
     sucesso = sum(1 for r in resultados if r.ok)
-    if sucesso > 0:
+    # Saídas do extrato viram despesas (28/09/2026: "importe as entradas da
+    # forma que está e importe as saídas abaixo").
+    for d in req.despesas:
+        registrar_despesa(db, prestador_id, categoria=d.categoria.strip(), competencia=d.competencia, valor=d.valor)
+    if sucesso > 0 or req.despesas:
         db.commit()
     return ConfirmarExtratoResponse(
         total=len(resultados), sucesso=sucesso, erro=len(resultados) - sucesso,
         itens=[{"indice": r.indice, "ok": r.ok, "mensagem": r.mensagem, "pagamento_id": r.pagamento_id} for r in resultados],
+        despesas_registradas=len(req.despesas),
     )
+
+
+def _vinculo_shopee(db: Session, vinculo_id: uuid.UUID):
+    vinculo = buscar_vinculo(db, vinculo_id)
+    if vinculo is None or vinculo.excluido_em is not None:
+        raise HTTPException(status_code=404, detail="Tomador não encontrado.")
+    return vinculo
+
+
+@app.post("/api/shopee/previa", response_model=PreviaShopeeResponse, responses={400: {"model": ErroResponse}})
+async def api_previa_shopee(
+    vinculo_id: uuid.UUID = Form(...), arquivo: UploadFile = File(...), db: Session = Depends(db_sessao),
+):
+    """Relatório mensal da Shopee (28/09/2026) — lê o arquivo e mostra, por
+    mês, quantos vendedores e quanto dá, sem gravar nada (ver
+    app/services/relatorio_shopee.py)."""
+    vinculo = _vinculo_shopee(db, vinculo_id)
+    try:
+        relatorio = ler_relatorio(await arquivo.read())
+    except RelatorioShopeeInvalidoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    ja = {
+        (e.competencia, e.tomador_documento)
+        for e in db.query(Emissao.competencia, Emissao.tomador_documento).filter(
+            Emissao.prestador_tomador_id == vinculo.id, Emissao.estado != "cancelada", Emissao.tomador_documento.isnot(None)
+        )
+    }
+    vendedores, por_mes = [], {}
+    for v in relatorio.vendedores:
+        gerada = (v.competencia, v.documento) in ja
+        vendedores.append({
+            "competencia": v.competencia, "documento": v.documento, "tipo_documento": v.tipo_documento,
+            "razao_social": v.razao_social, "lojas": v.lojas, "valor": float(v.valor),
+            "cidade": (v.endereco or {}).get("cidade"), "uf": (v.endereco or {}).get("uf"),
+            "estrangeiro": v.estrangeiro, "avisos": v.avisos, "ja_gerada": gerada,
+        })
+        m = por_mes.setdefault(v.competencia, {"competencia": v.competencia, "vendedores": 0, "total": 0.0, "estrangeiros": 0, "ja_geradas": 0})
+        m["vendedores"] += 1
+        m["total"] += float(v.valor)
+        m["estrangeiros"] += int(v.estrangeiro)
+        m["ja_geradas"] += int(gerada)
+    competencias = sorted(por_mes.values(), key=lambda m: m["competencia"], reverse=True)
+    for m in competencias:
+        m["total"] = round(m["total"], 2)
+    vendedores.sort(key=lambda v: (v["competencia"], -v["valor"]))
+    return {
+        "linhas_lidas": relatorio.linhas_lidas, "linhas_ignoradas": relatorio.linhas_ignoradas,
+        "competencias": competencias, "vendedores": vendedores,
+    }
+
+
+@app.post("/api/shopee/gerar", response_model=GeracaoShopeeResponse, responses={400: {"model": ErroResponse}})
+async def api_gerar_shopee(
+    vinculo_id: uuid.UUID = Form(...),
+    competencia: str = Form(...),
+    arquivo: UploadFile = File(...),
+    valor_minimo: float = Form(0),
+    incluir_estrangeiros: bool = Form(False),
+    aliq_sn: float | None = Form(None),
+    tpAmb: str = Form("2"),
+    db: Session = Depends(db_sessao),
+):
+    """Gera uma nota por vendedor do mês escolhido — os vendedores NÃO viram
+    tomadores cadastrados (pedido do Marcos): os dados de cada um vão só na
+    própria nota. Reenviar o mesmo relatório não duplica."""
+    if not re.fullmatch(r"\d{4}-\d{2}", competencia):
+        raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
+    if tpAmb not in ("1", "2"):
+        raise HTTPException(status_code=422, detail="tpAmb deve ser 1 ou 2")
+    vinculo = _vinculo_shopee(db, vinculo_id)
+    try:
+        relatorio = ler_relatorio(await arquivo.read())
+    except RelatorioShopeeInvalidoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    resultado = gerar_notas(
+        db, vinculo, relatorio, competencia=competencia, valor_minimo=Decimal(str(valor_minimo)),
+        incluir_estrangeiros=incluir_estrangeiros, aliq_sn=aliq_sn, tpAmb=tpAmb,
+    )
+    db.commit()
+    return {
+        "geradas": resultado.geradas, "ja_existiam": resultado.ja_existiam, "puladas": resultado.puladas,
+        "total": float(resultado.total), "erros": resultado.erros,
+    }
 
 
 @app.post("/api/dados/limpar", response_model=LimparDadosResponse, responses={422: {"model": ErroResponse}})

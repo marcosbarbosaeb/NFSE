@@ -95,7 +95,9 @@ def _proximo_ndps(db: Session, prestador_id: uuid.UUID, serie: str) -> int:
     return (maximo or 0) + 1
 
 
-def buscar_emissao_ativa(db: Session, vinculo_id: uuid.UUID, competencia: str) -> Emissao | None:
+def buscar_emissao_ativa(
+    db: Session, vinculo_id: uuid.UUID, competencia: str, tomador_documento: str | None = None
+) -> Emissao | None:
     """Emissão ATIVA (não cancelada) pra esse vínculo+competência, se
     existir — mesma regra do índice único parcial
     `uq_emissao_vinculo_competencia_ativa`. Reaproveitada por
@@ -104,11 +106,14 @@ def buscar_emissao_ativa(db: Session, vinculo_id: uuid.UUID, competencia: str) -
     avisar de duplicata de forma proativa em vez de só depois de um erro
     (pedido do Marcos no Marco 16 — 'o sistema tem que avisar pra não ter
     nota repetida')."""
-    return (
-        db.query(Emissao)
-        .filter(Emissao.prestador_tomador_id == vinculo_id, Emissao.competencia == competencia, Emissao.estado != "cancelada")
-        .first()
+    query = db.query(Emissao).filter(
+        Emissao.prestador_tomador_id == vinculo_id, Emissao.competencia == competencia, Emissao.estado != "cancelada"
     )
+    if tomador_documento is None:
+        query = query.filter(Emissao.tomador_documento.is_(None))
+    else:
+        query = query.filter(Emissao.tomador_documento == tomador_documento)
+    return query.first()
 
 
 def criar_rascunho(
@@ -120,15 +125,18 @@ def criar_rascunho(
     ordem: str | None = None,
     aliq_sn: float | None = None,
     tpAmb: str = "2",
+    tomador_avulso: dict | None = None,
 ) -> Emissao:
     """rascunho — atribui nDPS, congela o snapshot do tomador+descrição, e
     checa a idempotência mensal ANTES de tentar gravar (o índice único
     parcial é quem garante de verdade; isto aqui só dá um erro mais claro
     no caso comum, em vez de deixar estourar IntegrityError genérico)."""
-    ja_existe = buscar_emissao_ativa(db, vinculo.id, competencia)
+    documento_avulso = tomador_avulso["documento"] if tomador_avulso else None
+    ja_existe = buscar_emissao_ativa(db, vinculo.id, competencia, documento_avulso)
     if ja_existe is not None:
+        quem = f"{tomador_avulso['razao_social']} ({vinculo.apelido})" if tomador_avulso else f"'{vinculo.apelido}'"
         raise EmissaoJaExisteError(
-            f"Já existe uma emissão ativa para '{vinculo.apelido}' na competência {competencia} "
+            f"Já existe uma emissão ativa para {quem} na competência {competencia} "
             f"(id={ja_existe.id}, estado={ja_existe.estado}). Cancele-a antes de criar outra."
         )
 
@@ -153,6 +161,23 @@ def criar_rascunho(
         "aliq_sn": aliq_sn,
         "tpAmb": tpAmb,
     }
+    if tomador_avulso:
+        # Relatório da Shopee: a nota é pro VENDEDOR da linha, não pro
+        # tomador do vínculo — e ele não vai pro catálogo, só fica aqui.
+        endereco = tomador_avulso.get("endereco") or {}
+        snapshot.update({
+            "razao_social": tomador_avulso["razao_social"],
+            "cnpj": tomador_avulso["documento"],
+            "tipo_documento": tomador_avulso["tipo_documento"],
+            "endereco": {
+                "cMun": endereco.get("cMun"), "CEP": endereco.get("CEP"), "xLgr": endereco.get("xLgr"),
+                "nro": endereco.get("nro"), "xCpl": endereco.get("xCpl"), "xBairro": endereco.get("xBairro"),
+            },
+            "pais": tomador_avulso.get("pais"),
+            "email": tomador_avulso.get("email"),
+            "lojas": tomador_avulso.get("lojas") or [],
+            "avulso": True,
+        })
 
     n_dps = _proximo_ndps(db, vinculo.prestador_id, vinculo.serie)
 
@@ -166,6 +191,7 @@ def criar_rascunho(
         n_dps=n_dps,
         estado="rascunho",
         tomador_snapshot=snapshot,
+        tomador_documento=documento_avulso,
     )
     db.add(emissao)
     db.flush()
@@ -189,8 +215,9 @@ def montar(db: Session, emissao: Emissao) -> Emissao:
         "opSimpNac": prestador.op_simples_nacional, "regApTribSN": prestador.regime_apuracao_sn,
         "regEspTrib": prestador.regime_especial_trib,
     }
+    tipo_doc = snap.get("tipo_documento", "CNPJ")
     toma = {
-        "CNPJ": snap["cnpj"], "xNome": snap["razao_social"],
+        tipo_doc: snap["cnpj"], "xNome": snap["razao_social"],
         "cMun": snap["endereco"]["cMun"], "CEP": snap["endereco"]["CEP"],
         "xLgr": snap["endereco"]["xLgr"], "nro": snap["endereco"]["nro"],
         "xCpl": snap["endereco"].get("xCpl"), "xBairro": snap["endereco"]["xBairro"],

@@ -37,13 +37,14 @@ conceitos que não existem 1:1 no motor de emissão hoje:
    mês sem nenhum pagamento associado.
 """
 import datetime
+from calendar import monthrange
 import uuid
 from decimal import Decimal
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import Certificado, Emissao, PagamentoRecebido, Prestador
+from app.models import AjusteEvento, Certificado, Emissao, PagamentoRecebido, Prestador
 from app.services.envios import listar_envios
 from app.services.vinculos import listar_vinculos_ativos
 
@@ -114,6 +115,53 @@ def _serie_recebimentos(db: Session, prestador_id: uuid.UUID, competencia_final:
     return serie
 
 
+def _avisos_dia_de_gerar(db: Session, vinculos: list, hoje: datetime.date | None = None) -> list[dict]:
+    """Pedido do Marcos (28/09/2026): "no dia anterior da data de emissão e
+    no dia escolhido para o tomador, coloque o aviso em Precisa da sua
+    atenção". Olha o mês REAL (hoje), não o navegado; respeita a data movida
+    no calendário (AjusteEvento) e some assim que a nota do mês é gerada.
+    Depois do dia, continua avisando que ficou pra trás."""
+    hoje = hoje or datetime.date.today()
+    competencia = f"{hoje.year:04d}-{hoje.month:02d}"
+    ajustes = {a.chave: a for a in db.query(AjusteEvento).filter(AjusteEvento.tipo == "prazo_emissao").all()}
+    avisos = []
+    for v in vinculos:
+        if v.dia_limite_emissao is None:
+            continue
+        dia = datetime.date(hoje.year, hoje.month, min(v.dia_limite_emissao, monthrange(hoje.year, hoje.month)[1]))
+        ajuste = ajustes.get(f"{v.id}:{competencia}")
+        if ajuste is not None:
+            if ajuste.oculto:
+                continue
+            dia = ajuste.nova_data or dia
+        faltam = (dia - hoje).days
+        if faltam > 1:
+            continue
+        ja_gerou = (
+            db.query(Emissao.id)
+            .filter(Emissao.prestador_tomador_id == v.id, Emissao.competencia == competencia, Emissao.estado != "cancelada")
+            .first()
+            is not None
+        )
+        if ja_gerou:
+            continue
+        if faltam == 1:
+            mensagem, tipo = f"Amanhã ({dia:%d/%m}) é o dia de gerar a nota de {v.apelido}.", "gerar_amanha"
+        elif faltam == 0:
+            mensagem, tipo = f"Hoje é o dia de gerar a nota de {v.apelido}.", "gerar_hoje"
+        else:
+            mensagem, tipo = f"O dia de gerar a nota de {v.apelido} era {dia:%d/%m} e ela ainda não foi gerada.", "gerar_atrasada"
+        avisos.append({
+            "tipo": tipo,
+            "titulo": v.apelido,
+            "mensagem": mensagem,
+            "link": f"/app/nfse?gerar={v.id}&competencia={competencia}",
+            "link_label": "Gerar agora",
+        })
+    ordem = {"gerar_atrasada": 0, "gerar_hoje": 1, "gerar_amanha": 2}
+    return sorted(avisos, key=lambda a: ordem[a["tipo"]])
+
+
 def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = None) -> dict:
     """Monta o payload completo da tela Visão geral pra uma competência
     (padrão: mês corrente). Só leitura — não muda estado de nada."""
@@ -128,15 +176,20 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
     pagamentos_pendentes = 0
 
     for vinculo in vinculos:
-        emissao = (
+        # Shopee: várias notas no mês (uma por vendedor) — vira uma linha só,
+        # somando os valores.
+        do_mes = (
             db.query(Emissao)
             .filter(
                 Emissao.prestador_tomador_id == vinculo.id,
                 Emissao.competencia == competencia,
                 Emissao.estado != "cancelada",
             )
-            .one_or_none()
+            .order_by(Emissao.criado_em)
+            .all()
         )
+        emissao = do_mes[0] if do_mes else None
+        valor_mes = sum((e.valor for e in do_mes), Decimal(0))
         if emissao is None:
             aguardando += 1
             continue
@@ -144,15 +197,17 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
         emitidas += 1
         recebido = _tem_pagamento(db, vinculo.id, competencia)
         if not recebido:
-            a_receber += emissao.valor
+            a_receber += valor_mes
             pagamentos_pendentes += 1
 
         emissoes.append({
             "emissao_id": emissao.id,
-            "apelido": vinculo.apelido,
-            "tomador_razao_social": vinculo.tomador.razao_social,
+            "vinculo_id": vinculo.id,
+            "quantidade": len(do_mes),
+            "apelido": vinculo.apelido if len(do_mes) == 1 else f"{vinculo.apelido} ({len(do_mes)} notas)",
+            "tomador_razao_social": vinculo.tomador.razao_social if len(do_mes) == 1 else "vários vendedores",
             "competencia": emissao.competencia,
-            "valor": float(emissao.valor),
+            "valor": float(valor_mes),
             "estado": emissao.estado,
             "estado_label": ESTADO_NFSE_LABEL.get(emissao.estado, emissao.estado),
             "envio_status": _status_envio(db, emissao),
@@ -165,7 +220,7 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
     if recebido_mes_anterior:
         delta_recebimentos_pct = float((recebido_no_mes - recebido_mes_anterior) / recebido_mes_anterior * 100)
 
-    atencao: list[dict] = []
+    atencao: list[dict] = _avisos_dia_de_gerar(db, vinculos)
     cert = db.query(Certificado).filter_by(prestador_id=prestador_id).one_or_none()
     if cert is not None and cert.validade is not None:
         dias = (cert.validade - datetime.date.today()).days

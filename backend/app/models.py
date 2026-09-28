@@ -364,6 +364,11 @@ class Emissao(Base):
     # Opus): {"razao_social": ..., "cnpj": ..., "endereco": {...}, "apelido":
     # ..., "template_descricao_usado": ..., "codigo_servico_usado": ...}
     tomador_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    # Relatório da Shopee (28/09/2026): nota pra um vendedor que NÃO é o
+    # tomador do vínculo e não é salvo no catálogo — o documento dele fica
+    # aqui (e o resto no snapshot). Nulo no caso de sempre. Entra na chave
+    # da trava de nota duplicada (ver índice abaixo).
+    tomador_documento: Mapped[str | None] = mapped_column(String(40))
 
     xml_dps: Mapped[str | None] = mapped_column(Text)
     xml_assinado: Mapped[str | None] = mapped_column(Text)
@@ -402,6 +407,7 @@ Index(
     "uq_emissao_vinculo_competencia_ativa",
     Emissao.prestador_tomador_id,
     Emissao.competencia,
+    func.coalesce(Emissao.tomador_documento, ""),
     unique=True,
     postgresql_where=(Emissao.estado != "cancelada"),
 )

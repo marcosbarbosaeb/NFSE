@@ -69,7 +69,8 @@ def listar_emissoes(
             "id": e.id,
             "vinculo_id": e.prestador_tomador_id,
             "apelido": e.vinculo.apelido,
-            "tomador_razao_social": e.vinculo.tomador.razao_social,
+            # Shopee: o tomador é o vendedor da nota, não o do vínculo.
+            "tomador_razao_social": (e.tomador_snapshot or {}).get("razao_social") if e.tomador_documento else e.vinculo.tomador.razao_social,
             "competencia": e.competencia,
             "valor": float(e.valor),
             "serie": e.serie,

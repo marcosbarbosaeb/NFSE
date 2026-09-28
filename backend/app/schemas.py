@@ -27,6 +27,9 @@ class VinculoResumo(BaseModel):
     emissao_id: uuid.UUID | None = None
     emissao_estado: str | None = None
     emissao_valor: float | None = None
+    # Shopee: várias notas no mês (uma por vendedor).
+    emissao_quantidade: int = 0
+    metodo_captura_valor: str = "manual"
 
     model_config = {"from_attributes": True}
 
@@ -264,6 +267,8 @@ class PainelStatusResponse(BaseModel):
 
 class EmissaoResumoLinha(BaseModel):
     emissao_id: uuid.UUID
+    vinculo_id: uuid.UUID | None = None
+    quantidade: int = 1
     apelido: str
     tomador_razao_social: str
     competencia: str
@@ -677,8 +682,16 @@ class ItemConfirmarExtratoRequest(BaseModel):
     data_recebimento: date | None = None
 
 
+class DespesaExtratoRequest(BaseModel):
+    """Saída do extrato que vira despesa (28/09/2026)."""
+    categoria: str = Field(min_length=1, max_length=100)
+    competencia: str = Field(pattern=r"^\d{4}-\d{2}$")
+    valor: float = Field(gt=0)
+
+
 class ConfirmarExtratoRequest(BaseModel):
-    itens: list[ItemConfirmarExtratoRequest] = Field(min_length=1)
+    itens: list[ItemConfirmarExtratoRequest] = Field(default_factory=list)
+    despesas: list[DespesaExtratoRequest] = Field(default_factory=list)
 
 
 class ItemConfirmadoExtratoResponse(BaseModel):
@@ -693,6 +706,44 @@ class ConfirmarExtratoResponse(BaseModel):
     sucesso: int
     erro: int
     itens: list[ItemConfirmadoExtratoResponse]
+    despesas_registradas: int = 0
+
+
+class VendedorShopeeResponse(BaseModel):
+    competencia: str
+    documento: str
+    tipo_documento: str
+    razao_social: str
+    lojas: list[str]
+    valor: float
+    cidade: str | None = None
+    uf: str | None = None
+    estrangeiro: bool
+    avisos: list[str]
+    ja_gerada: bool = False
+
+
+class CompetenciaShopeeResponse(BaseModel):
+    competencia: str
+    vendedores: int
+    total: float
+    estrangeiros: int
+    ja_geradas: int
+
+
+class PreviaShopeeResponse(BaseModel):
+    linhas_lidas: int
+    linhas_ignoradas: list[str]
+    competencias: list[CompetenciaShopeeResponse]
+    vendedores: list[VendedorShopeeResponse]
+
+
+class GeracaoShopeeResponse(BaseModel):
+    geradas: int
+    ja_existiam: int
+    puladas: int
+    total: float
+    erros: list[str]
 
 
 WhatsappLinkResponse.model_rebuild()
