@@ -96,6 +96,7 @@ def listar_emissoes(
             "tem_pdf": e.estado == "confirmado",
             "tem_email": bool((e.tomador_snapshot or {}).get("email") if e.tomador_documento else (e.vinculo.email_para or e.vinculo.email_contato)),
             "homologacao": (e.tomador_snapshot or {}).get("tpAmb") == "2",
+            "avulsa": bool(e.tomador_documento),
         }
         for e in emissoes
     ]

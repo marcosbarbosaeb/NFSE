@@ -349,3 +349,40 @@ def test_destinatario_configuravel_copia_propria_e_troca_na_hora(client, db, pre
     vinculo_teste.email_para = None
     db.flush()
     assert client.get(f"/api/dps/{emissao.id}/email-previa").json()["destinos"] == ["contato@tomador.com"]
+
+
+def test_teto_diario_nao_vale_pra_nota_autorizada_da_shopee(client, db, prestador_teste, vinculo_teste, monkeypatch):
+    import app.services.envio_direto as envio_direto
+    from app.services.motor_emissao import criar_rascunho as _criar
+
+    enviados = []
+
+    class Falso:
+        def enviar(self, **kw):
+            enviados.append(kw)
+
+    monkeypatch.setattr(envio_direto, "get_email_sender", lambda: Falso())
+    monkeypatch.setattr(envio_direto, "motivo_email_desabilitado", lambda vinculo, destino=None: None if destino else "sem destino")
+    monkeypatch.setattr(envio_direto, "LIMITE_EMAILS_DIA", 1)
+    vinculo_teste.email_contato = "contato@tomador.com"
+    vinculo_teste.email_anexos = "xml"  # sem PDF oficial no teste
+
+    comum = _criar(db, vinculo_teste, competencia="2026-01", valor=10)
+    montar(db, comum)
+    assert client.post(f"/api/dps/{comum.id}/enviar-email").json()["status"] == "enviado"
+    # a segunda nota comum bate no teto
+    comum2 = _criar(db, vinculo_teste, competencia="2026-02", valor=10)
+    montar(db, comum2)
+    assert client.post(f"/api/dps/{comum2.id}/enviar-email").status_code == 400
+
+    # nota da Shopee já autorizada: passa, e sempre pro e-mail do vendedor
+    avulsa = _criar(db, vinculo_teste, competencia="2026-02", valor=5, tomador_avulso={
+        "documento": "11222333000181", "tipo_documento": "CNPJ", "razao_social": "Loja X",
+        "email": "vendedor@loja.com", "endereco": {}, "pais": "BR", "lojas": ["x"],
+    })
+    montar(db, avulsa)
+    avulsa.estado = "confirmado"
+    db.flush()
+    r = client.post(f"/api/dps/{avulsa.id}/enviar-email", json={"para": ["outro@spam.com"]})
+    assert r.status_code == 200 and r.json()["status"] == "enviado"
+    assert enviados[-1]["destinatario"] == ["vendedor@loja.com"]

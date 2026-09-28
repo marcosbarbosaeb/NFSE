@@ -298,6 +298,7 @@ export interface EmissaoListaLinha {
   tem_pdf?: boolean
   tem_email?: boolean
   homologacao?: boolean
+  avulsa?: boolean
 }
 
 export interface GerarDpsRequest {

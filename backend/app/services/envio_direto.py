@@ -327,6 +327,13 @@ def enviar_email(
     Assunto, texto, cópias e anexos vêm do modelo configurado (tomador >
     padrão do prestador > texto de sempre)."""
     vinculo = db.get(PrestadorTomador, emissao.prestador_tomador_id)
+    # Nota de vendedor da Shopee já autorizada pela Receita: vai sempre pro
+    # e-mail que veio no relatório (não dá pra trocar o destinatário) e fica
+    # FORA do teto diário — são centenas por mês (pedido do Marcos,
+    # 29/09/2026). Nota de teste (homologação) não entra na exceção.
+    nota_shopee = bool(emissao.tomador_documento) and emissao.estado == "confirmado"
+    if nota_shopee:
+        para = None
     # `para`/`copia` vindos da tela valem só pra este envio (a pessoa trocou
     # o destinatário na hora); sem eles, o que está configurado.
     destinos = lista_emails(para) if para is not None else destinos_email(emissao, vinculo)
@@ -342,10 +349,14 @@ def enviar_email(
     enviados_24h = (
         db.query(Envio.id)
         .join(Emissao, Emissao.id == Envio.emissao_id)
-        .filter(Envio.canal == "email", Envio.criado_em >= desde)
+        .filter(
+            Envio.canal == "email", Envio.criado_em >= desde,
+            # os envios da Shopee (autorizadas) não gastam o teto dos outros
+            ~((Emissao.tomador_documento.isnot(None)) & (Emissao.estado == "confirmado")),
+        )
         .count()
     )
-    if enviados_24h >= LIMITE_EMAILS_DIA:
+    if not nota_shopee and enviados_24h >= LIMITE_EMAILS_DIA:
         raise EmailIndisponivelError(
             f"Limite de {LIMITE_EMAILS_DIA} e-mails de nota por dia atingido. Se precisar de mais, fale com o suporte."
         )

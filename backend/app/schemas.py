@@ -684,6 +684,7 @@ class EmissaoListaLinha(BaseModel):
     tem_pdf: bool = False
     tem_email: bool = False
     homologacao: bool = False
+    avulsa: bool = False  # nota de vendedor da Shopee (destinatário fixo)
 
 
 class EventoCalendarioResponse(BaseModel):

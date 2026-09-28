@@ -21,6 +21,7 @@ export interface NotaParaAcoes {
   tem_pdf?: boolean
   tem_email?: boolean
   homologacao?: boolean
+  avulsa?: boolean
 }
 
 /** Selo com confirmação em popover (position:fixed — tabelas com overflow cortariam um popover comum). */
@@ -290,6 +291,8 @@ export function SeloTomador({ nota, onMudou }: { nota: NotaParaAcoes; onMudou: (
                 <span className="text-slate-400">Para</span>
                 <input
                   value={para}
+                  readOnly={nota.avulsa && nota.estado === "confirmado"}
+                  title={nota.avulsa ? "Nota da Shopee: vai pro e-mail do vendedor que veio no relatório" : undefined}
                   onChange={(e) => setPara(e.target.value)}
                   className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                 />
