@@ -6,6 +6,7 @@ import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
+import { formatarDocumento } from "../lib/documento"
 import { competenciaAtual, formatBRL, formatCompetenciaLonga } from "../lib/format"
 import type { Tomador, VinculoResumo } from "../lib/types"
 
@@ -35,7 +36,7 @@ type Situacao = "gerada" | "atrasada" | "hoje" | "pendente" | "sem_dia" | "inati
 
 function situacao(v: VinculoResumo, competencia: string): Situacao {
   if (v.emissao_id) return "gerada"
-  if (v.ativo === false) return "inativo"
+  if (v.ativo === false || v.sem_nota) return "inativo"
   if (v.dia_limite_emissao == null) return "sem_dia"
   const atual = competenciaAtual()
   if (competencia < atual) return "atrasada"
@@ -172,8 +173,12 @@ export function TomadoresPage() {
     if (!vinculos) return []
     const termo = busca.trim().toLowerCase()
     if (!termo) return vinculos
+    const digitos = termo.replace(/\D/g, "")
     return vinculos.filter(
-      (v) => v.apelido.toLowerCase().includes(termo) || v.tomador_razao_social.toLowerCase().includes(termo) || v.tomador_cnpj.includes(termo)
+      (v) =>
+        v.apelido.toLowerCase().includes(termo) ||
+        v.tomador_razao_social.toLowerCase().includes(termo) ||
+        (digitos !== "" && v.tomador_cnpj.includes(digitos))
     )
   }, [vinculos, busca])
 
@@ -181,11 +186,13 @@ export function TomadoresPage() {
     if (!tomadores) return []
     const termo = busca.trim().toLowerCase()
     if (!termo) return tomadores
-    return tomadores.filter((t) => t.razao_social.toLowerCase().includes(termo) || t.cnpj.includes(termo))
+    const digitos = termo.replace(/\D/g, "")
+    return tomadores.filter((t) => t.razao_social.toLowerCase().includes(termo) || (digitos !== "" && t.cnpj.includes(digitos)))
   }, [tomadores, busca])
 
   const resumo = useMemo(() => {
-    const ativos = (vinculos ?? []).filter((v) => v.ativo !== false)
+    // "Só controle" (sem_nota) não entra na conta de notas a gerar.
+    const ativos = (vinculos ?? []).filter((v) => v.ativo !== false && !v.sem_nota)
     const gerados = ativos.filter((v) => v.emissao_id).length
     const atrasados = ativos.filter((v) => situacao(v, competencia) === "atrasada").length
     return { total: ativos.length, gerados, atrasados, faltam: ativos.length - gerados }
@@ -310,8 +317,14 @@ export function TomadoresPage() {
                           {v.apelido}
                         </Link>
                         {inativo && <span className="ml-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">inativo</span>}
+                        {v.sem_nota && (
+                          <span className="ml-2 align-middle" title="Só controle de recebimento — a Ana não gera nota pra este tomador">
+                            <Badge>Só controle</Badge>
+                          </span>
+                        )}
                         <p className="text-xs text-slate-400 dark:text-slate-500">
-                          {v.tomador_razao_social} · {v.tomador_cnpj}
+                          {v.tomador_razao_social}
+                          {v.tomador_cnpj && ` · ${formatarDocumento(v.tomador_cnpj)}`}
                         </p>
                       </td>
                       <td className="py-2.5 pr-3">
@@ -322,7 +335,7 @@ export function TomadoresPage() {
                       </td>
                       <td className="py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {!v.emissao_id && !inativo && (
+                          {!v.emissao_id && !inativo && !v.sem_nota && (
                             <button
                               type="button"
                               onClick={() => navigate(`/app/nfse?gerar=${v.id}&competencia=${competencia}`)}
@@ -379,7 +392,7 @@ export function TomadoresPage() {
                 {tomadoresFiltrados.map((t) => (
                   <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 dark:border-slate-700/40 dark:hover:bg-slate-700/50">
                     <td className="py-3 font-medium text-slate-800 dark:text-slate-200">{t.razao_social}</td>
-                    <td className="py-3 text-slate-500 dark:text-slate-400">{t.cnpj}</td>
+                    <td className="py-3 text-slate-500 dark:text-slate-400">{t.cnpj ? formatarDocumento(t.cnpj) : "—"}</td>
                     <td className="py-3 text-right">
                       <Link to={`/app/tomadores/novo?tomador_id=${t.id}`} className="text-sm font-medium text-primary-600 hover:text-primary-700">
                         Usar este tomador

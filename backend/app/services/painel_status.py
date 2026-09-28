@@ -80,7 +80,7 @@ def status_despesas(db: Session, prestador_id: uuid.UUID, ano: str) -> list[dict
     vínculo), ordenadas alfabeticamente pra saída estável."""
     registros = (
         db.query(Despesa.categoria, Despesa.competencia, Despesa.valor)
-        .filter(Despesa.prestador_id == prestador_id, Despesa.competencia.like(f"{ano}-%"))
+        .filter(Despesa.prestador_id == prestador_id, Despesa.competencia.like(f"{ano}-%"), Despesa.tipo == "despesa")
         .all()
     )
     por_categoria: dict[str, list[tuple[str, Decimal]]] = {}

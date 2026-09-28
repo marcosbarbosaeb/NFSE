@@ -19,7 +19,9 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from app.models import AjusteEvento, Despesa, Emissao, Envio, EventoManual, PagamentoRecebido, PrestadorTomador
+from app.models import (
+    AjusteEvento, Despesa, DespesaRecorrente, Emissao, Envio, EventoManual, PagamentoRecebido, PrestadorTomador, RotinaMensal,
+)
 from app.services.vinculos import excluir_vinculo
 
 CATEGORIAS = ("nfse", "recebimentos", "despesas", "calendario", "tomadores")
@@ -63,6 +65,9 @@ def limpar_dados(db: Session, prestador_id: uuid.UUID, categorias: list[str]) ->
         resultado["despesas"] = (
             db.query(Despesa).filter(Despesa.prestador_id == prestador_id).delete(synchronize_session=False)
         )
+        # Contas fixas e rotina do mês vão junto (senão voltam a lançar).
+        db.query(DespesaRecorrente).filter(DespesaRecorrente.prestador_id == prestador_id).delete(synchronize_session=False)
+        db.query(RotinaMensal).filter(RotinaMensal.prestador_id == prestador_id).delete(synchronize_session=False)
 
     if "calendario" in categorias:
         manuais = db.query(EventoManual).filter(EventoManual.prestador_id == prestador_id).delete(synchronize_session=False)

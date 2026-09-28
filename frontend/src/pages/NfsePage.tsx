@@ -1,6 +1,7 @@
 import {
   CheckCircle2,
   Clock,
+  DownloadCloud,
   FileArchive,
   FileSpreadsheet,
   FileText,
@@ -17,6 +18,7 @@ import {
 import { DownloadsNota, SeloAssinatura, SeloPrefeitura, SeloTomador } from "../components/AcoesNota"
 import { BaixaPagamento } from "../components/BaixaPagamento"
 import { CampoData } from "../components/CampoData"
+import { ImportarNacionalModal } from "../components/ImportarNacionalModal"
 import { ConfirmarLoteModal, LotePainel } from "../components/LotePainel"
 import { ShopeeModal } from "../components/ShopeeModal"
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react"
@@ -125,6 +127,7 @@ export function NfsePage() {
   // Vindo do botão "Gerar" da aba Tomadores: ?gerar=<vínculo>&competencia=AAAA-MM
   const [modalNova, setModalNova] = useState(Boolean(searchParams.get("gerar") || searchParams.get("nova")))
   const [modalCsv, setModalCsv] = useState(false)
+  const [modalNacional, setModalNacional] = useState(false)
   const [shopee, setShopee] = useState<VinculoResumo | null>(null)
   // Marco 16, item 5 — só pra pré-preencher aliq_sn na Nova emissão (ver
   // NovaEmissaoModal abaixo); nunca aplicada sem o usuário poder confirmar.
@@ -151,8 +154,12 @@ export function NfsePage() {
       .catch(() => {})
   }, [])
 
-  useEffect(() => {
+  function carregarVinculos() {
     api.get<VinculoResumo[]>("/vinculos").then(setVinculos).catch(() => {})
+  }
+
+  useEffect(() => {
+    carregarVinculos()
     api
       .get<Prestador>("/prestador")
       .then((p) => {
@@ -192,6 +199,9 @@ export function NfsePage() {
   }
 
   const competenciaFiltro = ano && mesFiltro ? `${ano}-${mesFiltro}` : ""
+  // "Só controle de recebimento" (sem_nota): tem notas importadas na lista,
+  // mas a Ana não gera nota pra ele — fica fora da Nova emissão.
+  const emissiveis = useMemo(() => vinculos.filter((v) => !v.sem_nota), [vinculos])
   const vinculoSelecionado = vinculos.find((v) => v.id === vinculoFiltro) ?? null
 
   // Filtro de pagamento aplicado no cliente (não no servidor, embora
@@ -346,7 +356,10 @@ export function NfsePage() {
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">NFS-e</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Todas as notas emitidas, por competência.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setModalNacional(true)} title="Trazer as notas já emitidas no Emissor Nacional">
+            <DownloadCloud size={16} /> Importar do Emissor Nacional
+          </Button>
           {/* CSV só pra quem usa relatório em planilha (Shopee) — ver
               "Como o valor chega" no cadastro do tomador (28/09/2026). */}
           {vinculos.some((v) => v.metodo_captura_valor === "csv") && (
@@ -360,9 +373,9 @@ export function NfsePage() {
           )}
           <Button
             variant="accent"
-            onClick={() => (vinculos.length > 0 ? setModalNova(true) : navigate("/app/tomadores/novo"))}
+            onClick={() => (emissiveis.length > 0 ? setModalNova(true) : navigate("/app/tomadores/novo"))}
             data-tour="nfse-nova"
-            title={vinculos.length > 0 ? undefined : "Cadastre um tomador primeiro"}
+            title={emissiveis.length > 0 ? undefined : "Cadastre um tomador primeiro"}
           >
             <Plus size={16} /> Nova emissão
           </Button>
@@ -643,9 +656,9 @@ export function NfsePage() {
         )}
       </Card>
 
-      {modalNova && vinculos.length > 0 && (
+      {modalNova && emissiveis.length > 0 && (
         <NovaEmissaoModal
-          vinculos={vinculos}
+          vinculos={emissiveis}
           aliquotaReferencia={aliquotaReferencia}
           ambienteTeste={ambienteTeste}
           vinculoInicial={searchParams.get("gerar")}
@@ -707,6 +720,15 @@ export function NfsePage() {
           onFechar={() => {
             marcarLoteFechado(lote.id)
             setLote(null)
+          }}
+        />
+      )}
+      {modalNacional && (
+        <ImportarNacionalModal
+          onClose={() => setModalNacional(false)}
+          onConcluido={() => {
+            recarregar()
+            carregarVinculos()
           }}
         />
       )}

@@ -8,6 +8,7 @@ import { CampoCidade } from "../components/ui/CampoCidade"
 import { CampoServico, formatarCodigoServico } from "../components/ui/CampoServico"
 import { Field, FieldWrap } from "../components/ui/Field"
 import { ApiError, api, formatarErro } from "../lib/api"
+import { formatarDocumento } from "../lib/documento"
 import { competenciaAtual } from "../lib/format"
 import type { ConsultaCnpj, FormaEnvio, Prestador, Tomador, VinculoCriarRequest, VinculoDetalhe, VinculoResumo } from "../lib/types"
 
@@ -70,6 +71,8 @@ interface FormState {
   portal_url: string
   cod_nbs: string
   incluir_intermediario: boolean
+  /** Só controle de recebimento — a Ana não gera nota pra este tomador. */
+  sem_nota: boolean
 }
 
 const ESTADO_INICIAL: FormState = {
@@ -91,6 +94,7 @@ const ESTADO_INICIAL: FormState = {
   portal_url: "",
   cod_nbs: "",
   incluir_intermediario: false,
+  sem_nota: false,
 }
 
 // 29/09/2026: "cada tomador pede a nota de um jeito" — portal próprio,
@@ -196,6 +200,7 @@ export function VinculoFormPage() {
           portal_url: v.portal_url ?? "",
           cod_nbs: mascaraNbs(v.cod_nbs ?? ""),
           incluir_intermediario: Boolean(v.incluir_intermediario),
+          sem_nota: Boolean(v.sem_nota),
         })
         setTomadorSelecionado(v.tomador)
         // Abre a seção do e-mail se o tomador já tem algo personalizado.
@@ -343,12 +348,17 @@ export function VinculoFormPage() {
     }
     setEnviando(true)
     try {
+      // "Só controle": os campos de emissão ficam escondidos, mas a API ainda
+      // pede código e descrição — vai o que estiver no formulário ou um padrão
+      // (o código mais usado nos seus tomadores; 17.06.01 se não houver).
+      const codigo = form.cod_trib_nacional || (form.sem_nota ? meusCodigos[0] || "170601" : "")
+      const descricao = form.template_descricao.trim() || (form.sem_nota ? "Serviço prestado" : form.template_descricao)
       const base = {
         apelido: form.apelido.trim(),
         cod_local_prestacao: form.cod_local_prestacao,
-        cod_trib_nacional: form.cod_trib_nacional,
+        cod_trib_nacional: codigo,
         cod_trib_municipal: form.cod_trib_municipal || null,
-        template_descricao: form.template_descricao,
+        template_descricao: descricao,
         serie: form.serie,
         metodo_captura_valor: form.metodo_captura_valor,
         requer_revisao: form.requer_revisao,
@@ -365,6 +375,7 @@ export function VinculoFormPage() {
         portal_url: form.portal_url.trim() || null,
         cod_nbs: nbs || null,
         incluir_intermediario: form.incluir_intermediario,
+        sem_nota: form.sem_nota,
       }
 
       if (editando && id) {
@@ -423,7 +434,9 @@ export function VinculoFormPage() {
             <Card className="p-5">
               <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Tomador</h2>
               <p className="font-medium text-slate-800 dark:text-slate-200">{tomadorSelecionado.razao_social}</p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">{tomadorSelecionado.cnpj}</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {tomadorSelecionado.cnpj ? formatarDocumento(tomadorSelecionado.cnpj) : "Sem CNPJ (só controle)"}
+              </p>
             </Card>
           )
         ) : (
@@ -567,7 +580,38 @@ export function VinculoFormPage() {
         )}
 
         <Card className="p-5">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Regras de emissão</h2>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            {form.sem_nota ? "Cadastro" : "Regras de emissão"}
+          </h2>
+
+          <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={form.sem_nota}
+              onChange={(e) => atualizarCampo("sem_nota", e.target.checked)}
+              className="peer sr-only"
+            />
+            <span
+              aria-hidden
+              className="relative mt-0.5 inline-flex h-5 w-9 shrink-0 rounded-full bg-slate-300 transition-colors peer-checked:bg-primary-600 peer-focus-visible:ring-2 peer-focus-visible:ring-primary-300 dark:bg-slate-600 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-4"
+            />
+            <span className="text-sm text-slate-700 dark:text-slate-300">
+              Só controle de recebimento (a Ana não gera nota pra este tomador)
+              <span className="mt-0.5 block text-xs text-slate-400 dark:text-slate-500">
+                {form.sem_nota
+                  ? "Os dados de emissão ficam guardados, só escondidos — desligue pra ver e editar."
+                  : "Pra fontes de receita sem nota pela Ana: parcerias, pessoa física, exterior, notas importadas."}
+              </span>
+            </span>
+          </label>
+          {editando && tomadorSelecionado && !tomadorSelecionado.cnpj && !form.sem_nota && (
+            <p className="mb-4 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
+              Este tomador não tem CNPJ cadastrado — sem ele a Ana não consegue gerar nota. Deixe como “só controle” ou cadastre o
+              tomador com CNPJ.
+            </p>
+          )}
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field
               label="Apelido"
@@ -583,124 +627,132 @@ export function VinculoFormPage() {
               onChange={(codigo) => atualizarCampo("cod_local_prestacao", codigo)}
               hint="Normalmente é a sua própria cidade."
             />
-            <div className="sm:col-span-2" data-tour="form-codigo">
-              <CampoServico
-                label="Código do serviço (lista nacional)"
-                required
-                codigo={form.cod_trib_nacional}
-                onChange={(codigo) => atualizarCampo("cod_trib_nacional", codigo)}
-                destaques={destaquesCodigo}
-                hint="Afiliados costumam usar 17.06.01 (propaganda e publicidade) — confirme com seu contador."
-              />
-            </div>
-            <Field
-              label="Código de tributação municipal"
-              value={form.cod_trib_municipal}
-              onChange={(e) => atualizarCampo("cod_trib_municipal", e.target.value)}
-              hint="Opcional — só se a sua prefeitura exigir."
-            />
-            <Field
-              label="Código NBS"
-              inputMode="numeric"
-              value={form.cod_nbs}
-              onChange={(e) => atualizarCampo("cod_nbs", mascaraNbs(e.target.value))}
-              placeholder="1.1406.20.00"
-              hint="Opcional. Alguns municípios/tomadores exigem. Nomenclatura Brasileira de Serviços, 9 dígitos."
-            />
-            <Field label="Série" required value={form.serie} onChange={(e) => atualizarCampo("serie", e.target.value)} hint="Deixe 1 se não souber." />
-          </div>
-
-          <div data-tour="form-descricao" className="mt-5">
-            <p className="mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">Descrição do serviço na nota</p>
-            <div className="rounded-lg border border-primary-100 bg-primary-50/60 px-3 py-2.5 dark:border-primary-900/40 dark:bg-primary-900/20">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-600 dark:text-primary-300">
-                Na nota deste mês vai sair assim
-              </p>
-              <p className="mt-0.5 text-sm text-slate-800 dark:text-slate-100">
-                {form.template_descricao ? previaDescricao(form.template_descricao) : <span className="text-slate-400">—</span>}
-              </p>
-            </div>
-
-            {modelosDescricao.filter((m) => m !== form.template_descricao).length > 0 && (
-              <div className="mt-2 flex flex-col gap-1.5">
-                {modelosDescricao
-                  .filter((m) => m !== form.template_descricao)
-                  .map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => atualizarCampo("template_descricao", m)}
-                      className="flex items-start gap-2 rounded-lg border border-dashed border-accent-200 px-3 py-2 text-left text-xs text-slate-600 hover:border-accent-400 hover:bg-accent-50/50 dark:border-accent-900/50 dark:text-slate-300"
-                    >
-                      <Sparkles size={14} className="mt-0.5 shrink-0 text-accent-500" />
-                      <span>
-                        <span className="font-semibold text-accent-700 dark:text-accent-200">Usar a já cadastrada pra este tomador: </span>
-                        {previaDescricao(m)}
-                      </span>
-                    </button>
-                  ))}
+            {!form.sem_nota && (
+              <>
+              <div className="sm:col-span-2" data-tour="form-codigo">
+                <CampoServico
+                  label="Código do serviço (lista nacional)"
+                  required
+                  codigo={form.cod_trib_nacional}
+                  onChange={(codigo) => atualizarCampo("cod_trib_nacional", codigo)}
+                  destaques={destaquesCodigo}
+                  hint="Afiliados costumam usar 17.06.01 (propaganda e publicidade) — confirme com seu contador."
+                />
               </div>
+              <Field
+                label="Código de tributação municipal"
+                value={form.cod_trib_municipal}
+                onChange={(e) => atualizarCampo("cod_trib_municipal", e.target.value)}
+                hint="Opcional — só se a sua prefeitura exigir."
+              />
+              <Field
+                label="Código NBS"
+                inputMode="numeric"
+                value={form.cod_nbs}
+                onChange={(e) => atualizarCampo("cod_nbs", mascaraNbs(e.target.value))}
+                placeholder="1.1406.20.00"
+                hint="Opcional. Alguns municípios/tomadores exigem. Nomenclatura Brasileira de Serviços, 9 dígitos."
+              />
+              <Field label="Série" required value={form.serie} onChange={(e) => atualizarCampo("serie", e.target.value)} hint="Deixe 1 se não souber." />
+              </>
             )}
-
-            <textarea
-              required
-              aria-label="Modelo da descrição"
-              value={form.template_descricao}
-              onChange={(e) => atualizarCampo("template_descricao", e.target.value)}
-              rows={2}
-              placeholder={MODELOS_PADRAO[0]}
-              className={`mt-2 ${classeInput}`}
-            />
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
-              <span>Partes que mudam sozinhas todo mês:</span>
-              {[
-                ["{mes_nome_upper}", "mês (SETEMBRO)"],
-                ["{ano}", "ano (2026)"],
-                ["{competencia_mm_aaaa}", "mês/ano (09/2026)"],
-                ["{ordem}", "nº da ordem de pagamento"],
-              ].map(([token, rotulo]) => (
-                <button
-                  key={token}
-                  type="button"
-                  onClick={() => atualizarCampo("template_descricao", `${form.template_descricao}${form.template_descricao && !form.template_descricao.endsWith(" ") ? " " : ""}${token}`)}
-                  className="rounded-full border border-slate-200 px-2 py-0.5 text-slate-500 hover:border-primary-300 hover:text-primary-700 dark:border-slate-600 dark:text-slate-400"
-                  title={`Inserir ${token}`}
-                >
-                  + {rotulo}
-                </button>
-              ))}
-            </div>
           </div>
 
-          <label className="mt-4 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-            <input
-              type="checkbox"
-              checked={form.requer_revisao}
-              onChange={(e) => atualizarCampo("requer_revisao", e.target.checked)}
-              className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-900"
-            />
-            Quero revisar cada nota antes de assinar
-          </label>
+          {!form.sem_nota && (
+            <>
+            <div data-tour="form-descricao" className="mt-5">
+              <p className="mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">Descrição do serviço na nota</p>
+              <div className="rounded-lg border border-primary-100 bg-primary-50/60 px-3 py-2.5 dark:border-primary-900/40 dark:bg-primary-900/20">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-600 dark:text-primary-300">
+                  Na nota deste mês vai sair assim
+                </p>
+                <p className="mt-0.5 text-sm text-slate-800 dark:text-slate-100">
+                  {form.template_descricao ? previaDescricao(form.template_descricao) : <span className="text-slate-400">—</span>}
+                </p>
+              </div>
 
-          <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700">
-            <input
-              type="checkbox"
-              role="switch"
-              checked={form.incluir_intermediario}
-              onChange={(e) => atualizarCampo("incluir_intermediario", e.target.checked)}
-              className="peer sr-only"
-            />
-            <span
-              aria-hidden
-              className="relative mt-0.5 inline-flex h-5 w-9 shrink-0 rounded-full bg-slate-300 transition-colors peer-checked:bg-primary-600 peer-focus-visible:ring-2 peer-focus-visible:ring-primary-300 dark:bg-slate-600 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-4"
-            />
-            <span className="text-sm text-slate-700 dark:text-slate-300">
-              Declarar o marketplace como intermediário
-              <span className="mt-0.5 block text-xs text-slate-400 dark:text-slate-500">
-                Nas notas emitidas para vendedores (ex.: Shopee), o tomador cadastrado aqui entra como intermediário na NFS-e.
+              {modelosDescricao.filter((m) => m !== form.template_descricao).length > 0 && (
+                <div className="mt-2 flex flex-col gap-1.5">
+                  {modelosDescricao
+                    .filter((m) => m !== form.template_descricao)
+                    .map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => atualizarCampo("template_descricao", m)}
+                        className="flex items-start gap-2 rounded-lg border border-dashed border-accent-200 px-3 py-2 text-left text-xs text-slate-600 hover:border-accent-400 hover:bg-accent-50/50 dark:border-accent-900/50 dark:text-slate-300"
+                      >
+                        <Sparkles size={14} className="mt-0.5 shrink-0 text-accent-500" />
+                        <span>
+                          <span className="font-semibold text-accent-700 dark:text-accent-200">Usar a já cadastrada pra este tomador: </span>
+                          {previaDescricao(m)}
+                        </span>
+                      </button>
+                    ))}
+                </div>
+              )}
+
+              <textarea
+                required
+                aria-label="Modelo da descrição"
+                value={form.template_descricao}
+                onChange={(e) => atualizarCampo("template_descricao", e.target.value)}
+                rows={2}
+                placeholder={MODELOS_PADRAO[0]}
+                className={`mt-2 ${classeInput}`}
+              />
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
+                <span>Partes que mudam sozinhas todo mês:</span>
+                {[
+                  ["{mes_nome_upper}", "mês (SETEMBRO)"],
+                  ["{ano}", "ano (2026)"],
+                  ["{competencia_mm_aaaa}", "mês/ano (09/2026)"],
+                  ["{ordem}", "nº da ordem de pagamento"],
+                ].map(([token, rotulo]) => (
+                  <button
+                    key={token}
+                    type="button"
+                    onClick={() => atualizarCampo("template_descricao", `${form.template_descricao}${form.template_descricao && !form.template_descricao.endsWith(" ") ? " " : ""}${token}`)}
+                    className="rounded-full border border-slate-200 px-2 py-0.5 text-slate-500 hover:border-primary-300 hover:text-primary-700 dark:border-slate-600 dark:text-slate-400"
+                    title={`Inserir ${token}`}
+                  >
+                    + {rotulo}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <label className="mt-4 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={form.requer_revisao}
+                onChange={(e) => atualizarCampo("requer_revisao", e.target.checked)}
+                className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-900"
+              />
+              Quero revisar cada nota antes de assinar
+            </label>
+
+            <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={form.incluir_intermediario}
+                onChange={(e) => atualizarCampo("incluir_intermediario", e.target.checked)}
+                className="peer sr-only"
+              />
+              <span
+                aria-hidden
+                className="relative mt-0.5 inline-flex h-5 w-9 shrink-0 rounded-full bg-slate-300 transition-colors peer-checked:bg-primary-600 peer-focus-visible:ring-2 peer-focus-visible:ring-primary-300 dark:bg-slate-600 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-4"
+              />
+              <span className="text-sm text-slate-700 dark:text-slate-300">
+                Declarar o marketplace como intermediário
+                <span className="mt-0.5 block text-xs text-slate-400 dark:text-slate-500">
+                  Nas notas emitidas para vendedores (ex.: Shopee), o tomador cadastrado aqui entra como intermediário na NFS-e.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+            </>
+          )}
 
           {editando && (
             <label className="mt-2 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
@@ -715,7 +767,7 @@ export function VinculoFormPage() {
           )}
         </Card>
 
-        {editando && (
+        {editando && !form.sem_nota && (
           <Card className="p-5">
             <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Como o valor chega</h2>
             <p className="mb-3 text-xs text-slate-400 dark:text-slate-500">Define o que aparece na hora de gerar a nota deste tomador.</p>
@@ -744,15 +796,17 @@ export function VinculoFormPage() {
             <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Calendário</h2>
             <p className="mb-3 text-xs text-slate-400 dark:text-slate-500">Opcional — aparece no Calendário e na lista de Tomadores.</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field
-                label="Dia de gerar a nota"
-                type="number"
-                min={1}
-                max={31}
-                value={form.dia_limite_emissao}
-                onChange={(e) => atualizarCampo("dia_limite_emissao", e.target.value)}
-                hint="Dia do mês — depois dele, o pagamento pode cair pro mês seguinte."
-              />
+              {!form.sem_nota && (
+                <Field
+                  label="Dia de gerar a nota"
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={form.dia_limite_emissao}
+                  onChange={(e) => atualizarCampo("dia_limite_emissao", e.target.value)}
+                  hint="Dia do mês — depois dele, o pagamento pode cair pro mês seguinte."
+                />
+              )}
               <Field
                 label="Dias até o pagamento cair"
                 type="number"
@@ -765,100 +819,102 @@ export function VinculoFormPage() {
           </Card>
         )}
 
-        <Card className="p-6">
-          <h2 className="mb-1 text-base font-semibold text-slate-800 dark:text-slate-200">Envio da nota</h2>
-          <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-            Como a nota chega a este tomador. Em cada nota dá pra mudar na hora — e o último jeito usado fica lembrado.
-          </p>
+        {!form.sem_nota && (
+          <Card className="p-6">
+            <h2 className="mb-1 text-base font-semibold text-slate-800 dark:text-slate-200">Envio da nota</h2>
+            <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+              Como a nota chega a este tomador. Em cada nota dá pra mudar na hora — e o último jeito usado fica lembrado.
+            </p>
 
-          <fieldset className="mb-5">
-            <legend className="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-300">Como este tomador recebe a nota</legend>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {FORMAS_ENVIO.map((f) => {
-                const Icone = f.icone
-                return (
-                  <label key={f.valor} className="relative cursor-pointer">
-                    <input
-                      type="radio"
-                      name="envio_canal"
-                      value={f.valor}
-                      checked={(form.envio_canal ?? "email") === f.valor}
-                      onChange={() => atualizarCampo("envio_canal", f.valor)}
-                      className="peer sr-only"
-                    />
-                    <span className="flex h-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-primary-300 peer-checked:border-primary-500 peer-checked:bg-primary-50 peer-checked:text-primary-800 peer-focus-visible:ring-2 peer-focus-visible:ring-primary-300 dark:border-slate-600 dark:text-slate-300 dark:peer-checked:bg-primary-900/30 dark:peer-checked:text-primary-200">
-                      <Icone size={15} className="shrink-0" aria-hidden />
-                      {f.titulo}
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
-            <p className="mt-1.5 text-xs text-slate-400 dark:text-slate-500">{DICA_FORMA[form.envio_canal ?? "email"]}</p>
-            {form.envio_canal === "portal" && (
-              <div className="mt-3">
-                <Field
-                  label="Link do portal"
-                  inputMode="url"
-                  autoComplete="url"
-                  value={form.portal_url}
-                  onChange={(e) => atualizarCampo("portal_url", e.target.value)}
-                  placeholder="https://fornecedores.empresa.com.br"
-                  maxLength={400}
-                  hint="Aparece como “Abrir portal” na hora de enviar cada nota."
-                />
+            <fieldset className="mb-5">
+              <legend className="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-300">Como este tomador recebe a nota</legend>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {FORMAS_ENVIO.map((f) => {
+                  const Icone = f.icone
+                  return (
+                    <label key={f.valor} className="relative cursor-pointer">
+                      <input
+                        type="radio"
+                        name="envio_canal"
+                        value={f.valor}
+                        checked={(form.envio_canal ?? "email") === f.valor}
+                        onChange={() => atualizarCampo("envio_canal", f.valor)}
+                        className="peer sr-only"
+                      />
+                      <span className="flex h-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-primary-300 peer-checked:border-primary-500 peer-checked:bg-primary-50 peer-checked:text-primary-800 peer-focus-visible:ring-2 peer-focus-visible:ring-primary-300 dark:border-slate-600 dark:text-slate-300 dark:peer-checked:bg-primary-900/30 dark:peer-checked:text-primary-200">
+                        <Icone size={15} className="shrink-0" aria-hidden />
+                        {f.titulo}
+                      </span>
+                    </label>
+                  )
+                })}
               </div>
-            )}
-          </fieldset>
+              <p className="mt-1.5 text-xs text-slate-400 dark:text-slate-500">{DICA_FORMA[form.envio_canal ?? "email"]}</p>
+              {form.envio_canal === "portal" && (
+                <div className="mt-3">
+                  <Field
+                    label="Link do portal"
+                    inputMode="url"
+                    autoComplete="url"
+                    value={form.portal_url}
+                    onChange={(e) => atualizarCampo("portal_url", e.target.value)}
+                    placeholder="https://fornecedores.empresa.com.br"
+                    maxLength={400}
+                    hint="Aparece como “Abrir portal” na hora de enviar cada nota."
+                  />
+                </div>
+              )}
+            </fieldset>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field
-              label="E-mail do tomador"
-              type="email"
-              value={form.email_contato}
-              onChange={(e) => atualizarCampo("email_contato", e.target.value)}
-              placeholder="financeiro@empresa.com"
-            />
-            <Field
-              label="WhatsApp do tomador"
-              type="tel"
-              value={form.whatsapp_contato}
-              onChange={(e) => atualizarCampo("whatsapp_contato", e.target.value)}
-              placeholder="(92) 99999-0000"
-            />
-          </div>
-
-          <details
-            className="group mt-5 rounded-xl border border-slate-200 dark:border-slate-700"
-            open={emailAberto}
-            onToggle={(e) => setEmailAberto(e.currentTarget.open)}
-          >
-            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
-              E-mail da nota pra este tomador
-              <span className="ml-2 text-xs font-normal text-slate-400">destinatário, cópia, assunto, texto e anexos</span>
-            </summary>
-            <div className="border-t border-slate-200 p-4 dark:border-slate-700">
-              <EditorModeloEmail
-                valor={form.email_modelo}
-                onChange={(v) => setForm((f) => ({ ...f, email_modelo: v }))}
-                herdado={{
-                  assunto: prestadorModelo?.email_assunto_padrao,
-                  mensagem: prestadorModelo?.email_mensagem_padrao,
-                  anexos: prestadorModelo?.email_anexos_padrao ?? null,
-                  rotulo: "o modelo padrão de Empresa › E-mails",
-                }}
-                mostrarCopia
-                dicaCopia={
-                  prestadorModelo?.email_copia_padrao
-                    ? `Além destes, vai cópia pra ${prestadorModelo.email_copia_padrao} (Empresa › E-mails).`
-                    : undefined
-                }
-                mostrarPara
-                paraPadrao={form.email_contato.trim() || null}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field
+                label="E-mail do tomador"
+                type="email"
+                value={form.email_contato}
+                onChange={(e) => atualizarCampo("email_contato", e.target.value)}
+                placeholder="financeiro@empresa.com"
+              />
+              <Field
+                label="WhatsApp do tomador"
+                type="tel"
+                value={form.whatsapp_contato}
+                onChange={(e) => atualizarCampo("whatsapp_contato", e.target.value)}
+                placeholder="(92) 99999-0000"
               />
             </div>
-          </details>
-        </Card>
+
+            <details
+              className="group mt-5 rounded-xl border border-slate-200 dark:border-slate-700"
+              open={emailAberto}
+              onToggle={(e) => setEmailAberto(e.currentTarget.open)}
+            >
+              <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                E-mail da nota pra este tomador
+                <span className="ml-2 text-xs font-normal text-slate-400">destinatário, cópia, assunto, texto e anexos</span>
+              </summary>
+              <div className="border-t border-slate-200 p-4 dark:border-slate-700">
+                <EditorModeloEmail
+                  valor={form.email_modelo}
+                  onChange={(v) => setForm((f) => ({ ...f, email_modelo: v }))}
+                  herdado={{
+                    assunto: prestadorModelo?.email_assunto_padrao,
+                    mensagem: prestadorModelo?.email_mensagem_padrao,
+                    anexos: prestadorModelo?.email_anexos_padrao ?? null,
+                    rotulo: "o modelo padrão de Empresa › E-mails",
+                  }}
+                  mostrarCopia
+                  dicaCopia={
+                    prestadorModelo?.email_copia_padrao
+                      ? `Além destes, vai cópia pra ${prestadorModelo.email_copia_padrao} (Empresa › E-mails).`
+                      : undefined
+                  }
+                  mostrarPara
+                  paraPadrao={form.email_contato.trim() || null}
+                />
+              </div>
+            </details>
+          </Card>
+        )}
 
         <div className="flex justify-end gap-3">
           <Button type="button" variant="outline" onClick={() => navigate("/app/tomadores")}>
