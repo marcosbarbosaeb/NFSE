@@ -1,4 +1,4 @@
-import { CalendarDays, FileText, Home, Settings, TrendingDown, Users, Wallet } from "lucide-react"
+import { CalendarDays, FileText, Home, Settings, Users, Wallet } from "lucide-react"
 import { NavLink } from "react-router-dom"
 import { MAILTO_SUPORTE } from "../../lib/contato"
 import { AnaAvatar, Marca } from "../brand/Marca"
@@ -11,20 +11,19 @@ const ITENS = [
   { to: "/app/nfse", label: "NFS-e", icon: FileText },
   { to: "/app/tomadores", label: "Tomadores", icon: Users },
   { to: "/app/calendario", label: "Calendário", icon: CalendarDays },
-  { to: "/app/recebimentos", label: "Recebimentos", icon: Wallet },
-  { to: "/app/despesas", label: "Despesas", icon: TrendingDown },
+  { to: "/app/financeiro", label: "Financeiro", icon: Wallet },
   { to: "/app/configuracoes", label: "Configurações", icon: Settings },
 ]
 
 export function Sidebar() {
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col justify-between bg-brand-900 px-4 py-6 text-slate-300">
+    <aside className="sticky top-0 flex h-screen w-64 shrink-0 self-start flex-col justify-between bg-brand-900 px-4 py-6 text-slate-300">
       <div>
         <div className="mb-8 flex items-center gap-2 px-2">
           <Marca escuro subtitulo="Emissor de notas" />
         </div>
 
-        <nav className="flex flex-col gap-1">
+        <nav className="flex flex-col gap-1" data-tour="menu">
           {ITENS.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}

@@ -257,9 +257,15 @@ export function LandingPage() {
                 <LinkEmissor to={logado ? "/app" : "/cadastro"} className={BTN_PRINCIPAL}>
                   {logado ? "Ir para o painel" : "Começar grátis"} <ArrowRight size={18} />
                 </LinkEmissor>
-                <a href="#como-funciona" className={BTN_SECUNDARIO}>
-                  Ver como funciona
-                </a>
+                {logado ? (
+                  <a href="#como-funciona" className={BTN_SECUNDARIO}>
+                    Ver como funciona
+                  </a>
+                ) : (
+                  <LinkEmissor to="/simulacao" className={BTN_SECUNDARIO}>
+                    Testar sem cadastro
+                  </LinkEmissor>
+                )}
               </div>
               <ul className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
                 {["14 dias grátis", "Sem cartão pra começar", "NFS-e padrão nacional"].map((t) => (
@@ -389,6 +395,11 @@ export function LandingPage() {
             <LinkEmissor to={logado ? "/app" : "/cadastro"} className={`${BTN_PRINCIPAL} mt-8`}>
               {logado ? "Ir para o painel" : "Começar grátis por 14 dias"} <ArrowRight size={18} />
             </LinkEmissor>
+            {!logado && (
+              <LinkEmissor to="/simulacao" className="mt-4 text-sm font-medium text-slate-500 underline-offset-4 hover:text-accent-600 hover:underline dark:text-slate-400">
+                ou teste antes num ambiente de simulação, sem cadastro
+              </LinkEmissor>
+            )}
           </div>
         </section>
       </main>

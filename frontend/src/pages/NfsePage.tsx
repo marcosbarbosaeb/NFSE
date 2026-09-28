@@ -1,6 +1,6 @@
-import { CheckCircle2, Clock, FileText, FileUp, Plus, Search } from "lucide-react"
+import { CheckCircle2, Clock, FileSpreadsheet, FileText, FileUp, Keyboard, Plus, Search } from "lucide-react"
 import { type FormEvent, useEffect, useMemo, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
@@ -55,7 +55,10 @@ export function NfsePage() {
   const [vinculos, setVinculos] = useState<VinculoResumo[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
-  const [modalNova, setModalNova] = useState(false)
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  // Vindo do botão "Gerar" da aba Tomadores: ?gerar=<vínculo>&competencia=AAAA-MM
+  const [modalNova, setModalNova] = useState(Boolean(searchParams.get("gerar")))
   const [modalCsv, setModalCsv] = useState(false)
   // Marco 16, item 5 — só pra pré-preencher aliq_sn na Nova emissão (ver
   // NovaEmissaoModal abaixo); nunca aplicada sem o usuário poder confirmar.
@@ -120,10 +123,10 @@ export function NfsePage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">Todas as notas emitidas, por competência.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setModalCsv(true)}>
+          <Button variant="outline" onClick={() => setModalCsv(true)} data-tour="nfse-csv">
             <FileUp size={16} /> Importar CSV
           </Button>
-          <Button variant="accent" onClick={() => setModalNova(true)}>
+          <Button variant="accent" onClick={() => setModalNova(true)} data-tour="nfse-nova">
             <Plus size={16} /> Nova emissão
           </Button>
         </div>
@@ -245,14 +248,24 @@ export function NfsePage() {
         )}
       </Card>
 
-      {modalNova && (
+      {modalNova && vinculos.length > 0 && (
         <NovaEmissaoModal
           vinculos={vinculos}
           aliquotaReferencia={aliquotaReferencia}
-          onClose={() => setModalNova(false)}
-          onCriada={() => {
+          vinculoInicial={searchParams.get("gerar")}
+          competenciaInicial={searchParams.get("competencia")}
+          onClose={() => {
             setModalNova(false)
-            recarregar()
+            if (searchParams.get("gerar")) navigate("/app/nfse", { replace: true })
+          }}
+          onEscolherCsv={() => {
+            setModalNova(false)
+            setModalCsv(true)
+          }}
+          onCriada={(emissao) => {
+            setModalNova(false)
+            if (searchParams.get("gerar")) navigate(`/app/nfse/${emissao.id}`)
+            else recarregar()
           }}
         />
       )}
@@ -269,22 +282,36 @@ export function NfsePage() {
 function NovaEmissaoModal({
   vinculos,
   aliquotaReferencia,
+  vinculoInicial,
+  competenciaInicial,
   onClose,
+  onEscolherCsv,
   onCriada,
 }: {
   vinculos: VinculoResumo[]
   aliquotaReferencia: number | null
+  vinculoInicial?: string | null
+  competenciaInicial?: string | null
   onClose: () => void
+  onEscolherCsv: () => void
   onCriada: (emissao: Emissao) => void
 }) {
-  const [vinculoId, setVinculoId] = useState(vinculos[0]?.id ?? "")
-  const [competencia, setCompetencia] = useState(competenciaAtual())
+  const [vinculoId, setVinculoId] = useState(
+    vinculoInicial && vinculos.some((v) => v.id === vinculoInicial) ? vinculoInicial : (vinculos[0]?.id ?? ""),
+  )
+  const [competencia, setCompetencia] = useState(
+    competenciaInicial && /^\d{4}-\d{2}$/.test(competenciaInicial) ? competenciaInicial : competenciaAtual(),
+  )
   const [valor, setValor] = useState("")
   const [ordem, setOrdem] = useState("")
   // Pré-preenchida com a alíquota de referência de Configurações, quando
   // existir — sempre editável, nunca aplicada sem a pessoa ver/confirmar
   // (mesma alíquota que o backend também aceita None e não assume nada).
   const [aliqSn, setAliqSn] = useState<number | null>(aliquotaReferencia)
+  // A referência pode chegar depois do modal abrir (atalho "Gerar" da aba Tomadores).
+  useEffect(() => {
+    if (aliquotaReferencia != null) setAliqSn((atual) => atual ?? aliquotaReferencia)
+  }, [aliquotaReferencia])
   const [tpAmb, setTpAmb] = useState<"1" | "2">("2")
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -349,7 +376,35 @@ function NovaEmissaoModal({
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
 
-        <FieldWrap label="Fornecedor">
+        {/* "Na hora da geração a pessoa pode escolher como carregar" (28/09/2026)
+            — o método deixou de ser fixo no cadastro do tomador. */}
+        <FieldWrap label="Como você quer informar o valor?">
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              className="flex flex-col items-center gap-1 rounded-lg border border-primary-500 bg-primary-50 px-2 py-2 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-200"
+            >
+              <Keyboard size={16} /> Digitar
+            </button>
+            <button
+              type="button"
+              onClick={onEscolherCsv}
+              className="flex flex-col items-center gap-1 rounded-lg border border-slate-300 px-2 py-2 text-xs font-medium text-slate-600 hover:border-primary-300 hover:text-primary-700 dark:border-slate-600 dark:text-slate-300"
+            >
+              <FileSpreadsheet size={16} /> Planilha (CSV)
+            </button>
+            <button
+              type="button"
+              disabled
+              title="Em breve: mande o PDF do relatório de comissões e a Ana lê o valor"
+              className="flex flex-col items-center gap-1 rounded-lg border border-dashed border-slate-300 px-2 py-2 text-xs font-medium text-slate-400 dark:border-slate-600"
+            >
+              <FileText size={16} /> PDF (em breve)
+            </button>
+          </div>
+        </FieldWrap>
+
+        <FieldWrap label="Tomador">
           <select
             required
             value={vinculoId}

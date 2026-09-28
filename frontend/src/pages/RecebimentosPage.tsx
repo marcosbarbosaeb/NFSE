@@ -91,7 +91,7 @@ export function RecebimentosPage() {
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-slate-100 dark:border-slate-700/60 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                <th className="py-2 font-medium">Fornecedor</th>
+                <th className="py-2 font-medium">Tomador</th>
                 <th className="py-2 font-medium">Competência</th>
                 <th className="py-2 font-medium">Valor</th>
                 <th className="py-2 font-medium">Data do recebimento</th>
@@ -144,7 +144,7 @@ export function RecebimentosPage() {
   )
 }
 
-function RegistrarPagamentoModal({
+export function RegistrarPagamentoModal({
   vinculos,
   onClose,
   onRegistrado,
@@ -254,12 +254,25 @@ interface LinhaRevisao {
  * revisão (ver docstring de app/services/extrato_pdf.py: a extração é
  * heurística, nunca decide sozinha o que vira pagamento de verdade). */
 function chutarVinculo(descricao: string, vinculos: VinculoResumo[]): string {
-  const alvo = descricao.toLowerCase()
-  const candidatos = vinculos.filter((v) => alvo.includes(v.apelido.toLowerCase()))
+  const alvo = semAcento(descricao)
+  const digitos = descricao.replace(/\D/g, "")
+  // 1) CNPJ do tomador na descrição (Pix/TED costumam trazer)
+  const porCnpj = vinculos.filter((v) => digitos.includes(v.tomador_cnpj) || digitos.includes(v.tomador_cnpj.slice(0, 8)))
+  if (porCnpj.length === 1) return porCnpj[0].id
+  // 2) apelido, ou a primeira palavra "forte" da razão social
+  const candidatos = vinculos.filter((v) => {
+    if (alvo.includes(semAcento(v.apelido))) return true
+    const palavra = semAcento(v.tomador_razao_social).split(/\s+/).find((p) => p.length >= 4)
+    return palavra ? alvo.includes(palavra) : false
+  })
   return candidatos.length === 1 ? candidatos[0].id : ""
 }
 
-function ImportarExtratoModal({
+function semAcento(texto: string): string {
+  return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+}
+
+export function ImportarExtratoModal({
   vinculos,
   onClose,
   onImportado,
@@ -274,6 +287,8 @@ function ImportarExtratoModal({
   const [linhas, setLinhas] = useState<LinhaRevisao[] | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [resultado, setResultado] = useState<ConfirmarExtratoResultado | null>(null)
+  const [info, setInfo] = useState<{ formato?: string; linhas_lidas?: number } | null>(null)
+  const [soEntradas, setSoEntradas] = useState(true)
 
   async function extrair(e: FormEvent) {
     e.preventDefault()
@@ -284,6 +299,7 @@ function ImportarExtratoModal({
       const form = new FormData()
       form.append("arquivo", arquivo)
       const resp = await api.postForm<ExtratoExtraido>("/recebimentos/extrato", form)
+      setInfo({ formato: resp.formato, linhas_lidas: resp.linhas_lidas })
       setLinhas(
         resp.transacoes.map((t: TransacaoExtraida) => ({
           linha: t.linha,
@@ -332,19 +348,20 @@ function ImportarExtratoModal({
   }
 
   return (
-    <Modal titulo="Importar extrato bancário (PDF)" onClose={onClose} largura="max-w-3xl">
+    <Modal titulo="Importar extrato bancário" onClose={onClose} largura="max-w-3xl">
       {!linhas && (
         <form onSubmit={extrair} className="flex flex-col gap-4">
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Envie o PDF do extrato — a gente tenta reconhecer as transações automaticamente (data, descrição e valor) pra você
-            revisar e casar com o fornecedor antes de registrar qualquer recebimento.
+            Envie o extrato do seu banco em <strong>PDF</strong>, <strong>OFX</strong> ou <strong>CSV</strong> — a gente reconhece as
+            transações (data, descrição e valor) pra você revisar e ligar cada entrada ao tomador antes de registrar qualquer
+            recebimento. Dica: no app do banco, a opção “exportar OFX” é a que funciona melhor.
           </p>
           {erroExtracao && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erroExtracao}</p>}
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Arquivo PDF</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Arquivo do extrato</span>
             <input
               type="file"
-              accept=".pdf,application/pdf"
+              accept=".pdf,.ofx,.csv,.txt,application/pdf,text/csv"
               required
               onChange={(e) => setArquivo(e.target.files?.[0] ?? null)}
               className="text-sm"
@@ -355,7 +372,7 @@ function ImportarExtratoModal({
               Cancelar
             </Button>
             <Button type="submit" variant="accent" disabled={extraindo || !arquivo}>
-              {extraindo ? "Lendo o PDF..." : "Extrair transações"}
+              {extraindo ? "Lendo o extrato..." : "Extrair transações"}
             </Button>
           </div>
         </form>
@@ -365,15 +382,20 @@ function ImportarExtratoModal({
         <div className="flex flex-col gap-4">
           {linhas.length === 0 ? (
             <p className="rounded-lg bg-warning-50 px-4 py-3 text-sm text-warning-700">
-              Não encontramos nenhuma transação reconhecível neste PDF — ele pode ser uma imagem escaneada, ou usar um formato
-              que a gente ainda não entende. Você pode registrar os recebimentos manualmente.
+              {info?.formato === "pdf" && !info.linhas_lidas
+                ? "Esse PDF não tem texto — parece uma imagem ou foto do extrato. Baixe o extrato de novo no app do banco (de preferência em OFX) e tente outra vez."
+                : `Não encontramos nenhuma transação reconhecível neste arquivo${info?.linhas_lidas ? ` (lemos ${info.linhas_lidas} linhas)` : ""}. Tente exportar o extrato em OFX, ou mande o arquivo pro suporte pra gente ensinar a Ana a ler o formato do seu banco.`}
             </p>
           ) : (
             <>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Encontramos {linhas.length} transaç{linhas.length === 1 ? "ão" : "ões"}. Marque as que são recebimentos de
-                verdade e escolha o fornecedor de cada uma antes de confirmar.
+                Encontramos {linhas.length} transaç{linhas.length === 1 ? "ão" : "ões"} ({linhas.filter((l) => l.credito).length} entradas).
+                Marque as que são pagamentos dos seus tomadores e escolha de quem é cada uma antes de confirmar.
               </p>
+              <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                <input type="checkbox" checked={soEntradas} onChange={(e) => setSoEntradas(e.target.checked)} />
+                Mostrar só entradas (dinheiro que chegou)
+              </label>
               {erroExtracao && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erroExtracao}</p>}
               <div className="max-h-96 overflow-y-auto rounded-lg border border-slate-100 dark:border-slate-700/60">
                 <table className="w-full text-left text-sm">
@@ -381,13 +403,13 @@ function ImportarExtratoModal({
                     <tr className="border-b border-slate-100 dark:border-slate-700/60 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                       <th className="py-2 pl-3 font-medium"></th>
                       <th className="py-2 font-medium">Descrição</th>
-                      <th className="py-2 font-medium">Fornecedor</th>
+                      <th className="py-2 font-medium">Tomador</th>
                       <th className="py-2 font-medium">Competência</th>
                       <th className="py-2 pr-3 font-medium">Valor (R$)</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {linhas.map((l) => (
+                    {linhas.filter((l) => !soEntradas || l.credito || l.incluir).map((l) => (
                       <tr key={l.linha} className="border-b border-slate-50 dark:border-slate-700/40 last:border-0 align-top">
                         <td className="py-2 pl-3">
                           <input type="checkbox" checked={l.incluir} onChange={(e) => atualizarLinha(l.linha, { incluir: e.target.checked })} />

@@ -109,7 +109,7 @@ export function DespesasPage() {
   )
 }
 
-function RegistrarDespesaModal({ onClose, onRegistrada }: { onClose: () => void; onRegistrada: () => void }) {
+export function RegistrarDespesaModal({ onClose, onRegistrada }: { onClose: () => void; onRegistrada: () => void }) {
   const [categoria, setCategoria] = useState("")
   const [competencia, setCompetencia] = useState(competenciaAtual())
   const [valor, setValor] = useState("")

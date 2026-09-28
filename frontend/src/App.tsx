@@ -10,13 +10,13 @@ import { CalendarioPage } from "./pages/CalendarioPage"
 import { ConfiguracoesPage } from "./pages/ConfiguracoesPage"
 import { ConfirmarEmailPage } from "./pages/ConfirmarEmailPage"
 import { DashboardPage } from "./pages/DashboardPage"
-import { DespesasPage } from "./pages/DespesasPage"
 import { EmissaoDetalhePage } from "./pages/EmissaoDetalhePage"
+import { FinanceiroPage } from "./pages/FinanceiroPage"
 import { LandingPage } from "./pages/LandingPage"
 import { PrivacidadePage, TermosPage } from "./pages/LegalPage"
+import { SimulacaoPage } from "./pages/SimulacaoPage"
 import { LoginPage } from "./pages/LoginPage"
 import { NfsePage } from "./pages/NfsePage"
-import { RecebimentosPage } from "./pages/RecebimentosPage"
 import { TomadoresPage } from "./pages/TomadoresPage"
 import { VinculoFormPage } from "./pages/VinculoFormPage"
 
@@ -38,6 +38,7 @@ export default function App() {
           <Route path="/termos" element={<TermosPage />} />
           <Route path="/entrar" element={<SoNoEmissor><LoginPage /></SoNoEmissor>} />
           <Route path="/cadastro" element={<SoNoEmissor><CadastroPage /></SoNoEmissor>} />
+          <Route path="/simulacao" element={<SoNoEmissor><SimulacaoPage /></SoNoEmissor>} />
           <Route path="/confirmar-email" element={<SoNoEmissor><ConfirmarEmailPage /></SoNoEmissor>} />
           <Route
             path="/app"
@@ -56,8 +57,10 @@ export default function App() {
             <Route path="tomadores/novo" element={<VinculoFormPage />} />
             <Route path="tomadores/:id" element={<VinculoFormPage />} />
             <Route path="calendario" element={<CalendarioPage />} />
-            <Route path="recebimentos" element={<RecebimentosPage />} />
-            <Route path="despesas" element={<DespesasPage />} />
+            <Route path="financeiro" element={<FinanceiroPage />} />
+            {/* Recebimentos e Despesas viraram uma aba só (28/09/2026). */}
+            <Route path="recebimentos" element={<Navigate to="/app/financeiro" replace />} />
+            <Route path="despesas" element={<Navigate to="/app/financeiro?aba=despesas" replace />} />
             <Route path="configuracoes" element={<ConfiguracoesPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -282,7 +282,7 @@ export function DashboardPage() {
             <Card className="p-5">
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Recebimentos</h2>
-                <Link to="/app/recebimentos" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
+                <Link to="/app/financeiro" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
                   Ver detalhes <ArrowRight size={14} />
                 </Link>
               </div>
@@ -307,8 +307,8 @@ export function DashboardPage() {
                 {[
                   { to: "/app/nfse", label: "Nova emissão", icon: FileText },
                   { to: "/app/tomadores", label: "Adicionar tomador", icon: UserPlus },
-                  { to: "/app/recebimentos", label: "Registrar recebimento", icon: Wallet },
-                  { to: "/app/despesas", label: "Registrar despesa", icon: TrendingDown },
+                  { to: "/app/financeiro", label: "Registrar recebimento", icon: Wallet },
+                  { to: "/app/financeiro?aba=despesas", label: "Registrar despesa", icon: TrendingDown },
                 ].map(({ to, label, icon: Icon }) => (
                   <Link key={to} to={to} className="flex items-center justify-between py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:text-primary-600">
                     <span className="flex items-center gap-2">

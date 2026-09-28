@@ -6,11 +6,12 @@ lado do catálogo de tomadores).
 Toda função aqui presume que `definir_prestador_atual` já foi chamado na
 sessão — a RLS cuida de só devolver/gravar vínculos do prestador certo.
 """
+import datetime
 import uuid
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import PrestadorTomador
+from app.models import Emissao, Prestador, PrestadorTomador, Tomador
 
 
 class ApelidoJaExisteError(Exception):
@@ -23,10 +24,84 @@ def listar_vinculos_ativos(db: Session) -> list[PrestadorTomador]:
     return (
         db.query(PrestadorTomador)
         .options(joinedload(PrestadorTomador.tomador))
-        .filter_by(ativo=True)
+        .filter(PrestadorTomador.ativo.is_(True), PrestadorTomador.excluido_em.is_(None))
         .order_by(PrestadorTomador.apelido)
         .all()
     )
+
+
+def listar_vinculos_da_tela(db: Session) -> list[PrestadorTomador]:
+    """Aba Tomadores (28/09/2026): ativos E inativos — "quando a pessoa
+    desmarcar ele não suma, mas vá pra baixo com uma cor diferente". Só os
+    excluídos ficam de fora. A ordem (dia de emissão, inativos por último)
+    é decidida em `ordenar_para_tela`."""
+    return (
+        db.query(PrestadorTomador)
+        .options(joinedload(PrestadorTomador.tomador))
+        .filter(PrestadorTomador.excluido_em.is_(None))
+        .all()
+    )
+
+
+def ordenar_para_tela(vinculos: list[PrestadorTomador]) -> list[PrestadorTomador]:
+    """Ativos primeiro; dentro de cada grupo, pelo dia de emissão (quem não
+    tem dia vai pro fim) e depois pelo apelido."""
+    return sorted(
+        vinculos,
+        key=lambda v: (not v.ativo, v.dia_limite_emissao is None, v.dia_limite_emissao or 0, v.apelido.lower()),
+    )
+
+
+def emissoes_da_competencia(db: Session, competencia: str) -> dict[uuid.UUID, Emissao]:
+    """Emissão ATIVA (não cancelada) de cada vínculo na competência — o
+    "gerado / não gerado" da aba Tomadores (mesmo critério do calendário e
+    do dashboard)."""
+    emissoes = (
+        db.query(Emissao)
+        .filter(Emissao.competencia == competencia, Emissao.estado != "cancelada")
+        .all()
+    )
+    return {e.prestador_tomador_id: e for e in emissoes}
+
+
+def excluir_vinculo(db: Session, vinculo: PrestadorTomador) -> str:
+    """Devolve 'apagado' (sem notas: some do banco) ou 'arquivado' (com
+    notas: fica no banco só pra as notas antigas continuarem íntegras, mas
+    sai de todas as listas)."""
+    tem_notas = db.query(Emissao.id).filter(Emissao.prestador_tomador_id == vinculo.id).first() is not None
+    if not tem_notas:
+        db.delete(vinculo)
+        db.flush()
+        return "apagado"
+    # Libera o apelido pra ser reusado num tomador novo (o apelido é único
+    # por prestador) — as notas antigas guardam o apelido original no
+    # snapshot, então não perdem nada.
+    carimbo = datetime.datetime.now(datetime.timezone.utc)
+    sufixo = f" (excluído {carimbo:%d/%m/%Y %H:%M:%S})"
+    vinculo.apelido = (vinculo.apelido[: 100 - len(sufixo)] + sufixo)
+    vinculo.ativo = False
+    vinculo.excluido_em = carimbo
+    db.flush()
+    return "arquivado"
+
+
+def registrar_sugestoes(db: Session, vinculo: PrestadorTomador) -> None:
+    """Guarda no catálogo (tomador, sem RLS) o que acabou de ser usado com
+    este tomador — vira a "prévia de sugestão de preenchimento" pra
+    próxima pessoa que for faturar o mesmo tomador. Contas de simulação não
+    ensinam nada ao catálogo."""
+    if db.query(Prestador.demo).filter_by(id=vinculo.prestador_id).scalar():
+        return
+    tomador = db.get(Tomador, vinculo.tomador_id)
+    if tomador is None:
+        return
+    tomador.sug_cod_trib_nacional = vinculo.cod_trib_nacional
+    tomador.sug_template_descricao = vinculo.template_descricao
+    if vinculo.dia_limite_emissao is not None:
+        tomador.sug_dia_emissao = vinculo.dia_limite_emissao
+    if vinculo.dias_para_recebimento is not None:
+        tomador.sug_dias_recebimento = vinculo.dias_para_recebimento
+    db.flush()
 
 
 def buscar_vinculo(db: Session, vinculo_id: uuid.UUID) -> PrestadorTomador | None:
@@ -39,6 +114,7 @@ def buscar_vinculo(db: Session, vinculo_id: uuid.UUID) -> PrestadorTomador | Non
 
 
 def _apelido_em_uso(db: Session, prestador_id: uuid.UUID, apelido: str, *, ignorar_id: uuid.UUID | None = None) -> bool:
+    apelido = apelido.strip()
     query = db.query(PrestadorTomador).filter_by(prestador_id=prestador_id, apelido=apelido)
     if ignorar_id is not None:
         query = query.filter(PrestadorTomador.id != ignorar_id)
@@ -71,6 +147,7 @@ def criar_vinculo(
     )
     db.add(vinculo)
     db.flush()
+    registrar_sugestoes(db, vinculo)
     return vinculo
 
 
@@ -88,4 +165,6 @@ def atualizar_vinculo(db: Session, vinculo: PrestadorTomador, **campos) -> Prest
     for campo, valor in campos.items():
         setattr(vinculo, campo, valor)
     db.flush()
+    if campos.keys() & {"cod_trib_nacional", "template_descricao", "dia_limite_emissao", "dias_para_recebimento"}:
+        registrar_sugestoes(db, vinculo)
     return vinculo

@@ -166,3 +166,91 @@ def test_endpoint_confirmar_extrato_item_invalido_da_erro_parcial(client):
     assert corpo["sucesso"] == 0
     assert corpo["erro"] == 1
     assert corpo["itens"][0]["ok"] is False
+
+
+# --- Revisão de 28/09/2026: leiautes reais de bancos + OFX/CSV ---------------
+
+from app.services.extrato_pdf import extrair_de_texto, extrair_extrato  # noqa: E402
+
+
+def _resumo(transacoes):
+    return [(t.data, t.valor, t.credito) for t in transacoes]
+
+
+def test_nubank_data_no_cabecalho_e_totais_ignorados():
+    linhas = [
+        "Extrato de 01 SET 2026 a 30 SET 2026",
+        "01 SET 2026 Total de entradas + 1.500,00",
+        "Transferência recebida pelo Pix 1.000,00",
+        "AWIN LTDA - 12.345.678/0001-90",
+        "Transferência enviada pelo Pix 200,00",
+        "02 SET 2026 Total de saídas - 50,00",
+        "Compra no débito Mercado 50,00",
+    ]
+    assert _resumo(extrair_de_texto(linhas)) == [
+        (date(2026, 9, 1), Decimal("1000.00"), True),
+        (date(2026, 9, 1), Decimal("200.00"), False),
+        (date(2026, 9, 2), Decimal("50.00"), False),
+    ]
+
+
+def test_inter_data_por_extenso_valor_com_rs_e_saldo_na_mesma_linha():
+    linhas = [
+        "1 de Setembro de 2026 Saldo do dia: R$ 2.000,00",
+        'Pix recebido: "Cp :60746948-AWIN" R$ 800,00 R$ 2.800,00',
+        'Pix enviado: "Fulano" -R$ 100,00 R$ 2.700,00',
+    ]
+    assert _resumo(extrair_de_texto(linhas)) == [
+        (date(2026, 9, 1), Decimal("800.00"), True),
+        (date(2026, 9, 1), Decimal("100.00"), False),
+    ]
+
+
+def test_itau_data_sem_ano_e_menos_no_fim():
+    linhas = ["Extrato conta corrente - 2026", "01/09 PIX TRANSF AWIN LTDA 1.234,56", "02/09 SISPAG FORNECEDORES 300,00-", "03/09 SALDO DO DIA 5.000,00"]
+    assert _resumo(extrair_de_texto(linhas)) == [
+        (date(2026, 9, 1), Decimal("1234.56"), True),
+        (date(2026, 9, 2), Decimal("300.00"), False),
+    ]
+
+
+def test_mercado_pago_data_com_traco():
+    linhas = [
+        "01-09-2026 Transferência Pix recebida Lomadee R$ 500,00 R$ 1.500,00",
+        "02-09-2026 Pagamento com QR Pix Padaria R$ -30,00 R$ 1.470,00",
+    ]
+    assert _resumo(extrair_de_texto(linhas)) == [
+        (date(2026, 9, 1), Decimal("500.00"), True),
+        (date(2026, 9, 2), Decimal("30.00"), False),
+    ]
+
+
+def test_ofx():
+    ofx = b"""OFXHEADER:100
+DATA:OFXSGML
+<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKTRANLIST>
+<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20260905120000[-3:BRT]<TRNAMT>950.00<FITID>1<MEMO>PIX RECEBIDO AWIN
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260906<TRNAMT>-120.00<FITID>2<MEMO>BOLETO CEMIG
+</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>"""
+    resultado = extrair_extrato(ofx, "extrato.ofx")
+    assert resultado.formato == "ofx"
+    assert _resumo(resultado.transacoes) == [
+        (date(2026, 9, 5), Decimal("950.00"), True),
+        (date(2026, 9, 6), Decimal("120.00"), False),
+    ]
+    assert resultado.transacoes[0].descricao == "PIX RECEBIDO AWIN"
+
+
+def test_csv_com_cabecalho():
+    conteudo = "Data;Descrição;Valor\n05/09/2026;Pix recebido AWIN;950,00\n06/09/2026;Boleto;-120,00\n".encode("cp1252")
+    resultado = extrair_extrato(conteudo, "extrato.csv")
+    assert resultado.formato == "csv"
+    assert _resumo(resultado.transacoes) == [
+        (date(2026, 9, 5), Decimal("950.00"), True),
+        (date(2026, 9, 6), Decimal("120.00"), False),
+    ]
+
+
+def test_formato_desconhecido_da_erro_claro():
+    with pytest.raises(PdfInvalidoError):
+        extrair_extrato(b"\x89PNG\r\n\x1a\n\x00\x00", "foto.png")

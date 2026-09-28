@@ -7,6 +7,7 @@ interface AuthState {
   carregando: boolean
   login: (email: string, senha: string) => Promise<void>
   loginComGoogle: () => Promise<void>
+  entrarNaSimulacao: () => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -44,13 +45,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = dados.url
   }
 
+  // Ambiente de simulação: cria uma conta descartável com dados de exemplo
+  // e já entra nela (ver backend/app/services/demo.py).
+  async function entrarNaSimulacao() {
+    const dados = await api.post<Usuario>("/demo")
+    setUsuario(dados)
+  }
+
   async function logout() {
     await api.post("/auth/logout")
     setUsuario(null)
   }
 
   return (
-    <AuthContext.Provider value={{ usuario, carregando, login, loginComGoogle, logout }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ usuario, carregando, login, loginComGoogle, entrarNaSimulacao, logout }}>{children}</AuthContext.Provider>
   )
 }
 

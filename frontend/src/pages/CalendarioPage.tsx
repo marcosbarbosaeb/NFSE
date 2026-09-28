@@ -15,7 +15,7 @@ const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
 // só existe pra primary. Um bg-warning-500/bg-success-500 aqui renderizaria
 // sem cor nenhuma (bolinha invisível), erro encontrado na 1ª verificação visual.
 const ESTILO_EVENTO: Record<TipoEventoCalendario, { dot: string; chip: string; label: string }> = {
-  prazo_emissao: { dot: "bg-warning-600", chip: "bg-warning-50 text-warning-700", label: "Prazo pra emitir a nota" },
+  prazo_emissao: { dot: "bg-warning-600", chip: "bg-warning-50 text-warning-700", label: "Dia de gerar a nota" },
   recebimento_previsto: { dot: "bg-primary-600", chip: "bg-primary-50 text-primary-700", label: "Previsão de recebimento" },
   recebimento_confirmado: { dot: "bg-success-600", chip: "bg-success-50 text-success-700", label: "Recebimento confirmado" },
   revisar_aliquota: { dot: "bg-slate-500", chip: "bg-slate-100 text-slate-700", label: "Revisar alíquota do Simples Nacional" },

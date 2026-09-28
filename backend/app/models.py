@@ -96,6 +96,9 @@ class Prestador(Base):
     # Regra do lembrete mensal de alíquota no calendário (dia do mês).
     # Nulo = dia 1 (padrão). Ver app/services/calendario.py.
     dia_lembrete_aliquota: Mapped[int | None] = mapped_column(SmallInteger)
+    # Conta do ambiente de simulação (ver app/services/demo.py): nunca fala
+    # com a Receita nem manda e-mail, e é apagada sozinha depois de um tempo.
+    demo: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
@@ -236,6 +239,15 @@ class Tomador(Base):
     # isto deixar de ser single-tenant, sem precisar de nova migração.
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="aprovado")
 
+    # Sugestões de preenchimento pra quem for faturar este tomador (ver
+    # migração c7e1a4d9b203): o último código de serviço, modelo de
+    # descrição, dia de emissão e prazo de pagamento usados com ele. Ficam
+    # no catálogo (sem RLS) de propósito — os vínculos têm RLS por prestador.
+    sug_cod_trib_nacional: Mapped[str | None] = mapped_column(String(6))
+    sug_template_descricao: Mapped[str | None] = mapped_column(Text)
+    sug_dia_emissao: Mapped[int | None] = mapped_column(SmallInteger)
+    sug_dias_recebimento: Mapped[int | None] = mapped_column(SmallInteger)
+
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
@@ -287,6 +299,9 @@ class PrestadorTomador(Base):
     # Marco 17 — pra onde mandar as notas deste fornecedor (envio direto).
     email_contato: Mapped[str | None] = mapped_column(String(200))
     whatsapp_contato: Mapped[str | None] = mapped_column(String(20))
+    # "Excluir tomador": vínculo com notas não pode sumir do banco (a nota
+    # aponta pra ele), então é marcado aqui e sai de todas as listas.
+    excluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(

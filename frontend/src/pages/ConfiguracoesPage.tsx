@@ -1,4 +1,4 @@
-import { CheckCircle2, KeyRound, Moon, Percent, ShieldAlert, Sun, UploadCloud } from "lucide-react"
+import { CheckCircle2, GraduationCap, KeyRound, Moon, Percent, ShieldAlert, Sun, Trash2, UploadCloud } from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
 import { useLocation } from "react-router-dom"
 import { Badge } from "../components/ui/Badge"
@@ -9,6 +9,8 @@ import { Field } from "../components/ui/Field"
 import { useAuth } from "../lib/auth"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useTheme } from "../lib/theme"
+import { definirTutorialAtivo, mostrarDicasDaTela, reverTodasAsDicas, tutorialAtivo } from "../lib/tutorial"
+import { Modal } from "../components/ui/Modal"
 import type { Assinatura, CertificadoStatus, CheckoutSessao, Prestador } from "../lib/types"
 
 export function ConfiguracoesPage() {
@@ -117,16 +119,28 @@ export function ConfiguracoesPage() {
         </div>
       </Card>
 
-      <Card className="p-5">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Minha conta</h2>
-        <div className="mb-4">
-          <p className="text-xs text-slate-400 dark:text-slate-500">E-mail de acesso</p>
-          <p className="text-sm text-slate-800 dark:text-slate-200">{usuario?.email}</p>
-        </div>
-        <TrocarSenhaForm />
-      </Card>
+      {usuario?.demo ? (
+        <Card className="p-5">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Conta de simulação</h2>
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Esta é uma conta de exemplo, apagada automaticamente em 24 horas. Senha, assinatura e certificado digital só
+            existem na conta de verdade — crie a sua pelo botão no topo da tela.
+          </p>
+        </Card>
+      ) : (
+        <>
+          <Card className="p-5">
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Minha conta</h2>
+            <div className="mb-4">
+              <p className="text-xs text-slate-400 dark:text-slate-500">E-mail de acesso</p>
+              <p className="text-sm text-slate-800 dark:text-slate-200">{usuario?.email}</p>
+            </div>
+            <TrocarSenhaForm />
+          </Card>
 
-      {assinatura && <AssinaturaCard assinatura={assinatura} />}
+          {assinatura && <AssinaturaCard assinatura={assinatura} />}
+        </>
+      )}
 
       <Card id="certificado" className="p-5 scroll-mt-24 transition-shadow">
         <div className="mb-4 flex items-center justify-between">
@@ -210,7 +224,168 @@ export function ConfiguracoesPage() {
           <AliquotaForm prestador={prestador} onAtualizado={setPrestador} />
         </Card>
       )}
+
+      <TutorialCard />
+      <LimparDadosCard />
     </div>
+  )
+}
+
+// "Na aba de configurações coloque uma opção para ativar e desativar esse
+// tutorial" (28/09/2026) — ver lib/tutorial.ts.
+function TutorialCard() {
+  const [ativo, setAtivo] = useState(tutorialAtivo())
+  const [revisto, setRevisto] = useState(false)
+  return (
+    <Card className="p-5" data-tour="config-tutorial">
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+        <GraduationCap size={16} /> Dicas da Ana (tutorial)
+      </h2>
+      <label className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-300">
+        <input
+          type="checkbox"
+          checked={ativo}
+          onChange={(e) => {
+            setAtivo(e.target.checked)
+            definirTutorialAtivo(e.target.checked)
+          }}
+          className="mt-0.5 rounded border-slate-300 dark:border-slate-600 dark:bg-slate-900"
+        />
+        <span>
+          Mostrar dicas na primeira vez que eu abrir cada tela
+          <span className="block text-xs text-slate-400 dark:text-slate-500">
+            Mesmo desligado, o botão ? no topo mostra as dicas da tela em que você estiver.
+          </span>
+        </span>
+      </label>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            reverTodasAsDicas()
+            setAtivo(true)
+            definirTutorialAtivo(true)
+            setRevisto(true)
+          }}
+        >
+          Ver todas as dicas de novo
+        </Button>
+        <Button type="button" variant="ghost" onClick={mostrarDicasDaTela}>
+          Dicas desta tela
+        </Button>
+      </div>
+      {revisto && <p className="mt-2 text-xs text-success-700">Pronto — as dicas vão aparecer de novo em cada tela.</p>}
+    </Card>
+  )
+}
+
+// "Coloque a opção de limpar dados dos tomadores, de NF-e, calendário,
+// recebimentos e despesas" (28/09/2026) — POST /api/dados/limpar.
+const CATEGORIAS_LIMPEZA = [
+  { id: "tomadores", rotulo: "Tomadores", detalhe: "Tomadores com notas já emitidas ficam arquivados (as notas continuam guardadas)." },
+  { id: "nfse", rotulo: "Notas (NFS-e)", detalhe: "Só as que nunca foram enviadas à Receita. Notas emitidas de verdade não podem ser apagadas." },
+  { id: "calendario", rotulo: "Calendário", detalhe: "Lembretes criados por você e datas ajustadas." },
+  { id: "recebimentos", rotulo: "Recebimentos", detalhe: "Todos os pagamentos registrados." },
+  { id: "despesas", rotulo: "Despesas", detalhe: "Todas as despesas registradas." },
+]
+
+const ROTULOS_RESULTADO: Record<string, string> = {
+  tomadores: "tomadores removidos",
+  tomadores_arquivados: "arquivados por terem notas",
+  nfse: "notas apagadas",
+  nfse_mantidas: "notas emitidas mantidas",
+  calendario: "itens do calendário",
+  recebimentos: "recebimentos",
+  despesas: "despesas",
+}
+
+function LimparDadosCard() {
+  const [selecionadas, setSelecionadas] = useState<string[]>([])
+  const [confirmando, setConfirmando] = useState(false)
+  const [texto, setTexto] = useState("")
+  const [enviando, setEnviando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const [resultado, setResultado] = useState<Record<string, number> | null>(null)
+
+  function alternar(id: string) {
+    setSelecionadas((atual) => (atual.includes(id) ? atual.filter((c) => c !== id) : [...atual, id]))
+  }
+
+  async function limpar() {
+    setEnviando(true)
+    setErro(null)
+    try {
+      const resp = await api.post<{ removidos: Record<string, number> }>("/dados/limpar", { categorias: selecionadas, confirmacao: texto })
+      setResultado(resp.removidos)
+      setSelecionadas([])
+      setConfirmando(false)
+      setTexto("")
+    } catch (err) {
+      setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão.")
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <Card className="border-danger-100 p-5 dark:border-danger-900/40" data-tour="config-limpar">
+      <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-danger-600">
+        <Trash2 size={16} /> Limpar dados
+      </h2>
+      <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">Apaga dados da sua conta por categoria. Não tem como desfazer.</p>
+      <div className="flex flex-col gap-2">
+        {CATEGORIAS_LIMPEZA.map((c) => (
+          <label key={c.id} className="flex items-start gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
+            <input type="checkbox" checked={selecionadas.includes(c.id)} onChange={() => alternar(c.id)} className="mt-0.5" />
+            <span>
+              <span className="font-medium text-slate-800 dark:text-slate-200">{c.rotulo}</span>
+              <span className="block text-xs text-slate-400 dark:text-slate-500">{c.detalhe}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      <div className="mt-4 flex justify-end">
+        <Button type="button" variant="danger" disabled={selecionadas.length === 0} onClick={() => setConfirmando(true)}>
+          Limpar selecionados
+        </Button>
+      </div>
+      {resultado && (
+        <p className="mt-3 rounded-lg bg-success-50 px-3 py-2 text-sm text-success-700 dark:bg-success-900/30 dark:text-success-300">
+          Feito:{" "}
+          {Object.entries(resultado)
+            .map(([k, v]) => `${v} ${ROTULOS_RESULTADO[k] ?? k}`)
+            .join(" · ")}
+          .
+        </p>
+      )}
+
+      {confirmando && (
+        <Modal titulo="Tem certeza?" onClose={() => setConfirmando(false)}>
+          <div className="flex flex-col gap-4 text-sm text-slate-600 dark:text-slate-300">
+            <p>
+              Você vai apagar:{" "}
+              <strong>
+                {CATEGORIAS_LIMPEZA.filter((c) => selecionadas.includes(c.id))
+                  .map((c) => c.rotulo)
+                  .join(", ")}
+              </strong>
+              . Não tem como desfazer.
+            </p>
+            <Field label='Digite LIMPAR para confirmar' value={texto} onChange={(e) => setTexto(e.target.value)} autoFocus />
+            {erro && <p className="rounded-lg bg-danger-50 px-3 py-2 text-danger-700">{erro}</p>}
+            <div className="flex justify-end gap-3">
+              <Button type="button" variant="outline" onClick={() => setConfirmando(false)}>
+                Cancelar
+              </Button>
+              <Button type="button" variant="danger" disabled={enviando || texto.trim().toUpperCase() !== "LIMPAR"} onClick={limpar}>
+                {enviando ? "Apagando..." : "Apagar de vez"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </Card>
   )
 }
 

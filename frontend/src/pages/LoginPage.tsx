@@ -125,6 +125,12 @@ export function LoginPage() {
               Criar conta
             </Link>
           </p>
+          <p className="mt-2 text-center text-sm text-slate-500 dark:text-slate-400">
+            Só quer conhecer?{" "}
+            <Link to="/simulacao" className="font-medium text-accent-600 hover:text-accent-700">
+              Testar sem cadastro
+            </Link>
+          </p>
         </form>
       </div>
     </div>

@@ -66,6 +66,7 @@ from app.schemas import (
     DashboardResumoResponse,
     DespesaResponse,
     EmissaoListaLinha,
+    ExclusaoVinculoResponse,
     EmissaoResponse,
     EnvioResponse,
     ErroResponse,
@@ -77,6 +78,8 @@ from app.schemas import (
     GoogleOAuthUrlResponse,
     ImportacaoCsvResponse,
     LembreteAliquotaRequest,
+    LimparDadosRequest,
+    LimparDadosResponse,
     LoginRequest,
     MunicipioResponse,
     MensagemProntaResponse,
@@ -89,6 +92,7 @@ from app.schemas import (
     RegistrarDespesaRequest,
     RegistrarEnvioRequest,
     RegistrarPagamentoRequest,
+    ServicoNacionalResponse,
     TomadorResponse,
     TrocarSenhaRequest,
     UsuarioResponse,
@@ -155,7 +159,10 @@ from app.services.envio_direto import (
     obter_danfse,
     opcoes_envio,
 )
-from app.services.extrato_pdf import PdfInvalidoError, extrair_transacoes
+from app.services.demo import criar_conta_demo, eh_email_demo
+from app.services.extrato_pdf import PdfInvalidoError, extrair_extrato
+from app.services.limpeza import limpar_dados
+from app.services.servicos_nacionais import buscar_servicos, listar_servicos, servico_por_codigo
 from app.services.google_oauth import (
     GoogleOAuthFalhaError,
     GoogleOAuthNaoConfiguradoError,
@@ -195,7 +202,11 @@ from app.services.vinculos import (
     atualizar_vinculo,
     buscar_vinculo,
     criar_vinculo,
+    emissoes_da_competencia,
+    excluir_vinculo,
     listar_vinculos_ativos,
+    listar_vinculos_da_tela,
+    ordenar_para_tela,
 )
 
 app = FastAPI(title="Painel NFS-e — Raiana (Marco 5/6/9/10)")
@@ -232,6 +243,25 @@ def db_sessao(db: Session = Depends(get_db), prestador_id: uuid.UUID = Depends(p
     return db
 
 
+MENSAGEM_DEMO = (
+    "Isso não está disponível no modo simulação — aqui nada é enviado à Receita nem a ninguém. "
+    "Crie sua conta grátis para usar de verdade."
+)
+
+
+def exigir_conta_real(request: Request, db: Session = Depends(get_db)) -> None:
+    """Ambiente de simulação (ver app/services/demo.py): recusa as rotas que
+    falam com o mundo de fora — Receita, e-mail, cobrança, certificado,
+    senha. Usa `usuario` (sem RLS) pra não depender da ordem das outras
+    dependências."""
+    usuario_id = request.session.get("usuario_id")
+    if usuario_id is None:
+        return  # a própria rota devolve o 401 de sempre
+    usuario = db.get(Usuario, uuid.UUID(usuario_id))
+    if usuario is not None and eh_email_demo(usuario.email):
+        raise HTTPException(status_code=403, detail=MENSAGEM_DEMO)
+
+
 @app.post("/api/auth/login", response_model=UsuarioResponse, responses={401: {"model": ErroResponse}, 403: {"model": ErroResponse}})
 def api_login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
     """Desde o Marco 15 existem dois jeitos de uma conta nascer: administrativo
@@ -244,6 +274,17 @@ def api_login(req: LoginRequest, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=403, detail="Confirme seu e-mail antes de entrar — verifique sua caixa de entrada.")
     request.session["usuario_id"] = str(usuario.id)
     return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id)
+
+
+@app.post("/api/demo", response_model=UsuarioResponse)
+def api_criar_demo(request: Request, db: Session = Depends(get_db)):
+    """Ambiente de simulação — cria uma conta descartável com dados de
+    exemplo e já entra nela (ver app/services/demo.py)."""
+    usuario = criar_conta_demo(db)
+    db.commit()
+    request.session.clear()
+    request.session["usuario_id"] = str(usuario.id)
+    return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id, demo=True)
 
 
 @app.post("/api/auth/google/iniciar", response_model=GoogleOAuthUrlResponse, responses={400: {"model": ErroResponse}})
@@ -419,10 +460,10 @@ def api_auth_me(request: Request, db: Session = Depends(get_db)):
     usuario = db.query(Usuario).filter_by(id=uuid.UUID(usuario_id), ativo=True).one_or_none()
     if usuario is None:
         raise HTTPException(status_code=401, detail="Sessão inválida.")
-    return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id)
+    return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id, demo=eh_email_demo(usuario.email))
 
 
-@app.post("/api/auth/trocar-senha", responses={400: {"model": ErroResponse}, 401: {"model": ErroResponse}})
+@app.post("/api/auth/trocar-senha", responses={400: {"model": ErroResponse}, 401: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
 def api_trocar_senha(req: TrocarSenhaRequest, request: Request, db: Session = Depends(get_db)):
     """Marco 15 — tela de Configurações. Usa `get_db` puro (não `db_sessao`)
     porque `usuario` não tem RLS, mesmo motivo de `prestador_atual_id`
@@ -456,7 +497,7 @@ def api_ver_assinatura(prestador_id: uuid.UUID = Depends(prestador_atual_id), db
     )
 
 
-@app.post("/api/assinatura/checkout", response_model=CheckoutSessaoResponse, responses={400: {"model": ErroResponse}})
+@app.post("/api/assinatura/checkout", response_model=CheckoutSessaoResponse, responses={400: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
 def api_criar_checkout(
     request: Request, prestador_id: uuid.UUID = Depends(prestador_atual_id), db: Session = Depends(get_db)
 ):
@@ -473,7 +514,7 @@ def api_criar_checkout(
     return CheckoutSessaoResponse(url=url)
 
 
-@app.post("/api/assinatura/portal", response_model=CheckoutSessaoResponse, responses={400: {"model": ErroResponse}})
+@app.post("/api/assinatura/portal", response_model=CheckoutSessaoResponse, responses={400: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
 def api_criar_portal(prestador_id: uuid.UUID = Depends(prestador_atual_id), db: Session = Depends(get_db)):
     definir_prestador_atual(db, prestador_id)
     try:
@@ -506,16 +547,72 @@ async def api_webhook_stripe(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/api/vinculos", response_model=list[VinculoResumo])
-def api_listar_vinculos(db: Session = Depends(db_sessao)):
-    vinculos = listar_vinculos_ativos(db)
-    return [
-        VinculoResumo(
+def api_listar_vinculos(todos: bool = False, competencia: str | None = None, db: Session = Depends(db_sessao)):
+    """Sem parâmetros: só os ativos (dropdowns de emissão/recebimento).
+    `todos=true` (aba Tomadores, 28/09/2026): ativos e inativos, ordenados
+    por dia de emissão com os inativos no fim, cada um com a nota da
+    `competencia` (AAAA-MM, padrão = mês atual) se já foi gerada."""
+    if competencia is not None and not re.fullmatch(r"\d{4}-\d{2}", competencia):
+        raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
+    if todos:
+        vinculos = ordenar_para_tela(listar_vinculos_da_tela(db))
+        hoje = datetime.date.today()
+        emissoes = emissoes_da_competencia(db, competencia or f"{hoje.year:04d}-{hoje.month:02d}")
+    else:
+        vinculos = listar_vinculos_ativos(db)
+        emissoes = {}
+    resposta = []
+    for v in vinculos:
+        emissao = emissoes.get(v.id)
+        resposta.append(VinculoResumo(
             id=v.id, apelido=v.apelido, tomador_razao_social=v.tomador.razao_social,
             tomador_cnpj=v.tomador.cnpj, serie=v.serie, template_descricao=v.template_descricao,
-            requer_revisao=v.requer_revisao,
+            requer_revisao=v.requer_revisao, ativo=v.ativo, tomador_id=v.tomador_id,
+            cod_trib_nacional=v.cod_trib_nacional, cod_local_prestacao=v.cod_local_prestacao,
+            dia_limite_emissao=v.dia_limite_emissao, dias_para_recebimento=v.dias_para_recebimento,
+            emissao_id=emissao.id if emissao else None, emissao_estado=emissao.estado if emissao else None,
+            emissao_valor=float(emissao.valor) if emissao else None,
+        ))
+    return resposta
+
+
+@app.delete("/api/vinculos/{vinculo_id}", response_model=ExclusaoVinculoResponse, responses={404: {"model": ErroResponse}})
+def api_excluir_vinculo(vinculo_id: uuid.UUID, db: Session = Depends(db_sessao)):
+    """"Excluir o tomador e aí sim ele suma" (28/09/2026) — sem notas, apaga
+    de verdade; com notas, arquiva (as notas continuam íntegras)."""
+    vinculo = buscar_vinculo(db, vinculo_id)
+    if vinculo is None or vinculo.excluido_em is not None:
+        raise HTTPException(status_code=404, detail="Tomador não encontrado.")
+    apelido = vinculo.apelido
+    resultado = excluir_vinculo(db, vinculo)
+    db.commit()
+    if resultado == "apagado":
+        mensagem = f"{apelido} foi excluído."
+    else:
+        mensagem = f"{apelido} foi excluído da sua lista. As notas já emitidas pra ele continuam guardadas na aba NFS-e."
+    return ExclusaoVinculoResponse(resultado=resultado, mensagem=mensagem)
+
+
+def _validar_codigo_servico(codigo: str | None) -> str | None:
+    """"Não criar códigos novos": só aceita código da lista oficial."""
+    if codigo is None:
+        return None
+    servico = servico_por_codigo(codigo)
+    if servico is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Código de serviço {codigo} não existe na lista nacional — escolha um na busca.",
         )
-        for v in vinculos
-    ]
+    return servico["codigo"]
+
+
+@app.get("/api/servicos-nacionais", response_model=list[ServicoNacionalResponse])
+def api_servicos_nacionais(q: str | None = None, limite: int = 400):
+    """Lista oficial de códigos de tributação nacional (cTribNac), com busca
+    por código ou palavra. Pública: é tabela do governo, não dado de conta."""
+    if q:
+        return buscar_servicos(q, limite=min(limite, 400))
+    return listar_servicos()[: min(limite, 400)]
 
 
 @app.get("/api/vinculos/{vinculo_id}", response_model=VinculoDetalheResponse, responses={404: {"model": ErroResponse}})
@@ -532,6 +629,7 @@ def api_criar_vinculo(req: VinculoCriarRequest, db: Session = Depends(db_sessao)
     """Marco 13 — 'usar um tomador pré-cadastrado' ou 'cadastrar meu
     próprio tomador' (ver VinculoCriarRequest) chegam aqui pela mesma
     rota; a diferença é só qual dos dois campos veio preenchido."""
+    req.cod_trib_nacional = _validar_codigo_servico(req.cod_trib_nacional)
     if req.novo_tomador is not None:
         try:
             tomador = criar_tomador(db, **req.novo_tomador.model_dump())
@@ -567,8 +665,11 @@ def api_atualizar_vinculo(vinculo_id: uuid.UUID, req: VinculoAtualizarRequest, d
     vinculo = buscar_vinculo(db, vinculo_id)
     if vinculo is None:
         raise HTTPException(status_code=404, detail="Vínculo não encontrado (ou não pertence ao prestador ativo)")
+    campos = req.model_dump(exclude_unset=True)
+    if campos.get("cod_trib_nacional") is not None and campos["cod_trib_nacional"] != vinculo.cod_trib_nacional:
+        campos["cod_trib_nacional"] = _validar_codigo_servico(campos["cod_trib_nacional"])
     try:
-        vinculo = atualizar_vinculo(db, vinculo, **req.model_dump(exclude_unset=True))
+        vinculo = atualizar_vinculo(db, vinculo, **campos)
     except ApelidoJaExisteError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     db.commit()
@@ -753,7 +854,7 @@ def api_status_certificado(db: Session = Depends(db_sessao), prestador_id: uuid.
     return CertificadoStatus(carregado=True, validade=registro.validade, vencido=certificado_vencido(registro))
 
 
-@app.post("/api/certificado", response_model=CertificadoStatus)
+@app.post("/api/certificado", response_model=CertificadoStatus, dependencies=[Depends(exigir_conta_real)])
 async def api_salvar_certificado(
     pfx: UploadFile = File(...), senha: str = Form(...),
     db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
@@ -895,7 +996,7 @@ def api_nota_visual(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
     return montar_nota_visual(emissao)
 
 
-@app.post("/api/dps/{emissao_id}/assinar", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
+@app.post("/api/dps/{emissao_id}/assinar", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
 def api_assinar_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     """montado -> assinado, com o certificado carregado (Marco 4). Não
     envia pra Sefin (ver docstring do módulo)."""
@@ -917,7 +1018,7 @@ def api_assinar_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), pre
     return _para_resposta(emissao)
 
 
-@app.post("/api/dps/{emissao_id}/submeter", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
+@app.post("/api/dps/{emissao_id}/submeter", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
 def api_submeter_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     """Marco 16, item 7 — assinado/erro -> submetido -> confirmado (ou ->
     erro de novo, retentável), chamando a Sefin DE VERDADE (ver
@@ -948,7 +1049,7 @@ def api_submeter_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), pr
     return _para_resposta(emissao)
 
 
-@app.post("/api/dps/{emissao_id}/cancelar", response_model=EmissaoResponse, responses={400: {"model": ErroResponse}, 404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}})
+@app.post("/api/dps/{emissao_id}/cancelar", response_model=EmissaoResponse, responses={400: {"model": ErroResponse}, 404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
 def api_cancelar_dps(
     emissao_id: uuid.UUID,
     req: CancelarDpsRequest,
@@ -1035,7 +1136,7 @@ def api_opcoes_envio(emissao_id: uuid.UUID, request: Request, db: Session = Depe
     return opcoes_envio(db, emissao, base_url(str(request.base_url)))
 
 
-@app.post("/api/dps/{emissao_id}/enviar-email", response_model=EnvioResponse, responses={400: {"model": ErroResponse}, 404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
+@app.post("/api/dps/{emissao_id}/enviar-email", response_model=EnvioResponse, responses={400: {"model": ErroResponse}, 404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
 def api_enviar_email(
     emissao_id: uuid.UUID, request: Request,
     db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
@@ -1182,6 +1283,7 @@ def api_listar_pagamentos(
 
 @app.post("/api/recebimentos/extrato", response_model=ExtratoExtraidoResponse, responses={400: {"model": ErroResponse}})
 async def api_extrair_extrato(arquivo: UploadFile = File(...), db: Session = Depends(db_sessao)):
+    """Aceita PDF, OFX ou CSV desde 28/09/2026 (ver app/services/extrato_pdf.py)."""
     """Marco 15 (item 5) — extração heurística de transações de um extrato
     bancário em PDF (ver docstring de app/services/extrato_pdf.py). GET
     conceitual apesar do POST (upload exige POST): não grava NADA no banco
@@ -1190,10 +1292,13 @@ async def api_extrair_extrato(arquivo: UploadFile = File(...), db: Session = Dep
     não toca o banco."""
     bruto = await arquivo.read()
     try:
-        transacoes = extrair_transacoes(bruto)
+        resultado = extrair_extrato(bruto, arquivo.filename)
     except PdfInvalidoError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    transacoes = resultado.transacoes
     return ExtratoExtraidoResponse(
+        formato=resultado.formato,
+        linhas_lidas=resultado.linhas_lidas,
         total_transacoes=len(transacoes),
         transacoes=[
             {"linha": t.linha, "data": t.data, "descricao": t.descricao, "valor": float(t.valor), "credito": t.credito}
@@ -1221,6 +1326,23 @@ def api_confirmar_extrato(req: ConfirmarExtratoRequest, db: Session = Depends(db
         total=len(resultados), sucesso=sucesso, erro=len(resultados) - sucesso,
         itens=[{"indice": r.indice, "ok": r.ok, "mensagem": r.mensagem, "pagamento_id": r.pagamento_id} for r in resultados],
     )
+
+
+@app.post("/api/dados/limpar", response_model=LimparDadosResponse, responses={422: {"model": ErroResponse}})
+def api_limpar_dados(
+    req: LimparDadosRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Configurações > Limpar dados (28/09/2026). Exige digitar LIMPAR —
+    não tem desfazer. Notas já enviadas à Receita nunca são apagadas (ver
+    app/services/limpeza.py)."""
+    if req.confirmacao.strip().upper() != "LIMPAR":
+        raise HTTPException(status_code=422, detail="Digite LIMPAR para confirmar.")
+    try:
+        removidos = limpar_dados(db, prestador_id, req.categorias)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    db.commit()
+    return LimparDadosResponse(removidos=removidos)
 
 
 @app.post("/api/despesas", response_model=DespesaResponse)

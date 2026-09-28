@@ -42,7 +42,8 @@ def listar_catalogo(db: Session, *, prestador_id: uuid.UUID, apenas_meus: bool) 
         query = query.join(PrestadorTomador, PrestadorTomador.tomador_id == Tomador.id).filter(
             PrestadorTomador.prestador_id == prestador_id,
             PrestadorTomador.ativo.is_(True),
-        )
+            PrestadorTomador.excluido_em.is_(None),
+        ).distinct()
     return query.order_by(Tomador.razao_social).all()
 
 

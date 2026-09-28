@@ -16,8 +16,39 @@ class VinculoResumo(BaseModel):
     serie: str
     template_descricao: str
     requer_revisao: bool
+    # Aba Tomadores (28/09/2026) — dia de emissão, ativo/inativo e se a
+    # nota da competência pedida já foi gerada.
+    ativo: bool = True
+    tomador_id: uuid.UUID | None = None
+    cod_trib_nacional: str | None = None
+    cod_local_prestacao: str | None = None
+    dia_limite_emissao: int | None = None
+    dias_para_recebimento: int | None = None
+    emissao_id: uuid.UUID | None = None
+    emissao_estado: str | None = None
+    emissao_valor: float | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ServicoNacionalResponse(BaseModel):
+    codigo: str
+    descricao: str
+    grupo: str
+
+
+class ExclusaoVinculoResponse(BaseModel):
+    resultado: str  # 'apagado' | 'arquivado'
+    mensagem: str
+
+
+class LimparDadosRequest(BaseModel):
+    categorias: list[str] = Field(min_length=1)
+    confirmacao: str
+
+
+class LimparDadosResponse(BaseModel):
+    removidos: dict[str, int]
 
 
 class CertificadoStatus(BaseModel):
@@ -326,6 +357,8 @@ class LoginRequest(BaseModel):
 class UsuarioResponse(BaseModel):
     email: str
     prestador_id: uuid.UUID
+    # Conta do ambiente de simulação (ver app/services/demo.py).
+    demo: bool = False
 
 
 class GoogleOAuthUrlResponse(BaseModel):
@@ -394,6 +427,11 @@ class TomadorResponse(BaseModel):
     numero: str | None = None
     complemento: str | None = None
     bairro: str | None = None
+    # Sugestões de preenchimento (o que já foi usado com este tomador).
+    sug_cod_trib_nacional: str | None = None
+    sug_template_descricao: str | None = None
+    sug_dia_emissao: int | None = None
+    sug_dias_recebimento: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -441,7 +479,7 @@ class VinculoCriarRequest(BaseModel):
 
     apelido: str = Field(min_length=1, max_length=100)
     cod_local_prestacao: str = Field(pattern=r"^\d{7}$")
-    cod_trib_nacional: str = Field(min_length=1, max_length=6)
+    cod_trib_nacional: str = Field(min_length=1, max_length=10)
     cod_trib_municipal: str | None = Field(default=None, max_length=5)
     template_descricao: str = Field(min_length=1)
     metodo_captura_valor: str = Field(default="manual", pattern=r"^(manual|pdf|csv|chat)$")
@@ -464,7 +502,7 @@ class VinculoAtualizarRequest(BaseModel):
     é alterado (ver atualizar_vinculo em app/services/vinculos.py)."""
     apelido: str | None = Field(default=None, min_length=1, max_length=100)
     cod_local_prestacao: str | None = Field(default=None, pattern=r"^\d{7}$")
-    cod_trib_nacional: str | None = Field(default=None, min_length=1, max_length=6)
+    cod_trib_nacional: str | None = Field(default=None, min_length=1, max_length=10)
     cod_trib_municipal: str | None = Field(default=None, max_length=5)
     template_descricao: str | None = Field(default=None, min_length=1)
     metodo_captura_valor: str | None = Field(default=None, pattern=r"^(manual|pdf|csv|chat)$")
@@ -627,6 +665,9 @@ class TransacaoExtraidaResponse(BaseModel):
 class ExtratoExtraidoResponse(BaseModel):
     total_transacoes: int
     transacoes: list[TransacaoExtraidaResponse]
+    formato: str = "pdf"
+    # Linhas de texto que o arquivo tinha: 0 num PDF = imagem escaneada.
+    linhas_lidas: int = 0
 
 
 class ItemConfirmarExtratoRequest(BaseModel):

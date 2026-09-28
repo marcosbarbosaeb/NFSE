@@ -1,6 +1,7 @@
 export interface Usuario {
   email: string
   prestador_id: string
+  demo?: boolean
 }
 
 export interface CadastroRequest {
@@ -24,6 +25,21 @@ export interface VinculoResumo {
   serie: string
   template_descricao: string
   requer_revisao: boolean
+  ativo?: boolean
+  tomador_id?: string | null
+  cod_trib_nacional?: string | null
+  cod_local_prestacao?: string | null
+  dia_limite_emissao?: number | null
+  dias_para_recebimento?: number | null
+  emissao_id?: string | null
+  emissao_estado?: string | null
+  emissao_valor?: number | null
+}
+
+export interface ServicoNacional {
+  codigo: string
+  descricao: string
+  grupo: string
 }
 
 export interface EmissaoResumoLinha {
@@ -61,6 +77,10 @@ export interface Tomador {
   numero: string | null
   complemento: string | null
   bairro: string | null
+  sug_cod_trib_nacional?: string | null
+  sug_template_descricao?: string | null
+  sug_dia_emissao?: number | null
+  sug_dias_recebimento?: number | null
 }
 
 export interface TomadorCriarRequest {
@@ -186,6 +206,8 @@ export interface TransacaoExtraida {
 export interface ExtratoExtraido {
   total_transacoes: number
   transacoes: TransacaoExtraida[]
+  formato?: string
+  linhas_lidas?: number
 }
 
 export interface ItemConfirmarExtrato {

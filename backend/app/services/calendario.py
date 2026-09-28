@@ -136,7 +136,7 @@ def eventos_calendario(db: Session, prestador_id: uuid.UUID, inicio: datetime.da
             _incluir(eventos, {
                 "data": datetime.date(ano, mes, _dia_valido_no_mes(ano, mes, vinculo.dia_limite_emissao)),
                 "tipo": "prazo_emissao",
-                "titulo": f"Prazo pra emitir — {vinculo.apelido}",
+                "titulo": f"Dia de gerar a nota — {vinculo.apelido}",
                 "vinculo_id": vinculo.id,
                 "apelido": vinculo.apelido,
                 "valor": None,

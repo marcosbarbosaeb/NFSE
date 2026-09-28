@@ -97,6 +97,12 @@ export function PrivacidadePage() {
           <br />
           <b>Destinatários que você escolher:</b> quando você manda uma nota a um fornecedor por e-mail ou WhatsApp.
         </p>
+        <p>
+          <b>Sugestões de preenchimento:</b> o cadastro de empresas tomadoras (CNPJ, razão social e endereço, que são dados
+          públicos) é compartilhado entre os usuários. Junto dele guardamos o código de serviço, o modelo de descrição e os
+          prazos usados por último com cada tomador, que aparecem como sugestão para quem for faturar a mesma empresa — nunca
+          valores, notas ou dados da sua conta.
+        </p>
         <p>Também podemos compartilhar dados se uma lei ou ordem judicial exigir.</p>
       </Secao>
 

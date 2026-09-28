@@ -1,6 +1,7 @@
-import { Bell, ChevronDown, LogOut, Search } from "lucide-react"
+import { Bell, ChevronDown, CircleHelp, LogOut, Search } from "lucide-react"
 import { useState } from "react"
 import { useAuth } from "../../lib/auth"
+import { mostrarDicasDaTela } from "../../lib/tutorial"
 
 function iniciais(email: string): string {
   const nome = email.split("@")[0].replace(/[._-]+/g, " ")
@@ -29,6 +30,16 @@ export function Topbar() {
       <div className="flex items-center gap-4">
         <button
           type="button"
+          onClick={mostrarDicasDaTela}
+          data-tour="ajuda"
+          className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-accent-600 dark:text-slate-400 dark:hover:bg-slate-700"
+          title="Ver as dicas desta tela"
+          aria-label="Ver as dicas desta tela"
+        >
+          <CircleHelp size={18} />
+        </button>
+        <button
+          type="button"
           className="rounded-full p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
           title="Notificações (ainda não implementado)"
           disabled
@@ -44,11 +55,11 @@ export function Topbar() {
               className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700"
             >
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-900 text-xs font-semibold text-white">
-                {iniciais(usuario.email)}
+                {usuario.demo ? "V" : iniciais(usuario.email)}
               </div>
               <div className="text-left leading-tight">
-                <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{usuario.email}</p>
-                <p className="text-xs text-slate-400 dark:text-slate-500">Prestador(a) de serviços</p>
+                <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{usuario.demo ? "Visitante" : usuario.email}</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">{usuario.demo ? "Conta de simulação" : "Prestador(a) de serviços"}</p>
               </div>
               <ChevronDown size={16} className="text-slate-400 dark:text-slate-500" />
             </button>
