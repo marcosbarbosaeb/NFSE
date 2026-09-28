@@ -108,6 +108,8 @@ def montar_nota_visual(emissao: Emissao) -> dict:
     if xml_bruto:
         root = etree.fromstring(xml_bruto.encode("utf-8"))
         inf = root.find(f"{{{NS}}}infDPS")
+        if inf is None:  # NFS-e confirmada/importada: a DPS vem dentro de infNFSe
+            inf = root.find(f".//{{{NS}}}infDPS")
 
     def _xml(path: str) -> str | None:
         return _t(inf, path) if inf is not None else None

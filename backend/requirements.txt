@@ -40,3 +40,6 @@ pytest==9.1.1
 # dependência de runtime do backend.
 reportlab==4.4.10
 tzdata==2025.2
+
+# Importar a planilha de controle financeiro (.xlsx) — 28/09/2026.
+openpyxl==3.1.5

@@ -345,7 +345,7 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
         v for (v,) in db.query(Emissao.prestador_tomador_id).filter(Emissao.competencia == competencia, Emissao.estado != "cancelada")
     }
     for v in listar_vinculos_ativos(db):
-        if v.id not in competencia_tem_nota:
+        if v.id not in competencia_tem_nota and not v.sem_nota:
             quando = f" (dia {v.dia_limite_emissao})" if v.dia_limite_emissao else ""
             pendencias.append({
                 "tipo": "gerar", "titulo": f"Gerar a nota de {v.apelido}{quando}", "acao": "Gerar",

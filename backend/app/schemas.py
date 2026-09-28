@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, computed_field, model_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
 from app.services.municipios import rotulo_municipio
 
@@ -30,6 +30,7 @@ class VinculoResumo(BaseModel):
     # Shopee: várias notas no mês (uma por vendedor).
     emissao_quantidade: int = 0
     metodo_captura_valor: str = "manual"
+    sem_nota: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -240,6 +241,24 @@ class RegistrarDespesaRequest(BaseModel):
     categoria: str = Field(min_length=1, max_length=100)
     competencia: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
     valor: float = Field(gt=0)
+    descricao: str | None = Field(default=None, max_length=200)
+    tipo: str = Field(default="despesa", pattern=r"^(despesa|retirada)$")
+    conta: str | None = Field(default=None, max_length=60)
+    vencimento: date | None = None
+    pago: bool = True
+    pago_em: date | None = None
+
+
+class AtualizarDespesaRequest(BaseModel):
+    categoria: str | None = Field(default=None, min_length=1, max_length=100)
+    competencia: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    valor: float | None = Field(default=None, ge=0)
+    descricao: str | None = Field(default=None, max_length=200)
+    tipo: str | None = Field(default=None, pattern=r"^(despesa|retirada)$")
+    conta: str | None = Field(default=None, max_length=60)
+    vencimento: date | None = None
+    pago: bool | None = None
+    pago_em: date | None = None
 
 
 class DespesaResponse(BaseModel):
@@ -247,6 +266,14 @@ class DespesaResponse(BaseModel):
     categoria: str
     competencia: str
     valor: float
+    descricao: str | None = None
+    tipo: str = "despesa"
+    conta: str | None = None
+    vencimento: date | None = None
+    pago: bool = True
+    pago_em: date | None = None
+    recorrente_id: uuid.UUID | None = None
+    valor_a_definir: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -491,8 +518,15 @@ class TomadorResponse(BaseModel):
     sug_template_descricao: str | None = None
     sug_dia_emissao: int | None = None
     sug_dias_recebimento: int | None = None
+    # 'interno' = só desta conta (sem CNPJ: parceria, pessoa física, exterior).
+    status: str = "aprovado"
 
     model_config = {"from_attributes": True}
+
+    @field_validator("cnpj")
+    @classmethod
+    def _sem_cnpj_interno(cls, v: str) -> str:
+        return "" if v.startswith("X") else v
 
 
 class TomadorCriarRequest(BaseModel):
@@ -534,6 +568,7 @@ class VinculoDetalheResponse(BaseModel):
     incluir_intermediario: bool = False
     envio_canal: str | None = None
     portal_url: str | None = None
+    sem_nota: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -567,6 +602,7 @@ class VinculoCriarRequest(BaseModel):
     incluir_intermediario: bool | None = None
     envio_canal: str | None = Field(default=None, pattern=r"^(email|whatsapp|portal|nenhum)$")
     portal_url: str | None = Field(default=None, max_length=400)
+    sem_nota: bool | None = None
 
     @model_validator(mode="after")
     def _exatamente_um_tomador(self):
@@ -601,6 +637,7 @@ class VinculoAtualizarRequest(BaseModel):
     incluir_intermediario: bool | None = None
     envio_canal: str | None = Field(default=None, pattern=r"^(email|whatsapp|portal|nenhum)$")
     portal_url: str | None = Field(default=None, max_length=400)
+    sem_nota: bool | None = None
 
 
 class PrestadorResponse(BaseModel):
@@ -1097,3 +1134,159 @@ class EnviarGeralRequest(BaseModel):
 
 class MarcarEnviadaRequest(BaseModel):
     forma: str = Field(default="portal", pattern=r"^(portal|outro)$")
+
+
+
+# --- Importar do Emissor Nacional (28/09/2026) ---
+
+
+class BuscarNacionalRequest(BaseModel):
+    recomecar: bool = False
+    desde_inicio: bool = False
+
+
+class GrupoImportacaoResponse(BaseModel):
+    documento: str
+    tipo: str | None = None
+    nome: str
+    quantidade: int
+    total: float
+    canceladas: int = 0
+    competencias: list[str]
+    descricao_exemplo: str | None = None
+    intermediario: str | None = None
+    sugestao: str
+    vinculo_id: uuid.UUID | None = None
+
+
+class PreviaNacionalResponse(BaseModel):
+    terminou: bool
+    nsu: int
+    total_notas: int
+    ja_importadas: int
+    recebidas: int
+    grupos: list[GrupoImportacaoResponse]
+
+
+class RegraImportacao(BaseModel):
+    documento: str = Field(max_length=40)
+    acao: str = Field(pattern=r"^(vinculo|avulsa|novo|ignorar)$")
+    vinculo_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def _precisa_vinculo(self):
+        if self.acao in ("vinculo", "avulsa") and self.vinculo_id is None:
+            raise ValueError("Escolha o tomador de destino.")
+        return self
+
+
+class ImportarNacionalRequest(BaseModel):
+    mapeamento: list[RegraImportacao] = Field(max_length=5000)
+
+
+class ImportarNacionalResponse(BaseModel):
+    importadas: int
+    vinculos_criados: int
+    puladas: list[dict]
+
+
+
+# --- Financeiro (28/09/2026) ---
+
+
+class ContaFixaRequest(BaseModel):
+    nome: str = Field(min_length=1, max_length=120)
+    categoria: str | None = Field(default=None, max_length=100)
+    tipo: str = Field(default="despesa", pattern=r"^(despesa|retirada)$")
+    valor_padrao: float | None = Field(default=None, ge=0)
+    dia_vencimento: int | None = Field(default=None, ge=1, le=31)
+    conta: str | None = Field(default=None, max_length=60)
+
+
+class ContaFixaAtualizarRequest(BaseModel):
+    nome: str | None = Field(default=None, min_length=1, max_length=120)
+    categoria: str | None = Field(default=None, min_length=1, max_length=100)
+    tipo: str | None = Field(default=None, pattern=r"^(despesa|retirada)$")
+    valor_padrao: float | None = Field(default=None, ge=0)
+    dia_vencimento: int | None = Field(default=None, ge=1, le=31)
+    conta: str | None = Field(default=None, max_length=60)
+    ativa: bool | None = None
+
+
+class ContaFixaResponse(BaseModel):
+    id: uuid.UUID
+    nome: str
+    categoria: str
+    tipo: str
+    valor_padrao: float | None
+    dia_vencimento: int | None
+    conta: str | None
+    ativa: bool
+
+    model_config = {"from_attributes": True}
+
+
+class RotinaRequest(BaseModel):
+    nome: str = Field(min_length=1, max_length=120)
+
+
+class RotinaAtualizarRequest(BaseModel):
+    nome: str | None = Field(default=None, min_length=1, max_length=120)
+    ativa: bool | None = None
+
+
+class RotinaCheckRequest(BaseModel):
+    competencia: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    feita: bool = True
+
+
+class RotinaResponse(BaseModel):
+    id: uuid.UUID
+    nome: str
+    ativa: bool = True
+
+    model_config = {"from_attributes": True}
+
+
+class RotinaDoMes(BaseModel):
+    id: uuid.UUID
+    nome: str
+    feita: bool
+    feita_em: datetime | None = None
+
+
+class ContasDoMesResponse(BaseModel):
+    competencia: str
+    contas: list[DespesaResponse]
+    rotinas: list[RotinaDoMes]
+    total_previsto: float
+    total_pago: float
+    a_pagar: int
+    rotinas_feitas: int
+
+
+class ResumoFinanceiroResponse(BaseModel):
+    ano: str
+    meses: list[str]
+    faturado: list[float]
+    recebido: list[float]
+    despesas: list[float]
+    impostos: list[float]
+    ferramentas: list[float]
+    retiradas: list[float]
+    lucro: list[float]
+    margem: list[float | None]
+    saldo_a_distribuir: list[float]
+    totais: dict
+    categorias: list[dict]
+
+
+class ImportarPlanilhaResponse(BaseModel):
+    pagamentos: int
+    pagamentos_existentes: int
+    tomadores_criados: int
+    despesas: int
+    contas_fixas: int
+    retiradas: int
+    rotinas: int
+    avisos: list[str]

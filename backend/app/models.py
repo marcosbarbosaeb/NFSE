@@ -27,6 +27,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     Date,
     DateTime,
@@ -109,6 +110,8 @@ class Prestador(Base):
     # Ambiente das notas novas: "1" produção, "2" homologação (teste). Saiu
     # da tela de gerar nota em 28/09/2026 e virou configuração da conta.
     tp_amb_padrao: Mapped[str] = mapped_column(String(1), nullable=False, default="1", server_default="1")
+    # Importação do Emissor Nacional: último NSU lido na distribuição do ADN.
+    adn_ultimo_nsu: Mapped[int | None] = mapped_column(BigInteger)
     nome_fantasia: Mapped[str | None] = mapped_column(String(200))
     # E-mails gerais (contador, a própria pessoa) — recebem as notas com um
     # texto padrão próprio, independente de como o tomador recebe.
@@ -273,7 +276,7 @@ class Tomador(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
-        CheckConstraint("status IN ('pendente', 'aprovado')", name="ck_tomador_status"),
+        CheckConstraint("status IN ('pendente', 'aprovado', 'interno')", name="ck_tomador_status"),
     )
 
 
@@ -336,6 +339,9 @@ class PrestadorTomador(Base):
     # declarar o marketplace (o tomador deste vínculo) como intermediário.
     cod_nbs: Mapped[str | None] = mapped_column(String(12))
     incluir_intermediario: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
+    # Só controle de recebimento (parceria, bônus, PayPal, tomador
+    # estrangeiro importado): a Ana não gera nota pra ele (28/09/2026).
+    sem_nota: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     # Últimas escolhas no envio ao fornecedor (29/09/2026: "salve sempre as
     # últimas configurações que a pessoa usar em cada tomador").
     envio_canal: Mapped[str | None] = mapped_column(String(10))
@@ -420,6 +426,8 @@ class Emissao(Base):
     danfse_pdf: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
     danfse_path: Mapped[str | None] = mapped_column(Text)
     erro_detalhe: Mapped[str | None] = mapped_column(Text)
+    # 'importada' = trazida do Emissor Nacional (emitida fora da Ana).
+    origem: Mapped[str] = mapped_column(String(12), nullable=False, default="ana", server_default="ana")
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
@@ -439,6 +447,7 @@ class Emissao(Base):
         # rejeita duplicidade quando ela chega; quem impede de tentar duas
         # vezes o mesmo número somos nós (ver Motor de emissão no plano).
         UniqueConstraint("prestador_id", "serie", "n_dps", name="uq_emissao_prestador_serie_ndps"),
+        CheckConstraint("origem IN ('ana', 'importada')", name="ck_emissao_origem"),
     )
 
 
@@ -477,7 +486,7 @@ class PagamentoRecebido(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
-        CheckConstraint("origem IN ('manual', 'extrato')", name="ck_pagamento_origem"),
+        CheckConstraint("origem IN ('manual', 'extrato', 'planilha')", name="ck_pagamento_origem"),
     )
 
 
@@ -493,9 +502,75 @@ class Despesa(Base):
     competencia: Mapped[str] = mapped_column(String(7), nullable=False)
     valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
 
+    # 28/09/2026 — contas do mês com check, retiradas e o modelo recorrente.
+    descricao: Mapped[str | None] = mapped_column(String(200))
+    tipo: Mapped[str] = mapped_column(String(10), nullable=False, default="despesa", server_default="despesa")
+    conta: Mapped[str | None] = mapped_column(String(60))
+    vencimento: Mapped[date | None] = mapped_column(Date)
+    pago: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
+    pago_em: Mapped[date | None] = mapped_column(Date)
+    recorrente_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("despesa_recorrente.id", ondelete="SET NULL")
+    )
+    origem: Mapped[str] = mapped_column(String(20), nullable=False, default="manual", server_default="manual")
+
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     prestador: Mapped["Prestador"] = relationship(back_populates="despesas")
+
+    __table_args__ = (CheckConstraint("tipo IN ('despesa', 'retirada')", name="ck_despesa_tipo"),)
+
+
+class DespesaRecorrente(Base):
+    """Conta fixa do mês (contabilidade, ferramenta, pró-labore, cartão...).
+    Cada mês ela vira um lançamento em `despesa` pra ticar quando pagar."""
+
+    __tablename__ = "despesa_recorrente"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False
+    )
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    categoria: Mapped[str] = mapped_column(String(100), nullable=False)
+    tipo: Mapped[str] = mapped_column(String(10), nullable=False, default="despesa", server_default="despesa")
+    valor_padrao: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    dia_vencimento: Mapped[int | None] = mapped_column(SmallInteger)
+    conta: Mapped[str | None] = mapped_column(String(60))
+    ativa: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
+    ordem: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RotinaMensal(Base):
+    """Conferência do fechamento do mês (extrato do banco, PayPal...)."""
+
+    __tablename__ = "rotina_mensal"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False
+    )
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    ativa: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
+    ordem: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RotinaMensalFeita(Base):
+    __tablename__ = "rotina_mensal_feita"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False
+    )
+    rotina_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("rotina_mensal.id", ondelete="CASCADE"), nullable=False
+    )
+    competencia: Mapped[str] = mapped_column(String(7), nullable=False)
+    feita_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("rotina_id", "competencia", name="uq_rotina_feita_mes"),)
 
 
 class EventoManual(Base):

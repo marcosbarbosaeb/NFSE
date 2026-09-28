@@ -156,7 +156,6 @@ def listar_despesas(db: Session, *, ano: str | None = None) -> list[dict]:
     query = db.query(Despesa).order_by(Despesa.criado_em.desc())
     if ano:
         query = query.filter(Despesa.competencia.like(f"{ano}-%"))
-    return [
-        {"id": d.id, "categoria": d.categoria, "competencia": d.competencia, "valor": float(d.valor)}
-        for d in query.all()
-    ]
+    from app.services.financeiro import _linha_despesa
+
+    return [_linha_despesa(d) for d in query.all()]
