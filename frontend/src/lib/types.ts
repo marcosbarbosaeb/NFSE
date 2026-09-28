@@ -2,6 +2,7 @@ export interface Usuario {
   email: string
   prestador_id: string
   demo?: boolean
+  nome?: string | null
 }
 
 export interface CadastroRequest {
@@ -89,6 +90,7 @@ export interface EmissaoResumoLinha {
   tem_pdf?: boolean
   tem_email?: boolean
   homologacao?: boolean
+  envio_forma?: FormaEnvio | null
 }
 
 export interface AtencaoItem {
@@ -152,6 +154,10 @@ export interface VinculoDetalhe {
   email_anexos?: "pdf_xml" | "pdf" | "xml" | null
   email_copia?: string | null
   email_para?: string | null
+  cod_nbs?: string | null
+  incluir_intermediario?: boolean
+  envio_canal?: FormaEnvio | null
+  portal_url?: string | null
 }
 
 export interface VinculoCriarRequest {
@@ -174,6 +180,10 @@ export interface VinculoCriarRequest {
   email_anexos?: string | null
   email_copia?: string | null
   email_para?: string | null
+  cod_nbs?: string | null
+  incluir_intermediario?: boolean
+  envio_canal?: FormaEnvio | null
+  portal_url?: string | null
 }
 
 export type VinculoAtualizarRequest = Partial<Omit<VinculoCriarRequest, "tomador_id" | "novo_tomador">> & {
@@ -299,6 +309,7 @@ export interface EmissaoListaLinha {
   tem_email?: boolean
   homologacao?: boolean
   avulsa?: boolean
+  envio_forma?: FormaEnvio | null
 }
 
 export interface GerarDpsRequest {
@@ -308,6 +319,8 @@ export interface GerarDpsRequest {
   ordem?: string | null
   aliq_sn?: number | null
   tpAmb?: string
+  /** AAAA-MM-DD — dia de competência escolhido; sem = hoje. */
+  data_competencia?: string | null
 }
 
 export interface VerificarDuplicata {
@@ -415,7 +428,10 @@ export interface ImportacaoCsvResultado {
   linhas: ImportacaoLinha[]
 }
 
-export type CanalEnvio = "download" | "email" | "whatsapp" | "direto_fornecedor" | "mensagem_pronta"
+export type CanalEnvio = "download" | "email" | "email_geral" | "whatsapp" | "direto_fornecedor" | "mensagem_pronta"
+
+/** Como o tomador recebe a nota (configurado no tomador). null = e-mail. */
+export type FormaEnvio = "email" | "whatsapp" | "portal" | "nenhum"
 
 export interface Envio {
   id: string
@@ -495,7 +511,32 @@ export interface Prestador {
   email_mensagem_padrao?: string | null
   email_anexos_padrao?: "pdf_xml" | "pdf" | "xml" | null
   email_copia_padrao?: string | null
+  nome_fantasia?: string | null
+  op_simples_nacional?: "1" | "2" | "3" | null
+  regime_apuracao_sn?: "1" | "2" | "3" | null
+  regime_especial_trib?: string | null
+  email_geral_para?: string | null
+  email_geral_assunto?: string | null
+  email_geral_mensagem?: string | null
+  email_geral_anexos?: "pdf_xml" | "pdf" | "xml" | null
 }
+
+export type EmitenteAtualizarRequest = Partial<{
+  razao_social: string
+  nome_fantasia: string | null
+  cod_municipio: string
+  inscricao_municipal: string | null
+  email: string | null
+  telefone: string | null
+  cep: string | null
+  logradouro: string | null
+  numero: string | null
+  complemento: string | null
+  bairro: string | null
+  op_simples_nacional: "1" | "2" | "3"
+  regime_apuracao_sn: "1" | "2" | "3"
+  regime_especial_trib: string
+}>
 
 export interface AliquotaAtualizarRequest {
   aliquota: number
@@ -566,6 +607,109 @@ export interface PreviaEmail {
   anexos: "pdf_xml" | "pdf" | "xml"
   arquivos: string[]
   motivo_desabilitado: string | null
+  whatsapp?: string | null
+  whatsapp_texto?: string
+  canal_preferido?: FormaEnvio
+  portal_url?: string | null
+  geral_destinos?: string[]
+  geral_assunto?: string
+  geral_texto?: string
+}
+
+export interface EnviarEmailBody {
+  para?: string[] | null
+  copia?: string[] | null
+  assunto?: string | null
+  texto?: string | null
+  salvar_padrao?: boolean
+}
+
+export interface WhatsappBody {
+  numero?: string | null
+  texto?: string | null
+  salvar_padrao?: boolean
+}
+
+export interface EnviarGeralBody {
+  para?: string[] | null
+  assunto?: string | null
+  texto?: string | null
+}
+
+// --- Ações em lote (29/09/2026) ---
+// POST /lotes/previa → PreviaLote; POST /lotes → Lote; GET /lotes/{id};
+// POST /lotes/{id}/cancelar | /retomar | /refazer-falhas; GET /lotes (recentes)
+export type AcaoLote = "email" | "email_geral" | "assinar" | "submeter"
+export type StatusLote = "fila" | "executando" | "concluido" | "cancelado" | "interrompido"
+
+export interface CriarLoteBody {
+  acao: AcaoLote
+  emissao_ids?: string[]
+  vinculo_id?: string
+  competencia?: string
+  reenviar?: boolean
+}
+
+export interface Lote {
+  id: string
+  acao: AcaoLote
+  status: StatusLote
+  total: number
+  feitos: number
+  falhas: number
+  erros: { emissao_id: string; nome: string; erro: string }[]
+  criado_em: string | null
+  concluido_em: string | null
+}
+
+export interface PreviaLote {
+  acao: AcaoLote
+  quantidade: number
+}
+
+/** GET /envios/resumo?vinculo_id&competencia — só envios ao fornecedor. */
+export interface ResumoEnvios {
+  enviados: number
+  falhas: number
+  notas_sem_envio: number
+}
+
+// --- Conta e empresas (29/09/2026) ---
+export interface Conta {
+  nome: string | null
+  email: string
+  demo: boolean
+  tem_senha: boolean
+  google_conectado: boolean
+}
+
+export interface SessaoConectada {
+  id: string
+  dispositivo: string
+  ip: string | null
+  criado_em: string | null
+  ultimo_acesso: string | null
+  atual: boolean
+}
+
+export interface Empresa {
+  id: string
+  razao_social: string
+  nome_fantasia: string | null
+  cnpj: string
+  ativa: boolean
+}
+
+export interface EmpresaCriarRequest {
+  cpf_cnpj: string
+  razao_social: string
+  nome_fantasia?: string | null
+  cod_municipio: string
+  cep?: string | null
+  logradouro?: string | null
+  numero?: string | null
+  complemento?: string | null
+  bairro?: string | null
 }
 
 export interface ModeloEmailPadrao {
