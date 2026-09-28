@@ -273,6 +273,7 @@ def gerar_notas(
     relatorio: RelatorioShopee,
     *,
     competencia: str,
+    dcompet: str | None = None,
     valor_minimo: Decimal = Decimal("0"),
     incluir_estrangeiros: bool = False,
     aliq_sn: float | None = None,
@@ -298,7 +299,7 @@ def gerar_notas(
         try:
             emissao = criar_rascunho(
                 db, vinculo, competencia=competencia, valor=float(v.valor), aliq_sn=aliq_sn, tpAmb=tpAmb,
-                tomador_avulso=tomador_avulso(v),
+                tomador_avulso=tomador_avulso(v), dcompet=dcompet,
             )
             montar(db, emissao)
         except EmissaoJaExisteError:

@@ -107,6 +107,25 @@ def _leaf(tag, text):
     return e
 
 
+def _pessoa(tag: str, dados: dict):
+    """<toma>/<interm>: documento (CNPJ, CPF ou NIF), nome e endereço
+    nacional quando houver município."""
+    if dados.get("CNPJ"):
+        doc = _leaf("CNPJ", dados["CNPJ"])
+    elif dados.get("CPF"):
+        doc = _leaf("CPF", dados["CPF"])
+    else:
+        doc = _leaf("NIF", dados["NIF"])
+    end = None
+    if dados.get("cMun"):
+        filhos = [_el("endNac", [_leaf("cMun", dados["cMun"]), _leaf("CEP", dados["CEP"])]), _leaf("xLgr", dados["xLgr"]), _leaf("nro", dados["nro"])]
+        if dados.get("xCpl"):
+            filhos.append(_leaf("xCpl", dados["xCpl"]))
+        filhos.append(_leaf("xBairro", dados["xBairro"]))
+        end = _el("end", filhos)
+    return _el(tag, [doc, _leaf("xNome", dados["xNome"]), end])
+
+
 def montar_dps_xml(
     *,
     prest: dict,
@@ -118,6 +137,7 @@ def montar_dps_xml(
     tpAmb: str = "2",
     aliq_sn: float | None = None,
     dcompet: str | None = None,
+    interm: dict | None = None,
 ) -> etree._Element:
     """Monta o elemento <DPS> (não assinado).
 
@@ -160,31 +180,21 @@ def montar_dps_xml(
     # últimos entraram com o relatório da Shopee (28/09/2026), onde a nota
     # vai pra cada vendedor. O endereço do tomador é opcional na DPS: sem
     # cMun (endereço não reconhecido / estrangeiro) o <end> não é enviado.
-    if toma.get("CNPJ"):
-        doc_toma = _leaf("CNPJ", toma["CNPJ"])
-    elif toma.get("CPF"):
-        doc_toma = _leaf("CPF", toma["CPF"])
-    else:
-        doc_toma = _leaf("NIF", toma["NIF"])
-    end_toma = None
-    if toma.get("cMun"):
-        end_nac_toma = _el("endNac", [_leaf("cMun", toma["cMun"]), _leaf("CEP", toma["CEP"])])
-        toma_end_children = [end_nac_toma, _leaf("xLgr", toma["xLgr"]), _leaf("nro", toma["nro"])]
-        if toma.get("xCpl"):
-            toma_end_children.append(_leaf("xCpl", toma["xCpl"]))
-        toma_end_children.append(_leaf("xBairro", toma["xBairro"]))
-        end_toma = _el("end", toma_end_children)
-    toma_el = _el("toma", [
-        doc_toma,
-        _leaf("xNome", toma["xNome"]),
-        end_toma,
-    ])
+    toma_el = _pessoa("toma", toma)
+    # Intermediário (29/09/2026): nas notas pra vendedores da Shopee, o
+    # marketplace pode ser declarado como intermediário do serviço.
+    interm_el = _pessoa("interm", interm) if interm else None
 
     locPrest = _el("locPrest", [_leaf("cLocPrestacao", serv["cLocPrestacao"])])
+    # cTribMun é opcional (antes ia "None" no XML quando vazio); cNBS
+    # (Nomenclatura Brasileira de Serviços, 9 dígitos) entrou com a reforma
+    # tributária.
+    cnbs = "".join(c for c in str(serv.get("cNBS") or "") if c.isdigit())
     cServ = _el("cServ", [
         _leaf("cTribNac", serv["cTribNac"]),
-        _leaf("cTribMun", serv["cTribMun"]),
+        _leaf("cTribMun", serv["cTribMun"]) if serv.get("cTribMun") else None,
         _leaf("xDescServ", serv["descricao"]),
+        _leaf("cNBS", cnbs) if len(cnbs) == 9 else None,
     ])
     serv_el = _el("serv", [locPrest, cServ])
 
@@ -210,6 +220,7 @@ def montar_dps_xml(
             _leaf("cLocEmi", prest["cMun"]),
             prest_el,
             toma_el,
+            interm_el,
             serv_el,
             valores_el,
         ],

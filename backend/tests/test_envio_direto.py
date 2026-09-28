@@ -115,7 +115,7 @@ def test_whatsapp_com_numero_e_mensagem(client, db, vinculo_teste):
     assert url.netloc == "wa.me" and url.path == "/5592999990000"
     texto = unquote(parse_qs(url.query)["text"][0])
     assert "/api/publico/nota/" in texto and "08/2026" in texto
-    assert r["envio"]["canal"] == "whatsapp" and r["envio"]["status"] == "pendente"
+    assert r["envio"]["canal"] == "whatsapp" and r["envio"]["status"] == "enviado"  # abrir o WhatsApp conta como enviado (29/09/2026)
 
 
 def test_whatsapp_sem_numero_abre_seletor_de_contato(client, vinculo_teste):

@@ -34,7 +34,9 @@ testado ao vivo daqui, só depois de implantado em algum lugar com rede
 aberta E com um certificado A1 de verdade carregado.
 """
 import datetime
+import io
 import logging
+import zipfile
 from urllib.parse import urlparse
 import os
 import re
@@ -54,7 +56,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import get_settings
 from app.database import definir_prestador_atual, get_db
 from app.fiscal.dps import DescricaoIncompletaError
-from app.models import Assinatura, Certificado, Emissao, PagamentoRecebido, Prestador, Usuario
+from app.models import Assinatura, Certificado, Emissao, Envio, LoteAcao, PagamentoRecebido, Prestador, Usuario
 from app.schemas import (
     AjusteOcorrenciaRequest,
     AliquotaAtualizarRequest,
@@ -87,6 +89,11 @@ from app.schemas import (
     PreviaEmailResponse,
     ModeloEmailPadraoResponse,
     PreviaShopeeResponse,
+    CriarLoteRequest,
+    LoteResponse,
+    PreviaLoteResponse,
+    ResumoEnviosResponse,
+    WhatsappRequest,
     EnviarEmailRequest,
     IndicacaoResponse,
     CanaisSuporteResponse,
@@ -167,7 +174,7 @@ from app.services.envios import (
     registrar_envio,
 )
 from app.limites import limitador, limite  # noqa: F401 — limitador: os testes zeram
-from app.services import mensagens
+from app.services import lotes, mensagens
 from app.services.indicacao import resumo as resumo_indicacao
 from app.services.email import EmailEnvioError, get_email_sender
 from app.services.a_receber import notas_em_aberto
@@ -325,6 +332,16 @@ MENSAGEM_DEMO = (
     "Isso não está disponível no modo simulação — aqui nada é enviado à Receita nem a ninguém. "
     "Crie sua conta grátis para usar de verdade."
 )
+
+
+def _validar_nbs(codigo: str | None) -> str | None:
+    """Código NBS: 9 dígitos (ex.: 1.1406.20.00). Vazio = sem NBS."""
+    digitos = "".join(c for c in (codigo or "") if c.isdigit())
+    if not digitos:
+        return None
+    if len(digitos) != 9:
+        raise HTTPException(status_code=422, detail="Código NBS tem 9 dígitos (ex.: 1.1406.20.00).")
+    return digitos
 
 
 def _sessao_demo(request: Request, db: Session) -> bool:
@@ -859,6 +876,8 @@ def api_criar_vinculo(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     for campo in ("email_assunto", "email_mensagem", "email_anexos", "email_copia", "email_para"):
         setattr(vinculo, campo, (getattr(req, campo) or "").strip() or None)
+    vinculo.cod_nbs = _validar_nbs(req.cod_nbs)
+    vinculo.incluir_intermediario = bool(req.incluir_intermediario)
     db.commit()
     return vinculo
 
@@ -875,6 +894,10 @@ def api_atualizar_vinculo(vinculo_id: uuid.UUID, req: VinculoAtualizarRequest, d
     for campo in ("email_assunto", "email_mensagem", "email_anexos", "email_copia", "email_para"):
         if campo in campos:
             campos[campo] = (campos[campo] or "").strip() or None
+    if "cod_nbs" in campos:
+        campos["cod_nbs"] = _validar_nbs(campos["cod_nbs"])
+    if campos.get("incluir_intermediario") is None:
+        campos.pop("incluir_intermediario", None)
     if campos.get("cod_trib_nacional") is not None and campos["cod_trib_nacional"] != vinculo.cod_trib_nacional:
         campos["cod_trib_nacional"] = _validar_codigo_servico(campos["cod_trib_nacional"])
     try:
@@ -1165,10 +1188,14 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
     if vinculo is None:
         raise HTTPException(status_code=404, detail="Vínculo não encontrado (ou não pertence ao prestador ativo)")
 
+    competencia = req.competencia
+    if req.data_competencia is not None:
+        competencia = f"{req.data_competencia.year:04d}-{req.data_competencia.month:02d}"
     try:
         emissao = criar_rascunho(
-            db, vinculo, competencia=req.competencia, valor=req.valor,
+            db, vinculo, competencia=competencia, valor=req.valor,
             ordem=req.ordem, aliq_sn=req.aliq_sn, tpAmb=req.tpAmb or _tp_amb_da_conta(db, vinculo.prestador_id),
+            dcompet=req.data_competencia.isoformat() if req.data_competencia else None,
         )
         emissao = montar_emissao(db, emissao)
     except EmissaoJaExisteError as exc:
@@ -1231,6 +1258,170 @@ def api_importar_csv(arquivo: UploadFile = File(...), db: Session = Depends(db_s
             for r in resultados
         ],
     )
+
+
+# --- Ações em lote (29/09/2026, ver app/services/lotes.py) ---
+
+
+def _ids_do_lote(db: Session, req: CriarLoteRequest) -> list[uuid.UUID]:
+    if req.emissao_ids is None and req.vinculo_id is None and req.competencia is None:
+        raise HTTPException(status_code=422, detail="Selecione notas ou um filtro (tomador/competência).")
+    try:
+        return lotes.selecionar(
+            db, req.acao, emissao_ids=req.emissao_ids, vinculo_id=req.vinculo_id,
+            competencia=req.competencia, reenviar=req.reenviar,
+        )
+    except lotes.LoteInvalidoError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/lotes/previa", response_model=PreviaLoteResponse)
+def api_previa_lote(req: CriarLoteRequest, db: Session = Depends(db_sessao)):
+    """Quantas notas a ação vai pegar (pra tela confirmar antes)."""
+    return {"acao": req.acao, "quantidade": len(_ids_do_lote(db, req))}
+
+
+@app.post("/api/lotes", response_model=LoteResponse, responses={422: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
+def api_criar_lote(
+    req: CriarLoteRequest, request: Request,
+    db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    ids = _ids_do_lote(db, req)
+    if not ids:
+        raise HTTPException(status_code=422, detail="Nenhuma nota selecionada está pronta pra essa ação.")
+    try:
+        lote = lotes.criar_lote(db, prestador_id, req.acao, ids)
+    except lotes.LoteInvalidoError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    lotes.iniciar(lote.id, prestador_id, base_url(str(request.base_url)))
+    return lotes.resumo(lote)
+
+
+@app.get("/api/lotes", response_model=list[LoteResponse])
+def api_listar_lotes(db: Session = Depends(db_sessao)):
+    recentes = db.query(LoteAcao).order_by(LoteAcao.criado_em.desc()).limit(10).all()
+    for lote in recentes:
+        lotes.atualizar_parado(db, lote)
+    db.commit()
+    return [lotes.resumo(l) for l in recentes]
+
+
+def _lote_ou_404(db: Session, lote_id: uuid.UUID) -> LoteAcao:
+    lote = db.get(LoteAcao, lote_id)
+    if lote is None:
+        raise HTTPException(status_code=404, detail="Lote não encontrado.")
+    return lote
+
+
+@app.get("/api/lotes/{lote_id}", response_model=LoteResponse)
+def api_ver_lote(lote_id: uuid.UUID, db: Session = Depends(db_sessao)):
+    lote = lotes.atualizar_parado(db, _lote_ou_404(db, lote_id))
+    db.commit()
+    return lotes.resumo(lote)
+
+
+@app.post("/api/lotes/{lote_id}/cancelar", response_model=LoteResponse)
+def api_cancelar_lote(lote_id: uuid.UUID, db: Session = Depends(db_sessao)):
+    lote = _lote_ou_404(db, lote_id)
+    if lote.status in ("fila", "executando", "interrompido"):
+        lote.status = "cancelado"
+        db.commit()
+    return lotes.resumo(lote)
+
+
+@app.post("/api/lotes/{lote_id}/retomar", response_model=LoteResponse, dependencies=[Depends(exigir_conta_real)])
+def api_retomar_lote(
+    lote_id: uuid.UUID, request: Request,
+    db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    lote = lotes.atualizar_parado(db, _lote_ou_404(db, lote_id))
+    if lote.status != "interrompido":
+        raise HTTPException(status_code=409, detail="Só dá pra retomar um lote interrompido.")
+    lote.status = "fila"
+    db.commit()
+    lotes.iniciar(lote.id, prestador_id, base_url(str(request.base_url)))
+    return lotes.resumo(lote)
+
+
+@app.post("/api/lotes/{lote_id}/refazer-falhas", response_model=LoteResponse, dependencies=[Depends(exigir_conta_real)])
+def api_refazer_falhas(
+    lote_id: uuid.UUID, request: Request,
+    db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Novo lote só com as notas que falharam."""
+    lote = _lote_ou_404(db, lote_id)
+    ids = [uuid.UUID(e["emissao_id"]) for e in lote.erros]
+    ids = lotes.selecionar(db, lote.acao, emissao_ids=ids, reenviar=False)
+    try:
+        novo = lotes.criar_lote(db, prestador_id, lote.acao, ids)
+    except lotes.LoteInvalidoError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    lotes.iniciar(novo.id, prestador_id, base_url(str(request.base_url)))
+    return lotes.resumo(novo)
+
+
+@app.get("/api/envios/resumo", response_model=ResumoEnviosResponse)
+def api_resumo_envios(ano: str | None = None, vinculo_id: uuid.UUID | None = None, db: Session = Depends(db_sessao)):
+    """E-mails/WhatsApp entregues x falhas (último status de cada nota), como
+    o "757 entregues · 35 falhas" do MandaNotas."""
+    query = db.query(Emissao.id).filter(Emissao.estado != "cancelada")
+    if ano:
+        query = query.filter(Emissao.competencia.like(f"{ano}-%"))
+    if vinculo_id:
+        query = query.filter(Emissao.prestador_tomador_id == vinculo_id)
+    ids = [i for (i,) in query]
+    ultimo: dict[uuid.UUID, str] = {}
+    if ids:
+        for emissao_id, status in (
+            db.query(Envio.emissao_id, Envio.status).filter(Envio.emissao_id.in_(ids)).order_by(Envio.criado_em)
+        ):
+            if ultimo.get(emissao_id) != "enviado":
+                ultimo[emissao_id] = status
+    enviados = sum(1 for v in ultimo.values() if v == "enviado")
+    falhas = sum(1 for v in ultimo.values() if v == "falha")
+    return {"enviados": enviados, "falhas": falhas, "notas_sem_envio": len(ids) - enviados - falhas}
+
+
+@app.get("/api/dps/zip", responses={404: {"model": ErroResponse}})
+def api_zip_notas(
+    ids: str | None = None, competencia: str | None = None, vinculo_id: uuid.UUID | None = None,
+    db: Session = Depends(db_sessao),
+):
+    """XMLs (e os PDFs oficiais já baixados) de várias notas num .zip — a
+    seleção da tela (`ids` separados por vírgula) ou um mês inteiro."""
+    query = db.query(Emissao).filter(Emissao.estado != "cancelada")
+    if ids:
+        try:
+            lista = [uuid.UUID(i) for i in ids.split(",") if i.strip()][:3000]
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="ids inválidos") from exc
+        query = query.filter(Emissao.id.in_(lista))
+    elif competencia:
+        if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", competencia):
+            raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
+        query = query.filter(Emissao.competencia == competencia)
+        if vinculo_id:
+            query = query.filter(Emissao.prestador_tomador_id == vinculo_id)
+    else:
+        raise HTTPException(status_code=422, detail="Informe as notas ou a competência.")
+    buffer = io.BytesIO()
+    quantos = 0
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for emissao in query.order_by(Emissao.n_dps).limit(3000):
+            try:
+                nome, conteudo = melhor_xml_disponivel(emissao)
+            except EmissaoSemConteudoError:
+                continue
+            zf.writestr(f"xml/{nome}", conteudo)
+            if emissao.estado == "confirmado" and emissao.danfse_pdf:
+                zf.writestr(f"pdf/{nome_pdf(emissao)}", emissao.danfse_pdf)
+            quantos += 1
+    if not quantos:
+        raise HTTPException(status_code=404, detail="Nenhuma nota com XML nessa seleção.")
+    nome_zip = f"notas_{competencia or 'selecao'}.zip"
+    return Response(content=buffer.getvalue(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{nome_zip}"'})
 
 
 @app.get("/api/dps/{emissao_id}", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}})
@@ -1416,6 +1607,8 @@ def api_enviar_email(
         envio = enviar_email(
             db, emissao, prestador_id, base_url(str(request.base_url)),
             para=req.para if req else None, copia=req.copia if req else None,
+            assunto=req.assunto if req else None, texto=req.texto if req else None,
+            salvar_padrao=bool(req and req.salvar_padrao),
         )
     except EmailIndisponivelError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1426,13 +1619,19 @@ def api_enviar_email(
 
 
 @app.post("/api/dps/{emissao_id}/whatsapp", response_model=WhatsappLinkResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
-def api_link_whatsapp(emissao_id: uuid.UUID, request: Request, db: Session = Depends(db_sessao)):
+def api_link_whatsapp(
+    emissao_id: uuid.UUID, request: Request, req: WhatsappRequest | None = None, db: Session = Depends(db_sessao),
+):
     """Marco 17 — link do WhatsApp com a mensagem pronta (e o número do
     fornecedor, se cadastrado). Registra o envio como pendente."""
     emissao = _emissao_ou_404(db, emissao_id)
     if not (emissao.xml_resposta or emissao.xml_assinado or emissao.xml_dps):
         raise HTTPException(status_code=409, detail="Esta nota ainda não tem conteúdo pra enviar.")
-    url, envio = link_whatsapp(db, emissao, base_url(str(request.base_url)))
+    url, envio = link_whatsapp(
+        db, emissao, base_url(str(request.base_url)),
+        numero=req.numero if req else None, texto=req.texto if req else None,
+        salvar_padrao=bool(req and req.salvar_padrao),
+    )
     db.commit()
     return {"url": url, "envio": envio}
 
@@ -1728,6 +1927,7 @@ def api_gerar_shopee(
     incluir_estrangeiros: bool = Form(False),
     aliq_sn: float | None = Form(None),
     tpAmb: str | None = Form(None),
+    data_competencia: str | None = Form(None),
     db: Session = Depends(db_sessao),
 ):
     """Gera uma nota por vendedor do mês escolhido — os vendedores NÃO viram
@@ -1739,12 +1939,18 @@ def api_gerar_shopee(
         raise HTTPException(status_code=422, detail="tpAmb deve ser 1 ou 2")
     vinculo = _vinculo_shopee(db, vinculo_id)
     tpAmb = tpAmb or _tp_amb_da_conta(db, vinculo.prestador_id)
+    dcompet = None
+    if data_competencia:
+        try:
+            dcompet = datetime.date.fromisoformat(data_competencia).isoformat()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="data_competencia deve estar no formato AAAA-MM-DD") from exc
     try:
         relatorio = ler_relatorio(_ler_upload(arquivo, 15))
     except RelatorioShopeeInvalidoError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     resultado = gerar_notas(
-        db, vinculo, relatorio, competencia=competencia, valor_minimo=Decimal(str(valor_minimo)),
+        db, vinculo, relatorio, competencia=competencia, dcompet=dcompet, valor_minimo=Decimal(str(valor_minimo)),
         incluir_estrangeiros=incluir_estrangeiros, aliq_sn=aliq_sn, tpAmb=tpAmb,
     )
     db.commit()

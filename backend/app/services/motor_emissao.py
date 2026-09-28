@@ -128,6 +128,7 @@ def criar_rascunho(
     aliq_sn: float | None = None,
     tpAmb: str = "2",
     tomador_avulso: dict | None = None,
+    dcompet: str | None = None,
 ) -> Emissao:
     """rascunho — atribui nDPS, congela o snapshot do tomador+descrição, e
     checa a idempotência mensal ANTES de tentar gravar (o índice único
@@ -158,7 +159,11 @@ def criar_rascunho(
             "cLocPrestacao": vinculo.cod_local_prestacao,
             "cTribNac": vinculo.cod_trib_nacional,
             "cTribMun": vinculo.cod_trib_municipal,
+            "cNBS": vinculo.cod_nbs,
         },
+        # Data de competência escolhida no calendário (29/09/2026); sem ela,
+        # a DPS usa o dia em que for montada.
+        "dcompet": dcompet,
         "ordem": ordem,
         "aliq_sn": aliq_sn,
         "tpAmb": tpAmb,
@@ -180,6 +185,15 @@ def criar_rascunho(
             "lojas": tomador_avulso.get("lojas") or [],
             "avulso": True,
         })
+        if vinculo.incluir_intermediario:
+            # O marketplace (tomador do vínculo, ex.: Shopee) declarado como
+            # intermediário da nota do vendedor.
+            snapshot["intermediario"] = {
+                "CNPJ": vinculo.tomador.cnpj, "xNome": vinculo.tomador.razao_social,
+                "cMun": vinculo.tomador.cod_municipio, "CEP": vinculo.tomador.cep,
+                "xLgr": vinculo.tomador.logradouro, "nro": vinculo.tomador.numero,
+                "xCpl": vinculo.tomador.complemento, "xBairro": vinculo.tomador.bairro,
+            }
 
     n_dps = _proximo_ndps(db, vinculo.prestador_id, vinculo.serie)
 
@@ -203,6 +217,16 @@ def criar_rascunho(
 def _exigir_estado(emissao: Emissao, *permitidos: str) -> None:
     if emissao.estado not in permitidos:
         raise TransicaoInvalidaError("/".join(permitidos), emissao.estado)
+
+
+def _interm_valido(interm: dict | None) -> dict | None:
+    """Endereço do intermediário só vai se estiver completo (senão só o
+    documento e o nome)."""
+    if not interm:
+        return None
+    if not all(interm.get(c) for c in ("cMun", "CEP", "xLgr", "nro", "xBairro")):
+        interm = {k: v for k, v in interm.items() if k in ("CNPJ", "CPF", "NIF", "xNome")}
+    return interm
 
 
 def montar(db: Session, emissao: Emissao) -> Emissao:
@@ -229,6 +253,7 @@ def montar(db: Session, emissao: Emissao) -> Emissao:
     dps_el = montar_dps_xml(
         prest=prest, toma=toma, serv=serv, serie=emissao.serie, n_dps=emissao.n_dps,
         valor=float(emissao.valor), tpAmb=snap["tpAmb"], aliq_sn=snap["aliq_sn"],
+        dcompet=snap.get("dcompet"), interm=_interm_valido(snap.get("intermediario")),
     )
     emissao.xml_dps = etree.tostring(dps_el, xml_declaration=True, encoding="UTF-8", pretty_print=True).decode()
     emissao.estado = "montado"

@@ -109,6 +109,7 @@ class Prestador(Base):
     # Ambiente das notas novas: "1" produção, "2" homologação (teste). Saiu
     # da tela de gerar nota em 28/09/2026 e virou configuração da conta.
     tp_amb_padrao: Mapped[str] = mapped_column(String(1), nullable=False, default="1", server_default="1")
+    nome_fantasia: Mapped[str | None] = mapped_column(String(200))
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
@@ -163,6 +164,11 @@ class Usuario(Base):
     email_confirmado: Mapped[bool] = mapped_column(nullable=False, default=False)
     token_confirmacao: Mapped[str | None] = mapped_column(String(64), unique=True)
     token_confirmacao_expira_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Nome de exibição e login por código enviado por e-mail (29/09/2026).
+    nome: Mapped[str | None] = mapped_column(String(120))
+    login_codigo_hash: Mapped[str | None] = mapped_column(String(128))
+    login_codigo_expira_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    login_codigo_tentativas: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
 
     # Marco 16, item 1 — login/cadastro via Google (ver app/services/
     # google_oauth.py). Nullable: a maioria das contas continua só
@@ -319,6 +325,15 @@ class PrestadorTomador(Base):
     email_copia: Mapped[str | None] = mapped_column(String(400))
     # Pra quem a nota vai; vazio = email_contato.
     email_para: Mapped[str | None] = mapped_column(String(400))
+    # Reforma tributária / MandaNotas (29/09/2026): código NBS do serviço
+    # (9 dígitos, ex.: 1.1406.20.00) e, nas notas pra vendedores da Shopee,
+    # declarar o marketplace (o tomador deste vínculo) como intermediário.
+    cod_nbs: Mapped[str | None] = mapped_column(String(12))
+    incluir_intermediario: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
+    # Últimas escolhas no envio ao fornecedor (29/09/2026: "salve sempre as
+    # últimas configurações que a pessoa usar em cada tomador").
+    envio_canal: Mapped[str | None] = mapped_column(String(10))
+    whatsapp_mensagem: Mapped[str | None] = mapped_column(Text)
     # "Excluir tomador": vínculo com notas não pode sumir do banco (a nota
     # aponta pra ele), então é marcado aqui e sai de todas as listas.
     excluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -654,3 +669,55 @@ Index("ix_envio_emissao_criado", Envio.emissao_id, Envio.criado_em)
 Index("ix_pagamento_vinculo_competencia", PagamentoRecebido.prestador_tomador_id, PagamentoRecebido.competencia)
 Index("ix_pagamento_prestador_competencia", PagamentoRecebido.prestador_id, PagamentoRecebido.competencia)
 Index("ix_emissao_prestador_competencia", Emissao.prestador_id, Emissao.competencia)
+
+
+class UsuarioPrestador(Base):
+    """Empresas (CNPJs) que um login pode operar. Sem RLS: é consultada
+    antes de saber qual empresa está ativa (ver prestador_atual_id)."""
+
+    __tablename__ = "usuario_prestador"
+
+    usuario_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("usuario.id", ondelete="CASCADE"), primary_key=True)
+    prestador_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), primary_key=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("ix_usuario_prestador_prestador", "prestador_id"),)
+
+
+class Sessao(Base):
+    """Um aparelho/navegador logado. O cookie guarda o id; revogar aqui
+    derruba aquele aparelho na próxima requisição."""
+
+    __tablename__ = "sessao"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    usuario_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("usuario.id", ondelete="CASCADE"), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    ultimo_acesso: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    user_agent: Mapped[str | None] = mapped_column(String(300))
+    ip: Mapped[str | None] = mapped_column(String(64))
+    revogada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (Index("ix_sessao_usuario", "usuario_id"),)
+
+
+class LoteAcao(Base):
+    """Ação em lote rodando em segundo plano (enviar e-mails, assinar,
+    enviar à prefeitura) — ver app/services/lotes.py."""
+
+    __tablename__ = "lote_acao"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False)
+    acao: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="fila", server_default="fila")
+    total: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    feitos: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    falhas: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    emissao_ids: Mapped[list] = mapped_column(JSONB, nullable=False)
+    erros: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    concluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (Index("ix_lote_acao_prestador", "prestador_id", "criado_em"),)

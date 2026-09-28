@@ -306,7 +306,12 @@ def previa_email(db: Session, emissao: Emissao, base: str) -> dict:
         arquivos.append(f"nfse_{emissao.n_dps}_{emissao.competencia}.xml")
     destinos = destinos_email(emissao, vinculo)
     destino = ", ".join(destinos) or None
+    dados = _dados(db, emissao, base)
+    whatsapp = None if emissao.tomador_documento else (vinculo.whatsapp_contato if vinculo else None)
     return {
+        "whatsapp": whatsapp,
+        "whatsapp_texto": mensagens.whatsapp_de_modelo(vinculo.whatsapp_mensagem if vinculo else None, dados),
+        "canal_preferido": (vinculo.envio_canal if vinculo else None) or ("email" if destinos or not whatsapp else "whatsapp"),
         "destino": destino,
         "destinos": destinos,
         "copia": [c for c in modelo["copia"] if c not in destinos],
@@ -321,6 +326,7 @@ def previa_email(db: Session, emissao: Emissao, base: str) -> dict:
 def enviar_email(
     db: Session, emissao: Emissao, prestador_id: uuid.UUID, base: str,
     para: list[str] | None = None, copia: list[str] | None = None,
+    assunto: str | None = None, texto: str | None = None, salvar_padrao: bool = False,
 ) -> Envio:
     """Manda de verdade (Resend). Falha do provedor vira envio com status
     'falha' + motivo (não exceção) — a tela mostra e a pessoa tenta de novo.
@@ -363,6 +369,16 @@ def enviar_email(
 
     modelo = modelo_email(db, emissao, base)
     copias = [c for c in (lista_emails(copia) if copia is not None else modelo["copia"]) if c not in destinos]
+    # Assunto/texto editados na hora (29/09/2026: "permita alterar o assunto
+    # e o corpo se a pessoa quiser").
+    dados = _dados(db, emissao, base)
+    if assunto and assunto.strip():
+        modelo["assunto"] = re.sub(r"[\r\n]+", " ", assunto).strip()[:300]
+    if texto and texto.strip() and texto.strip() != modelo["texto"].strip():
+        modelo["texto"] = texto.strip()
+        modelo["html"] = mensagens.email_html_de_texto(modelo["texto"], dados)
+    if salvar_padrao and vinculo is not None and not emissao.tomador_documento:
+        _lembrar_email(db, vinculo, emissao, destinos, copias, modelo, dados)
     quer_pdf = modelo["anexos"] in ("pdf_xml", "pdf")
     quer_xml = modelo["anexos"] in ("pdf_xml", "xml")
     anexos: list[tuple[str, bytes]] = []
@@ -403,13 +419,44 @@ def enviar_email(
     return envio
 
 
-def link_whatsapp(db: Session, emissao: Emissao, base: str) -> tuple[str, Envio]:
-    """URL wa.me com a mensagem pronta. Registra o envio como PENDENTE: quem
-    aperta 'enviar' no WhatsApp é a pessoa, então ela confirma depois (mesmo
-    fluxo de marcar enviado/falha que já existia)."""
+def _lembrar_email(db, vinculo, emissao, destinos, copias, modelo, dados) -> None:
+    """Guarda as escolhas deste envio como padrão do tomador (canal,
+    destinatários, cópias, assunto e texto — estes dois como modelo)."""
+    prestador = db.get(Prestador, emissao.prestador_id)
+    contato = lista_emails(vinculo.email_contato)
+    vinculo.email_para = None if destinos == contato else ", ".join(destinos)
+    fixas = set(lista_emails(prestador.email_copia_padrao if prestador else None))
+    vinculo.email_copia = ", ".join(c for c in copias if c not in fixas) or None
+    padrao_assunto = mensagens.email_assunto(dados)
+    vinculo.email_assunto = None if modelo["assunto"] == padrao_assunto else mensagens.templatizar(modelo["assunto"], dados)
+    if modelo["texto"].strip() != mensagens.email_texto(dados).strip():
+        vinculo.email_mensagem = mensagens.templatizar(modelo["texto"], dados)
+    vinculo.envio_canal = "email"
+    db.flush()
+
+
+def link_whatsapp(
+    db: Session, emissao: Emissao, base: str,
+    numero: str | None = None, texto: str | None = None, salvar_padrao: bool = False,
+) -> tuple[str, Envio]:
+    """URL wa.me com a mensagem pronta (número e texto podem vir editados
+    da tela). Quem aperta "enviar" no WhatsApp é a pessoa — ao abrir o link
+    o envio fica registrado como enviado por WhatsApp (29/09/2026: o e-mail
+    não é obrigatório, dá pra mandar só pelo WhatsApp)."""
     vinculo = db.get(PrestadorTomador, emissao.prestador_tomador_id)
-    numero = _numero_whatsapp(vinculo.whatsapp_contato if vinculo else None)
-    texto = quote(mensagens.whatsapp_texto(_dados(db, emissao, base)))
-    url = f"https://wa.me/{numero}?text={texto}" if numero else f"https://wa.me/?text={texto}"
-    envio = _novo_envio(db, emissao, "whatsapp", vinculo.whatsapp_contato if vinculo else None)
+    dados = _dados(db, emissao, base)
+    telefone = numero if numero is not None else (vinculo.whatsapp_contato if vinculo else None)
+    digitos = _numero_whatsapp(telefone)
+    mensagem = (texto or "").strip() or mensagens.whatsapp_de_modelo(vinculo.whatsapp_mensagem if vinculo else None, dados)
+    url = f"https://wa.me/{digitos}?text={quote(mensagem)}" if digitos else f"https://wa.me/?text={quote(mensagem)}"
+    envio = _novo_envio(db, emissao, "whatsapp", (telefone or "")[:200] or None)
+    envio.status = "enviado"
+    envio.enviado_em = datetime.datetime.now(datetime.timezone.utc)
+    if salvar_padrao and vinculo is not None and not emissao.tomador_documento:
+        if telefone is not None:
+            vinculo.whatsapp_contato = (telefone or "").strip()[:20] or None
+        if mensagem != mensagens.whatsapp_de_modelo(None, dados):
+            vinculo.whatsapp_mensagem = mensagens.templatizar(mensagem, dados)
+        vinculo.envio_canal = "whatsapp"
+    db.flush()
     return url, envio

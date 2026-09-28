@@ -177,3 +177,23 @@ def whatsapp_texto(d: DadosMensagem) -> str:
         linhas += ["", f"Chave de acesso: {d.chave_acesso}"]
     linhas += ["", d.prestador_nome]
     return "\n".join(linhas)
+
+
+
+def whatsapp_de_modelo(modelo: str | None, d: DadosMensagem) -> str:
+    return renderizar_modelo(modelo, d) if modelo else whatsapp_texto(d)
+
+
+def templatizar(texto: str, d: DadosMensagem) -> str:
+    """O caminho inverso de `renderizar_modelo`: o texto que a pessoa editou
+    na hora de enviar vira modelo pra próxima nota, trocando os dados DESTA
+    nota (mês, valor, nomes, link...) pelos códigos — assim o "salvar as
+    últimas configurações" não congela o mês de hoje no texto."""
+    valores = sorted(
+        ((codigo, valor) for codigo, valor in valores_modelo(d).items() if valor and len(valor) >= 3),
+        key=lambda cv: len(cv[1]),
+        reverse=True,
+    )
+    for codigo, valor in valores:
+        texto = texto.replace(valor, "{" + codigo + "}")
+    return texto

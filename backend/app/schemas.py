@@ -73,6 +73,9 @@ class GerarDpsRequest(BaseModel):
     # Sem valor = ambiente configurado na conta (prestador.tp_amb_padrao) —
     # a escolha saiu da tela de gerar nota em 28/09/2026.
     tpAmb: str | None = Field(default=None, pattern=r"^[12]$", description="1=Produção 2=Homologação")
+    # Dia de competência escolhido no calendário (29/09/2026). Quando vem,
+    # a competência (AAAA-MM) passa a ser o mês dele.
+    data_competencia: date | None = None
 
 
 class EmissaoResponse(BaseModel):
@@ -525,6 +528,8 @@ class VinculoDetalheResponse(BaseModel):
     email_anexos: str | None = None
     email_copia: str | None = None
     email_para: str | None = None
+    cod_nbs: str | None = None
+    incluir_intermediario: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -554,6 +559,8 @@ class VinculoCriarRequest(BaseModel):
     email_anexos: str | None = Field(default=None, pattern=r"^(pdf_xml|pdf|xml)$")
     email_copia: str | None = Field(default=None, max_length=400)
     email_para: str | None = Field(default=None, max_length=400)
+    cod_nbs: str | None = Field(default=None, max_length=14, pattern=r"^[\d.\s]*$")
+    incluir_intermediario: bool | None = None
 
     @model_validator(mode="after")
     def _exatamente_um_tomador(self):
@@ -584,6 +591,8 @@ class VinculoAtualizarRequest(BaseModel):
     email_anexos: str | None = Field(default=None, pattern=r"^(pdf_xml|pdf|xml)$")
     email_copia: str | None = Field(default=None, max_length=400)
     email_para: str | None = Field(default=None, max_length=400)
+    cod_nbs: str | None = Field(default=None, max_length=14, pattern=r"^[\d.\s]*$")
+    incluir_intermediario: bool | None = None
 
 
 class PrestadorResponse(BaseModel):
@@ -650,6 +659,9 @@ class ModeloEmailPadraoResponse(BaseModel):
 class PreviaEmailResponse(BaseModel):
     destino: str | None
     destinos: list[str] = []
+    whatsapp: str | None = None
+    whatsapp_texto: str = ""
+    canal_preferido: str = "email"
     copia: list[str]
     assunto: str
     texto: str
@@ -917,7 +929,57 @@ class IndicacaoResponse(BaseModel):
 
 
 class EnviarEmailRequest(BaseModel):
-    """Opcional: trocar pra quem vai SÓ neste envio (a tela pré-preenche com
-    o configurado). Listas de e-mails; inválidos são descartados."""
+    """Opcional: trocar pra quem vai, o assunto e o texto SÓ neste envio (a
+    tela pré-preenche com o configurado). `salvar_padrao`: guarda essas
+    escolhas no tomador pra próxima vez."""
     para: list[str] | None = Field(default=None, max_length=20)
     copia: list[str] | None = Field(default=None, max_length=20)
+    assunto: str | None = Field(default=None, max_length=300)
+    texto: str | None = Field(default=None, max_length=5000)
+    salvar_padrao: bool = False
+
+
+class WhatsappRequest(BaseModel):
+    numero: str | None = Field(default=None, max_length=30)
+    texto: str | None = Field(default=None, max_length=3000)
+    salvar_padrao: bool = False
+
+
+
+class CriarLoteRequest(BaseModel):
+    """Ação em lote (29/09/2026). Ou uma lista de notas (seleção na tela),
+    ou um filtro (ex.: todas as notas da Shopee de um mês)."""
+    acao: str = Field(pattern=r"^(email|assinar|submeter)$")
+    emissao_ids: list[uuid.UUID] | None = Field(default=None, max_length=3000)
+    vinculo_id: uuid.UUID | None = None
+    competencia: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    reenviar: bool = False
+
+
+class ErroLoteItem(BaseModel):
+    emissao_id: str
+    nome: str = ""
+    erro: str
+
+
+class LoteResponse(BaseModel):
+    id: uuid.UUID
+    acao: str
+    status: str
+    total: int
+    feitos: int
+    falhas: int
+    erros: list[ErroLoteItem]
+    criado_em: datetime | None = None
+    concluido_em: datetime | None = None
+
+
+class PreviaLoteResponse(BaseModel):
+    acao: str
+    quantidade: int
+
+
+class ResumoEnviosResponse(BaseModel):
+    enviados: int
+    falhas: int
+    notas_sem_envio: int
