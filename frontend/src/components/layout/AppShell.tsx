@@ -1,4 +1,5 @@
 import { FlaskConical } from "lucide-react"
+import { Suspense, useState } from "react"
 import { Outlet, useNavigate } from "react-router-dom"
 import { useAuth } from "../../lib/auth"
 import { TourDaPagina } from "../tour/Tour"
@@ -31,14 +32,17 @@ function FaixaSimulacao() {
 }
 
 export function AppShell() {
+  const [menuAberto, setMenuAberto] = useState(false)
   return (
     <div className="flex min-h-screen bg-canvas dark:bg-canvas-dark">
-      <Sidebar />
+      <Sidebar aberto={menuAberto} onFechar={() => setMenuAberto(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <FaixaSimulacao />
-        <Topbar />
-        <main className="flex-1 overflow-y-auto p-8">
-          <Outlet />
+        <Topbar onAbrirMenu={() => setMenuAberto(true)} />
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          <Suspense fallback={<p className="py-10 text-center text-sm text-slate-400">Carregando...</p>}>
+            <Outlet />
+          </Suspense>
         </main>
         <TourDaPagina />
       </div>

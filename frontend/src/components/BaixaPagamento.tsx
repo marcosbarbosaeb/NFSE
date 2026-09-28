@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { ApiError, api, formatarErro } from "../lib/api"
-import { formatBRL } from "../lib/format"
+import { formatBRL, parseBRL } from "../lib/format"
 import { Badge } from "./ui/Badge"
 
 // Status de pagamento clicável (28/09/2026): "Pendente" -> dar baixa (registra
@@ -38,11 +38,19 @@ export function BaixaPagamento({
   useEffect(() => {
     if (!aberto) return
     const fora = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setAberto(false)
-    const fechar = () => setAberto(false)
+    // Rolar a página fecha (o painel é fixo e ficaria solto) — menos quando
+    // a pessoa está digitando nele: no celular o teclado rola a tela.
+    const fechar = () => {
+      if (ref.current?.contains(document.activeElement)) return
+      setAberto(false)
+    }
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setAberto(false)
     document.addEventListener("mousedown", fora)
+    document.addEventListener("keydown", esc)
     window.addEventListener("scroll", fechar, true)
     return () => {
       document.removeEventListener("mousedown", fora)
+      document.removeEventListener("keydown", esc)
       window.removeEventListener("scroll", fechar, true)
     }
   }, [aberto])
@@ -56,7 +64,9 @@ export function BaixaPagamento({
       if (recebido) {
         await api.delete(`/pagamentos?vinculo_id=${vinculoId}&competencia=${competencia}`)
       } else {
-        await api.post("/pagamentos", { vinculo_id: vinculoId, competencia, valor: Number(valorTexto), data_recebimento: data || null })
+        const valorNum = parseBRL(valorTexto)
+        if (valorNum == null || valorNum <= 0) throw new ApiError(422, "Informe o valor recebido.")
+        await api.post("/pagamentos", { vinculo_id: vinculoId, competencia, valor: valorNum, data_recebimento: data || null })
       }
       setAberto(false)
       onMudou()

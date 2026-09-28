@@ -129,6 +129,7 @@ export function VinculoFormPage() {
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [prestadorModelo, setPrestadorModelo] = useState<Prestador | null>(null)
+  const [emailAberto, setEmailAberto] = useState(false)
   useEffect(() => {
     api.get<Prestador>("/prestador").then(setPrestadorModelo).catch(() => {})
   }, [])
@@ -162,6 +163,8 @@ export function VinculoFormPage() {
           },
         })
         setTomadorSelecionado(v.tomador)
+        // Abre a seção do e-mail se o tomador já tem algo personalizado.
+        setEmailAberto(Boolean(v.email_assunto || v.email_mensagem || v.email_anexos || v.email_copia || v.email_para))
       })
       .catch((err) => setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha ao carregar."))
       .finally(() => setCarregando(false))
@@ -710,7 +713,11 @@ export function VinculoFormPage() {
             />
           </div>
 
-          <details className="group mt-5 rounded-xl border border-slate-200 dark:border-slate-700" open={Boolean(form.email_modelo.assunto || form.email_modelo.mensagem || form.email_modelo.anexos || form.email_modelo.copia || form.email_modelo.para)}>
+          <details
+            className="group mt-5 rounded-xl border border-slate-200 dark:border-slate-700"
+            open={emailAberto}
+            onToggle={(e) => setEmailAberto(e.currentTarget.open)}
+          >
             <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
               E-mail da nota pra este tomador
               <span className="ml-2 text-xs font-normal text-slate-400">destinatário, cópia, assunto, texto e anexos</span>

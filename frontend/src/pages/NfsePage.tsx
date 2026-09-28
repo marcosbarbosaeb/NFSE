@@ -2,7 +2,7 @@ import { CheckCircle2, Clock, FileSpreadsheet, FileText, FileUp, Plus, Search } 
 import { DownloadsNota, SeloAssinatura, SeloPrefeitura, SeloTomador } from "../components/AcoesNota"
 import { BaixaPagamento } from "../components/BaixaPagamento"
 import { ShopeeModal } from "../components/ShopeeModal"
-import { type FormEvent, useEffect, useMemo, useState } from "react"
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
@@ -71,14 +71,21 @@ export function NfsePage() {
   const [ambienteTeste, setAmbienteTeste] = useState(false)
 
   useEffect(() => {
-    api.get<VinculoResumo[]>("/vinculos").then(setVinculos)
-    api.get<Prestador>("/prestador").then((p) => {
-      setAliquotaReferencia(p.aliquota_atual)
-      setAmbienteTeste(p.tp_amb_padrao === "2")
-    })
+    api.get<VinculoResumo[]>("/vinculos").then(setVinculos).catch(() => {})
+    api
+      .get<Prestador>("/prestador")
+      .then((p) => {
+        setAliquotaReferencia(p.aliquota_atual)
+        setAmbienteTeste(p.tp_amb_padrao === "2")
+      })
+      .catch(() => {})
   }, [])
 
+  // Só a resposta do pedido mais recente vale (trocar ano/fornecedor rápido
+  // não deixa uma resposta antiga sobrescrever a nova).
+  const pedidoAtual = useRef(0)
   function recarregar() {
+    const pedido = ++pedidoAtual.current
     setCarregando(true)
     setErro(null)
     const params = new URLSearchParams()
@@ -86,9 +93,9 @@ export function NfsePage() {
     if (vinculoFiltro) params.set("vinculo_id", vinculoFiltro)
     api
       .get<EmissaoListaLinha[]>(`/dps?${params.toString()}`)
-      .then(setEmissoes)
-      .catch((err) => setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão."))
-      .finally(() => setCarregando(false))
+      .then((dados) => pedido === pedidoAtual.current && setEmissoes(dados))
+      .catch((err) => pedido === pedidoAtual.current && setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão."))
+      .finally(() => pedido === pedidoAtual.current && setCarregando(false))
   }
 
   useEffect(recarregar, [ano, vinculoFiltro])
@@ -143,7 +150,12 @@ export function NfsePage() {
               <FileUp size={16} /> Relatório da Shopee
             </Button>
           )}
-          <Button variant="accent" onClick={() => setModalNova(true)} data-tour="nfse-nova">
+          <Button
+            variant="accent"
+            onClick={() => (vinculos.length > 0 ? setModalNova(true) : navigate("/app/tomadores/novo"))}
+            data-tour="nfse-nova"
+            title={vinculos.length > 0 ? undefined : "Cadastre um tomador primeiro"}
+          >
             <Plus size={16} /> Nova emissão
           </Button>
         </div>
@@ -223,10 +235,10 @@ export function NfsePage() {
         </div>
 
         {erro && <p className="mb-3 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
-        {carregando && <p className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</p>}
+        {carregando && emissoes === null && <p className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">Carregando...</p>}
 
-        {!carregando && (
-          <div className="-mx-5 overflow-x-auto px-5">
+        {emissoes !== null && (
+          <div className={`-mx-5 overflow-x-auto px-5 transition-opacity ${carregando ? "opacity-60" : ""}`}>
           <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-100 dark:border-slate-700/60 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
@@ -412,10 +424,19 @@ function NovaEmissaoModal({
     }
   }, [vinculoId, competencia])
 
+  // Nota criada mas a assinatura falhou: os botões de gerar somem (gerar de
+  // novo daria "já existe") e fica o "Ver a nota".
+  const [notaSemAssinar, setNotaSemAssinar] = useState<Emissao | null>(null)
+  const acaoRef = useRef<"assinar" | "rascunho">("assinar")
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
-    // Botão clicado: "Gerar rascunho" ou "Gerar e assinar" (28/09/2026).
-    const assinarJunto = ((e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null)?.value === "assinar"
+    // Botão clicado: "Gerar rascunho" ou "Gerar e assinar" (28/09/2026). O
+    // Enter aciona o primeiro botão de envio do formulário — "Gerar e
+    // assinar" (vem primeiro no código; a ordem na tela é invertida).
+    const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null | undefined
+    const assinarJunto = (submitter?.value ?? acaoRef.current) === "assinar"
+    if (notaSemAssinar) return
     setErro(null)
     setEnviando(true)
     let criada: Emissao | null = null
@@ -437,7 +458,7 @@ function NovaEmissaoModal({
           setErro(
             `Nota gerada, mas não deu pra assinar: ${err instanceof ApiError ? formatarErro(err.detail) : "falha de conexão"}.`,
           )
-          setTimeout(() => criada && onCriada(criada), 2500)
+          setNotaSemAssinar(criada)
           return
         }
       }
@@ -557,15 +578,35 @@ function NovaEmissaoModal({
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
-          {vinculo?.metodo_captura_valor !== "csv" && (
-            <>
-              <Button type="submit" name="acao" value="rascunho" variant="outline" disabled={enviando || !vinculoId}>
-                Gerar rascunho
-              </Button>
-              <Button type="submit" name="acao" value="assinar" variant="accent" disabled={enviando || !vinculoId}>
-                {enviando ? "Gerando..." : "Gerar e assinar"}
-              </Button>
-            </>
+          {notaSemAssinar ? (
+            <Button type="button" variant="accent" onClick={() => onCriada(notaSemAssinar)}>
+              Ver a nota
+            </Button>
+          ) : (
+            vinculo?.metodo_captura_valor !== "csv" && (
+              <div className="flex flex-row-reverse flex-wrap gap-3">
+                <Button
+                  type="submit"
+                  name="acao"
+                  value="assinar"
+                  variant="accent"
+                  disabled={enviando || !vinculoId}
+                  onClick={() => (acaoRef.current = "assinar")}
+                >
+                  {enviando ? "Gerando..." : "Gerar e assinar"}
+                </Button>
+                <Button
+                  type="submit"
+                  name="acao"
+                  value="rascunho"
+                  variant="outline"
+                  disabled={enviando || !vinculoId}
+                  onClick={() => (acaoRef.current = "rascunho")}
+                >
+                  Gerar rascunho
+                </Button>
+              </div>
+            )
           )}
         </div>
       </form>

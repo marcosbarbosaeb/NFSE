@@ -55,7 +55,7 @@ export function FinanceiroPage() {
   function recarregar() {
     setErro(null)
     api.get<NotaAberta[]>("/notas-a-receber").then(setAbertas).catch(() => setAbertas([]))
-    Promise.all([api.get<Pagamento[]>(`/pagamentos?ano=${ano}`), api.get<Despesa[]>(`/despesas?ano=${ano}`)])
+    Promise.all([api.get<Pagamento[]>(`/pagamentos?ano=${ano}&por=recebimento`), api.get<Despesa[]>(`/despesas?ano=${ano}`)])
       .then(([p, d]) => {
         setPagamentos(p)
         setDespesas(d)

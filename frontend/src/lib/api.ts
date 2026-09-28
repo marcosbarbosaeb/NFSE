@@ -31,6 +31,14 @@ export function formatarErro(detail: unknown): string {
   return "Erro inesperado."
 }
 
+// Sessão expirou no meio do uso (cookie vencido, conta de simulação apagada):
+// avisa o AuthProvider, que manda pra tela de login em vez de deixar cada
+// página mostrando erro.
+export const EVENTO_SESSAO_EXPIRADA = "agenteana:sessao-expirada"
+function avisarSeExpirou(status: number, path: string) {
+  if (status === 401 && !path.startsWith("/auth/")) window.dispatchEvent(new Event(EVENTO_SESSAO_EXPIRADA))
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(`/api${path}`, {
     ...init,
@@ -39,6 +47,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const isJson = resp.headers.get("content-type")?.includes("application/json")
   const body = isJson ? await resp.json() : await resp.text()
   if (!resp.ok) {
+    avisarSeExpirou(resp.status, path)
     throw new ApiError(resp.status, isJson ? body.detail : body)
   }
   return body as T
@@ -51,6 +60,7 @@ async function postForm<T>(path: string, form: FormData): Promise<T> {
   const isJson = resp.headers.get("content-type")?.includes("application/json")
   const body = isJson ? await resp.json() : await resp.text()
   if (!resp.ok) {
+    avisarSeExpirou(resp.status, path)
     throw new ApiError(resp.status, isJson ? body.detail : body)
   }
   return body as T

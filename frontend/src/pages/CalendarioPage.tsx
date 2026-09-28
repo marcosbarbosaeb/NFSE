@@ -5,7 +5,7 @@ import { Card } from "../components/ui/Card"
 import { Field, FieldWrap } from "../components/ui/Field"
 import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
-import { competenciaAtual, deslocarCompetencia, formatBRL, formatCompetenciaLonga } from "../lib/format"
+import { competenciaAtual, deslocarCompetencia, formatBRL, formatCompetenciaLonga, parseBRL } from "../lib/format"
 import type { Calendario, CategoriaEventoManual, EventoCalendario, TipoEventoCalendario, VinculoResumo } from "../lib/types"
 
 const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
@@ -300,7 +300,7 @@ function EventoModal({
       descricao: descricao || null,
       categoria,
       vinculo_id: usaFornecedor && vinculoId ? vinculoId : null,
-      valor: categoria === "recebimento_previsto" && valor ? Number(valor.replace(",", ".")) : null,
+      valor: categoria === "recebimento_previsto" && valor ? parseBRL(valor) : null,
     }
     try {
       if (editando) {

@@ -1850,7 +1850,9 @@ def _index_html() -> FileResponse:
             status_code=500,
             detail="Build do frontend não encontrado — rode `npm run build` em frontend/ (ou use o Dockerfile).",
         )
-    return FileResponse(indice)
+    # Sempre revalida o index.html (senão, depois de um deploy, o navegador
+    # guarda a página velha apontando pra arquivos que não existem mais).
+    return FileResponse(indice, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/", include_in_schema=False)
@@ -1876,5 +1878,8 @@ def frontend_catch_all(caminho_completo: str):
         raise HTTPException(status_code=404, detail="Rota não encontrada.")
     candidato = (_FRONTEND_DIST / caminho_completo).resolve()
     if _FRONTEND_DIST.is_dir() and candidato.is_file() and _FRONTEND_DIST.resolve() in candidato.parents:
+        # Arquivos do build com hash no nome nunca mudam: cache longo.
+        if caminho_completo.startswith("assets/"):
+            return FileResponse(candidato, headers={"Cache-Control": "public, max-age=31536000, immutable"})
         return FileResponse(candidato)
     return _index_html()

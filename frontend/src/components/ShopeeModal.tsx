@@ -1,11 +1,11 @@
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Globe2 } from "lucide-react"
-import { type FormEvent, useMemo, useState } from "react"
+import { type FormEvent, useEffect, useMemo, useState } from "react"
 import { ApiError, api, formatarErro } from "../lib/api"
-import { formatBRL, formatCompetenciaLonga } from "../lib/format"
+import { formatBRL, formatCompetenciaLonga, parseBRL } from "../lib/format"
 import type { GeracaoShopee, PreviaShopee, VinculoResumo } from "../lib/types"
 import { Button } from "./ui/Button"
 import { CampoPercentual } from "./ui/CampoPercentual"
-import { Field, FieldWrap } from "./ui/Field"
+import { Field } from "./ui/Field"
 import { Modal } from "./ui/Modal"
 
 // Relatório mensal da Shopee (28/09/2026). Na Shopee a nota vai pra cada
@@ -36,7 +36,12 @@ export function ShopeeModal({
   const [valorMinimo, setValorMinimo] = useState("0")
   const [incluirEstrangeiros, setIncluirEstrangeiros] = useState(false)
   const [aliqSn, setAliqSn] = useState<number | null>(aliquotaReferencia)
-  const [tpAmb, setTpAmb] = useState<"1" | "2">("2")
+  // A referência pode chegar depois do modal abrir.
+  useEffect(() => {
+    if (aliquotaReferencia != null) setAliqSn((atual) => atual ?? aliquotaReferencia)
+  }, [aliquotaReferencia])
+  // Ambiente: o da conta (Configurações › Ambiente das notas) — o backend
+  // aplica quando não vem tpAmb.
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [resultado, setResultado] = useState<GeracaoShopee | null>(null)
@@ -61,7 +66,7 @@ export function ShopeeModal({
     }
   }
 
-  const minimo = Number(valorMinimo.replace(",", ".")) || 0
+  const minimo = parseBRL(valorMinimo) ?? 0
   const doMes = useMemo(() => (previa?.vendedores ?? []).filter((v) => v.competencia === competencia), [previa, competencia])
   const aGerar = doMes.filter((v) => !v.ja_gerada && v.valor >= minimo && (incluirEstrangeiros || !v.estrangeiro))
   const totalAGerar = aGerar.reduce((s, v) => s + v.valor, 0)
@@ -82,7 +87,6 @@ export function ShopeeModal({
       form.append("valor_minimo", String(minimo))
       form.append("incluir_estrangeiros", String(incluirEstrangeiros))
       if (aliqSn != null) form.append("aliq_sn", String(aliqSn))
-      form.append("tpAmb", tpAmb)
       const resp = await api.postForm<GeracaoShopee>("/shopee/gerar", form)
       setResultado(resp)
       if (resp.geradas > 0) onGeradas()
@@ -143,7 +147,7 @@ export function ShopeeModal({
             ))}
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field
               label="Não gerar notas abaixo de (R$)"
               inputMode="decimal"
@@ -152,16 +156,6 @@ export function ShopeeModal({
               hint={abaixoMinimo ? `${abaixoMinimo} vendedor(es) ficam de fora` : "0 = gera todas"}
             />
             <CampoPercentual label="Alíquota do Simples (%)" valor={aliqSn} onChange={setAliqSn} />
-            <FieldWrap label="Ambiente">
-              <select
-                value={tpAmb}
-                onChange={(e) => setTpAmb(e.target.value as "1" | "2")}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-              >
-                <option value="2">Homologação (teste)</option>
-                <option value="1">Produção</option>
-              </select>
-            </FieldWrap>
           </div>
 
           {estrangeiros > 0 && (

@@ -16,7 +16,6 @@ import { Link, useNavigate } from "react-router-dom"
 import { type NotaParaAcoes, SeloAssinatura, SeloPrefeitura, SeloTomador } from "../components/AcoesNota"
 import { BaixaPagamento } from "../components/BaixaPagamento"
 import { Badge } from "../components/ui/Badge"
-import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { MiniBarChart } from "../components/ui/MiniBarChart"
 import { StatCard } from "../components/ui/StatCard"
@@ -197,10 +196,11 @@ export function DashboardPage() {
                   <Link to="/app/nfse" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
                     Ver todas <ArrowRight size={14} />
                   </Link>
-                  <Link to="/app/nfse?nova=1">
-                    <Button variant="accent" className="text-sm">
-                      <Plus size={15} /> Nova emissão
-                    </Button>
+                  <Link
+                    to="/app/nfse?nova=1"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-white hover:bg-accent-600"
+                  >
+                    <Plus size={15} /> Nova emissão
                   </Link>
                 </div>
               </div>

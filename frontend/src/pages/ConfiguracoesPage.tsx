@@ -24,6 +24,7 @@ export function ConfiguracoesPage() {
   const [erro, setErro] = useState<string | null>(null)
 
   const [pfx, setPfx] = useState<File | null>(null)
+  const [chaveArquivo, setChaveArquivo] = useState(0)
   const [senha, setSenha] = useState("")
   const [enviandoCert, setEnviandoCert] = useState(false)
   const [erroCert, setErroCert] = useState<string | null>(null)
@@ -75,6 +76,7 @@ export function ConfiguracoesPage() {
       setCertificado(status)
       setPfx(null)
       setSenha("")
+      setChaveArquivo((n) => n + 1) // limpa o campo de arquivo (dá pra escolher o mesmo .pfx de novo)
     } catch (err) {
       setErroCert(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
     } finally {
@@ -171,8 +173,9 @@ export function ConfiguracoesPage() {
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Arquivo .pfx</span>
             <input
+              key={chaveArquivo}
               type="file"
-              accept=".pfx,application/x-pkcs12"
+              accept=".pfx,.p12,application/x-pkcs12"
               required
               onChange={(e) => setPfx(e.target.files?.[0] ?? null)}
               className="text-sm"

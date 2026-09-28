@@ -1,3 +1,4 @@
+import { lazy } from "react"
 import { Navigate, Route, Routes } from "react-router-dom"
 import { AppShell } from "./components/layout/AppShell"
 import { SoNoEmissor } from "./components/layout/SoNoEmissor"
@@ -6,20 +7,23 @@ import { AuthProvider } from "./lib/auth"
 import { ehDominioNotas } from "./lib/dominios"
 import { ThemeProvider } from "./lib/theme"
 import { CadastroPage } from "./pages/CadastroPage"
-import { CalendarioPage } from "./pages/CalendarioPage"
-import { IndiquePage } from "./pages/IndiquePage"
-import { ConfiguracoesPage } from "./pages/ConfiguracoesPage"
 import { ConfirmarEmailPage } from "./pages/ConfirmarEmailPage"
-import { DashboardPage } from "./pages/DashboardPage"
-import { EmissaoDetalhePage } from "./pages/EmissaoDetalhePage"
-import { FinanceiroPage } from "./pages/FinanceiroPage"
 import { LandingPage } from "./pages/LandingPage"
 import { PrivacidadePage, TermosPage } from "./pages/LegalPage"
 import { SimulacaoPage } from "./pages/SimulacaoPage"
 import { LoginPage } from "./pages/LoginPage"
-import { NfsePage } from "./pages/NfsePage"
-import { TomadoresPage } from "./pages/TomadoresPage"
-import { VinculoFormPage } from "./pages/VinculoFormPage"
+
+// Telas do painel carregadas sob demanda (o site institucional e o login
+// não baixam o app inteiro).
+const CalendarioPage = lazy(() => import("./pages/CalendarioPage").then((m) => ({ default: m.CalendarioPage })))
+const IndiquePage = lazy(() => import("./pages/IndiquePage").then((m) => ({ default: m.IndiquePage })))
+const ConfiguracoesPage = lazy(() => import("./pages/ConfiguracoesPage").then((m) => ({ default: m.ConfiguracoesPage })))
+const DashboardPage = lazy(() => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardPage })))
+const EmissaoDetalhePage = lazy(() => import("./pages/EmissaoDetalhePage").then((m) => ({ default: m.EmissaoDetalhePage })))
+const FinanceiroPage = lazy(() => import("./pages/FinanceiroPage").then((m) => ({ default: m.FinanceiroPage })))
+const NfsePage = lazy(() => import("./pages/NfsePage").then((m) => ({ default: m.NfsePage })))
+const TomadoresPage = lazy(() => import("./pages/TomadoresPage").then((m) => ({ default: m.TomadoresPage })))
+const VinculoFormPage = lazy(() => import("./pages/VinculoFormPage").then((m) => ({ default: m.VinculoFormPage })))
 
 // Marco 15 (item 6): "/" virou a página de marketing pública (ver
 // LandingPage.tsx) — o painel autenticado, que antes vivia na raiz,

@@ -50,11 +50,19 @@ export function SeloAcao({
   useEffect(() => {
     if (!aberto) return
     const fora = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setAberto(false)
-    const fechar = () => setAberto(false)
+    // Rolar a página fecha (o painel é fixo e ficaria solto) — menos quando
+    // a pessoa está digitando nele: no celular o teclado rola a tela.
+    const fechar = () => {
+      if (ref.current?.contains(document.activeElement)) return
+      setAberto(false)
+    }
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setAberto(false)
     document.addEventListener("mousedown", fora)
+    document.addEventListener("keydown", esc)
     window.addEventListener("scroll", fechar, true)
     return () => {
       document.removeEventListener("mousedown", fora)
+      document.removeEventListener("keydown", esc)
       window.removeEventListener("scroll", fechar, true)
     }
   }, [aberto])
@@ -206,8 +214,10 @@ export function SeloPrefeitura({ nota, onMudou }: { nota: NotaParaAcoes; onMudou
             fechar={fechar}
             onConfirmar={async () => {
               const r = await api.post<{ estado: string; erro_detalhe?: string | null }>(`/dps/${nota.id}/submeter`, {})
-              setResultado(r.estado === "confirmado" ? "Autorizada!" : r.erro_detalhe ?? null)
+              setResultado(r.estado === "confirmado" ? "Autorizada!" : null)
               onMudou()
+              // Recusa da prefeitura volta com 200 + estado "erro": mostra o motivo.
+              if (r.estado === "erro") throw new ApiError(400, r.erro_detalhe ?? "A prefeitura recusou a nota.")
             }}
           />
         )}

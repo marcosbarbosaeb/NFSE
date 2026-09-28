@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
-import { ApiError, api } from "./api"
+import { ApiError, EVENTO_SESSAO_EXPIRADA, api } from "./api"
 import type { Usuario } from "./types"
 
 interface AuthState {
@@ -26,6 +26,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then(setUsuario)
       .catch(() => setUsuario(null))
       .finally(() => setCarregando(false))
+  }, [])
+
+  useEffect(() => {
+    const expirou = () => setUsuario(null)
+    window.addEventListener(EVENTO_SESSAO_EXPIRADA, expirou)
+    return () => window.removeEventListener(EVENTO_SESSAO_EXPIRADA, expirou)
   }, [])
 
   async function login(email: string, senha: string) {

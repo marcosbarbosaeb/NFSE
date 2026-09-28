@@ -16,9 +16,17 @@ const ITENS = [
   { to: "/app/configuracoes", label: "Configurações", icon: Settings },
 ]
 
-export function Sidebar() {
+// Celular (revisão de 28/09/2026): abaixo de "lg" a barra vira uma gaveta
+// que abre pelo botão de menu do topo e fecha ao escolher uma tela.
+export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFechar?: () => void }) {
   return (
-    <aside className="sticky top-0 flex h-screen w-64 shrink-0 self-start flex-col justify-between bg-brand-900 px-4 py-6 text-slate-300">
+    <>
+      {aberto && <div className="fixed inset-0 z-40 bg-slate-900/50 lg:hidden" onClick={onFechar} aria-hidden="true" />}
+    <aside
+      className={`fixed inset-y-0 left-0 z-50 flex h-screen w-64 shrink-0 flex-col justify-between overflow-y-auto bg-brand-900 px-4 py-6 text-slate-300 transition-transform lg:sticky lg:top-0 lg:z-auto lg:translate-x-0 lg:self-start ${
+        aberto ? "translate-x-0" : "-translate-x-full"
+      }`}
+    >
       <div>
         <div className="mb-8 flex items-center gap-2 px-2">
           <Marca escuro subtitulo="Emissor de notas" />
@@ -30,6 +38,7 @@ export function Sidebar() {
               key={to}
               to={to}
               end={end}
+              onClick={onFechar}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                   isActive ? "bg-primary-600 text-white" : "text-slate-300 hover:bg-brand-800 hover:text-white"
@@ -56,5 +65,6 @@ export function Sidebar() {
         </BotaoSuporte>
       </div>
     </aside>
+    </>
   )
 }

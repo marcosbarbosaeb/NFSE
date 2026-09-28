@@ -1,5 +1,5 @@
-import { Bell, ChevronDown, CircleHelp, LogOut, Search } from "lucide-react"
-import { useState } from "react"
+import { Bell, ChevronDown, CircleHelp, LogOut, Menu, Search } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
 import { useAuth } from "../../lib/auth"
 import { mostrarDicasDaTela } from "../../lib/tutorial"
 
@@ -10,13 +10,35 @@ function iniciais(email: string): string {
   return letras.join("") || "?"
 }
 
-export function Topbar() {
+export function Topbar({ onAbrirMenu }: { onAbrirMenu?: () => void }) {
   const { usuario, logout } = useAuth()
   const [menuAberto, setMenuAberto] = useState(false)
+  const refMenu = useRef<HTMLDivElement>(null)
+
+  // Menu do usuário fecha ao clicar fora ou apertar Esc.
+  useEffect(() => {
+    if (!menuAberto) return
+    const fora = (e: MouseEvent) => refMenu.current && !refMenu.current.contains(e.target as Node) && setMenuAberto(false)
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setMenuAberto(false)
+    document.addEventListener("mousedown", fora)
+    document.addEventListener("keydown", esc)
+    return () => {
+      document.removeEventListener("mousedown", fora)
+      document.removeEventListener("keydown", esc)
+    }
+  }, [menuAberto])
 
   return (
-    <header className="flex items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-8 py-4">
-      <div className="relative w-full max-w-md">
+    <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800 sm:px-6 lg:px-8 lg:py-4">
+      <button
+        type="button"
+        onClick={onAbrirMenu}
+        className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700 lg:hidden"
+        aria-label="Abrir o menu"
+      >
+        <Menu size={20} />
+      </button>
+      <div className="relative hidden w-full max-w-md md:block">
         <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
         <input
           type="text"
@@ -27,7 +49,7 @@ export function Topbar() {
         />
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-4">
         <button
           type="button"
           onClick={mostrarDicasDaTela}
@@ -48,16 +70,18 @@ export function Topbar() {
         </button>
 
         {usuario && (
-          <div className="relative">
+          <div className="relative" ref={refMenu}>
             <button
               type="button"
               onClick={() => setMenuAberto((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={menuAberto}
               className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700"
             >
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-900 text-xs font-semibold text-white">
                 {usuario.demo ? "V" : iniciais(usuario.email)}
               </div>
-              <div className="text-left leading-tight">
+              <div className="hidden text-left leading-tight sm:block">
                 <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{usuario.demo ? "Visitante" : usuario.email}</p>
                 <p className="text-xs text-slate-400 dark:text-slate-500">{usuario.demo ? "Conta de simulação" : "Prestador(a) de serviços"}</p>
               </div>
