@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app.auth import hash_senha
 from app.config import get_settings
 from app.database import definir_prestador_atual
-from app.models import Prestador, Usuario
+from app.models import Prestador, Usuario, UsuarioPrestador
 from app.services.billing import criar_assinatura_trial
 from app.services.indicacao import registrar_indicacao
 from app.services.email import EmailEnvioError, get_email_sender
@@ -131,6 +131,8 @@ def criar_cadastro(
         token_confirmacao_expira_em=datetime.datetime.now(datetime.timezone.utc) + _VALIDADE_TOKEN,
     )
     db.add(usuario)
+    db.flush()
+    db.add(UsuarioPrestador(usuario_id=usuario.id, prestador_id=prestador.id))
     db.flush()
 
     _enviar_email_confirmacao(usuario.email, token)

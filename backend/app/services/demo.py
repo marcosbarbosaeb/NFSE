@@ -43,6 +43,7 @@ from app.models import (
     PrestadorTomador,
     Tomador,
     Usuario,
+    UsuarioPrestador,
 )
 from app.services.motor_emissao import criar_rascunho, montar
 from app.services.pagamentos import registrar_pagamento
@@ -135,6 +136,8 @@ def criar_conta_demo(db: Session) -> Usuario:
         senha_hash=hash_senha(secrets.token_urlsafe(24)), email_confirmado=True,
     )
     db.add(usuario)
+    db.flush()
+    db.add(UsuarioPrestador(usuario_id=usuario.id, prestador_id=prestador_id))
     db.flush()
 
     for indice, dados in enumerate(_TOMADORES_DEMO):

@@ -36,11 +36,27 @@ def upgrade() -> None:
     # Últimas escolhas de envio ao fornecedor (canal e texto do WhatsApp).
     op.add_column('prestador_tomador', sa.Column('envio_canal', sa.String(length=10), nullable=True))
     op.add_column('prestador_tomador', sa.Column('whatsapp_mensagem', sa.Text(), nullable=True))
+    # Como o tomador recebe a nota (envio_canal: email | whatsapp | portal |
+    # nenhum) e o endereço do portal dele, quando for "portal".
+    op.add_column('prestador_tomador', sa.Column('portal_url', sa.String(length=400), nullable=True))
+    # E-mails gerais (contador, a própria pessoa) com texto padrão próprio.
+    op.add_column('prestador', sa.Column('email_geral_para', sa.String(length=400), nullable=True))
+    op.add_column('prestador', sa.Column('email_geral_assunto', sa.String(length=300), nullable=True))
+    op.add_column('prestador', sa.Column('email_geral_mensagem', sa.Text(), nullable=True))
+    op.add_column('prestador', sa.Column('email_geral_anexos', sa.String(length=10), nullable=True))
     op.add_column('prestador', sa.Column('nome_fantasia', sa.String(length=200), nullable=True))
     op.add_column('usuario', sa.Column('nome', sa.String(length=120), nullable=True))
     op.add_column('usuario', sa.Column('login_codigo_hash', sa.String(length=128), nullable=True))
     op.add_column('usuario', sa.Column('login_codigo_expira_em', sa.DateTime(timezone=True), nullable=True))
     op.add_column('usuario', sa.Column('login_codigo_tentativas', sa.SmallInteger(), nullable=False, server_default='0'))
+
+    # Canal novo: cópia pros e-mails gerais (contador etc.) — não conta como
+    # "enviada ao fornecedor".
+    op.drop_constraint('ck_envio_canal', 'envio', type_='check')
+    op.create_check_constraint(
+        'ck_envio_canal', 'envio',
+        "canal IN ('download','email','whatsapp','direto_fornecedor','mensagem_pronta','email_geral')",
+    )
 
     op.create_table(
         'usuario_prestador',
@@ -92,6 +108,10 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute("DROP POLICY IF EXISTS lote_acao_isolamento_por_prestador ON lote_acao;")
+    op.drop_constraint('ck_envio_canal', 'envio', type_='check')
+    op.create_check_constraint(
+        'ck_envio_canal', 'envio', "canal IN ('download','email','whatsapp','direto_fornecedor','mensagem_pronta')",
+    )
     op.drop_index('ix_lote_acao_prestador', table_name='lote_acao')
     op.drop_table('lote_acao')
     op.drop_index('ix_sessao_usuario', table_name='sessao')
@@ -101,6 +121,9 @@ def downgrade() -> None:
     for coluna in ('login_codigo_tentativas', 'login_codigo_expira_em', 'login_codigo_hash', 'nome'):
         op.drop_column('usuario', coluna)
     op.drop_column('prestador', 'nome_fantasia')
+    for coluna in ('email_geral_anexos', 'email_geral_mensagem', 'email_geral_assunto', 'email_geral_para'):
+        op.drop_column('prestador', coluna)
+    op.drop_column('prestador_tomador', 'portal_url')
     op.drop_column('prestador_tomador', 'whatsapp_mensagem')
     op.drop_column('prestador_tomador', 'envio_canal')
     op.drop_column('prestador_tomador', 'incluir_intermediario')

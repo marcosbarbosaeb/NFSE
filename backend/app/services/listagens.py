@@ -72,7 +72,7 @@ def listar_emissoes(
     if emissoes:
         for emissao_id, status in (
             db.query(Envio.emissao_id, Envio.status)
-            .filter(Envio.emissao_id.in_([e.id for e in emissoes]))
+            .filter(Envio.emissao_id.in_([e.id for e in emissoes]), Envio.canal.in_(("email", "whatsapp", "direto_fornecedor")))
             .order_by(Envio.criado_em)
         ):
             if ultimo_envio.get(emissao_id) != "enviado":
@@ -97,6 +97,7 @@ def listar_emissoes(
             "tem_email": bool((e.tomador_snapshot or {}).get("email") if e.tomador_documento else (e.vinculo.email_para or e.vinculo.email_contato)),
             "homologacao": (e.tomador_snapshot or {}).get("tpAmb") == "2",
             "avulsa": bool(e.tomador_documento),
+            "envio_forma": "email" if e.tomador_documento else e.vinculo.envio_canal,
         }
         for e in emissoes
     ]

@@ -197,3 +197,19 @@ def templatizar(texto: str, d: DadosMensagem) -> str:
     for codigo, valor in valores:
         texto = texto.replace(valor, "{" + codigo + "}")
     return texto
+
+
+
+# E-mails gerais (contador, a própria pessoa) — texto padrão próprio.
+ASSUNTO_GERAL_PADRAO = "NFS-e {numero_nota} — {razao_social_tomador} — {competencia}"
+MENSAGEM_GERAL_PADRAO = """Olá!
+
+Segue a nota fiscal de serviço emitida por {prestador} para {razao_social_tomador}.
+
+Competência: {competencia}
+Valor: {valor}
+Referente a: {descricao}
+
+A nota está em anexo e também pode ser baixada aqui: {link}
+
+{prestador}"""

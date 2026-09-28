@@ -28,7 +28,7 @@ from app.models import Emissao, Envio, LoteAcao
 
 logger = logging.getLogger("agenteana.lotes")
 
-ACOES = ("email", "assinar", "submeter")
+ACOES = ("email", "email_geral", "assinar", "submeter")
 MAXIMO_POR_LOTE = 3000
 PAUSA_EMAIL_S = 0.6
 # Lote "executando" sem progresso há mais que isso e sem thread viva aqui =
@@ -48,9 +48,13 @@ def _elegivel(acao: str, e: Emissao, ja_enviada: bool) -> bool:
         return e.estado == "montado"
     if acao == "submeter":
         return e.estado in ("assinado", "erro")
-    # e-mail: nota autorizada (ou de teste) que ainda não foi enviada
+    # e-mail: nota autorizada (ou de teste) que ainda não foi enviada — e,
+    # pro fornecedor, só de quem recebe por e-mail (portal/WhatsApp/"não
+    # precisa" ficam de fora).
     teste = (e.tomador_snapshot or {}).get("tpAmb") == "2"
     liberada = e.estado == "confirmado" or (teste and e.estado in ("montado", "assinado", "submetido"))
+    if acao == "email" and not e.tomador_documento and e.vinculo is not None and e.vinculo.envio_canal not in (None, "email"):
+        return False
     return liberada and not ja_enviada
 
 
@@ -71,10 +75,10 @@ def selecionar(
         query = query.filter(Emissao.competencia == competencia)
     emissoes = query.order_by(Emissao.criado_em, Emissao.n_dps).limit(MAXIMO_POR_LOTE + 1).all()
     enviadas: set[uuid.UUID] = set()
-    if acao == "email" and not reenviar and emissoes:
+    if acao in ("email", "email_geral") and not reenviar and emissoes:
         enviadas = {
             i for (i,) in db.query(Envio.emissao_id).filter(
-                Envio.emissao_id.in_([e.id for e in emissoes]), Envio.canal == "email", Envio.status == "enviado"
+                Envio.emissao_id.in_([e.id for e in emissoes]), Envio.canal == acao, Envio.status == "enviado"
             )
         }
     return [e.id for e in emissoes if _elegivel(acao, e, e.id in enviadas)][:MAXIMO_POR_LOTE]
@@ -161,6 +165,18 @@ def _executor(db: Session, acao: str, prestador_id: uuid.UUID, base_url: str):
     from app.services.certificados import CertificadoNaoEncontradoError, carregar_certificado
     from app.services.envio_direto import EmailIndisponivelError, enviar_email
     from app.services.motor_emissao import TransicaoInvalidaError, assinar, submeter
+
+    if acao == "email_geral":
+        from app.services.envio_direto import enviar_geral
+
+        def fazer_geral(e: Emissao) -> str | None:
+            try:
+                envio = enviar_geral(db, e, prestador_id, base_url)
+            except EmailIndisponivelError as exc:
+                return str(exc)
+            time.sleep(PAUSA_EMAIL_S)
+            return None if envio.status == "enviado" else (envio.erro or "Falha no envio")
+        return fazer_geral
 
     if acao == "email":
         def fazer(e: Emissao) -> str | None:

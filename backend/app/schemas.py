@@ -285,6 +285,7 @@ class EmissaoResumoLinha(BaseModel):
     tem_pdf: bool = False
     tem_email: bool = False
     homologacao: bool = False
+    envio_forma: str | None = None
 
 
 class AtencaoItem(BaseModel):
@@ -414,6 +415,7 @@ class UsuarioResponse(BaseModel):
     prestador_id: uuid.UUID
     # Conta do ambiente de simulação (ver app/services/demo.py).
     demo: bool = False
+    nome: str | None = None
 
 
 class GoogleOAuthUrlResponse(BaseModel):
@@ -530,6 +532,8 @@ class VinculoDetalheResponse(BaseModel):
     email_para: str | None = None
     cod_nbs: str | None = None
     incluir_intermediario: bool = False
+    envio_canal: str | None = None
+    portal_url: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -561,6 +565,8 @@ class VinculoCriarRequest(BaseModel):
     email_para: str | None = Field(default=None, max_length=400)
     cod_nbs: str | None = Field(default=None, max_length=14, pattern=r"^[\d.\s]*$")
     incluir_intermediario: bool | None = None
+    envio_canal: str | None = Field(default=None, pattern=r"^(email|whatsapp|portal|nenhum)$")
+    portal_url: str | None = Field(default=None, max_length=400)
 
     @model_validator(mode="after")
     def _exatamente_um_tomador(self):
@@ -593,6 +599,8 @@ class VinculoAtualizarRequest(BaseModel):
     email_para: str | None = Field(default=None, max_length=400)
     cod_nbs: str | None = Field(default=None, max_length=14, pattern=r"^[\d.\s]*$")
     incluir_intermediario: bool | None = None
+    envio_canal: str | None = Field(default=None, pattern=r"^(email|whatsapp|portal|nenhum)$")
+    portal_url: str | None = Field(default=None, max_length=400)
 
 
 class PrestadorResponse(BaseModel):
@@ -619,10 +627,18 @@ class PrestadorResponse(BaseModel):
     aliquota_atualizada_em: date | None = None
     dia_lembrete_aliquota: int | None = None
     tp_amb_padrao: str = "1"
+    nome_fantasia: str | None = None
+    op_simples_nacional: str | None = None
+    regime_apuracao_sn: str | None = None
+    regime_especial_trib: str | None = None
     email_assunto_padrao: str | None = None
     email_mensagem_padrao: str | None = None
     email_anexos_padrao: str | None = None
     email_copia_padrao: str | None = None
+    email_geral_para: str | None = None
+    email_geral_assunto: str | None = None
+    email_geral_mensagem: str | None = None
+    email_geral_anexos: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -642,6 +658,10 @@ class PreferenciasPrestadorRequest(BaseModel):
     email_mensagem_padrao: str | None = Field(default=None, max_length=5000)
     email_anexos_padrao: str | None = Field(default=None, pattern=r"^(pdf_xml|pdf|xml)$")
     email_copia_padrao: str | None = Field(default=None, max_length=400)
+    email_geral_para: str | None = Field(default=None, max_length=400)
+    email_geral_assunto: str | None = Field(default=None, max_length=300)
+    email_geral_mensagem: str | None = Field(default=None, max_length=5000)
+    email_geral_anexos: str | None = Field(default=None, pattern=r"^(pdf_xml|pdf|xml)$")
 
 
 class CodigoModeloResponse(BaseModel):
@@ -662,6 +682,10 @@ class PreviaEmailResponse(BaseModel):
     whatsapp: str | None = None
     whatsapp_texto: str = ""
     canal_preferido: str = "email"
+    portal_url: str | None = None
+    geral_destinos: list[str] = []
+    geral_assunto: str = ""
+    geral_texto: str = ""
     copia: list[str]
     assunto: str
     texto: str
@@ -697,6 +721,7 @@ class EmissaoListaLinha(BaseModel):
     tem_email: bool = False
     homologacao: bool = False
     avulsa: bool = False  # nota de vendedor da Shopee (destinatário fixo)
+    envio_forma: str | None = None  # como o tomador recebe: email|whatsapp|portal|nenhum
 
 
 class EventoCalendarioResponse(BaseModel):
@@ -949,7 +974,7 @@ class WhatsappRequest(BaseModel):
 class CriarLoteRequest(BaseModel):
     """Ação em lote (29/09/2026). Ou uma lista de notas (seleção na tela),
     ou um filtro (ex.: todas as notas da Shopee de um mês)."""
-    acao: str = Field(pattern=r"^(email|assinar|submeter)$")
+    acao: str = Field(pattern=r"^(email|email_geral|assinar|submeter)$")
     emissao_ids: list[uuid.UUID] | None = Field(default=None, max_length=3000)
     vinculo_id: uuid.UUID | None = None
     competencia: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -983,3 +1008,91 @@ class ResumoEnviosResponse(BaseModel):
     enviados: int
     falhas: int
     notas_sem_envio: int
+
+
+
+# --- Conta e empresas (29/09/2026) ---
+
+
+class SolicitarCodigoRequest(BaseModel):
+    email: str = Field(max_length=200)
+
+
+class EntrarComCodigoRequest(BaseModel):
+    email: str = Field(max_length=200)
+    codigo: str = Field(min_length=6, max_length=12)
+
+
+class ContaResponse(BaseModel):
+    nome: str | None
+    email: str
+    demo: bool
+    tem_senha: bool
+    google_conectado: bool
+
+
+class ContaAtualizarRequest(BaseModel):
+    nome: str | None = Field(default=None, max_length=120)
+
+
+class SessaoResponse(BaseModel):
+    id: uuid.UUID
+    dispositivo: str
+    ip: str | None
+    criado_em: datetime | None
+    ultimo_acesso: datetime | None
+    atual: bool
+
+
+class EmpresaResponse(BaseModel):
+    id: uuid.UUID
+    razao_social: str
+    nome_fantasia: str | None = None
+    cnpj: str
+    ativa: bool = False
+
+
+class EmpresaCriarRequest(BaseModel):
+    cpf_cnpj: str = Field(pattern=r"^\d{14}$")
+    razao_social: str = Field(min_length=1, max_length=200)
+    nome_fantasia: str | None = Field(default=None, max_length=200)
+    cod_municipio: str = Field(pattern=r"^\d{7}$")
+    cep: str | None = None
+    logradouro: str | None = None
+    numero: str | None = None
+    complemento: str | None = None
+    bairro: str | None = None
+
+
+class ExcluirRequest(BaseModel):
+    confirmacao: str = Field(max_length=40)
+
+
+class EmitenteAtualizarRequest(BaseModel):
+    """Dados do emitente editáveis (antes eram só administrativos). CNPJ
+    não muda — outro CNPJ é outra empresa."""
+    razao_social: str | None = Field(default=None, min_length=1, max_length=200)
+    nome_fantasia: str | None = Field(default=None, max_length=200)
+    cod_municipio: str | None = Field(default=None, pattern=r"^\d{7}$")
+    inscricao_municipal: str | None = Field(default=None, max_length=30)
+    email: str | None = Field(default=None, max_length=200)
+    telefone: str | None = Field(default=None, max_length=20)
+    cep: str | None = Field(default=None, max_length=10)
+    logradouro: str | None = Field(default=None, max_length=200)
+    numero: str | None = Field(default=None, max_length=20)
+    complemento: str | None = Field(default=None, max_length=100)
+    bairro: str | None = Field(default=None, max_length=100)
+    op_simples_nacional: str | None = Field(default=None, pattern=r"^[123]$")
+    regime_apuracao_sn: str | None = Field(default=None, pattern=r"^[123]$")
+    regime_especial_trib: str | None = Field(default=None, pattern=r"^[0-6]$")
+
+
+
+class EnviarGeralRequest(BaseModel):
+    para: list[str] | None = Field(default=None, max_length=20)
+    assunto: str | None = Field(default=None, max_length=300)
+    texto: str | None = Field(default=None, max_length=5000)
+
+
+class MarcarEnviadaRequest(BaseModel):
+    forma: str = Field(default="portal", pattern=r"^(portal|outro)$")

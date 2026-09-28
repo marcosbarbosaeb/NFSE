@@ -157,3 +157,47 @@ def test_zip_do_mes(client, db, vinculo_teste):
     nomes = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
     assert len([n for n in nomes if n.startswith("xml/")]) == 2
     assert client.get("/api/dps/zip?competencia=2020-01").status_code == 404
+
+
+def test_forma_de_envio_emails_gerais_e_portal(client, db, prestador_teste, vinculo_teste, monkeypatch):
+    import app.services.envio_direto as envio_direto
+    from app.config import get_settings
+
+    falso = _Falso()
+    monkeypatch.setattr(envio_direto, "get_email_sender", lambda: falso)
+    monkeypatch.setattr(get_settings(), "resend_api_key", "re_teste")
+    monkeypatch.setattr(get_settings(), "email_remetente_notas", "notas@x.com")
+
+    # tomador recebe pelo portal: nota fica fora do lote de e-mail
+    r = client.patch(f"/api/vinculos/{vinculo_teste.id}", json={"envio_canal": "portal", "portal_url": " https://portal.x/notas "})
+    assert r.status_code == 200 and r.json()["envio_canal"] == "portal" and r.json()["portal_url"] == "https://portal.x/notas"
+    assert client.patch(f"/api/vinculos/{vinculo_teste.id}", json={"envio_canal": "fax"}).status_code == 422
+    e = criar_rascunho(db, vinculo_teste, competencia="2026-09", valor=10, tpAmb="2")
+    montar(db, e)
+    vinculo_teste.email_anexos = "xml"
+    db.flush()
+    assert client.post("/api/lotes/previa", json={"acao": "email", "emissao_ids": [str(e.id)]}).json()["quantidade"] == 0
+    previa = client.get(f"/api/dps/{e.id}/email-previa").json()
+    assert previa["portal_url"] == "https://portal.x/notas"
+
+    # e-mails gerais sem cadastro → 400 com orientação
+    assert client.post(f"/api/dps/{e.id}/enviar-geral", json={}).status_code == 400
+    r = client.patch("/api/prestador/preferencias", json={
+        "email_geral_para": "contador@x.com; eu@x.com", "email_geral_assunto": "Nota {numero} - {tomador}",
+        "email_geral_anexos": "xml",
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["email_geral_para"] == "contador@x.com; eu@x.com"
+    r = client.post(f"/api/dps/{e.id}/enviar-geral", json={})
+    assert r.status_code == 200, r.text
+    assert r.json()["canal"] == "email_geral" and r.json()["status"] == "enviado"
+    assert falso.enviados[-1]["destinatario"] == ["contador@x.com", "eu@x.com"]
+    # e-mail geral não conta como entregue ao fornecedor
+    assert client.get(f"/api/envios/resumo?vinculo_id={vinculo_teste.id}").json()["enviados"] == 0
+
+    r = client.post(f"/api/dps/{e.id}/marcar-enviada", json={"forma": "portal"})
+    assert r.status_code == 200 and r.json()["status"] == "enviado"
+    assert client.get(f"/api/envios/resumo?vinculo_id={vinculo_teste.id}").json()["enviados"] == 1
+    lista = client.get("/api/dps").json()
+    item = next(i for i in (lista["itens"] if isinstance(lista, dict) else lista) if i["id"] == str(e.id))
+    assert item["envio_forma"] == "portal"

@@ -199,7 +199,9 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
     ultimo_envio: dict[uuid.UUID, str] = {}
     if primeiras:
         for emissao_id, status in (
-            db.query(Envio.emissao_id, Envio.status).filter(Envio.emissao_id.in_(primeiras)).order_by(Envio.criado_em)
+            db.query(Envio.emissao_id, Envio.status)
+            .filter(Envio.emissao_id.in_(primeiras), Envio.canal.in_(("email", "whatsapp", "direto_fornecedor")))
+            .order_by(Envio.criado_em)
         ):
             ultimo_envio[emissao_id] = status
 
@@ -234,6 +236,7 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
             "tem_pdf": emissao.estado == "confirmado",
             "tem_email": bool(vinculo.email_para or vinculo.email_contato) if len(do_mes) == 1 else False,
             "homologacao": (emissao.tomador_snapshot or {}).get("tpAmb") == "2",
+            "envio_forma": vinculo.envio_canal,
         })
 
     recebido_no_mes = _soma_pagamentos(db, prestador_id, competencia)
@@ -311,7 +314,9 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
     # depois de um lote grande da Shopee, notas antigas com erro sumiam) e
     # checa "já enviada" com um NOT EXISTS em vez de uma consulta por nota.
     ja_enviada = (
-        db.query(Envio.id).filter(Envio.emissao_id == Emissao.id, Envio.status == "enviado").exists()
+        db.query(Envio.id).filter(
+            Envio.emissao_id == Emissao.id, Envio.status == "enviado", Envio.canal.in_(("email", "whatsapp", "direto_fornecedor"))
+        ).exists()
     )
     ativas = (
         db.query(Emissao)
@@ -333,7 +338,7 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
             pendencias.append({**base, "tipo": "prefeitura", "titulo": f"Enviar à prefeitura a nota de {nome}", "acao": "Enviar"})
         elif e.estado == "erro":
             pendencias.append({**base, "tipo": "erro", "titulo": f"A prefeitura recusou a nota de {nome}", "acao": "Ver erro"})
-        elif e.estado == "confirmado":
+        elif e.estado == "confirmado" and (e.tomador_documento or (e.vinculo and e.vinculo.envio_canal != "nenhum")):
             pendencias.append({**base, "tipo": "enviar_tomador", "titulo": f"Mandar a nota pra {nome}", "acao": "Enviar"})
 
     competencia_tem_nota = {

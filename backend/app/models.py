@@ -110,6 +110,12 @@ class Prestador(Base):
     # da tela de gerar nota em 28/09/2026 e virou configuração da conta.
     tp_amb_padrao: Mapped[str] = mapped_column(String(1), nullable=False, default="1", server_default="1")
     nome_fantasia: Mapped[str | None] = mapped_column(String(200))
+    # E-mails gerais (contador, a própria pessoa) — recebem as notas com um
+    # texto padrão próprio, independente de como o tomador recebe.
+    email_geral_para: Mapped[str | None] = mapped_column(String(400))
+    email_geral_assunto: Mapped[str | None] = mapped_column(String(300))
+    email_geral_mensagem: Mapped[str | None] = mapped_column(Text)
+    email_geral_anexos: Mapped[str | None] = mapped_column(String(10))
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
@@ -334,6 +340,7 @@ class PrestadorTomador(Base):
     # últimas configurações que a pessoa usar em cada tomador").
     envio_canal: Mapped[str | None] = mapped_column(String(10))
     whatsapp_mensagem: Mapped[str | None] = mapped_column(Text)
+    portal_url: Mapped[str | None] = mapped_column(String(400))
     # "Excluir tomador": vínculo com notas não pode sumir do banco (a nota
     # aponta pra ele), então é marcado aqui e sai de todas as listas.
     excluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -622,7 +629,7 @@ class Envio(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "canal IN ('download','email','whatsapp','direto_fornecedor','mensagem_pronta')",
+            "canal IN ('download','email','whatsapp','direto_fornecedor','mensagem_pronta','email_geral')",
             name="ck_envio_canal",
         ),
         CheckConstraint("status IN ('pendente','enviado','falha')", name="ck_envio_status"),

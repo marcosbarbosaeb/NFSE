@@ -250,6 +250,10 @@ def remetente_da_nota(nome_prestador: str | None) -> str:
 
 
 LIMITE_EMAILS_DIA = 150
+# Canais que contam como "enviada ao fornecedor" (os e-mails gerais, pro
+# contador, não contam).
+CANAIS_FORNECEDOR = ("email", "whatsapp", "direto_fornecedor")
+FORMAS_ENVIO = ("email", "whatsapp", "portal", "nenhum")
 # PDF oficial que falhou há pouco não é tentado de novo por uns minutos:
 # cada tentativa passa por 5 endereços com timeout e segurava o pedido por
 # até um minuto (inclusive no link público).
@@ -311,7 +315,12 @@ def previa_email(db: Session, emissao: Emissao, base: str) -> dict:
     return {
         "whatsapp": whatsapp,
         "whatsapp_texto": mensagens.whatsapp_de_modelo(vinculo.whatsapp_mensagem if vinculo else None, dados),
-        "canal_preferido": (vinculo.envio_canal if vinculo else None) or ("email" if destinos or not whatsapp else "whatsapp"),
+        "canal_preferido": (
+            "email" if emissao.tomador_documento
+            else (vinculo.envio_canal if vinculo else None) or ("email" if destinos or not whatsapp else "whatsapp")
+        ),
+        "portal_url": vinculo.portal_url if vinculo and not emissao.tomador_documento else None,
+        **_previa_geral(db, emissao, dados),
         "destino": destino,
         "destinos": destinos,
         "copia": [c for c in modelo["copia"] if c not in destinos],
@@ -460,3 +469,83 @@ def link_whatsapp(
         vinculo.envio_canal = "whatsapp"
     db.flush()
     return url, envio
+
+
+
+# --- e-mails gerais (contador / a própria pessoa) ---
+
+
+def _modelo_geral(db: Session, emissao: Emissao, dados) -> dict:
+    prestador = db.get(Prestador, emissao.prestador_id)
+    assunto = mensagens.renderizar_modelo((prestador.email_geral_assunto if prestador else None) or mensagens.ASSUNTO_GERAL_PADRAO, dados)
+    texto = mensagens.renderizar_modelo((prestador.email_geral_mensagem if prestador else None) or mensagens.MENSAGEM_GERAL_PADRAO, dados)
+    anexos = (prestador.email_geral_anexos if prestador else None) or "pdf_xml"
+    return {
+        "destinos": lista_emails(prestador.email_geral_para if prestador else None),
+        "assunto": re.sub(r"[\r\n]+", " ", assunto).strip()[:300], "texto": texto,
+        "anexos": anexos if anexos in mensagens.ANEXOS_VALIDOS else "pdf_xml",
+    }
+
+
+def _previa_geral(db: Session, emissao: Emissao, dados) -> dict:
+    g = _modelo_geral(db, emissao, dados)
+    return {"geral_destinos": g["destinos"], "geral_assunto": g["assunto"], "geral_texto": g["texto"]}
+
+
+def _anexos_da_nota(db: Session, emissao: Emissao, prestador_id: uuid.UUID, anexos: str) -> list[tuple[str, bytes]]:
+    quer_pdf = anexos in ("pdf_xml", "pdf")
+    pdf = obter_danfse(db, emissao, prestador_id) if quer_pdf else None
+    if quer_pdf and pdf is None and emissao.estado == "confirmado":
+        raise EmailIndisponivelError("Não consegui baixar o PDF oficial da nota agora. Tente de novo em alguns minutos.")
+    lista: list[tuple[str, bytes]] = []
+    if pdf:
+        lista.append((nome_pdf(emissao), pdf))
+    if anexos in ("pdf_xml", "xml") or not pdf:
+        nome_xml, conteudo_xml = melhor_xml_disponivel(emissao)
+        lista.append((nome_xml, conteudo_xml.encode("utf-8")))
+    return lista
+
+
+def enviar_geral(
+    db: Session, emissao: Emissao, prestador_id: uuid.UUID, base: str,
+    para: list[str] | None = None, assunto: str | None = None, texto: str | None = None,
+) -> Envio:
+    """Manda a nota pros e-mails gerais da conta (contador, a própria
+    pessoa) com o texto padrão deles (29/09/2026). Não conta como enviada ao
+    fornecedor."""
+    s = get_settings()
+    if not (s.resend_api_key and s.email_remetente_notas):
+        raise EmailIndisponivelError("O envio por e-mail ainda não está ativo.")
+    dados = _dados(db, emissao, base)
+    modelo = _modelo_geral(db, emissao, dados)
+    destinos = lista_emails(para) if para is not None else modelo["destinos"]
+    if not destinos:
+        raise EmailIndisponivelError("Cadastre os e-mails gerais (contador, o seu) em Empresa › E-mails.")
+    if assunto and assunto.strip():
+        modelo["assunto"] = re.sub(r"[\r\n]+", " ", assunto).strip()[:300]
+    if texto and texto.strip():
+        modelo["texto"] = texto.strip()
+    anexos = _anexos_da_nota(db, emissao, prestador_id, modelo["anexos"])
+    prestador = db.get(Prestador, prestador_id)
+    envio = _novo_envio(db, emissao, "email_geral", ", ".join(destinos)[:200])
+    try:
+        get_email_sender().enviar(
+            destinatario=destinos, assunto=modelo["assunto"], corpo_texto=modelo["texto"],
+            corpo_html=mensagens.email_html_de_texto(modelo["texto"], dados),
+            remetente=remetente_da_nota(prestador.razao_social if prestador else None),
+            responder_para=prestador.email if prestador and prestador.email else None, anexos=anexos,
+        )
+    except EmailEnvioError as exc:
+        envio.status, envio.erro = "falha", str(exc)
+    else:
+        envio.status, envio.enviado_em = "enviado", datetime.datetime.now(datetime.timezone.utc)
+    db.flush()
+    return envio
+
+
+def marcar_enviada(db: Session, emissao: Emissao, forma: str) -> Envio:
+    """"Já mandei pelo portal do tomador" (ou outro jeito fora do sistema)."""
+    envio = _novo_envio(db, emissao, "direto_fornecedor", forma[:200])
+    envio.status, envio.enviado_em = "enviado", datetime.datetime.now(datetime.timezone.utc)
+    db.flush()
+    return envio

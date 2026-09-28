@@ -89,6 +89,17 @@ from app.schemas import (
     PreviaEmailResponse,
     ModeloEmailPadraoResponse,
     PreviaShopeeResponse,
+    EnviarGeralRequest,
+    MarcarEnviadaRequest,
+    SolicitarCodigoRequest,
+    EntrarComCodigoRequest,
+    ContaResponse,
+    ContaAtualizarRequest,
+    SessaoResponse,
+    EmpresaResponse,
+    EmpresaCriarRequest,
+    ExcluirRequest,
+    EmitenteAtualizarRequest,
     CriarLoteRequest,
     LoteResponse,
     PreviaLoteResponse,
@@ -174,7 +185,7 @@ from app.services.envios import (
     registrar_envio,
 )
 from app.limites import limitador, limite  # noqa: F401 — limitador: os testes zeram
-from app.services import lotes, mensagens
+from app.services import contas, lotes, mensagens
 from app.services.indicacao import resumo as resumo_indicacao
 from app.services.email import EmailEnvioError, get_email_sender
 from app.services.a_receber import notas_em_aberto
@@ -184,6 +195,8 @@ from app.services.envio_direto import (
     LinkInvalidoError,
     base_url,
     enviar_email,
+    enviar_geral,
+    marcar_enviada,
     previa_email,
     ler_token,
     link_whatsapp,
@@ -315,10 +328,12 @@ def prestador_atual_id(request: Request, db: Session = Depends(get_db)) -> uuid.
     if usuario_id is None:
         raise HTTPException(status_code=401, detail="Não autenticado — faça login.")
     usuario = db.query(Usuario).filter_by(id=uuid.UUID(usuario_id), ativo=True, email_confirmado=True).one_or_none()
-    if usuario is None:
+    if usuario is None or not contas.validar_sessao(db, request, usuario):
         request.session.clear()
         raise HTTPException(status_code=401, detail="Sessão inválida — faça login novamente.")
-    return usuario.prestador_id
+    # Vários CNPJs no mesmo login (29/09/2026): a empresa ativa vem da
+    # sessão, sempre conferida contra as empresas a que o usuário tem acesso.
+    return contas.empresa_ativa(db, request, usuario)
 
 
 def db_sessao(db: Session = Depends(get_db), prestador_id: uuid.UUID = Depends(prestador_atual_id)) -> Session:
@@ -384,8 +399,9 @@ def api_login(req: LoginRequest, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=401, detail="E-mail ou senha inválidos.")
     if not usuario.email_confirmado:
         raise HTTPException(status_code=403, detail="Confirme seu e-mail antes de entrar — verifique sua caixa de entrada.")
-    request.session["usuario_id"] = str(usuario.id)
-    return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id)
+    contas.iniciar_sessao(db, request, usuario)
+    db.commit()
+    return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id, nome=usuario.nome)
 
 
 @app.post("/api/demo", response_model=UsuarioResponse, dependencies=[Depends(limite("demo", 6, 3600))])
@@ -394,8 +410,8 @@ def api_criar_demo(request: Request, db: Session = Depends(get_db)):
     exemplo e já entra nela (ver app/services/demo.py)."""
     usuario = criar_conta_demo(db)
     db.commit()
-    request.session.clear()
-    request.session["usuario_id"] = str(usuario.id)
+    contas.iniciar_sessao(db, request, usuario)
+    db.commit()
     return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id, demo=True)
 
 
@@ -472,9 +488,10 @@ def api_callback_google_oauth(
 
     if usuario.google_sub is None:
         usuario.google_sub = info.sub
-        db.commit()
-
-    request.session["usuario_id"] = str(usuario.id)
+    if not usuario.nome and info.nome:
+        usuario.nome = info.nome[:120]
+    contas.iniciar_sessao(db, request, usuario)
+    db.commit()
     return RedirectResponse(f"{base}/app")
 
 
@@ -550,9 +567,9 @@ def api_confirmar_email(req: ConfirmarEmailRequest, request: Request, db: Sessio
         usuario = confirmar_email(db, req.token)
     except TokenInvalidoOuExpiradoError:
         raise HTTPException(status_code=400, detail="Link de confirmação inválido ou expirado. Peça um novo.")
+    contas.iniciar_sessao(db, request, usuario)
     db.commit()
-    request.session["usuario_id"] = str(usuario.id)
-    return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id)
+    return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id, nome=usuario.nome)
 
 
 @app.post("/api/cadastro/reenviar-confirmacao", dependencies=[Depends(limite("reenvio", 5, 3600))])
@@ -566,7 +583,14 @@ def api_reenviar_confirmacao(req: ReenviarConfirmacaoRequest, db: Session = Depe
 
 
 @app.post("/api/auth/logout")
-def api_logout(request: Request):
+def api_logout(request: Request, db: Session = Depends(get_db)):
+    usuario_id, sessao_id = request.session.get("usuario_id"), request.session.get("sessao_id")
+    if usuario_id and sessao_id:
+        try:
+            contas.revogar_sessao(db, uuid.UUID(usuario_id), uuid.UUID(sessao_id))
+            db.commit()
+        except ValueError:
+            pass
     request.session.clear()
     return {"ok": True}
 
@@ -579,7 +603,195 @@ def api_auth_me(request: Request, db: Session = Depends(get_db)):
     usuario = db.query(Usuario).filter_by(id=uuid.UUID(usuario_id), ativo=True).one_or_none()
     if usuario is None:
         raise HTTPException(status_code=401, detail="Sessão inválida.")
-    return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id, demo=eh_email_demo(usuario.email))
+    if not contas.validar_sessao(db, request, usuario):
+        request.session.clear()
+        raise HTTPException(status_code=401, detail="Sessão encerrada neste aparelho.")
+    return UsuarioResponse(
+        email=usuario.email, prestador_id=contas.empresa_ativa(db, request, usuario),
+        demo=eh_email_demo(usuario.email), nome=usuario.nome,
+    )
+
+
+# --- Conta, sessões e empresas (29/09/2026, ver app/services/contas.py) ---
+
+
+def _usuario_logado(request: Request, db: Session) -> Usuario:
+    usuario_id = request.session.get("usuario_id")
+    usuario = db.get(Usuario, uuid.UUID(usuario_id)) if usuario_id else None
+    if usuario is None or not usuario.ativo or not contas.validar_sessao(db, request, usuario):
+        request.session.clear()
+        raise HTTPException(status_code=401, detail="Não autenticado — faça login.")
+    return usuario
+
+
+@app.post("/api/auth/codigo", dependencies=[Depends(limite("codigo", 5, 900))])
+def api_pedir_codigo(req: SolicitarCodigoRequest, db: Session = Depends(get_db)):
+    """Login sem senha: manda um código de 6 dígitos pro e-mail. Responde
+    igual com ou sem conta (não revela quem é cliente)."""
+    gerado = contas.gerar_codigo(db, req.email)
+    if gerado is not None:
+        usuario, codigo = gerado
+        db.commit()
+        s = get_settings()
+        texto = (
+            f"Seu código de acesso à Agente Ana: {codigo}\n\n"
+            "Ele vale por 10 minutos. Se não foi você que pediu, ignore este e-mail."
+        )
+        html = (
+            "<div style='font-family:Arial,sans-serif;font-size:15px;color:#1e293b'>"
+            "<p>Seu código de acesso à Agente Ana:</p>"
+            f"<p style='font-size:28px;font-weight:bold;letter-spacing:6px'>{codigo}</p>"
+            "<p style='color:#64748b;font-size:13px'>Vale por 10 minutos. Se não foi você que pediu, ignore este e-mail.</p></div>"
+        )
+        try:
+            get_email_sender().enviar(
+                destinatario=usuario.email, assunto=f"{codigo} é o seu código da Agente Ana",
+                corpo_texto=texto, corpo_html=html, responder_para=s.email_suporte,
+            )
+        except EmailEnvioError:
+            logger.exception("Falha ao enviar código de login")
+    return {"ok": True}
+
+
+@app.post("/api/auth/codigo/entrar", response_model=UsuarioResponse, responses={401: {"model": ErroResponse}}, dependencies=[Depends(limite("codigo-entrar", 15, 900))])
+def api_entrar_com_codigo(req: EntrarComCodigoRequest, request: Request, db: Session = Depends(get_db)):
+    usuario = contas.entrar_com_codigo(db, req.email, req.codigo)
+    if usuario is None:
+        db.commit()  # guarda a tentativa errada
+        raise HTTPException(status_code=401, detail="Código inválido ou vencido. Peça um novo.")
+    contas.iniciar_sessao(db, request, usuario)
+    db.commit()
+    return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id, nome=usuario.nome)
+
+
+@app.get("/api/conta", response_model=ContaResponse)
+def api_conta(request: Request, db: Session = Depends(get_db)):
+    u = _usuario_logado(request, db)
+    return {
+        "nome": u.nome, "email": u.email, "demo": eh_email_demo(u.email),
+        "tem_senha": bool(u.senha_hash), "google_conectado": bool(u.google_sub),
+    }
+
+
+@app.patch("/api/conta", response_model=ContaResponse)
+def api_atualizar_conta(req: ContaAtualizarRequest, request: Request, db: Session = Depends(get_db)):
+    u = _usuario_logado(request, db)
+    if req.nome is not None:
+        u.nome = req.nome.strip()[:120] or None
+    db.commit()
+    return api_conta(request, db)
+
+
+@app.get("/api/conta/sessoes", response_model=list[SessaoResponse])
+def api_sessoes(request: Request, db: Session = Depends(get_db)):
+    u = _usuario_logado(request, db)
+    return contas.listar_sessoes(db, u.id, request.session.get("sessao_id"))
+
+
+@app.delete("/api/conta/sessoes/{sessao_id}")
+def api_desconectar_sessao(sessao_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
+    u = _usuario_logado(request, db)
+    if not contas.revogar_sessao(db, u.id, sessao_id):
+        raise HTTPException(status_code=404, detail="Aparelho não encontrado.")
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/conta/sessoes/sair-das-outras")
+def api_sair_das_outras(request: Request, db: Session = Depends(get_db)):
+    u = _usuario_logado(request, db)
+    quantas = contas.revogar_outras(db, u.id, request.session.get("sessao_id"))
+    db.commit()
+    return {"desconectadas": quantas}
+
+
+@app.delete("/api/conta", dependencies=[Depends(exigir_conta_real)])
+def api_excluir_conta(req: ExcluirRequest, request: Request, db: Session = Depends(get_db)):
+    """Apaga o login e as empresas em que ele é o único usuário. Confirmação:
+    digitar EXCLUIR."""
+    u = _usuario_logado(request, db)
+    if req.confirmacao.strip().upper() != "EXCLUIR":
+        raise HTTPException(status_code=422, detail="Digite EXCLUIR pra confirmar.")
+    contas.apagar_conta(db, u)
+    db.commit()
+    request.session.clear()
+    return {"ok": True}
+
+
+@app.get("/api/empresas", response_model=list[EmpresaResponse])
+def api_empresas(request: Request, db: Session = Depends(get_db)):
+    u = _usuario_logado(request, db)
+    ativa = contas.empresa_ativa(db, request, u)
+    return [{**e, "ativa": e["id"] == ativa} for e in contas.listar_empresas(db, u)]
+
+
+@app.post("/api/empresas", response_model=EmpresaResponse, responses={409: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
+def api_adicionar_empresa(req: EmpresaCriarRequest, request: Request, db: Session = Depends(get_db)):
+    """Mais um CNPJ no mesmo login — já entra ativo."""
+    u = _usuario_logado(request, db)
+    try:
+        prestador = contas.adicionar_empresa(db, u, **req.model_dump())
+    except contas.ContaError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    request.session["prestador_id"] = str(prestador.id)
+    return {"id": prestador.id, "razao_social": prestador.razao_social, "nome_fantasia": prestador.nome_fantasia, "cnpj": prestador.cpf_cnpj, "ativa": True}
+
+
+@app.post("/api/empresas/{prestador_id}/ativar", response_model=EmpresaResponse)
+def api_ativar_empresa(prestador_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
+    u = _usuario_logado(request, db)
+    if prestador_id != u.prestador_id and not contas.tem_acesso(db, u.id, prestador_id):
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    request.session["prestador_id"] = str(prestador_id)
+    u.prestador_id = prestador_id  # abre nela da próxima vez
+    db.commit()
+    definir_prestador_atual(db, prestador_id)
+    p = db.get(Prestador, prestador_id)
+    return {"id": p.id, "razao_social": p.razao_social, "nome_fantasia": p.nome_fantasia, "cnpj": p.cpf_cnpj, "ativa": True}
+
+
+@app.delete("/api/empresa", dependencies=[Depends(exigir_conta_real)])
+def api_excluir_empresa(
+    req: ExcluirRequest, request: Request,
+    db: Session = Depends(get_db), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Apaga a empresa ativa e todo o histórico dela aqui. Confirmação: o
+    CNPJ (só números). Se era a única empresa do login, a conta vai junto."""
+    u = _usuario_logado(request, db)
+    definir_prestador_atual(db, prestador_id)
+    p = db.get(Prestador, prestador_id)
+    if p is None or "".join(c for c in req.confirmacao if c.isdigit()) != p.cpf_cnpj:
+        raise HTTPException(status_code=422, detail="Digite o CNPJ da empresa pra confirmar.")
+    usuario_id = u.id
+    contas.apagar_empresa(db, prestador_id)
+    db.commit()
+    restante = db.get(Usuario, usuario_id)
+    if restante is None:
+        request.session.clear()
+        return {"ok": True, "conta_excluida": True}
+    request.session["prestador_id"] = str(restante.prestador_id)
+    return {"ok": True, "conta_excluida": False}
+
+
+@app.patch("/api/prestador", response_model=PrestadorResponse)
+def api_atualizar_emitente(
+    req: EmitenteAtualizarRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Dados do emitente (tela Empresa › Emitente)."""
+    prestador = db.get(Prestador, prestador_id)
+    if prestador is None:
+        raise HTTPException(status_code=404, detail="Prestador não encontrado.")
+    for campo, valor in req.model_dump(exclude_unset=True).items():
+        if isinstance(valor, str):
+            valor = valor.strip()
+            if campo == "cep":
+                valor = "".join(c for c in valor if c.isdigit())
+        if campo == "razao_social" and not valor:
+            continue
+        setattr(prestador, campo, valor or None)
+    db.commit()
+    return prestador
 
 
 @app.get("/api/indicacao", response_model=IndicacaoResponse)
@@ -651,6 +863,8 @@ def api_trocar_senha(req: TrocarSenhaRequest, request: Request, db: Session = De
         trocar_senha(db, uuid.UUID(usuario_id), req.senha_atual, req.senha_nova)
     except SenhaAtualIncorretaError:
         raise HTTPException(status_code=400, detail="Senha atual incorreta.")
+    # Senha nova derruba os outros aparelhos logados.
+    contas.revogar_outras(db, uuid.UUID(usuario_id), request.session.get("sessao_id"))
     db.commit()
     return {"ok": True}
 
@@ -878,6 +1092,8 @@ def api_criar_vinculo(
         setattr(vinculo, campo, (getattr(req, campo) or "").strip() or None)
     vinculo.cod_nbs = _validar_nbs(req.cod_nbs)
     vinculo.incluir_intermediario = bool(req.incluir_intermediario)
+    vinculo.envio_canal = req.envio_canal
+    vinculo.portal_url = (req.portal_url or "").strip() or None
     db.commit()
     return vinculo
 
@@ -898,6 +1114,8 @@ def api_atualizar_vinculo(vinculo_id: uuid.UUID, req: VinculoAtualizarRequest, d
         campos["cod_nbs"] = _validar_nbs(campos["cod_nbs"])
     if campos.get("incluir_intermediario") is None:
         campos.pop("incluir_intermediario", None)
+    if "portal_url" in campos:
+        campos["portal_url"] = (campos["portal_url"] or "").strip() or None
     if campos.get("cod_trib_nacional") is not None and campos["cod_trib_nacional"] != vinculo.cod_trib_nacional:
         campos["cod_trib_nacional"] = _validar_codigo_servico(campos["cod_trib_nacional"])
     try:
@@ -1375,7 +1593,9 @@ def api_resumo_envios(ano: str | None = None, vinculo_id: uuid.UUID | None = Non
     ultimo: dict[uuid.UUID, str] = {}
     if ids:
         for emissao_id, status in (
-            db.query(Envio.emissao_id, Envio.status).filter(Envio.emissao_id.in_(ids)).order_by(Envio.criado_em)
+            db.query(Envio.emissao_id, Envio.status)
+            .filter(Envio.emissao_id.in_(ids), Envio.canal.in_(("email", "whatsapp", "direto_fornecedor")))
+            .order_by(Envio.criado_em)
         ):
             if ultimo.get(emissao_id) != "enviado":
                 ultimo[emissao_id] = status
@@ -1585,6 +1805,35 @@ def api_opcoes_envio(emissao_id: uuid.UUID, request: Request, db: Session = Depe
     (e-mail direto ligado/desligado e por quê, WhatsApp, link público)."""
     emissao = _emissao_ou_404(db, emissao_id)
     return opcoes_envio(db, emissao, base_url(str(request.base_url)))
+
+
+@app.post("/api/dps/{emissao_id}/enviar-geral", response_model=EnvioResponse, responses={400: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
+def api_enviar_geral(
+    emissao_id: uuid.UUID, request: Request, req: EnviarGeralRequest | None = None,
+    db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Manda a nota pros e-mails gerais (contador, você) — 29/09/2026."""
+    emissao = _emissao_ou_404(db, emissao_id)
+    try:
+        envio = enviar_geral(
+            db, emissao, prestador_id, base_url(str(request.base_url)),
+            para=req.para if req else None, assunto=req.assunto if req else None, texto=req.texto if req else None,
+        )
+    except EmailIndisponivelError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except EmissaoSemConteudoError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    return envio
+
+
+@app.post("/api/dps/{emissao_id}/marcar-enviada", response_model=EnvioResponse)
+def api_marcar_enviada(emissao_id: uuid.UUID, req: MarcarEnviadaRequest, db: Session = Depends(db_sessao)):
+    """"Já mandei" — pelo portal do tomador ou outro jeito fora daqui."""
+    emissao = _emissao_ou_404(db, emissao_id)
+    envio = marcar_enviada(db, emissao, req.forma)
+    db.commit()
+    return envio
 
 
 @app.get("/api/dps/{emissao_id}/email-previa", response_model=PreviaEmailResponse, responses={404: {"model": ErroResponse}})
