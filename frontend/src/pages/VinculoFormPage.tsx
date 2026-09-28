@@ -168,14 +168,18 @@ export function VinculoFormPage() {
     return [...contagem.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c)
   }, [meusVinculos])
 
+  // Descrições JÁ CADASTRADAS pra este mesmo tomador (no catálogo, e nos
+  // seus outros vínculos com ele — ex.: AWIN e AWIN Rchlo). Nada de
+  // descrição de outros tomadores (pedido do Marcos, 28/09/2026: "deixe ela
+  // associada ao tomador escolhido, com base no que nós cadastrarmos").
   const modelosDescricao = useMemo(() => {
+    if (!tomadorSelecionado) return []
     const lista = [
-      tomadorSelecionado?.sug_template_descricao,
-      ...meusVinculos.map((v) => v.template_descricao),
-      ...MODELOS_PADRAO,
+      tomadorSelecionado.sug_template_descricao,
+      ...meusVinculos.filter((v) => v.tomador_id === tomadorSelecionado.id && v.id !== id).map((v) => v.template_descricao),
     ].filter((t): t is string => Boolean(t))
-    return [...new Set(lista)].slice(0, 6)
-  }, [tomadorSelecionado, meusVinculos])
+    return [...new Set(lista)]
+  }, [tomadorSelecionado, meusVinculos, id])
 
   // Sugestões pro tomador escolhido (modo "usar tomador existente").
   const sugestoes: Sugestao[] = useMemo(() => {
@@ -184,13 +188,13 @@ export function VinculoFormPage() {
     const lista: Sugestao[] = [{ campo: "apelido", rotulo: "Apelido", valor: apelidoDe(t.razao_social) }]
     const codigo = t.sug_cod_trib_nacional || meusCodigos[0]
     if (codigo) lista.push({ campo: "cod_trib_nacional", rotulo: "Código do serviço", valor: codigo, exibicao: formatarCodigoServico(codigo) })
-    const modelo = t.sug_template_descricao || meusVinculos[0]?.template_descricao || MODELOS_PADRAO[0]
+    const modelo = modelosDescricao[0] || MODELOS_PADRAO[0]
     lista.push({ campo: "template_descricao", rotulo: "Descrição", valor: modelo, exibicao: previaDescricao(modelo) })
     if (t.sug_dia_emissao) lista.push({ campo: "dia_limite_emissao", rotulo: "Dia de gerar a nota", valor: String(t.sug_dia_emissao), exibicao: `todo dia ${t.sug_dia_emissao}` })
     if (t.sug_dias_recebimento != null)
       lista.push({ campo: "dias_para_recebimento", rotulo: "Pagamento", valor: String(t.sug_dias_recebimento), exibicao: `${t.sug_dias_recebimento} dias depois da nota` })
     return lista
-  }, [editando, tomadorSelecionado, meusCodigos, meusVinculos])
+  }, [editando, tomadorSelecionado, meusCodigos, modelosDescricao])
 
   const sugestoesPendentes = sugestoes.filter((s) => form[s.campo] !== s.valor)
 
@@ -245,7 +249,7 @@ export function VinculoFormPage() {
         ...f,
         apelido: f.apelido || apelidoDe(d.razao_social),
         cod_trib_nacional: f.cod_trib_nacional || meusCodigos[0] || "",
-        template_descricao: f.template_descricao || meusVinculos[0]?.template_descricao || MODELOS_PADRAO[0],
+        template_descricao: f.template_descricao || MODELOS_PADRAO[0],
       }))
       const situacao = d.situacao_cadastral && d.situacao_cadastral.toUpperCase() !== "ATIVA" ? ` Atenção: situação na Receita = ${d.situacao_cadastral}.` : ""
       setConsultaCnpj({ estado: situacao ? "aviso" : "ok", texto: `Dados preenchidos a partir do CNPJ (${d.municipio}/${d.uf}).${situacao}` })
@@ -514,41 +518,67 @@ export function VinculoFormPage() {
             <Field label="Série" required value={form.serie} onChange={(e) => atualizarCampo("serie", e.target.value)} hint="Deixe 1 se não souber." />
           </div>
 
-          <div data-tour="form-descricao" className="mt-4">
-          <FieldWrap label="Descrição do serviço na nota">
+          <div data-tour="form-descricao" className="mt-5">
+            <p className="mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">Descrição do serviço na nota</p>
+            <div className="rounded-lg border border-primary-100 bg-primary-50/60 px-3 py-2.5 dark:border-primary-900/40 dark:bg-primary-900/20">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-600 dark:text-primary-300">
+                Na nota deste mês vai sair assim
+              </p>
+              <p className="mt-0.5 text-sm text-slate-800 dark:text-slate-100">
+                {form.template_descricao ? previaDescricao(form.template_descricao) : <span className="text-slate-400">—</span>}
+              </p>
+            </div>
+
+            {modelosDescricao.filter((m) => m !== form.template_descricao).length > 0 && (
+              <div className="mt-2 flex flex-col gap-1.5">
+                {modelosDescricao
+                  .filter((m) => m !== form.template_descricao)
+                  .map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => atualizarCampo("template_descricao", m)}
+                      className="flex items-start gap-2 rounded-lg border border-dashed border-accent-200 px-3 py-2 text-left text-xs text-slate-600 hover:border-accent-400 hover:bg-accent-50/50 dark:border-accent-900/50 dark:text-slate-300"
+                    >
+                      <Sparkles size={14} className="mt-0.5 shrink-0 text-accent-500" />
+                      <span>
+                        <span className="font-semibold text-accent-700 dark:text-accent-200">Usar a já cadastrada pra este tomador: </span>
+                        {previaDescricao(m)}
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            )}
+
             <textarea
               required
+              aria-label="Modelo da descrição"
               value={form.template_descricao}
               onChange={(e) => atualizarCampo("template_descricao", e.target.value)}
               rows={2}
               placeholder={MODELOS_PADRAO[0]}
-              className={`mt-1 ${classeInput}`}
+              className={`mt-2 ${classeInput}`}
             />
-          </FieldWrap>
-          {form.template_descricao && (
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Como vai sair este mês: <span className="font-medium text-slate-700 dark:text-slate-200">{previaDescricao(form.template_descricao)}</span>
-            </p>
-          )}
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {modelosDescricao
-              .filter((m) => m !== form.template_descricao)
-              .map((m) => (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
+              <span>Partes que mudam sozinhas todo mês:</span>
+              {[
+                ["{mes_nome_upper}", "mês (SETEMBRO)"],
+                ["{ano}", "ano (2026)"],
+                ["{competencia_mm_aaaa}", "mês/ano (09/2026)"],
+                ["{ordem}", "nº da ordem de pagamento"],
+              ].map(([token, rotulo]) => (
                 <button
-                  key={m}
+                  key={token}
                   type="button"
-                  onClick={() => atualizarCampo("template_descricao", m)}
-                  title={previaDescricao(m)}
-                  className="max-w-full truncate rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:border-primary-300 hover:text-primary-700 dark:border-slate-600 dark:text-slate-300"
+                  onClick={() => atualizarCampo("template_descricao", `${form.template_descricao}${form.template_descricao && !form.template_descricao.endsWith(" ") ? " " : ""}${token}`)}
+                  className="rounded-full border border-slate-200 px-2 py-0.5 text-slate-500 hover:border-primary-300 hover:text-primary-700 dark:border-slate-600 dark:text-slate-400"
+                  title={`Inserir ${token}`}
                 >
-                  {previaDescricao(m)}
+                  + {rotulo}
                 </button>
               ))}
+            </div>
           </div>
-          </div>
-          <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-            O mês e o ano mudam sozinhos todo mês. Use {"{ordem}"} se o tomador pedir o número da ordem de pagamento.
-          </p>
 
           <label className="mt-4 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
             <input
