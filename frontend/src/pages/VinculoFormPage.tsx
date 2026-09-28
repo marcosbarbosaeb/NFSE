@@ -81,7 +81,7 @@ const ESTADO_INICIAL: FormState = {
   dias_para_recebimento: "",
   email_contato: "",
   whatsapp_contato: "",
-  email_modelo: { assunto: "", mensagem: "", anexos: "", copia: "" },
+  email_modelo: { assunto: "", mensagem: "", anexos: "", copia: "", para: "" },
 }
 
 // Quem manda o valor de um jeito próprio (28/09/2026): AWIN em PDF, Shopee
@@ -158,6 +158,7 @@ export function VinculoFormPage() {
             mensagem: v.email_mensagem ?? "",
             anexos: v.email_anexos ?? "",
             copia: v.email_copia ?? "",
+            para: v.email_para ?? "",
           },
         })
         setTomadorSelecionado(v.tomador)
@@ -316,6 +317,7 @@ export function VinculoFormPage() {
         email_mensagem: form.email_modelo.mensagem.trim() || null,
         email_anexos: form.email_modelo.anexos || null,
         email_copia: (form.email_modelo.copia ?? "").trim() || null,
+        email_para: (form.email_modelo.para ?? "").trim() || null,
       }
 
       if (editando && id) {
@@ -708,10 +710,10 @@ export function VinculoFormPage() {
             />
           </div>
 
-          <details className="group mt-5 rounded-xl border border-slate-200 dark:border-slate-700" open={Boolean(form.email_modelo.assunto || form.email_modelo.mensagem || form.email_modelo.anexos || form.email_modelo.copia)}>
+          <details className="group mt-5 rounded-xl border border-slate-200 dark:border-slate-700" open={Boolean(form.email_modelo.assunto || form.email_modelo.mensagem || form.email_modelo.anexos || form.email_modelo.copia || form.email_modelo.para)}>
             <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
               E-mail da nota pra este tomador
-              <span className="ml-2 text-xs font-normal text-slate-400">assunto, texto, anexos e cópia — se ele pedir algo específico</span>
+              <span className="ml-2 text-xs font-normal text-slate-400">destinatário, cópia, assunto, texto e anexos</span>
             </summary>
             <div className="border-t border-slate-200 p-4 dark:border-slate-700">
               <EditorModeloEmail
@@ -724,6 +726,13 @@ export function VinculoFormPage() {
                   rotulo: "o modelo padrão de Configurações",
                 }}
                 mostrarCopia
+                dicaCopia={
+                  prestadorModelo?.email_copia_padrao
+                    ? `Além destes, vai cópia pra ${prestadorModelo.email_copia_padrao} (Configurações).`
+                    : undefined
+                }
+                mostrarPara
+                paraPadrao={form.email_contato.trim() || null}
               />
             </div>
           </details>

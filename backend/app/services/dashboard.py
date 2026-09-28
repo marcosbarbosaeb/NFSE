@@ -214,7 +214,7 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
             "envio_status": _status_envio(db, emissao),
             "pagamento_recebido": recebido,
             "tem_pdf": bool(emissao.danfse_pdf) or emissao.estado == "confirmado",
-            "tem_email": bool(vinculo.email_contato) if len(do_mes) == 1 else False,
+            "tem_email": bool(vinculo.email_para or vinculo.email_contato) if len(do_mes) == 1 else False,
             "homologacao": (emissao.tomador_snapshot or {}).get("tpAmb") == "2",
         })
 

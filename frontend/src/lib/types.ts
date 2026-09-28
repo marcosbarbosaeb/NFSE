@@ -151,6 +151,7 @@ export interface VinculoDetalhe {
   email_mensagem?: string | null
   email_anexos?: "pdf_xml" | "pdf" | "xml" | null
   email_copia?: string | null
+  email_para?: string | null
 }
 
 export interface VinculoCriarRequest {
@@ -172,6 +173,7 @@ export interface VinculoCriarRequest {
   email_mensagem?: string | null
   email_anexos?: string | null
   email_copia?: string | null
+  email_para?: string | null
 }
 
 export type VinculoAtualizarRequest = Partial<Omit<VinculoCriarRequest, "tomador_id" | "novo_tomador">> & {
@@ -491,6 +493,7 @@ export interface Prestador {
   email_assunto_padrao?: string | null
   email_mensagem_padrao?: string | null
   email_anexos_padrao?: "pdf_xml" | "pdf" | "xml" | null
+  email_copia_padrao?: string | null
 }
 
 export interface AliquotaAtualizarRequest {
@@ -555,6 +558,7 @@ export interface NotaAberta {
 
 export interface PreviaEmail {
   destino: string | null
+  destinos: string[]
   copia: string[]
   assunto: string
   texto: string

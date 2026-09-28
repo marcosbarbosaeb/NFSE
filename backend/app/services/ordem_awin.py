@@ -15,9 +15,9 @@ Lemos em três camadas, da mais confiável pra menos:
 3. Nome do arquivo que a Awin usa: `2026-08-31_15496516-20260831-...pdf`
    (fim do período + número da ordem).
 
-Competência sugerida: o mês do fim do período (nome do arquivo); sem ele, o
-mês anterior à data da ordem (a Awin emite a ordem no mês seguinte ao das
-comissões). A tela deixa a pessoa trocar antes de gerar.
+Competência: "normalmente a competência fica como a data de emissão da nota"
+(Marcos, 28/09/2026) — então a sugestão é o mês de hoje (quando a nota vai
+ser emitida), não o período das comissões. A tela deixa trocar antes de gerar.
 
 Só leitura — nada vai pro banco aqui.
 """
@@ -145,12 +145,7 @@ _RE_CNPJ = re.compile(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}")
 _RE_NOME_ARQUIVO = re.compile(r"(\d{4})-(\d{2})-(\d{2})_(\d{5,})")
 
 
-def _mes_anterior(d: date) -> str:
-    ano, mes = (d.year, d.month - 1) if d.month > 1 else (d.year - 1, 12)
-    return f"{ano:04d}-{mes:02d}"
-
-
-def ler_ordem_awin(conteudo: bytes, nome_arquivo: str | None = None) -> OrdemAwin:
+def ler_ordem_awin(conteudo: bytes, nome_arquivo: str | None = None, hoje: date | None = None) -> OrdemAwin:
     try:
         pdf = pdfplumber.open(io.BytesIO(conteudo))
     except Exception as exc:  # noqa: BLE001
@@ -194,21 +189,13 @@ def ler_ordem_awin(conteudo: bytes, nome_arquivo: str | None = None) -> OrdemAwi
         outros = [c for c in cnpjs if c != CNPJ_AWIN]
         ordem.cnpj_beneficiario = outros[0] if outros else None
 
-    # 3) nome do arquivo
-    fim_periodo: date | None = None
-    if nome_arquivo and (m := _RE_NOME_ARQUIVO.search(nome_arquivo)):
-        try:
-            fim_periodo = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-        except ValueError:
-            fim_periodo = None
-        if not ordem.numero:
-            ordem.numero = m.group(4)
-            ordem.fontes.append("nome_arquivo")
+    # 3) nome do arquivo (só o número da ordem, se faltou)
+    if not ordem.numero and nome_arquivo and (m := _RE_NOME_ARQUIVO.search(nome_arquivo)):
+        ordem.numero = m.group(4)
+        ordem.fontes.append("nome_arquivo")
 
-    if fim_periodo:
-        ordem.competencia_sugerida = f"{fim_periodo.year:04d}-{fim_periodo.month:02d}"
-    elif ordem.data:
-        ordem.competencia_sugerida = _mes_anterior(ordem.data)
+    hoje = hoje or date.today()
+    ordem.competencia_sugerida = f"{hoje.year:04d}-{hoje.month:02d}"
 
     parece_awin = ordem.cnpj_devedor == CNPJ_AWIN or "awin" in texto.lower() or bool(campos.get("paymentOrderId"))
     if not parece_awin and not (ordem.numero and ordem.valor):

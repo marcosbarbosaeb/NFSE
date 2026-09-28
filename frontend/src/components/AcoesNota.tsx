@@ -223,6 +223,9 @@ export function SeloPrefeitura({ nota, onMudou }: { nota: NotaParaAcoes; onMudou
 export function SeloTomador({ nota, onMudou }: { nota: NotaParaAcoes; onMudou: () => void }) {
   const [previa, setPrevia] = useState<PreviaEmail | null>(null)
   const [erroPrevia, setErroPrevia] = useState<string | null>(null)
+  // Destinatário e cópia editáveis na hora (valem só pra este envio).
+  const [para, setPara] = useState("")
+  const [copia, setCopia] = useState("")
   const liberado = nota.estado === "confirmado" || (nota.homologacao && ["montado", "assinado", "submetido"].includes(nota.estado))
   const enviada = nota.envio_status === "enviado"
 
@@ -246,7 +249,11 @@ export function SeloTomador({ nota, onMudou }: { nota: NotaParaAcoes; onMudou: (
         setErroPrevia(null)
         api
           .get<PreviaEmail>(`/dps/${nota.id}/email-previa`)
-          .then(setPrevia)
+          .then((p) => {
+            setPrevia(p)
+            setPara(p.destinos.join(", "))
+            setCopia(p.copia.join(", "))
+          })
           .catch((err) => setErroPrevia(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão."))
       }}
     >
@@ -255,8 +262,12 @@ export function SeloTomador({ nota, onMudou }: { nota: NotaParaAcoes; onMudou: (
           botao={enviada ? "Reenviar" : "Enviar e-mail"}
           fechar={fechar}
           onConfirmar={async () => {
-            if (previa?.motivo_desabilitado) throw new ApiError(400, previa.motivo_desabilitado)
-            const envio = await api.post<{ status: string; erro: string | null }>(`/dps/${nota.id}/enviar-email`, {})
+            const lista = (t: string) => t.split(/[,;\s]+/).map((e) => e.trim()).filter(Boolean)
+            if (lista(para).length === 0) throw new ApiError(400, "Informe pelo menos um destinatário.")
+            const envio = await api.post<{ status: string; erro: string | null }>(`/dps/${nota.id}/enviar-email`, {
+              para: lista(para),
+              copia: lista(copia),
+            })
             if (envio.status === "falha") throw new ApiError(400, envio.erro ?? "O envio falhou.")
             onMudou()
           }}
@@ -264,18 +275,31 @@ export function SeloTomador({ nota, onMudou }: { nota: NotaParaAcoes; onMudou: (
           {erroPrevia && <p className="text-xs text-danger-600">{erroPrevia}</p>}
           {!previa && !erroPrevia && <p className="text-xs text-slate-400">Carregando o e-mail...</p>}
           {previa && (
-            <div className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-300">
-              <p>
-                <span className="text-slate-400">Para:</span> {previa.destino}
-                {previa.copia.length > 0 && <span className="text-slate-400"> · cópia: {previa.copia.join(", ")}</span>}
-              </p>
+            <div className="flex flex-col gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+              <label className="flex flex-col gap-0.5">
+                <span className="text-slate-400">Para</span>
+                <input
+                  value={para}
+                  onChange={(e) => setPara(e.target.value)}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </label>
+              <label className="flex flex-col gap-0.5">
+                <span className="text-slate-400">Cópia</span>
+                <input
+                  value={copia}
+                  onChange={(e) => setCopia(e.target.value)}
+                  placeholder="opcional"
+                  className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </label>
               <p>
                 <span className="text-slate-400">Assunto:</span> {previa.assunto}
               </p>
               <p>
                 <span className="text-slate-400">Anexos:</span> {previa.arquivos.join(", ")}
               </p>
-              {previa.motivo_desabilitado && <p className="text-danger-600">{previa.motivo_desabilitado}</p>}
+              {previa.motivo_desabilitado && previa.destinos.length > 0 && <p className="text-danger-600">{previa.motivo_desabilitado}</p>}
             </div>
           )}
         </Confirmar>

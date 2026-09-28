@@ -79,27 +79,29 @@ def test_ordem_awin_pelos_campos_do_formulario():
         "paymentOrderId": "12345678", "totalAmount": "1234.56", "paymentOrderDate": "15/09/2026",
         "currency": "BRL", "taxDetailsTaxNumber": "11.222.333/0001-81",
     })
-    ordem = ler_ordem_awin(pdf, "ordem.pdf")
+    ordem = ler_ordem_awin(pdf, "ordem.pdf", hoje=datetime.date(2026, 9, 28))
     assert ordem.numero == "12345678"
     assert ordem.valor == Decimal("1234.56")
     assert ordem.data == datetime.date(2026, 9, 15)
     assert ordem.moeda == "BRL"
     assert ordem.cnpj_beneficiario == "11222333000181"
     assert ordem.cnpj_devedor == "14182871000188"
-    assert ordem.competencia_sugerida == "2026-08"  # mês anterior à data da ordem
+    assert ordem.competencia_sugerida == "2026-09"  # mês de emissão da nota (hoje)
 
 
-def test_ordem_awin_pelo_texto_e_competencia_pelo_nome_do_arquivo():
+def test_ordem_awin_pelo_texto_e_numero_pelo_nome_do_arquivo():
     pdf = _pdf_texto([
         "Awin Veiculação de Publicidade na Internet Ltda.",
         "Data: 15/09/2026",
         "ORDEM DE PAGAMENTO – Número: 87654321",
         "Total Bruto BRL 35.951,41",
     ])
-    ordem = ler_ordem_awin(pdf, "2026-07-31_87654321-20260731-1-BRL-201.pdf")
+    ordem = ler_ordem_awin(pdf, "2026-07-31_87654321-20260731-1-BRL-201.pdf", hoje=datetime.date(2026, 10, 2))
     assert ordem.numero == "87654321"
     assert ordem.valor == Decimal("35951.41")
-    assert ordem.competencia_sugerida == "2026-07"
+    assert ordem.competencia_sugerida == "2026-10"
+    sem_numero = ler_ordem_awin(_pdf_texto(["Awin Ltda", "Total Bruto BRL 10,00"]), "2026-07-31_11112222-x.pdf")
+    assert sem_numero.numero == "11112222"
 
 
 def test_ordem_awin_recusa_pdf_que_nao_e_da_awin():
@@ -311,3 +313,39 @@ def test_endpoints_de_previa_e_prestador(client, db, vinculo_teste):
     resp = client.get(f"/api/dps/{emissao.id}/email-previa")
     assert resp.status_code == 200 and "assunto" in resp.json()
     assert "municipio_rotulo" in client.get("/api/prestador").json()
+
+
+def test_destinatario_configuravel_copia_propria_e_troca_na_hora(client, db, prestador_teste, vinculo_teste, monkeypatch):
+    enviados = []
+
+    class Falso:
+        def enviar(self, **kw):
+            enviados.append(kw)
+
+    monkeypatch.setattr("app.services.envio_direto.get_email_sender", lambda: Falso())
+    monkeypatch.setattr("app.services.envio_direto.motivo_email_desabilitado",
+                        lambda vinculo, destino=None: None if destino else "sem destino")
+    vinculo_teste.email_contato = "contato@tomador.com"
+    vinculo_teste.email_para = "fin@tomador.com; ap@tomador.com"
+    vinculo_teste.email_copia = "gerente@tomador.com, fin@tomador.com"
+    prestador_teste.email_copia_padrao = "eu@minhaempresa.com"
+    emissao = criar_rascunho(db, vinculo_teste, competencia="2026-03", valor=10)
+    montar(db, emissao)
+
+    previa = client.get(f"/api/dps/{emissao.id}/email-previa").json()
+    assert previa["destinos"] == ["fin@tomador.com", "ap@tomador.com"]
+    assert previa["copia"] == ["gerente@tomador.com", "eu@minhaempresa.com"]  # sem repetir destinatário
+
+    assert client.post(f"/api/dps/{emissao.id}/enviar-email").json()["status"] == "enviado"
+    assert enviados[-1]["destinatario"] == ["fin@tomador.com", "ap@tomador.com"]
+    assert enviados[-1]["copia"] == ["gerente@tomador.com", "eu@minhaempresa.com"]
+
+    # só neste envio: outro destinatário, sem cópia
+    r = client.post(f"/api/dps/{emissao.id}/enviar-email", json={"para": ["outro@x.com", "lixo"], "copia": []})
+    assert r.json()["status"] == "enviado"
+    assert enviados[-1]["destinatario"] == ["outro@x.com"] and enviados[-1]["copia"] is None
+
+    # sem "Para" configurado, volta pro e-mail de contato
+    vinculo_teste.email_para = None
+    db.flush()
+    assert client.get(f"/api/dps/{emissao.id}/email-previa").json()["destinos"] == ["contato@tomador.com"]

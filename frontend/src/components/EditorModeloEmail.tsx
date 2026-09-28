@@ -14,6 +14,7 @@ export interface ValorModeloEmail {
   mensagem: string
   anexos: Anexos | ""
   copia?: string
+  para?: string
 }
 
 const OPCOES_ANEXO: { valor: Anexos; rotulo: string }[] = [
@@ -36,12 +37,21 @@ export function EditorModeloEmail({
   onChange,
   herdado,
   mostrarCopia,
+  rotuloCopia = "Com cópia para",
+  dicaCopia,
+  mostrarPara,
+  paraPadrao,
 }: {
   valor: ValorModeloEmail
   onChange: (v: ValorModeloEmail) => void
   /** O que vale quando o campo fica vazio (padrão da conta ou texto da Ana). */
   herdado?: { assunto?: string | null; mensagem?: string | null; anexos?: Anexos | null; rotulo: string }
   mostrarCopia?: boolean
+  rotuloCopia?: string
+  dicaCopia?: string
+  /** Campo "Para" (só na ficha do tomador). */
+  mostrarPara?: boolean
+  paraPadrao?: string | null
 }) {
   const [modelo, setModelo] = useState<ModeloEmailPadrao | null>(null)
   const [focado, setFocado] = useState<"assunto" | "mensagem">("mensagem")
@@ -79,6 +89,22 @@ export function EditorModeloEmail({
 
   return (
     <div className="flex flex-col gap-4">
+      {mostrarPara && (
+        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700 dark:text-slate-300">
+          Para (destinatário)
+          <input
+            value={valor.para ?? ""}
+            onChange={(e) => onChange({ ...valor, para: e.target.value })}
+            placeholder={paraPadrao || "financeiro@empresa.com, outro@empresa.com"}
+            maxLength={400}
+            className={classeCampo}
+          />
+          <span className="text-xs font-normal text-slate-400">
+            {paraPadrao ? `Vazio = vai pro e-mail do tomador (${paraPadrao}).` : "Vazio = vai pro e-mail do tomador cadastrado acima."} Separe
+            vários com vírgula.
+          </span>
+        </label>
+      )}
       <label className="flex flex-col gap-1 text-sm font-medium text-slate-700 dark:text-slate-300">
         Assunto
         <input
@@ -154,7 +180,7 @@ export function EditorModeloEmail({
         </div>
         {mostrarCopia && (
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700 dark:text-slate-300">
-            Com cópia para
+            {rotuloCopia}
             <input
               value={valor.copia ?? ""}
               onChange={(e) => onChange({ ...valor, copia: e.target.value })}
@@ -162,6 +188,7 @@ export function EditorModeloEmail({
               maxLength={400}
               className={classeCampo}
             />
+            {dicaCopia && <span className="text-xs font-normal text-slate-400">{dicaCopia}</span>}
           </label>
         )}
       </div>

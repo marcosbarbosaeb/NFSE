@@ -166,13 +166,35 @@ def _numero_whatsapp(telefone: str | None) -> str | None:
 # --- opções da tela ---
 
 
-def email_destino(emissao: Emissao, vinculo: PrestadorTomador | None) -> str | None:
-    """Shopee: a nota é pro vendedor da linha do relatório — o e-mail dele
-    veio no snapshot. No resto, o e-mail cadastrado no tomador."""
+_RE_EMAIL = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$")
+
+
+def lista_emails(texto: str | list[str] | None) -> list[str]:
+    """"a@x.com; b@y.com, invalido" -> ["a@x.com", "b@y.com"] (sem repetir)."""
+    partes = texto if isinstance(texto, list) else re.split(r"[,;\s]+", texto or "")
+    vistos: list[str] = []
+    for parte in partes:
+        email = (parte or "").strip().lower()
+        if _RE_EMAIL.match(email) and email not in vistos:
+            vistos.append(email)
+    return vistos[:20]
+
+
+def destinos_email(emissao: Emissao, vinculo: PrestadorTomador | None) -> list[str]:
+    """Pra quem a nota vai (28/09/2026: "tem que configurar o destinatário
+    também, não necessariamente enviamos para o e-mail da nota").
+    Shopee: o vendedor da linha do relatório (e-mail do snapshot). No resto:
+    o "Para" configurado no tomador; sem ele, o e-mail de contato."""
     snap = emissao.tomador_snapshot or {}
     if emissao.tomador_documento:
-        return snap.get("email")
-    return vinculo.email_contato if vinculo else None
+        return lista_emails(snap.get("email"))
+    if vinculo is None:
+        return []
+    return lista_emails(vinculo.email_para) or lista_emails(vinculo.email_contato)
+
+
+def email_destino(emissao: Emissao, vinculo: PrestadorTomador | None) -> str | None:
+    return ", ".join(destinos_email(emissao, vinculo)) or None
 
 
 def motivo_email_desabilitado(vinculo: PrestadorTomador | None, destino: str | None = None) -> str | None:
@@ -180,9 +202,9 @@ def motivo_email_desabilitado(vinculo: PrestadorTomador | None, destino: str | N
     if not (s.resend_api_key and s.email_remetente_notas):
         return "O envio por e-mail da Ana será ativado quando o domínio de e-mail estiver configurado."
     if destino is None and vinculo is not None:
-        destino = vinculo.email_contato
+        destino = ", ".join(lista_emails(vinculo.email_para) or lista_emails(vinculo.email_contato))
     if not destino:
-        return "Cadastre o e-mail deste fornecedor pra enviar direto."
+        return "Cadastre o e-mail deste tomador (ou o destinatário no e-mail da nota) pra enviar direto."
     return None
 
 
@@ -227,10 +249,6 @@ def _novo_envio(db: Session, emissao: Emissao, canal: str, destino: str | None) 
     return envio
 
 
-def _copias(texto: str | None) -> list[str]:
-    return [c.strip() for c in re.split(r"[,;\s]+", texto or "") if "@" in c.strip()]
-
-
 def modelo_email(db: Session, emissao: Emissao, base: str) -> dict:
     """Assunto, texto, cópias e anexos que esta nota vai usar — tomador >
     padrão do prestador > texto de sempre da Ana (28/09/2026)."""
@@ -253,7 +271,11 @@ def modelo_email(db: Session, emissao: Emissao, base: str) -> dict:
         "texto": texto,
         "html": html,
         "anexos": anexos,
-        "copia": _copias(vinculo.email_copia if vinculo else None),
+        # Cópias do tomador + "sempre me mandar cópia" da conta.
+        "copia": lista_emails(
+            lista_emails(vinculo.email_copia if vinculo else None)
+            + lista_emails(prestador.email_copia_padrao if prestador else None)
+        ),
     }
 
 
@@ -267,10 +289,12 @@ def previa_email(db: Session, emissao: Emissao, base: str) -> dict:
         arquivos.append(nome_pdf(emissao))
     if modelo["anexos"] in ("pdf_xml", "xml") or not tem_pdf:
         arquivos.append(f"nfse_{emissao.n_dps}_{emissao.competencia}.xml")
-    destino = email_destino(emissao, vinculo)
+    destinos = destinos_email(emissao, vinculo)
+    destino = ", ".join(destinos) or None
     return {
         "destino": destino,
-        "copia": modelo["copia"],
+        "destinos": destinos,
+        "copia": [c for c in modelo["copia"] if c not in destinos],
         "assunto": modelo["assunto"],
         "texto": modelo["texto"],
         "anexos": modelo["anexos"],
@@ -279,18 +303,25 @@ def previa_email(db: Session, emissao: Emissao, base: str) -> dict:
     }
 
 
-def enviar_email(db: Session, emissao: Emissao, prestador_id: uuid.UUID, base: str) -> Envio:
+def enviar_email(
+    db: Session, emissao: Emissao, prestador_id: uuid.UUID, base: str,
+    para: list[str] | None = None, copia: list[str] | None = None,
+) -> Envio:
     """Manda de verdade (Resend). Falha do provedor vira envio com status
     'falha' + motivo (não exceção) — a tela mostra e a pessoa tenta de novo.
     Assunto, texto, cópias e anexos vêm do modelo configurado (tomador >
     padrão do prestador > texto de sempre)."""
     vinculo = db.get(PrestadorTomador, emissao.prestador_tomador_id)
-    destino = email_destino(emissao, vinculo)
+    # `para`/`copia` vindos da tela valem só pra este envio (a pessoa trocou
+    # o destinatário na hora); sem eles, o que está configurado.
+    destinos = lista_emails(para) if para is not None else destinos_email(emissao, vinculo)
+    destino = ", ".join(destinos) or None
     motivo = motivo_email_desabilitado(vinculo, destino)
     if motivo:
         raise EmailIndisponivelError(motivo)
 
     modelo = modelo_email(db, emissao, base)
+    copias = [c for c in (lista_emails(copia) if copia is not None else modelo["copia"]) if c not in destinos]
     quer_pdf = modelo["anexos"] in ("pdf_xml", "pdf")
     quer_xml = modelo["anexos"] in ("pdf_xml", "xml")
     anexos: list[tuple[str, bytes]] = []
@@ -309,17 +340,17 @@ def enviar_email(db: Session, emissao: Emissao, prestador_id: uuid.UUID, base: s
         anexos.append((nome_xml, conteudo_xml.encode("utf-8")))
 
     prestador = db.get(Prestador, prestador_id)
-    envio = _novo_envio(db, emissao, "email", destino)
+    envio = _novo_envio(db, emissao, "email", destino[:200] if destino else None)
     try:
         get_email_sender().enviar(
-            destinatario=destino,
+            destinatario=destinos,
             assunto=modelo["assunto"],
             corpo_texto=modelo["texto"],
             corpo_html=modelo["html"],
             remetente=remetente_da_nota(prestador.razao_social if prestador else None),
             responder_para=prestador.email if prestador and prestador.email else None,
             anexos=anexos,
-            copia=modelo["copia"] or None,
+            copia=copias or None,
         )
     except EmailEnvioError as exc:
         envio.status = "falha"

@@ -283,6 +283,7 @@ function ModeloEmailCard({ prestador, onAtualizado }: { prestador: Prestador; on
     assunto: prestador.email_assunto_padrao ?? "",
     mensagem: prestador.email_mensagem_padrao ?? "",
     anexos: prestador.email_anexos_padrao ?? "",
+    copia: prestador.email_copia_padrao ?? "",
   })
   const [valor, setValor] = useState<ValorModeloEmail>(inicial)
   const [salvando, setSalvando] = useState(false)
@@ -295,6 +296,7 @@ function ModeloEmailCard({ prestador, onAtualizado }: { prestador: Prestador; on
         email_assunto_padrao: valor.assunto,
         email_mensagem_padrao: valor.mensagem,
         email_anexos_padrao: valor.anexos || "pdf_xml",
+        email_copia_padrao: valor.copia ?? "",
       })
       onAtualizado(p)
       setMsg({ ok: true, texto: "Modelo salvo." })
@@ -313,12 +315,19 @@ function ModeloEmailCard({ prestador, onAtualizado }: { prestador: Prestador; on
         O e-mail que vai pro tomador junto com a nota. Se algum tomador pedir um assunto ou texto diferente, ajuste na ficha
         dele (Tomadores › editar).
       </p>
-      <EditorModeloEmail valor={valor} onChange={setValor} herdado={{ rotulo: "o texto padrão da Ana" }} />
+      <EditorModeloEmail
+        valor={valor}
+        onChange={setValor}
+        herdado={{ rotulo: "o texto padrão da Ana" }}
+        mostrarCopia
+        rotuloCopia="Sempre mandar cópia para"
+        dicaCopia={`Vai em todo e-mail de nota — ex.: o seu próprio${prestador.email ? ` (${prestador.email})` : ""}.`}
+      />
       <div className="mt-4 flex items-center gap-3">
         <Button type="button" variant="accent" onClick={salvar} disabled={salvando}>
           {salvando ? "Salvando..." : "Salvar modelo"}
         </Button>
-        <Button type="button" variant="ghost" onClick={() => setValor({ assunto: "", mensagem: "", anexos: "" })}>
+        <Button type="button" variant="ghost" onClick={() => setValor({ ...valor, assunto: "", mensagem: "", anexos: "" })}>
           Voltar ao texto padrão
         </Button>
         {msg && <span className={`text-xs ${msg.ok ? "text-success-700" : "text-danger-600"}`}>{msg.texto}</span>}

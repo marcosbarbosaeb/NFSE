@@ -82,6 +82,7 @@ from app.schemas import (
     PreviaEmailResponse,
     ModeloEmailPadraoResponse,
     PreviaShopeeResponse,
+    EnviarEmailRequest,
     IndicacaoResponse,
     CanaisSuporteResponse,
     MensagemSuporteRequest,
@@ -732,7 +733,7 @@ def api_criar_vinculo(req: VinculoCriarRequest, db: Session = Depends(db_sessao)
         )
     except ApelidoJaExisteError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    for campo in ("email_assunto", "email_mensagem", "email_anexos", "email_copia"):
+    for campo in ("email_assunto", "email_mensagem", "email_anexos", "email_copia", "email_para"):
         setattr(vinculo, campo, (getattr(req, campo) or "").strip() or None)
     db.commit()
     return vinculo
@@ -747,7 +748,7 @@ def api_atualizar_vinculo(vinculo_id: uuid.UUID, req: VinculoAtualizarRequest, d
     if vinculo is None:
         raise HTTPException(status_code=404, detail="Vínculo não encontrado (ou não pertence ao prestador ativo)")
     campos = req.model_dump(exclude_unset=True)
-    for campo in ("email_assunto", "email_mensagem", "email_anexos", "email_copia"):
+    for campo in ("email_assunto", "email_mensagem", "email_anexos", "email_copia", "email_para"):
         if campo in campos:
             campos[campo] = (campos[campo] or "").strip() or None
     if campos.get("cod_trib_nacional") is not None and campos["cod_trib_nacional"] != vinculo.cod_trib_nacional:
@@ -1262,7 +1263,7 @@ def api_previa_email(emissao_id: uuid.UUID, request: Request, db: Session = Depe
 
 @app.post("/api/dps/{emissao_id}/enviar-email", response_model=EnvioResponse, responses={400: {"model": ErroResponse}, 404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
 def api_enviar_email(
-    emissao_id: uuid.UUID, request: Request,
+    emissao_id: uuid.UUID, request: Request, req: EnviarEmailRequest | None = None,
     db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
 ):
     """Marco 17 — manda a nota pro e-mail do fornecedor saindo do endereço
@@ -1270,7 +1271,10 @@ def api_enviar_email(
     prestador). Falha do provedor volta como envio com status 'falha'."""
     emissao = _emissao_ou_404(db, emissao_id)
     try:
-        envio = enviar_email(db, emissao, prestador_id, base_url(str(request.base_url)))
+        envio = enviar_email(
+            db, emissao, prestador_id, base_url(str(request.base_url)),
+            para=req.para if req else None, copia=req.copia if req else None,
+        )
     except EmailIndisponivelError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except EmissaoSemConteudoError as exc:

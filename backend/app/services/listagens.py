@@ -92,7 +92,7 @@ def listar_emissoes(
             "pagamento_recebido": (e.prestador_tomador_id, e.competencia) in pares_pagos,
             "envio_status": ultimo_envio.get(e.id),
             "tem_pdf": e.estado == "confirmado",
-            "tem_email": bool((e.tomador_snapshot or {}).get("email") if e.tomador_documento else e.vinculo.email_contato),
+            "tem_email": bool((e.tomador_snapshot or {}).get("email") if e.tomador_documento else (e.vinculo.email_para or e.vinculo.email_contato)),
             "homologacao": (e.tomador_snapshot or {}).get("tpAmb") == "2",
         }
         for e in emissoes

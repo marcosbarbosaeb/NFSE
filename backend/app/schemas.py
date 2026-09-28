@@ -524,6 +524,7 @@ class VinculoDetalheResponse(BaseModel):
     email_mensagem: str | None = None
     email_anexos: str | None = None
     email_copia: str | None = None
+    email_para: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -552,6 +553,7 @@ class VinculoCriarRequest(BaseModel):
     email_mensagem: str | None = Field(default=None, max_length=5000)
     email_anexos: str | None = Field(default=None, pattern=r"^(pdf_xml|pdf|xml)$")
     email_copia: str | None = Field(default=None, max_length=400)
+    email_para: str | None = Field(default=None, max_length=400)
 
     @model_validator(mode="after")
     def _exatamente_um_tomador(self):
@@ -581,6 +583,7 @@ class VinculoAtualizarRequest(BaseModel):
     email_mensagem: str | None = Field(default=None, max_length=5000)
     email_anexos: str | None = Field(default=None, pattern=r"^(pdf_xml|pdf|xml)$")
     email_copia: str | None = Field(default=None, max_length=400)
+    email_para: str | None = Field(default=None, max_length=400)
 
 
 class PrestadorResponse(BaseModel):
@@ -610,6 +613,7 @@ class PrestadorResponse(BaseModel):
     email_assunto_padrao: str | None = None
     email_mensagem_padrao: str | None = None
     email_anexos_padrao: str | None = None
+    email_copia_padrao: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -628,6 +632,7 @@ class PreferenciasPrestadorRequest(BaseModel):
     email_assunto_padrao: str | None = Field(default=None, max_length=300)
     email_mensagem_padrao: str | None = Field(default=None, max_length=5000)
     email_anexos_padrao: str | None = Field(default=None, pattern=r"^(pdf_xml|pdf|xml)$")
+    email_copia_padrao: str | None = Field(default=None, max_length=400)
 
 
 class CodigoModeloResponse(BaseModel):
@@ -644,6 +649,7 @@ class ModeloEmailPadraoResponse(BaseModel):
 
 class PreviaEmailResponse(BaseModel):
     destino: str | None
+    destinos: list[str] = []
     copia: list[str]
     assunto: str
     texto: str
@@ -907,3 +913,10 @@ class IndicacaoResponse(BaseModel):
     pct_maximo: int
     cobranca_ativa: bool
     indicados: list[IndicadoResponse]
+
+
+class EnviarEmailRequest(BaseModel):
+    """Opcional: trocar pra quem vai SÓ neste envio (a tela pré-preenche com
+    o configurado). Listas de e-mails; inválidos são descartados."""
+    para: list[str] | None = Field(default=None, max_length=20)
+    copia: list[str] | None = Field(default=None, max_length=20)

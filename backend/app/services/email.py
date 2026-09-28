@@ -42,7 +42,7 @@ class EmailEnvioError(Exception):
 
 class EmailSender:
     def enviar(
-        self, *, destinatario: str, assunto: str, corpo_texto: str, corpo_html: str,
+        self, *, destinatario: str | list[str], assunto: str, corpo_texto: str, corpo_html: str,
         remetente: str | None = None, responder_para: str | None = None,
         anexos: list[tuple[str, bytes]] | None = None, copia: list[str] | None = None,
     ) -> None:
@@ -56,7 +56,7 @@ class EmailSenderConsole(EmailSender):
     testes) — nunca faz uma chamada de rede."""
 
     def enviar(
-        self, *, destinatario: str, assunto: str, corpo_texto: str, corpo_html: str,
+        self, *, destinatario: str | list[str], assunto: str, corpo_texto: str, corpo_html: str,
         remetente: str | None = None, responder_para: str | None = None,
         anexos: list[tuple[str, bytes]] | None = None, copia: list[str] | None = None,
     ) -> None:
@@ -79,13 +79,13 @@ class EmailSenderResend(EmailSender):
         self._remetente = remetente
 
     def enviar(
-        self, *, destinatario: str, assunto: str, corpo_texto: str, corpo_html: str,
+        self, *, destinatario: str | list[str], assunto: str, corpo_texto: str, corpo_html: str,
         remetente: str | None = None, responder_para: str | None = None,
         anexos: list[tuple[str, bytes]] | None = None, copia: list[str] | None = None,
     ) -> None:
         corpo = {
             "from": remetente or self._remetente,
-            "to": [destinatario],
+            "to": destinatario if isinstance(destinatario, list) else [destinatario],
             "subject": assunto,
             "text": corpo_texto,
             "html": corpo_html,

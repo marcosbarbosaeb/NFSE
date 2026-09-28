@@ -104,6 +104,8 @@ class Prestador(Base):
     email_assunto_padrao: Mapped[str | None] = mapped_column(String(300))
     email_mensagem_padrao: Mapped[str | None] = mapped_column(Text)
     email_anexos_padrao: Mapped[str | None] = mapped_column(String(10))
+    # Cópia em todo e-mail de nota (ex.: o próprio e-mail), separados por vírgula.
+    email_copia_padrao: Mapped[str | None] = mapped_column(String(400))
     # Ambiente das notas novas: "1" produção, "2" homologação (teste). Saiu
     # da tela de gerar nota em 28/09/2026 e virou configuração da conta.
     tp_amb_padrao: Mapped[str] = mapped_column(String(1), nullable=False, default="1", server_default="1")
@@ -315,6 +317,8 @@ class PrestadorTomador(Base):
     email_mensagem: Mapped[str | None] = mapped_column(Text)
     email_anexos: Mapped[str | None] = mapped_column(String(10))
     email_copia: Mapped[str | None] = mapped_column(String(400))
+    # Pra quem a nota vai; vazio = email_contato.
+    email_para: Mapped[str | None] = mapped_column(String(400))
     # "Excluir tomador": vínculo com notas não pode sumir do banco (a nota
     # aponta pra ele), então é marcado aqui e sai de todas as listas.
     excluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

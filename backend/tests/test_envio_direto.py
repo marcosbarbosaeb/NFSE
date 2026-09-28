@@ -73,7 +73,7 @@ def test_opcoes_pede_email_do_fornecedor(client, vinculo_teste, monkeypatch):
     eid = _nova_emissao(client, vinculo_teste)
     r = client.get(f"/api/dps/{eid}/envio-opcoes").json()
     assert r["email_habilitado"] is False
-    assert "e-mail deste fornecedor" in r["email_motivo_desabilitado"]
+    assert "e-mail deste tomador" in r["email_motivo_desabilitado"]
     assert client.post(f"/api/dps/{eid}/enviar-email").status_code == 400
 
 
@@ -90,7 +90,7 @@ def test_enviar_email_com_xml_anexo_e_reply_to(client, db, vinculo_teste, presta
     assert r.json()["destino"] == "financeiro@fornecedor.com"
 
     enviado = sender.enviados[0]
-    assert enviado["destinatario"] == "financeiro@fornecedor.com"
+    assert enviado["destinatario"] == ["financeiro@fornecedor.com"]
     assert enviado["responder_para"] == "raiana@exemplo.com"
     assert enviado["remetente"].endswith("<notas@agenteana.test>")
     assert enviado["remetente"].startswith('"') and " via Agente Ana\" <notas@agenteana.test>" in enviado["remetente"]
