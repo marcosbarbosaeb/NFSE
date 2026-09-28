@@ -44,10 +44,11 @@ from decimal import Decimal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import AjusteEvento, Certificado, Emissao, PagamentoRecebido, Prestador
+from app.models import AjusteEvento, Certificado, Emissao, Envio, PagamentoRecebido, Prestador
 from app.services import a_receber as notas_abertas
 from app.services.envios import listar_envios
 from app.services.vinculos import listar_vinculos_ativos
+from app.tempo import hoje as hoje_br
 
 ESTADO_NFSE_LABEL = {
     "rascunho": "Rascunho",
@@ -67,7 +68,7 @@ DIAS_ALERTA_CERTIFICADO = 30
 
 
 def _competencia_atual() -> str:
-    hoje = datetime.date.today()
+    hoje = hoje_br()
     return f"{hoje.year:04d}-{hoje.month:02d}"
 
 
@@ -122,7 +123,7 @@ def _avisos_dia_de_gerar(db: Session, vinculos: list, hoje: datetime.date | None
     atenção". Olha o mês REAL (hoje), não o navegado; respeita a data movida
     no calendário (AjusteEvento) e some assim que a nota do mês é gerada.
     Depois do dia, continua avisando que ficou pra trás."""
-    hoje = hoje or datetime.date.today()
+    hoje = hoje or hoje_br()
     competencia = f"{hoje.year:04d}-{hoje.month:02d}"
     ajustes = {a.chave: a for a in db.query(AjusteEvento).filter(AjusteEvento.tipo == "prazo_emissao").all()}
     avisos = []
@@ -176,28 +177,45 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
     a_receber = Decimal(0)
     pagamentos_pendentes = 0
 
-    for vinculo in vinculos:
-        # Shopee: várias notas no mês (uma por vendedor) — vira uma linha só,
-        # somando os valores.
-        do_mes = (
+    # Tudo do mês em poucas consultas (antes eram ~4 por tomador): notas,
+    # competências pagas e o último envio de cada nota.
+    ids_vinculos = [v.id for v in vinculos]
+    notas_por_vinculo: dict[uuid.UUID, list[Emissao]] = {}
+    if ids_vinculos:
+        for e in (
             db.query(Emissao)
             .filter(
-                Emissao.prestador_tomador_id == vinculo.id,
+                Emissao.prestador_tomador_id.in_(ids_vinculos),
                 Emissao.competencia == competencia,
                 Emissao.estado != "cancelada",
             )
             .order_by(Emissao.criado_em)
-            .all()
-        )
+        ):
+            notas_por_vinculo.setdefault(e.prestador_tomador_id, []).append(e)
+    pagos = {
+        v for (v,) in db.query(PagamentoRecebido.prestador_tomador_id).filter(PagamentoRecebido.competencia == competencia).distinct()
+    }
+    primeiras = [notas[0].id for notas in notas_por_vinculo.values()]
+    ultimo_envio: dict[uuid.UUID, str] = {}
+    if primeiras:
+        for emissao_id, status in (
+            db.query(Envio.emissao_id, Envio.status).filter(Envio.emissao_id.in_(primeiras)).order_by(Envio.criado_em)
+        ):
+            ultimo_envio[emissao_id] = status
+
+    for vinculo in vinculos:
+        # Shopee: várias notas no mês (uma por vendedor) — vira uma linha só,
+        # somando os valores.
+        do_mes = notas_por_vinculo.get(vinculo.id, [])
         emissao = do_mes[0] if do_mes else None
-        valor_mes = sum((e.valor for e in do_mes), Decimal(0))
+        valor_mes = sum((e.valor for e in do_mes if e.estado in notas_abertas.ESTADOS_COBRAVEIS), Decimal(0))
         if emissao is None:
             aguardando += 1
             continue
 
         emitidas += 1
-        recebido = _tem_pagamento(db, vinculo.id, competencia)
-        if not recebido:
+        recebido = vinculo.id in pagos
+        if not recebido and valor_mes:
             a_receber += valor_mes
             pagamentos_pendentes += 1
 
@@ -208,12 +226,12 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
             "apelido": vinculo.apelido if len(do_mes) == 1 else f"{vinculo.apelido} ({len(do_mes)} notas)",
             "tomador_razao_social": vinculo.tomador.razao_social if len(do_mes) == 1 else "vários vendedores",
             "competencia": emissao.competencia,
-            "valor": float(valor_mes),
+            "valor": float(sum((e.valor for e in do_mes), Decimal(0))),
             "estado": emissao.estado,
             "estado_label": ESTADO_NFSE_LABEL.get(emissao.estado, emissao.estado),
-            "envio_status": _status_envio(db, emissao),
+            "envio_status": ultimo_envio.get(emissao.id),
             "pagamento_recebido": recebido,
-            "tem_pdf": bool(emissao.danfse_pdf) or emissao.estado == "confirmado",
+            "tem_pdf": emissao.estado == "confirmado",
             "tem_email": bool(vinculo.email_para or vinculo.email_contato) if len(do_mes) == 1 else False,
             "homologacao": (emissao.tomador_snapshot or {}).get("tpAmb") == "2",
         })
@@ -225,10 +243,11 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
         delta_recebimentos_pct = float((recebido_no_mes - recebido_mes_anterior) / recebido_mes_anterior * 100)
 
     atencao: list[dict] = _avisos_dia_de_gerar(db, vinculos)
-    atencao += notas_abertas.avisos_abertas_ha_muito(db)
+    base_abertas = notas_abertas.calcular(db)
+    atencao += notas_abertas.avisos_abertas_ha_muito(db, base=base_abertas)
     cert = db.query(Certificado).filter_by(prestador_id=prestador_id).one_or_none()
     if cert is not None and cert.validade is not None:
-        dias = (cert.validade - datetime.date.today()).days
+        dias = (cert.validade - hoje_br()).days
         if dias <= DIAS_ALERTA_CERTIFICADO:
             atencao.append({
                 "tipo": "certificado_vencido" if dias < 0 else "certificado_vencendo",
@@ -243,7 +262,7 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
     # docstring de Prestador.aliquota_atualizada_em). Só avisa — nunca
     # bloqueia emissão, mesma filosofia do resto desta lista.
     prestador = db.query(Prestador).filter_by(id=prestador_id).one_or_none()
-    hoje = datetime.date.today()
+    hoje = hoje_br()
     if prestador is not None and (
         prestador.aliquota_atualizada_em is None
         or (prestador.aliquota_atualizada_em.year, prestador.aliquota_atualizada_em.month) != (hoje.year, hoje.month)
@@ -271,7 +290,7 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
         "recebido_mes_anterior": float(recebido_mes_anterior),
         "delta_recebimentos_pct": delta_recebimentos_pct,
         "serie_recebimentos": _serie_recebimentos(db, prestador_id, competencia),
-        **notas_abertas.totais(db),
+        **notas_abertas.totais(db, base_abertas),
         "emissoes": emissoes,
         "atencao": atencao,
     }
@@ -284,15 +303,24 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
     do mês, cobrar) + a agenda dos próximos 30 dias."""
     from app.services.calendario import eventos_calendario
 
-    hoje = hoje or datetime.date.today()
+    hoje = hoje or hoje_br()
     competencia = f"{hoje.year:04d}-{hoje.month:02d}"
     pendencias: list[dict] = []
 
+    # Filtra no banco (antes pegava as 200 mais recentes e filtrava aqui —
+    # depois de um lote grande da Shopee, notas antigas com erro sumiam) e
+    # checa "já enviada" com um NOT EXISTS em vez de uma consulta por nota.
+    ja_enviada = (
+        db.query(Envio.id).filter(Envio.emissao_id == Emissao.id, Envio.status == "enviado").exists()
+    )
     ativas = (
         db.query(Emissao)
-        .filter(Emissao.estado.in_(("montado", "assinado", "erro", "confirmado")))
+        .filter(
+            (Emissao.estado.in_(("montado", "assinado", "erro")))
+            | ((Emissao.estado == "confirmado") & ~ja_enviada)
+        )
         .order_by(Emissao.criado_em.desc())
-        .limit(200)
+        .limit(500)
         .all()
     )
     for e in ativas:
@@ -305,16 +333,14 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
             pendencias.append({**base, "tipo": "prefeitura", "titulo": f"Enviar à prefeitura a nota de {nome}", "acao": "Enviar"})
         elif e.estado == "erro":
             pendencias.append({**base, "tipo": "erro", "titulo": f"A prefeitura recusou a nota de {nome}", "acao": "Ver erro"})
-        elif e.estado == "confirmado" and not any(v.status == "enviado" for v in listar_envios(db, e)):
+        elif e.estado == "confirmado":
             pendencias.append({**base, "tipo": "enviar_tomador", "titulo": f"Mandar a nota pra {nome}", "acao": "Enviar"})
 
+    competencia_tem_nota = {
+        v for (v,) in db.query(Emissao.prestador_tomador_id).filter(Emissao.competencia == competencia, Emissao.estado != "cancelada")
+    }
     for v in listar_vinculos_ativos(db):
-        tem = (
-            db.query(Emissao.id)
-            .filter(Emissao.prestador_tomador_id == v.id, Emissao.competencia == competencia, Emissao.estado != "cancelada")
-            .first()
-        )
-        if tem is None:
+        if v.id not in competencia_tem_nota:
             quando = f" (dia {v.dia_limite_emissao})" if v.dia_limite_emissao else ""
             pendencias.append({
                 "tipo": "gerar", "titulo": f"Gerar a nota de {v.apelido}{quando}", "acao": "Gerar",

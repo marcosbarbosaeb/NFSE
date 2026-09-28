@@ -390,9 +390,9 @@ class Emissao(Base):
     # da trava de nota duplicada (ver índice abaixo).
     tomador_documento: Mapped[str | None] = mapped_column(String(40))
 
-    xml_dps: Mapped[str | None] = mapped_column(Text)
-    xml_assinado: Mapped[str | None] = mapped_column(Text)
-    xml_resposta: Mapped[str | None] = mapped_column(Text)
+    xml_dps: Mapped[str | None] = mapped_column(Text, deferred=True)
+    xml_assinado: Mapped[str | None] = mapped_column(Text, deferred=True)
+    xml_resposta: Mapped[str | None] = mapped_column(Text, deferred=True)
     # Marco 17 — cache do DANFSe (PDF oficial do ADN) depois da confirmação;
     # anexado no e-mail ao fornecedor e servido pelo link público.
     danfse_pdf: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
@@ -647,3 +647,10 @@ class Indicacao(Base):
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (Index("ix_indicacao_indicador", "indicador_id"),)
+
+
+# Índices de desempenho (migração c5a1e9d3f720).
+Index("ix_envio_emissao_criado", Envio.emissao_id, Envio.criado_em)
+Index("ix_pagamento_vinculo_competencia", PagamentoRecebido.prestador_tomador_id, PagamentoRecebido.competencia)
+Index("ix_pagamento_prestador_competencia", PagamentoRecebido.prestador_id, PagamentoRecebido.competencia)
+Index("ix_emissao_prestador_competencia", Emissao.prestador_id, Emissao.competencia)

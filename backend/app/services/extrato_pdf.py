@@ -38,10 +38,11 @@ import io
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 import pdfplumber
+from app.tempo import hoje as hoje_br
 
 _MESES = {
     "jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
@@ -190,7 +191,7 @@ def _inferir_ano(texto: str) -> int:
     dígitos que aparece no documento (cabeçalho "Período: 01/09/2026 a
     ..."), ou o ano corrente."""
     m = re.search(r"\b(20\d{2})\b", texto)
-    return int(m.group(1)) if m else date.today().year
+    return int(m.group(1)) if m else hoje_br().year
 
 
 def _linha_para_transacao(linha: str, numero: int, data: date | None) -> TransacaoExtraida | None:
@@ -299,11 +300,12 @@ def _extrair_csv(texto: str) -> ResultadoExtrato:
     cabeçalho (ou, sem cabeçalho reconhecível, trata cada linha como texto)."""
     amostra = texto[:4096]
     try:
-        dialeto = csv.Sniffer().sniff(amostra, delimiters=";,\t|")
+        delimitador = csv.Sniffer().sniff(amostra, delimiters=";,\t|").delimiter
     except csv.Error:
-        dialeto = csv.excel
-        dialeto.delimiter = ";" if amostra.count(";") > amostra.count(",") else ","
-    linhas = list(csv.reader(io.StringIO(texto), dialeto))
+        # (antes mudava csv.excel.delimiter — global do processo, vazava pra
+        # outros uploads ao mesmo tempo)
+        delimitador = ";" if amostra.count(";") > amostra.count(",") else ","
+    linhas = list(csv.reader(io.StringIO(texto), delimiter=delimitador))
     linhas = [l for l in linhas if any(c.strip() for c in l)]
     if not linhas:
         return ResultadoExtrato(formato="csv")

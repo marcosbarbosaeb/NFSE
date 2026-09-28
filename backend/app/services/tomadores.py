@@ -54,18 +54,30 @@ def buscar_tomador(db: Session, tomador_id: uuid.UUID) -> Tomador | None:
 def criar_tomador(
     db: Session, *, cnpj: str, razao_social: str, cod_municipio: str,
     cep: str | None = None, logradouro: str | None = None, numero: str | None = None,
-    complemento: str | None = None, bairro: str | None = None,
+    complemento: str | None = None, bairro: str | None = None, status: str = "aprovado",
 ) -> Tomador:
+    """`status="pendente"` (conta de simulação): o tomador existe só pra
+    quem criou e não entra no catálogo compartilhado. Um cadastro de conta
+    real pro mesmo CNPJ assume esse registro pendente (com os dados novos)
+    em vez de esbarrar em "já existe"."""
     cnpj_norm = _normalizar_cnpj(cnpj)
     existente = db.query(Tomador).filter_by(cnpj=cnpj_norm).one_or_none()
     if existente is not None:
+        if existente.status != "aprovado" and status == "aprovado":
+            for campo, valor in dict(
+                razao_social=razao_social, cod_municipio=cod_municipio, cep=cep, logradouro=logradouro,
+                numero=numero, complemento=complemento, bairro=bairro, status="aprovado",
+            ).items():
+                setattr(existente, campo, valor)
+            db.flush()
+            return existente
         raise CnpjJaCadastradoError(
             f"Já existe um tomador cadastrado com o CNPJ '{cnpj_norm}' ({existente.razao_social}) — use-o em vez de duplicar."
         )
     tomador = Tomador(
         id=uuid.uuid4(), cnpj=cnpj_norm, razao_social=razao_social, cod_municipio=cod_municipio,
         cep=cep, logradouro=logradouro, numero=numero, complemento=complemento, bairro=bairro,
-        status="aprovado",
+        status=status,
     )
     db.add(tomador)
     db.flush()

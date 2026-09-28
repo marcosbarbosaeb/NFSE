@@ -29,6 +29,7 @@ não vier, o envio segue só com o XML.
 import datetime
 import logging
 import re
+import time
 import uuid
 from email.utils import parseaddr
 from urllib.parse import quote
@@ -110,6 +111,8 @@ def obter_danfse(db: Session, emissao: Emissao, prestador_id: uuid.UUID) -> byte
         return emissao.danfse_pdf
     if emissao.estado != "confirmado" or not emissao.chave_acesso:
         return None
+    if time.monotonic() - _FALHA_DANFSE.get(emissao.id, -1e9) < _ESPERA_DANFSE_S:
+        return None
     try:
         private_key, cert = carregar_certificado(db, prestador_id, get_settings().cert_master_key)
         tp_amb = (emissao.tomador_snapshot or {}).get("tpAmb", "2")
@@ -118,10 +121,14 @@ def obter_danfse(db: Session, emissao: Emissao, prestador_id: uuid.UUID) -> byte
         return None
     except Exception:  # noqa: BLE001 — extra opcional, só registra
         logger.exception("Falha ao baixar DANFSe da emissão %s", emissao.id)
+        _FALHA_DANFSE[emissao.id] = time.monotonic()
         return None
     if pdf:
         emissao.danfse_pdf = pdf
         db.flush()
+        _FALHA_DANFSE.pop(emissao.id, None)
+    else:
+        _FALHA_DANFSE[emissao.id] = time.monotonic()
     return pdf
 
 
@@ -211,7 +218,7 @@ def motivo_email_desabilitado(vinculo: PrestadorTomador | None, destino: str | N
 def opcoes_envio(db: Session, emissao: Emissao, base: str) -> dict:
     vinculo = db.get(PrestadorTomador, emissao.prestador_tomador_id)
     destino = email_destino(emissao, vinculo)
-    motivo = motivo_email_desabilitado(vinculo, destino)
+    motivo = motivo_email_desabilitado(vinculo, destino or "")
     return {
         "email_habilitado": motivo is None,
         "email_motivo_desabilitado": motivo,
@@ -240,6 +247,14 @@ def remetente_da_nota(nome_prestador: str | None) -> str:
     # Nome entre aspas (pode ter vírgula, ponto etc.) e em UTF-8 puro — o
     # Resend aceita acentos direto no campo "from".
     return f'"{nome} via Agente Ana" <{endereco}>'
+
+
+LIMITE_EMAILS_DIA = 150
+# PDF oficial que falhou há pouco não é tentado de novo por uns minutos:
+# cada tentativa passa por 5 endereços com timeout e segurava o pedido por
+# até um minuto (inclusive no link público).
+_FALHA_DANFSE: dict[uuid.UUID, float] = {}
+_ESPERA_DANFSE_S = 600
 
 
 def _novo_envio(db: Session, emissao: Emissao, canal: str, destino: str | None) -> Envio:
@@ -299,7 +314,7 @@ def previa_email(db: Session, emissao: Emissao, base: str) -> dict:
         "texto": modelo["texto"],
         "anexos": modelo["anexos"],
         "arquivos": arquivos,
-        "motivo_desabilitado": motivo_email_desabilitado(vinculo, destino),
+        "motivo_desabilitado": motivo_email_desabilitado(vinculo, destino or ""),
     }
 
 
@@ -316,9 +331,24 @@ def enviar_email(
     # o destinatário na hora); sem eles, o que está configurado.
     destinos = lista_emails(para) if para is not None else destinos_email(emissao, vinculo)
     destino = ", ".join(destinos) or None
-    motivo = motivo_email_desabilitado(vinculo, destino)
+    motivo = motivo_email_desabilitado(vinculo, destino or "")
     if motivo:
         raise EmailIndisponivelError(motivo)
+
+    # Teto diário por conta (revisão de segurança, 28/09/2026): o e-mail sai
+    # do domínio da Ana com assunto/texto livres — sem teto, uma conta mal
+    # intencionada viraria disparador de spam/phishing.
+    desde = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)
+    enviados_24h = (
+        db.query(Envio.id)
+        .join(Emissao, Emissao.id == Envio.emissao_id)
+        .filter(Envio.canal == "email", Envio.criado_em >= desde)
+        .count()
+    )
+    if enviados_24h >= LIMITE_EMAILS_DIA:
+        raise EmailIndisponivelError(
+            f"Limite de {LIMITE_EMAILS_DIA} e-mails de nota por dia atingido. Se precisar de mais, fale com o suporte."
+        )
 
     modelo = modelo_email(db, emissao, base)
     copias = [c for c in (lista_emails(copia) if copia is not None else modelo["copia"]) if c not in destinos]

@@ -53,6 +53,7 @@ from sqlalchemy.orm import Session
 
 from app.models import AjusteEvento, Emissao, EventoManual, PagamentoRecebido, Prestador, PrestadorTomador
 from app.services.vinculos import listar_vinculos_ativos
+from app.tempo import data_local, hoje as hoje_br
 
 TIPOS_AJUSTAVEIS = ("prazo_emissao", "recebimento_previsto", "revisar_aliquota")
 CATEGORIAS_MANUAIS = ("lembrete", "recebimento_previsto", "prazo_emissao")
@@ -115,23 +116,21 @@ def eventos_calendario(db: Session, prestador_id: uuid.UUID, inicio: datetime.da
     vinculos = listar_vinculos_ativos(db)
     vinculos_por_id = {v.id: v for v in vinculos}
 
-    # 1) Prazo pra emitir
+    # 1) Prazo pra emitir — (tomador, competência) que já têm nota vêm numa
+    # consulta só (antes: uma por tomador por mês).
+    competencias = _competencias_no_intervalo(inicio - _FOLGA, fim + _FOLGA)
+    ja_emitidas = {
+        (v, c)
+        for v, c in db.query(Emissao.prestador_tomador_id, Emissao.competencia)
+        .filter(Emissao.competencia.in_(competencias), Emissao.estado != "cancelada")
+        .distinct()
+    }
     for vinculo in vinculos:
         if vinculo.dia_limite_emissao is None:
             continue
-        for competencia in _competencias_no_intervalo(inicio - _FOLGA, fim + _FOLGA):
+        for competencia in competencias:
             ano, mes = (int(p) for p in competencia.split("-"))
-            ja_emitiu = (
-                db.query(Emissao)
-                .filter(
-                    Emissao.prestador_tomador_id == vinculo.id,
-                    Emissao.competencia == competencia,
-                    Emissao.estado != "cancelada",
-                )
-                .first()
-                is not None
-            )
-            if ja_emitiu:
+            if (vinculo.id, competencia) in ja_emitidas:
                 continue
             _incluir(eventos, {
                 "data": datetime.date(ano, mes, _dia_valido_no_mes(ano, mes, vinculo.dia_limite_emissao)),
@@ -145,7 +144,15 @@ def eventos_calendario(db: Session, prestador_id: uuid.UUID, inicio: datetime.da
             }, ajustes, inicio, fim)
 
     # 2) Previsão de recebimento
-    emissoes_ativas = db.query(Emissao).filter(Emissao.estado != "cancelada").order_by(Emissao.criado_em).all()
+    # Só quem tem prazo de pagamento configurado, e só o que ainda não foi pago.
+    com_prazo = [v.id for v in vinculos if v.dias_para_recebimento is not None]
+    pagos = {
+        (v, c) for v, c in db.query(PagamentoRecebido.prestador_tomador_id, PagamentoRecebido.competencia).distinct()
+    }
+    emissoes_ativas = (
+        db.query(Emissao).filter(Emissao.estado != "cancelada", Emissao.prestador_tomador_id.in_(com_prazo)).order_by(Emissao.criado_em).all()
+        if com_prazo else []
+    )
     # Shopee: várias notas por mês (uma por vendedor) — uma previsão só,
     # somando os valores, ancorada na primeira nota do mês.
     agrupadas: dict[tuple, list] = {}
@@ -157,10 +164,10 @@ def eventos_calendario(db: Session, prestador_id: uuid.UUID, inicio: datetime.da
         vinculo = vinculos_por_id.get(emissao.prestador_tomador_id)
         if vinculo is None or vinculo.dias_para_recebimento is None:
             continue
-        if _tem_pagamento(db, vinculo.id, emissao.competencia):
+        if (vinculo.id, emissao.competencia) in pagos:
             continue
         _incluir(eventos, {
-            "data": emissao.criado_em.date() + datetime.timedelta(days=vinculo.dias_para_recebimento),
+            "data": data_local(emissao.criado_em) + datetime.timedelta(days=vinculo.dias_para_recebimento),
             "tipo": "recebimento_previsto",
             "titulo": f"Previsão de recebimento — {vinculo.apelido}",
             "vinculo_id": vinculo.id,
@@ -199,7 +206,7 @@ def eventos_calendario(db: Session, prestador_id: uuid.UUID, inicio: datetime.da
     # (padrão 1).
     prestador = db.query(Prestador).filter_by(id=prestador_id).one_or_none()
     if prestador is not None:
-        hoje = datetime.date.today()
+        hoje = hoje_br()
         ja_confirmada_este_mes = (
             prestador.aliquota_atualizada_em is not None
             and (prestador.aliquota_atualizada_em.year, prestador.aliquota_atualizada_em.month) == (hoje.year, hoje.month)

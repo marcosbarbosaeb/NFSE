@@ -34,6 +34,9 @@ testado ao vivo daqui, só depois de implantado em algum lugar com rede
 aberta E com um certificado A1 de verdade carregado.
 """
 import datetime
+import logging
+from urllib.parse import urlparse
+import os
 import re
 from html import escape
 import uuid
@@ -41,6 +44,8 @@ from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urlencode
 
+from starlette.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
@@ -161,6 +166,7 @@ from app.services.envios import (
     melhor_xml_disponivel,
     registrar_envio,
 )
+from app.limites import limitador, limite  # noqa: F401 — limitador: os testes zeram
 from app.services import mensagens
 from app.services.indicacao import resumo as resumo_indicacao
 from app.services.email import EmailEnvioError, get_email_sender
@@ -229,14 +235,65 @@ from app.services.vinculos import (
     listar_vinculos_da_tela,
     ordenar_para_tela,
 )
+from app.tempo import hoje as hoje_br
 
+logger = logging.getLogger("agenteana.api")
 app = FastAPI(title="Painel NFS-e — Raiana (Marco 5/6/9/10)")
 # same_site="lax": suficiente pro painel ser first-party (o próprio backend
 # serve a página em /); https_only fica False aqui de propósito porque este
 # ambiente de dev roda em http puro — LIGAR em produção atrás de HTTPS de
 # verdade é obrigatório (cookie de sessão sem isso pode vazar em rede
 # insegura).
-app.add_middleware(SessionMiddleware, secret_key=get_settings().session_secret_key, same_site="lax", https_only=False)
+_EM_HTTPS = get_settings().app_base_url.startswith("https://")
+# Revisão de segurança (28/09/2026): em produção (APP_BASE_URL https) o
+# cookie só trafega em HTTPS; sessão dura 14 dias.
+app.add_middleware(
+    SessionMiddleware, secret_key=get_settings().session_secret_key, same_site="lax",
+    https_only=_EM_HTTPS, max_age=14 * 24 * 3600,
+)
+
+_METODOS_QUE_MUDAM = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _origem_confiavel(origem: str) -> bool:
+    """Mesmo site do painel (notas.agenteana.com.br), o site institucional
+    (agenteana.com.br) e o painel local em desenvolvimento."""
+    host = urlparse(origem).hostname or ""
+    base = urlparse(get_settings().app_base_url).hostname or ""
+    return host == base or host == "agenteana.com.br" or host.endswith(".agenteana.com.br") or host in ("localhost", "127.0.0.1")
+
+
+@app.middleware("http")
+async def _seguranca(request: Request, call_next):
+    """Defesa extra contra CSRF (pedido que muda dado vindo de outro site é
+    recusado — o cookie é SameSite=Lax, isto cobre o resto) e cabeçalhos de
+    segurança em toda resposta."""
+    if request.method in _METODOS_QUE_MUDAM and request.url.path.startswith("/api/") and request.url.path != "/api/webhooks/stripe":
+        origem = request.headers.get("origin")
+        if origem and origem != "null" and not _origem_confiavel(origem):
+            return JSONResponse(status_code=403, content={"detail": "Origem não permitida."})
+    resposta = await call_next(request)
+    resposta.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resposta.headers.setdefault("X-Frame-Options", "DENY")
+    resposta.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resposta.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if _EM_HTTPS:
+        resposta.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    return resposta
+
+
+def _avisar_segredos_de_desenvolvimento() -> None:
+    """Se o deploy subir sem SESSION_SECRET_KEY/CERT_MASTER_KEY próprias, os
+    valores de desenvolvimento (que estão no git) estariam valendo — qualquer
+    um forjaria sessão ou abriria certificados. Grita no log."""
+    padrao = type(get_settings())
+    s = get_settings()
+    for campo in ("session_secret_key", "cert_master_key"):
+        if getattr(s, campo) == padrao.model_fields[campo].default and os.environ.get("RAILWAY_ENVIRONMENT"):
+            logger.critical("SEGURANÇA: %s está com o valor de desenvolvimento em produção — defina a variável no Railway.", campo.upper())
+
+
+_avisar_segredos_de_desenvolvimento()
 
 
 def prestador_atual_id(request: Request, db: Session = Depends(get_db)) -> uuid.UUID:
@@ -270,6 +327,23 @@ MENSAGEM_DEMO = (
 )
 
 
+def _sessao_demo(request: Request, db: Session) -> bool:
+    usuario_id = request.session.get("usuario_id")
+    if not usuario_id:
+        return False
+    usuario = db.get(Usuario, uuid.UUID(usuario_id))
+    return usuario is not None and eh_email_demo(usuario.email)
+
+
+def _dados_oficiais_cnpj(cnpj: str):
+    """Dados da Receita pro CNPJ, ou None se a consulta falhar (não trava o
+    cadastro do tomador)."""
+    try:
+        return consultar_cnpj(cnpj)
+    except Exception:  # noqa: BLE001 — indisponível/não achou: segue com o digitado
+        return None
+
+
 def exigir_conta_real(request: Request, db: Session = Depends(get_db)) -> None:
     """Ambiente de simulação (ver app/services/demo.py): recusa as rotas que
     falam com o mundo de fora — Receita, e-mail, cobrança, certificado,
@@ -283,7 +357,7 @@ def exigir_conta_real(request: Request, db: Session = Depends(get_db)) -> None:
         raise HTTPException(status_code=403, detail=MENSAGEM_DEMO)
 
 
-@app.post("/api/auth/login", response_model=UsuarioResponse, responses={401: {"model": ErroResponse}, 403: {"model": ErroResponse}})
+@app.post("/api/auth/login", response_model=UsuarioResponse, responses={401: {"model": ErroResponse}, 403: {"model": ErroResponse}}, dependencies=[Depends(limite("login", 20, 600))])
 def api_login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
     """Desde o Marco 15 existem dois jeitos de uma conta nascer: administrativo
     (scripts/criar_usuario.py, já confirmado) ou cadastro público self-service
@@ -297,7 +371,7 @@ def api_login(req: LoginRequest, request: Request, db: Session = Depends(get_db)
     return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id)
 
 
-@app.post("/api/demo", response_model=UsuarioResponse)
+@app.post("/api/demo", response_model=UsuarioResponse, dependencies=[Depends(limite("demo", 6, 3600))])
 def api_criar_demo(request: Request, db: Session = Depends(get_db)):
     """Ambiente de simulação — cria uma conta descartável com dados de
     exemplo e já entra nela (ver app/services/demo.py)."""
@@ -308,7 +382,7 @@ def api_criar_demo(request: Request, db: Session = Depends(get_db)):
     return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id, demo=True)
 
 
-@app.post("/api/auth/google/iniciar", response_model=GoogleOAuthUrlResponse, responses={400: {"model": ErroResponse}})
+@app.post("/api/auth/google/iniciar", response_model=GoogleOAuthUrlResponse, responses={400: {"model": ErroResponse}}, dependencies=[Depends(limite("google", 30, 600))])
 def api_iniciar_google_oauth(request: Request):
     """Marco 16, item 1 — primeiro passo do login/cadastro com Google (ver
     app/services/google_oauth.py). Rota pública: roda tanto pra quem já
@@ -364,7 +438,14 @@ def api_callback_google_oauth(
     except (GoogleOAuthNaoConfiguradoError, GoogleOAuthFalhaError):
         return RedirectResponse(f"{base}/entrar?erro=google")
 
+    # Revisão de segurança (28/09/2026): só confia no e-mail que a Google
+    # diz ter verificado, e uma conta já ligada a uma conta Google não aceita
+    # outra com o mesmo e-mail.
+    if not info.email_verificado:
+        return RedirectResponse(f"{base}/entrar?erro=google")
     usuario = db.query(Usuario).filter_by(email=info.email, ativo=True).one_or_none()
+    if usuario is not None and usuario.google_sub and usuario.google_sub != info.sub:
+        return RedirectResponse(f"{base}/entrar?erro=google")
     if usuario is None:
         params = urlencode({"google_email": info.email, "google_nome": info.nome or ""})
         return RedirectResponse(f"{base}/cadastro?{params}")
@@ -396,7 +477,7 @@ def api_ver_municipio(codigo: str):
     return m
 
 
-@app.get("/api/cnpj/{cnpj}", response_model=ConsultaCnpjResponse, responses={404: {"model": ErroResponse}, 422: {"model": ErroResponse}, 503: {"model": ErroResponse}})
+@app.get("/api/cnpj/{cnpj}", response_model=ConsultaCnpjResponse, responses={404: {"model": ErroResponse}, 422: {"model": ErroResponse}, 503: {"model": ErroResponse}}, dependencies=[Depends(limite("cnpj", 60, 600))])
 def api_consultar_cnpj(cnpj: str):
     """Marco 16 — autopreenchimento do cadastro público a partir do CNPJ
     (rota pública, sem sessão — é usada ANTES de existir conta). Nunca deve
@@ -420,7 +501,7 @@ def api_consultar_cnpj(cnpj: str):
     )
 
 
-@app.post("/api/cadastro", response_model=CadastroResponse, responses={409: {"model": ErroResponse}})
+@app.post("/api/cadastro", response_model=CadastroResponse, responses={409: {"model": ErroResponse}}, dependencies=[Depends(limite("cadastro", 10, 3600))])
 def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
     """Marco 15 — cadastro público self-service (rota pública, sem sessão).
     Cria Prestador+Usuario de verdade (ver app/services/cadastro.py), mas o
@@ -457,7 +538,7 @@ def api_confirmar_email(req: ConfirmarEmailRequest, request: Request, db: Sessio
     return UsuarioResponse(email=usuario.email, prestador_id=usuario.prestador_id)
 
 
-@app.post("/api/cadastro/reenviar-confirmacao")
+@app.post("/api/cadastro/reenviar-confirmacao", dependencies=[Depends(limite("reenvio", 5, 3600))])
 def api_reenviar_confirmacao(req: ReenviarConfirmacaoRequest, db: Session = Depends(get_db)):
     """Resposta sempre igual, exista o e-mail ou não (ver docstring de
     reenviar_confirmacao) — não dá pista pra quem está tentando adivinhar
@@ -503,7 +584,7 @@ def api_canais_suporte():
     }
 
 
-@app.post("/api/suporte", responses={400: {"model": ErroResponse}, 503: {"model": ErroResponse}})
+@app.post("/api/suporte", responses={400: {"model": ErroResponse}, 503: {"model": ErroResponse}}, dependencies=[Depends(limite("suporte", 5, 600))])
 def api_mensagem_suporte(req: MensagemSuporteRequest, request: Request, db: Session = Depends(get_db)):
     """Manda a mensagem pro e-mail do suporte (que o Cloudflare encaminha
     pro Gmail), com "responder para" = quem escreveu."""
@@ -602,6 +683,18 @@ def api_criar_portal(prestador_id: uuid.UUID = Depends(prestador_atual_id), db: 
     return CheckoutSessaoResponse(url=url)
 
 
+def _ler_upload(arquivo: UploadFile, limite_mb: int) -> bytes:
+    """Lê o arquivo enviado com teto de tamanho (antes lia tudo pra memória
+    antes de conferir). As rotas de upload são `def` (não `async def`):
+    ler/parsear PDF e CSV é trabalho bloqueante e roda no threadpool, sem
+    travar os outros pedidos."""
+    limite = limite_mb * 1024 * 1024
+    dados = arquivo.file.read(limite + 1)
+    if len(dados) > limite:
+        raise HTTPException(status_code=413, detail=f"Arquivo grande demais (máximo {limite_mb} MB).")
+    return dados
+
+
 @app.post("/api/webhooks/stripe")
 async def api_webhook_stripe(request: Request, db: Session = Depends(get_db)):
     """Rota pública (sem sessão) — quem autentica isto é a assinatura
@@ -614,13 +707,20 @@ async def api_webhook_stripe(request: Request, db: Session = Depends(get_db)):
     RLS — ver docstring de `_resolver_prestador_id_do_evento`."""
     payload = await request.body()
     assinatura_header = request.headers.get("stripe-signature", "")
-    try:
+
+    def _processar():
         tipo = processar_webhook(db, payload, assinatura_header)
+        db.commit()
+        return tipo
+
+    # Banco + chamadas ao Stripe são bloqueantes: fora do event loop, senão
+    # todo o resto do app espera junto.
+    try:
+        tipo = await run_in_threadpool(_processar)
     except WebhookInvalidoError:
         raise HTTPException(status_code=400, detail="Assinatura de webhook inválida.")
     except BillingNaoConfiguradoError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    db.commit()
     return {"recebido": True, "tipo": tipo}
 
 
@@ -630,11 +730,11 @@ def api_listar_vinculos(todos: bool = False, competencia: str | None = None, db:
     `todos=true` (aba Tomadores, 28/09/2026): ativos e inativos, ordenados
     por dia de emissão com os inativos no fim, cada um com a nota da
     `competencia` (AAAA-MM, padrão = mês atual) se já foi gerada."""
-    if competencia is not None and not re.fullmatch(r"\d{4}-\d{2}", competencia):
+    if competencia is not None and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", competencia):
         raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
     if todos:
         vinculos = ordenar_para_tela(listar_vinculos_da_tela(db))
-        hoje = datetime.date.today()
+        hoje = hoje_br()
         emissoes = emissoes_da_competencia(db, competencia or f"{hoje.year:04d}-{hoje.month:02d}")
     else:
         vinculos = listar_vinculos_ativos(db)
@@ -705,14 +805,38 @@ def api_ver_vinculo(vinculo_id: uuid.UUID, db: Session = Depends(db_sessao)):
 
 
 @app.post("/api/vinculos", response_model=VinculoDetalheResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
-def api_criar_vinculo(req: VinculoCriarRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+def api_criar_vinculo(
+    req: VinculoCriarRequest, request: Request,
+    db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
     """Marco 13 — 'usar um tomador pré-cadastrado' ou 'cadastrar meu
     próprio tomador' (ver VinculoCriarRequest) chegam aqui pela mesma
-    rota; a diferença é só qual dos dois campos veio preenchido."""
+    rota; a diferença é só qual dos dois campos veio preenchido.
+
+    O catálogo de tomadores é compartilhado entre as contas, então um
+    tomador novo (revisão de segurança, 28/09/2026):
+    - de conta REAL: nome e endereço oficiais da Receita (BrasilAPI) ganham
+      do que foi digitado, quando a consulta responde — ninguém consegue
+      "plantar" dados falsos pra um CNPJ que outras contas vão usar;
+    - de conta de SIMULAÇÃO: fica pendente (só pra ela, fora do catálogo) e
+      some junto com a conta."""
     req.cod_trib_nacional = _validar_codigo_servico(req.cod_trib_nacional)
     if req.novo_tomador is not None:
+        dados = req.novo_tomador.model_dump()
+        if _sessao_demo(request, db):
+            dados["status"] = "pendente"
+        else:
+            oficial = _dados_oficiais_cnpj(dados["cnpj"])
+            if oficial is not None:
+                dados.update(
+                    razao_social=oficial.razao_social[:200] or dados["razao_social"],
+                    cod_municipio=oficial.cod_municipio_sugerido or dados["cod_municipio"],
+                    cep=oficial.cep or dados.get("cep"), logradouro=oficial.logradouro or dados.get("logradouro"),
+                    numero=oficial.numero or dados.get("numero"), complemento=oficial.complemento or dados.get("complemento"),
+                    bairro=oficial.bairro or dados.get("bairro"),
+                )
         try:
-            tomador = criar_tomador(db, **req.novo_tomador.model_dump())
+            tomador = criar_tomador(db, **dados)
         except CnpjJaCadastradoError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         tomador_id = tomador.id
@@ -763,6 +887,7 @@ def api_atualizar_vinculo(vinculo_id: uuid.UUID, req: VinculoAtualizarRequest, d
 
 @app.get("/api/tomadores", response_model=list[TomadorResponse])
 def api_listar_tomadores(
+    request: Request,
     apenas_meus: bool = False,
     db: Session = Depends(db_sessao),
     prestador_id: uuid.UUID = Depends(prestador_atual_id),
@@ -770,7 +895,18 @@ def api_listar_tomadores(
     """Marco 13 — catálogo pra tela de Tomadores: 'Meus tomadores'
     (apenas_meus=true, só quem já tem vínculo ativo) ou 'Todos os
     tomadores' (catálogo compartilhado inteiro)."""
-    return listar_catalogo(db, prestador_id=prestador_id, apenas_meus=apenas_meus)
+    tomadores = listar_catalogo(db, prestador_id=prestador_id, apenas_meus=apenas_meus)
+    if _sessao_demo(request, db):
+        # Simulação é anônima: vê o catálogo, mas não as sugestões (modelo de
+        # descrição, código, prazos) que vêm do uso das contas reais.
+        return [
+            TomadorResponse.model_validate(t).model_copy(update={
+                "sug_cod_trib_nacional": None, "sug_template_descricao": None,
+                "sug_dia_emissao": None, "sug_dias_recebimento": None,
+            })
+            for t in tomadores
+        ]
+    return tomadores
 
 
 @app.get("/api/calendario", response_model=CalendarioResponse, responses={422: {"model": ErroResponse}})
@@ -790,6 +926,8 @@ def api_calendario(
         raise HTTPException(status_code=422, detail="inicio/fim devem estar no formato AAAA-MM-DD") from exc
     if data_fim < data_inicio:
         raise HTTPException(status_code=422, detail="fim não pode ser anterior a inicio")
+    if (data_fim - data_inicio).days > 400 or not (2000 <= data_inicio.year <= 2100):
+        raise HTTPException(status_code=422, detail="intervalo muito grande (máximo de 13 meses)")
     eventos = eventos_calendario(db, prestador_id, data_inicio, data_fim)
     return {"inicio": data_inicio, "fim": data_fim, "eventos": eventos}
 
@@ -932,7 +1070,7 @@ def api_atualizar_aliquota(
     if prestador is None:
         raise HTTPException(status_code=404, detail="Prestador não encontrado.")
     prestador.aliquota_atual = Decimal(str(req.aliquota))
-    prestador.aliquota_atualizada_em = datetime.date.today()
+    prestador.aliquota_atualizada_em = hoje_br()
     db.commit()
     # SEM db.refresh() de propósito: a sessão usa expire_on_commit=False
     # (ver app/database.py) — `prestador` já tem os valores que acabou de
@@ -968,16 +1106,20 @@ def api_status_certificado(db: Session = Depends(db_sessao), prestador_id: uuid.
 
 
 @app.post("/api/certificado", response_model=CertificadoStatus, dependencies=[Depends(exigir_conta_real)])
-async def api_salvar_certificado(
+def api_salvar_certificado(
     pfx: UploadFile = File(...), senha: str = Form(...),
     db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
 ):
     settings = get_settings()
-    pfx_bytes = await pfx.read()
+    pfx_bytes = _ler_upload(pfx, 2)
     try:
         registro = salvar_certificado(db, prestador_id, pfx_bytes, senha, settings.cert_master_key)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Não foi possível carregar o certificado: {exc}") from exc
+        logger.warning("Certificado recusado: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=400,
+            detail="Não foi possível abrir o certificado — confira se o arquivo é o .pfx/.p12 do A1 e se a senha está certa.",
+        ) from exc
     db.commit()
     return CertificadoStatus(carregado=True, validade=registro.validade, vencido=certificado_vencido(registro))
 
@@ -1002,7 +1144,7 @@ def api_verificar_duplicata(vinculo_id: uuid.UUID, competencia: str, db: Session
     duplicata ANTES do usuário tentar gerar a nota (não substitui a checagem
     de `POST /api/dps`, que continua sendo a fonte de verdade — isto aqui é
     só pra UX, GET puro sem efeito colateral)."""
-    if not re.fullmatch(r"\d{4}-\d{2}", competencia):
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", competencia):
         raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
     existente = buscar_emissao_ativa(db, vinculo_id, competencia)
     if existente is None:
@@ -1060,12 +1202,12 @@ def api_listar_dps(
 
 
 @app.post("/api/dps/importar-csv", response_model=ImportacaoCsvResponse, responses={400: {"model": ErroResponse}})
-async def api_importar_csv(arquivo: UploadFile = File(...), db: Session = Depends(db_sessao)):
+def api_importar_csv(arquivo: UploadFile = File(...), db: Session = Depends(db_sessao)):
     """Marco 7 — gera várias emissões de uma vez a partir de um CSV
     (colunas: apelido, competencia, valor[, ordem][, aliq_sn]). Cada linha
     roda isolada (savepoint) — uma linha ruim vira erro naquela linha, sem
     derrubar as demais. Só dá commit se pelo menos uma linha deu certo."""
-    bruto = await arquivo.read()
+    bruto = _ler_upload(arquivo, 5)
     try:
         conteudo = bruto.decode("utf-8-sig")
     except UnicodeDecodeError:
@@ -1401,7 +1543,7 @@ def api_registrar_pagamento(req: RegistrarPagamentoRequest, db: Session = Depend
 def api_desfazer_pagamento(vinculo_id: uuid.UUID, competencia: str, db: Session = Depends(db_sessao)):
     """Desfaz a baixa (28/09/2026): apaga o(s) recebimento(s) daquele
     tomador+competência — a nota volta a aparecer como pendente."""
-    if not re.fullmatch(r"\d{4}-\d{2}", competencia):
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", competencia):
         raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
     removidos = (
         db.query(PagamentoRecebido)
@@ -1416,16 +1558,18 @@ def api_desfazer_pagamento(vinculo_id: uuid.UUID, competencia: str, db: Session 
 def api_listar_pagamentos(
     ano: str | None = None,
     vinculo_id: uuid.UUID | None = None,
+    por: str | None = None,
     db: Session = Depends(db_sessao),
 ):
-    """Marco 14 — tela 'Recebimentos'. GET puro, sem efeito colateral."""
+    """Marco 14 — tela 'Recebimentos'. GET puro, sem efeito colateral.
+    `por=recebimento`: o ano é o de quando o dinheiro caiu (Financeiro)."""
     if ano is not None and (len(ano) != 4 or not ano.isdigit()):
         raise HTTPException(status_code=422, detail="ano deve estar no formato AAAA")
-    return listar_pagamentos(db, ano=ano, vinculo_id=vinculo_id)
+    return listar_pagamentos(db, ano=ano, vinculo_id=vinculo_id, por_recebimento=por == "recebimento")
 
 
 @app.post("/api/recebimentos/extrato", response_model=ExtratoExtraidoResponse, responses={400: {"model": ErroResponse}})
-async def api_extrair_extrato(arquivo: UploadFile = File(...), db: Session = Depends(db_sessao)):
+def api_extrair_extrato(arquivo: UploadFile = File(...), db: Session = Depends(db_sessao)):
     """Aceita PDF, OFX ou CSV desde 28/09/2026 (ver app/services/extrato_pdf.py)."""
     """Marco 15 (item 5) — extração heurística de transações de um extrato
     bancário em PDF (ver docstring de app/services/extrato_pdf.py). GET
@@ -1433,7 +1577,7 @@ async def api_extrair_extrato(arquivo: UploadFile = File(...), db: Session = Dep
     — só devolve candidatos pra tela de revisão. `db_sessao` aqui só serve
     pra manter o padrão de autenticação das outras rotas; o parser em si
     não toca o banco."""
-    bruto = await arquivo.read()
+    bruto = _ler_upload(arquivo, 15)
     try:
         resultado = extrair_extrato(bruto, arquivo.filename)
     except PdfInvalidoError as exc:
@@ -1486,7 +1630,7 @@ def _vinculo_shopee(db: Session, vinculo_id: uuid.UUID):
 
 
 @app.post("/api/awin/ordem", response_model=OrdemAwinResponse, responses={400: {"model": ErroResponse}})
-async def api_ler_ordem_awin(
+def api_ler_ordem_awin(
     arquivo: UploadFile = File(...), vinculo_id: uuid.UUID | None = Form(default=None),
     db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
 ):
@@ -1495,7 +1639,7 @@ async def api_ler_ordem_awin(
     PDF for de outro CNPJ ou se a ordem já tiver nota. Não grava nada (ver
     app/services/ordem_awin.py)."""
     try:
-        ordem = ler_ordem_awin(await arquivo.read(), arquivo.filename)
+        ordem = ler_ordem_awin(_ler_upload(arquivo, 10), arquivo.filename)
     except OrdemAwinInvalidaError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1534,7 +1678,7 @@ async def api_ler_ordem_awin(
 
 
 @app.post("/api/shopee/previa", response_model=PreviaShopeeResponse, responses={400: {"model": ErroResponse}})
-async def api_previa_shopee(
+def api_previa_shopee(
     vinculo_id: uuid.UUID = Form(...), arquivo: UploadFile = File(...), db: Session = Depends(db_sessao),
 ):
     """Relatório mensal da Shopee (28/09/2026) — lê o arquivo e mostra, por
@@ -1542,7 +1686,7 @@ async def api_previa_shopee(
     app/services/relatorio_shopee.py)."""
     vinculo = _vinculo_shopee(db, vinculo_id)
     try:
-        relatorio = ler_relatorio(await arquivo.read())
+        relatorio = ler_relatorio(_ler_upload(arquivo, 15))
     except RelatorioShopeeInvalidoError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     ja = {
@@ -1576,7 +1720,7 @@ async def api_previa_shopee(
 
 
 @app.post("/api/shopee/gerar", response_model=GeracaoShopeeResponse, responses={400: {"model": ErroResponse}})
-async def api_gerar_shopee(
+def api_gerar_shopee(
     vinculo_id: uuid.UUID = Form(...),
     competencia: str = Form(...),
     arquivo: UploadFile = File(...),
@@ -1589,14 +1733,14 @@ async def api_gerar_shopee(
     """Gera uma nota por vendedor do mês escolhido — os vendedores NÃO viram
     tomadores cadastrados (pedido do Marcos): os dados de cada um vão só na
     própria nota. Reenviar o mesmo relatório não duplica."""
-    if not re.fullmatch(r"\d{4}-\d{2}", competencia):
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", competencia):
         raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
     if tpAmb is not None and tpAmb not in ("1", "2"):
         raise HTTPException(status_code=422, detail="tpAmb deve ser 1 ou 2")
     vinculo = _vinculo_shopee(db, vinculo_id)
     tpAmb = tpAmb or _tp_amb_da_conta(db, vinculo.prestador_id)
     try:
-        relatorio = ler_relatorio(await arquivo.read())
+        relatorio = ler_relatorio(_ler_upload(arquivo, 15))
     except RelatorioShopeeInvalidoError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     resultado = gerar_notas(
@@ -1677,7 +1821,7 @@ def api_painel_resumo_mes(
     app/services/dashboard.py pro porquê de cada campo e as aproximações
     assumidas). `competencia` é opcional (AAAA-MM); sem ela, usa o mês
     corrente. GET puro, sem efeito colateral."""
-    if competencia is not None and (len(competencia) != 7 or competencia[4] != "-"):
+    if competencia is not None and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", competencia):
         raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
     return resumo_mes(db, prestador_id, competencia)
 

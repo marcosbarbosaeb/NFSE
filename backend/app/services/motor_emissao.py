@@ -47,9 +47,11 @@ uma receita já validada em produção, mas cada envio aqui é uma chamada de
 rede de verdade — os testes deste módulo usam ClienteSefin mockado.
 """
 import hashlib
+import re
 import uuid
 from datetime import datetime, timezone
 
+import requests
 from lxml import etree
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
@@ -247,29 +249,70 @@ def assinar(db: Session, emissao: Emissao, private_key, cert) -> Emissao:
     return emissao
 
 
+# Marca no erro_detalhe de uma falha de REDE (não de uma recusa da Receita):
+# a DPS pode ter chegado lá mesmo sem resposta. Na próxima tentativa, antes
+# de reenviar, consulta se a nota já existe — reenviar às cegas daria
+# "DPS duplicada" e a nota ficaria presa em erro pra sempre.
+MARCA_FALHA_COMUNICACAO = "[comunicacao]"
+
+
+def _id_dps(emissao: Emissao) -> str | None:
+    m = re.search(r'Id="(DPS\d+)"', emissao.xml_assinado or "")
+    return m.group(1) if m else None
+
+
+def _confirmar_com_resposta(db: Session, emissao: Emissao, resposta, cliente: ClienteSefin, buscar_xml: bool = False) -> Emissao:
+    emissao.chave_acesso = (resposta.dados or {}).get("chaveAcesso")
+    nfse_xml = ClienteSefin.extrair_nfse_xml(resposta)
+    if nfse_xml is None and buscar_xml and emissao.chave_acesso:
+        try:
+            nfse_xml = ClienteSefin.extrair_nfse_xml(cliente.consultar_nfse(emissao.chave_acesso))
+        except requests.RequestException:
+            nfse_xml = None
+    emissao.xml_resposta = nfse_xml.decode("utf-8") if nfse_xml else None
+    emissao.estado = "confirmado"
+    emissao.erro_detalhe = None
+    emissao.atualizado_em = datetime.now(timezone.utc)
+    db.flush()
+    return emissao
+
+
 def submeter(db: Session, emissao: Emissao, cliente: ClienteSefin) -> Emissao:
     """assinado -> submetido -> confirmado, ou -> erro (retentável: chamar
     de novo a partir de 'erro' tenta de novo, não precisa remontar/reassinar
-    — o XML assinado não muda)."""
+    — o XML assinado não muda).
+
+    Queda de rede no meio (timeout, conexão) não vira 500 nem perde o estado:
+    a nota vai pra 'erro' com MARCA_FALHA_COMUNICACAO, e a próxima tentativa
+    primeiro pergunta à Receita se a DPS já virou nota (recupera a chave)."""
     _exigir_estado(emissao, "assinado", "erro")
+    tentativa_apos_queda = emissao.estado == "erro" and (emissao.erro_detalhe or "").startswith(MARCA_FALHA_COMUNICACAO)
     emissao.estado = "submetido"
     emissao.erro_detalhe = None
     db.flush()  # marca a tentativa ANTES do request de rede — se cair no meio, fica visível como 'submetido', não como 'assinado' silenciosamente reenviável sem rastro
 
-    resposta = cliente.submeter_dps(emissao.xml_assinado.encode("utf-8"))
+    try:
+        if tentativa_apos_queda and (id_dps := _id_dps(emissao)):
+            existente = cliente.consultar_dps(id_dps)
+            if existente.ok and (existente.dados or {}).get("chaveAcesso"):
+                return _confirmar_com_resposta(db, emissao, existente, cliente, buscar_xml=True)
+        resposta = cliente.submeter_dps(emissao.xml_assinado.encode("utf-8"))
+    except requests.RequestException as exc:
+        emissao.estado = "erro"
+        emissao.erro_detalhe = (
+            f"{MARCA_FALHA_COMUNICACAO} Não deu pra falar com a Receita agora ({type(exc).__name__}). "
+            "A nota pode ter chegado lá — ao tentar de novo, a Ana confere antes de reenviar."
+        )
+        db.flush()
+        return emissao
+
     if not resposta.ok:
         emissao.estado = "erro"
         emissao.erro_detalhe = str(resposta.dados or resposta.texto_bruto or f"HTTP {resposta.status_code}")
         db.flush()
         return emissao
 
-    emissao.chave_acesso = (resposta.dados or {}).get("chaveAcesso")
-    nfse_xml = ClienteSefin.extrair_nfse_xml(resposta)
-    emissao.xml_resposta = nfse_xml.decode("utf-8") if nfse_xml else None
-    emissao.estado = "confirmado"
-    emissao.atualizado_em = datetime.now(timezone.utc)
-    db.flush()
-    return emissao
+    return _confirmar_com_resposta(db, emissao, resposta, cliente)
 
 
 def cancelar(

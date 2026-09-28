@@ -25,6 +25,7 @@ import datetime
 import secrets
 import uuid
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import hash_senha
@@ -45,6 +46,7 @@ from app.models import (
 )
 from app.services.motor_emissao import criar_rascunho, montar
 from app.services.pagamentos import registrar_pagamento
+from app.tempo import hoje as hoje_br
 
 DOMINIO_EMAIL_DEMO = "simulacao.agenteana.com.br"
 VALIDADE = datetime.timedelta(hours=24)
@@ -111,7 +113,7 @@ def criar_conta_demo(db: Session) -> Usuario:
     """Não dá commit. Deixa a variável de RLS apontando pro prestador novo."""
     apagar_demos_expiradas(db)
 
-    hoje = datetime.date.today()
+    hoje = hoje_br()
     prestador_id = uuid.uuid4()
     definir_prestador_atual(db, prestador_id)
     prestador = Prestador(
@@ -184,6 +186,7 @@ def apagar_conta_demo(db: Session, prestador_id: uuid.UUID) -> None:
     prestador = db.query(Prestador).filter_by(id=prestador_id).one_or_none()
     if prestador is None or not prestador.demo:
         return
+    tomadores = [t for (t,) in db.query(PrestadorTomador.tomador_id).filter(PrestadorTomador.prestador_id == prestador_id)]
     emissoes = [e.id for e in db.query(Emissao.id).filter(Emissao.prestador_id == prestador_id)]
     if emissoes:
         db.query(Envio).filter(Envio.emissao_id.in_(emissoes)).delete(synchronize_session=False)
@@ -191,6 +194,15 @@ def apagar_conta_demo(db: Session, prestador_id: uuid.UUID) -> None:
         db.query(modelo).filter(modelo.prestador_id == prestador_id).delete(synchronize_session=False)
     db.query(Prestador).filter(Prestador.id == prestador_id).delete(synchronize_session=False)
     db.flush()
+    # Tomadores que a simulação criou (nunca aprovados no catálogo) saem
+    # junto — se algum outro vínculo ainda apontar pra ele, a FK impede e
+    # ele fica.
+    for tomador_id in set(tomadores):
+        try:
+            with db.begin_nested():
+                db.query(Tomador).filter(Tomador.id == tomador_id, Tomador.status != "aprovado").delete(synchronize_session=False)
+        except IntegrityError:
+            pass
 
 
 def apagar_demos_expiradas(db: Session) -> int:

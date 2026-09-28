@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.crypto import REF_CHAVE_LOCAL_DEV, criptografar, descriptografar
 from app.fiscal.certificado import carregar_pfx
 from app.models import Certificado
+from app.tempo import hoje as hoje_br
 
 
 class CertificadoNaoEncontradoError(LookupError):
@@ -93,4 +94,4 @@ def certificado_vencido(certificado: Certificado, referencia: date | None = None
     (Contingências) sem cada chamador reimplementar a comparação de data."""
     if certificado.validade is None:
         return False
-    return certificado.validade < (referencia or date.today())
+    return certificado.validade < (referencia or hoje_br())

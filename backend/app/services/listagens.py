@@ -11,8 +11,10 @@ Mesma disciplina de RLS das demais consultas: toda query aqui presume que
 — os filtros de prestador vêm de graça da RLS, nunca de um WHERE explícito
 nestas tabelas.
 """
+import datetime
 import uuid
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Despesa, Emissao, Envio, PagamentoRecebido, PrestadorTomador
@@ -109,8 +111,13 @@ def listar_pagamentos(
     *,
     ano: str | None = None,
     vinculo_id: uuid.UUID | None = None,
+    por_recebimento: bool = False,
 ) -> list[dict]:
-    """`PagamentoRecebido` não tem relationship pro vínculo (ver
+    """`por_recebimento`: filtra o ano pela data em que o dinheiro caiu
+    (sem data, pela competência) — é assim que o Financeiro soma; antes uma
+    nota de dezembro paga em janeiro sumia dos dois anos.
+
+    `PagamentoRecebido` não tem relationship pro vínculo (ver
     app/models.py) — join explícito com `PrestadorTomador` só pra buscar o
     apelido de exibição."""
     query = (
@@ -118,7 +125,15 @@ def listar_pagamentos(
         .join(PrestadorTomador, PagamentoRecebido.prestador_tomador_id == PrestadorTomador.id)
         .order_by(PagamentoRecebido.criado_em.desc())
     )
-    if ano:
+    if ano and por_recebimento:
+        inicio, fim = datetime.date(int(ano), 1, 1), datetime.date(int(ano), 12, 31)
+        query = query.filter(
+            or_(
+                PagamentoRecebido.data_recebimento.between(inicio, fim),
+                and_(PagamentoRecebido.data_recebimento.is_(None), PagamentoRecebido.competencia.like(f"{ano}-%")),
+            )
+        )
+    elif ano:
         query = query.filter(PagamentoRecebido.competencia.like(f"{ano}-%"))
     if vinculo_id:
         query = query.filter(PagamentoRecebido.prestador_tomador_id == vinculo_id)

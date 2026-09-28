@@ -20,9 +20,12 @@ teste de equivalência campo-a-campo contra o output de build_dps.py
 """
 import datetime
 
+import re
+
 from lxml import etree
 
 from app.fiscal.xmldsig import assinar_elemento
+from app.tempo import hoje as hoje_br
 
 NS = "http://www.sped.fazenda.gov.br/nfse"
 NSMAP = {None: NS}
@@ -53,13 +56,17 @@ def renderizar_descricao(template: str, competencia: str, ordem: str | None = No
             "Template de descrição usa {ordem} mas nenhuma foi informada "
             "(número da ordem de pagamento — obrigatório para AWIN/AWIN Rchlo)."
         )
-    descricao = template.format(
-        competencia_mm_aaaa=f"{mes}/{ano}",
-        mes_nome_upper=_MESES_PT[int(mes)],
-        ano=ano,
-        mes=mes,
-        ordem=ordem or "",
-    )
+    # Substituição tolerante (antes era str.format): o modelo é editado pela
+    # pessoa, e um "{cliente}" ou "{" solto derrubava a geração com 500.
+    # Códigos desconhecidos ficam como estão.
+    valores = {
+        "competencia_mm_aaaa": f"{mes}/{ano}",
+        "mes_nome_upper": _MESES_PT[int(mes)],
+        "ano": ano,
+        "mes": mes,
+        "ordem": ordem or "",
+    }
+    descricao = re.sub(r"\{(\w+)\}", lambda m: valores.get(m.group(1), m.group(0)), template)
     if dados_bancarios:
         # Sem quebra de linha: a API normaliza quebras antes de conferir a
         # assinatura, o que invalida o digest (E0714) — mesma regra do
@@ -128,7 +135,7 @@ def montar_dps_xml(
         todo mês).
     dcompet: 'AAAA-MM-DD'; None = hoje.
     """
-    dCompet = dcompet or datetime.date.today().isoformat()
+    dCompet = dcompet or hoje_br().isoformat()
     cnpj_prest = prest["CNPJ"]
 
     now = datetime.datetime.now().astimezone()

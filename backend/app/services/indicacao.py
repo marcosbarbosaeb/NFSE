@@ -26,11 +26,12 @@ import uuid
 
 import stripe
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import definir_prestador_atual
-from app.models import Assinatura, CodigoIndicacao, Indicacao, Prestador
+from app.models import Assinatura, CodigoIndicacao, Indicacao
 
 logger = logging.getLogger("agenteana.indicacao")
 
@@ -57,10 +58,18 @@ def codigo_do_prestador(db: Session, prestador_id: uuid.UUID) -> str:
         return existente.codigo
     for _ in range(10):
         codigo = _novo_codigo()
-        if db.get(CodigoIndicacao, codigo) is None:
-            db.add(CodigoIndicacao(codigo=codigo, prestador_id=prestador_id))
-            db.flush()
+        if db.get(CodigoIndicacao, codigo) is not None:
+            continue
+        try:
+            with db.begin_nested():
+                db.add(CodigoIndicacao(codigo=codigo, prestador_id=prestador_id))
+                db.flush()
             return codigo
+        except IntegrityError:
+            # Duas abas abrindo a tela ao mesmo tempo: a outra já criou.
+            existente = db.query(CodigoIndicacao).filter_by(prestador_id=prestador_id).one_or_none()
+            if existente is not None:
+                return existente.codigo
     raise RuntimeError("Não foi possível gerar um código de indicação único.")
 
 
@@ -85,6 +94,14 @@ def _contexto_atual(db: Session) -> str | None:
 
 def ativos_do_indicador(db: Session, indicador_id: uuid.UUID) -> int:
     return db.query(Indicacao).filter_by(indicador_id=indicador_id, status="ativa").count()
+
+
+# Chamadas ao Stripe com prazo curto (o padrão da biblioteca espera até 80 s).
+stripe.max_network_retries = 1
+try:
+    stripe.default_http_client = stripe.RequestsClient(timeout=15)
+except Exception:  # noqa: BLE001 — versão da lib sem RequestsClient: fica o padrão
+    pass
 
 
 def _stripe_configurado() -> bool:

@@ -17,6 +17,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import Emissao, PagamentoRecebido, PrestadorTomador
+from app.tempo import data_local, hoje as hoje_br
 
 # O que já saiu como nota (montado = gerada, ainda sem assinar). Rascunho,
 # erro, cancelada e substituída não entram na conta de "a receber".
@@ -31,14 +32,19 @@ def _pares_pagos(db: Session) -> set[tuple[uuid.UUID, str]]:
 
 def _grupos(db: Session) -> list[dict]:
     grupos: dict[tuple[uuid.UUID, str], dict] = {}
+    # Só as colunas necessárias (nada de XML/snapshot).
     emissoes = (
-        db.query(Emissao, PrestadorTomador.apelido)
+        db.query(
+            Emissao.id, Emissao.prestador_tomador_id, Emissao.competencia, Emissao.estado,
+            Emissao.valor, Emissao.criado_em, PrestadorTomador.apelido,
+        )
         .join(PrestadorTomador, PrestadorTomador.id == Emissao.prestador_tomador_id)
         .filter(Emissao.estado.in_(ESTADOS_COBRAVEIS))
         .order_by(Emissao.criado_em)
         .all()
     )
-    for e, apelido in emissoes:
+    for e in emissoes:
+        apelido = e.apelido
         chave = (e.prestador_tomador_id, e.competencia)
         g = grupos.get(chave)
         if g is None:
@@ -57,24 +63,29 @@ def _grupos(db: Session) -> list[dict]:
     return list(grupos.values())
 
 
-def notas_em_aberto(db: Session, hoje: datetime.date | None = None) -> list[dict]:
+def calcular(db: Session) -> tuple[list[dict], set]:
+    """Grupos + competências pagas, pra reaproveitar numa mesma tela."""
+    return _grupos(db), _pares_pagos(db)
+
+
+def notas_em_aberto(db: Session, hoje: datetime.date | None = None, base: tuple | None = None) -> list[dict]:
     """Grupos (tomador + competência) sem nenhum pagamento, do mais antigo
     pro mais novo."""
-    hoje = hoje or datetime.date.today()
-    pagos = _pares_pagos(db)
+    hoje = hoje or hoje_br()
+    grupos, pagos = base or calcular(db)
     abertas = []
-    for g in _grupos(db):
+    for g in grupos:
         if (g["vinculo_id"], g["competencia"]) in pagos:
             continue
-        emitida = g["emitida_em"].date() if g["emitida_em"] else hoje
+        emitida = data_local(g["emitida_em"]) or hoje
         abertas.append({**g, "valor": float(g["valor"]), "emitida_em": emitida, "dias_em_aberto": (hoje - emitida).days})
     return sorted(abertas, key=lambda g: (g["competencia"], g["apelido"]))
 
 
-def totais(db: Session) -> dict:
-    pagos = _pares_pagos(db)
+def totais(db: Session, base: tuple | None = None) -> dict:
+    grupos, pagos = base or calcular(db)
     a_receber, qtd_aberta, qtd_recebida = Decimal(0), 0, 0
-    for g in _grupos(db):
+    for g in grupos:
         if (g["vinculo_id"], g["competencia"]) in pagos:
             qtd_recebida += g["quantidade"]
         else:
@@ -89,8 +100,8 @@ def totais(db: Session) -> dict:
     }
 
 
-def avisos_abertas_ha_muito(db: Session, hoje: datetime.date | None = None, limite: int = 5) -> list[dict]:
-    antigas = [g for g in notas_em_aberto(db, hoje) if g["dias_em_aberto"] > DIAS_ABERTA_ALERTA]
+def avisos_abertas_ha_muito(db: Session, hoje: datetime.date | None = None, limite: int = 5, base: tuple | None = None) -> list[dict]:
+    antigas = [g for g in notas_em_aberto(db, hoje, base) if g["dias_em_aberto"] > DIAS_ABERTA_ALERTA]
     avisos = []
     for g in antigas[:limite]:
         ano, mes = g["competencia"].split("-")

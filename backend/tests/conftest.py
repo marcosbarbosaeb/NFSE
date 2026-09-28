@@ -112,3 +112,16 @@ def vinculo_teste(db, prestador_teste):
     db.add(vinculo)
     db.flush()
     return vinculo
+
+
+@pytest.fixture(autouse=True)
+def _sem_rede_e_sem_limites(monkeypatch):
+    """Testes nunca consultam a BrasilAPI de verdade ao cadastrar tomador, e
+    cada teste começa com os limites de uso (rate limit) zerados."""
+    import app.main as main_mod
+
+    monkeypatch.setattr(main_mod, "_dados_oficiais_cnpj", lambda cnpj: None)
+    limitador = getattr(main_mod, "limitador", None)
+    if limitador is not None:
+        limitador.limpar()
+    yield

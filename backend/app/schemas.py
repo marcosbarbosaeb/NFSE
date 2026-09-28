@@ -66,7 +66,7 @@ class GerarDpsRequest(BaseModel):
     que é a fonte de verdade do sequencial (ver app/services/
     motor_emissao.py)."""
     vinculo_id: uuid.UUID
-    competencia: str = Field(pattern=r"^\d{4}-\d{2}$", description="AAAA-MM, mês de referência da comissão")
+    competencia: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$", description="AAAA-MM, mês de referência da comissão")
     valor: float = Field(gt=0)
     ordem: str | None = Field(default=None, description="Número da ordem de pagamento (AWIN/AWIN Rchlo)")
     aliq_sn: float | None = Field(default=None, description="Alíquota do Simples Nacional em %% (ex.: 12.5)")
@@ -218,7 +218,7 @@ class ImportacaoCsvResponse(BaseModel):
 
 class RegistrarPagamentoRequest(BaseModel):
     vinculo_id: uuid.UUID
-    competencia: str = Field(pattern=r"^\d{4}-\d{2}$", description="AAAA-MM, mês de referência")
+    competencia: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$", description="AAAA-MM, mês de referência")
     valor: float = Field(gt=0)
     data_recebimento: date | None = None
 
@@ -235,7 +235,7 @@ class PagamentoResponse(BaseModel):
 
 class RegistrarDespesaRequest(BaseModel):
     categoria: str = Field(min_length=1, max_length=100)
-    competencia: str = Field(pattern=r"^\d{4}-\d{2}$")
+    competencia: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
     valor: float = Field(gt=0)
 
 
@@ -786,7 +786,7 @@ class ExtratoExtraidoResponse(BaseModel):
 
 class ItemConfirmarExtratoRequest(BaseModel):
     vinculo_id: uuid.UUID
-    competencia: str = Field(pattern=r"^\d{4}-\d{2}$", description="AAAA-MM, mês de referência")
+    competencia: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$", description="AAAA-MM, mês de referência")
     valor: float = Field(gt=0)
     data_recebimento: date | None = None
 
@@ -794,7 +794,7 @@ class ItemConfirmarExtratoRequest(BaseModel):
 class DespesaExtratoRequest(BaseModel):
     """Saída do extrato que vira despesa (28/09/2026)."""
     categoria: str = Field(min_length=1, max_length=100)
-    competencia: str = Field(pattern=r"^\d{4}-\d{2}$")
+    competencia: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
     valor: float = Field(gt=0)
 
 

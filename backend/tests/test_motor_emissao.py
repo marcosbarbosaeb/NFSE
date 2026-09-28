@@ -204,3 +204,24 @@ def test_cancelar_recusado_pela_sefin_nao_muda_estado(db, vinculo_teste, certifi
             cnpj_autor="45172374000122", cmotivo="1", xmotivo="Motivo de teste com mais de 15 caracteres",
         )
     assert confirmado.estado == "confirmado"  # não avançou pra cancelada
+
+
+def test_queda_de_rede_no_envio_vira_erro_e_recupera_a_nota_na_retentativa(db, vinculo_teste, certificado_teste):
+    import requests as _requests
+
+    rascunho = criar_rascunho(db, vinculo_teste, competencia="2026-02", valor=10)
+    montar(db, rascunho)
+    assinar(db, rascunho, certificado_teste["private_key"], certificado_teste["cert"])
+
+    cliente_fake = MagicMock()
+    cliente_fake.submeter_dps.side_effect = _requests.Timeout("lento")
+    submeter(db, rascunho, cliente_fake)
+    assert rascunho.estado == "erro" and rascunho.erro_detalhe.startswith("[comunicacao]")
+
+    # A Receita tinha recebido: a retentativa acha a nota em vez de reenviar.
+    cliente_fake = MagicMock()
+    cliente_fake.consultar_dps.return_value = RespostaSefin(status_code=200, dados={"chaveAcesso": "9" * 50})
+    cliente_fake.consultar_nfse.return_value = RespostaSefin(status_code=200, dados={"nfseXmlGZipB64": None})
+    submeter(db, rascunho, cliente_fake)
+    assert rascunho.estado == "confirmado" and rascunho.chave_acesso == "9" * 50
+    cliente_fake.submeter_dps.assert_not_called()

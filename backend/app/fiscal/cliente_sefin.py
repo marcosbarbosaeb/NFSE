@@ -116,6 +116,12 @@ class ClienteSefin:
         resp = self._get(f"{self.base}/dps/{id_dps}")
         return resp.status_code
 
+    def consultar_dps(self, id_dps: str) -> RespostaSefin:
+        """GET {base}/dps/{IdDPS} com o corpo — 200 traz a chaveAcesso da
+        NFS-e gerada a partir dessa DPS (usado pra recuperar a nota depois de
+        uma queda de rede no envio)."""
+        return self._para_resposta(self._get(f"{self.base}/dps/{id_dps}"))
+
     def proximo_ndps_livre_por_varredura(self, montar_id_dps_fn, max_tentativas: int = 50) -> int | None:
         """Ferramenta de RECONCILIAÇÃO/diagnóstico — varre nDPS=1..max até
         achar um 404. `montar_id_dps_fn(n) -> str` monta o Id pra cada n

@@ -31,6 +31,7 @@ from decimal import Decimal, InvalidOperation
 
 import pdfplumber
 from pdfminer.pdftypes import resolve1
+from app.tempo import hoje as hoje_br
 
 CNPJ_AWIN = "14182871000188"
 
@@ -194,7 +195,7 @@ def ler_ordem_awin(conteudo: bytes, nome_arquivo: str | None = None, hoje: date 
         ordem.numero = m.group(4)
         ordem.fontes.append("nome_arquivo")
 
-    hoje = hoje or date.today()
+    hoje = hoje or hoje_br()
     ordem.competencia_sugerida = f"{hoje.year:04d}-{hoje.month:02d}"
 
     parece_awin = ordem.cnpj_devedor == CNPJ_AWIN or "awin" in texto.lower() or bool(campos.get("paymentOrderId"))

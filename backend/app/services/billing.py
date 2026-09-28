@@ -272,7 +272,10 @@ def processar_webhook(db: Session, payload: bytes, assinatura_header: str) -> st
 
     if tipo == "checkout.session.completed":
         assinatura.stripe_subscription_id = obj.get("subscription")
-        assinatura.status = "ativa"
+        # Boleto/Pix: a sessão "completa" antes do dinheiro cair — só vira
+        # ativa quando pago; o customer.subscription.updated confirma depois.
+        if obj.get("payment_status") in ("paid", "no_payment_required", None):
+            assinatura.status = "ativa"
     elif tipo in ("customer.subscription.updated", "customer.subscription.created"):
         assinatura.stripe_subscription_id = obj.get("id")
         novo_status = _STRIPE_STATUS_PARA_NOSSO.get(obj.get("status"))
