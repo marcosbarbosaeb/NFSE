@@ -44,7 +44,7 @@ function badgeEnvio(status: string | null) {
 
 
 function notaDaLinha(l: EmissaoResumoLinha): NotaParaAcoes {
-  return { id: l.emissao_id, estado: l.estado, envio_status: l.envio_status, tem_pdf: l.tem_pdf, tem_email: l.tem_email, homologacao: l.homologacao }
+  return { id: l.emissao_id, estado: l.estado, envio_status: l.envio_status, tem_pdf: l.tem_pdf, tem_email: l.tem_email, homologacao: l.homologacao, envio_forma: l.envio_forma }
 }
 
 const COR_PENDENCIA: Record<string, string> = {

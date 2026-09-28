@@ -1,7 +1,7 @@
 import { FileCode2, FileDown } from "lucide-react"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { ApiError, api, formatarErro } from "../lib/api"
-import type { PreviaEmail } from "../lib/types"
+import type { FormaEnvio, PreviaEmail } from "../lib/types"
 import { Badge } from "./ui/Badge"
 
 // Pedido do Marcos (28/09/2026): "na aba NFS-e, além do estado, vamos deixar
@@ -22,6 +22,8 @@ export interface NotaParaAcoes {
   tem_email?: boolean
   homologacao?: boolean
   avulsa?: boolean
+  /** Como o tomador recebe a nota (null = e-mail). */
+  envio_forma?: FormaEnvio | null
 }
 
 /** Selo com confirmação em popover (position:fixed — tabelas com overflow cortariam um popover comum). */
