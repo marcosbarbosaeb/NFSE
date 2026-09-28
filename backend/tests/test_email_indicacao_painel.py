@@ -303,3 +303,11 @@ def test_fluxo_de_indicacao(db, prestador_teste):
     # o indicador não enxerga dados de outros prestadores além da indicação
     assert db.query(Indicacao).count() == 3
     assert db.get(CodigoIndicacao, codigo).prestador_id == prestador_teste.id
+
+
+def test_endpoints_de_previa_e_prestador(client, db, vinculo_teste):
+    emissao = criar_rascunho(db, vinculo_teste, competencia="2026-04", valor=10)
+    montar(db, emissao)
+    resp = client.get(f"/api/dps/{emissao.id}/email-previa")
+    assert resp.status_code == 200 and "assunto" in resp.json()
+    assert "municipio_rotulo" in client.get("/api/prestador").json()

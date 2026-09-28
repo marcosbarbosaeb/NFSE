@@ -613,6 +613,12 @@ class PrestadorResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def municipio_rotulo(self) -> str | None:
+        """'Belo Horizonte/MG' em vez do código IBGE cru (pedido do Marcos)."""
+        return rotulo_municipio(self.cod_municipio)
+
 
 class PreferenciasPrestadorRequest(BaseModel):
     """PATCH /api/prestador/preferencias (28/09/2026): ambiente das notas
@@ -644,12 +650,6 @@ class PreviaEmailResponse(BaseModel):
     anexos: str
     arquivos: list[str]
     motivo_desabilitado: str | None = None
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def municipio_rotulo(self) -> str | None:
-        """'Belo Horizonte/MG' em vez do código IBGE cru (pedido do Marcos)."""
-        return rotulo_municipio(self.cod_municipio)
 
 
 class AliquotaAtualizarRequest(BaseModel):
