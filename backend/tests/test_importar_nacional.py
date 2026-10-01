@@ -69,13 +69,14 @@ def test_busca_previa_e_importacao(client, db, prestador_teste, vinculo_teste, m
     docs = []
     a1, _ = nfse(1, "11222333000181", "TOMADOR", "2026-01", "100.00", desc="Comissão de teste - 01/2026")
     a2, _ = nfse(2, "11222333000181", "TOMADOR", "2026-01", "50.00", desc="Programa B comissão jan")
+    a3, _ = nfse(8, "11222333000181", "TOMADOR", "2026-01", "70.00", desc="Comissão de teste - complementar")
     novo, chave_novo = nfse(3, "44555666000199", "Empresa Nova SA", "2026-02", "300.00")
     velho, _ = nfse(4, "77888999000111", "Cliente Antigo", "2025-06", "80.00")
     loja, _ = nfse(5, "12345678909", "Vendedor PF", "2026-02", "10.00", tipo="CPF", interm="11222333000181")
     recebida, _ = nfse(6, PREST, "Eu", "2026-02", "999.00", prest="99999999000199")
-    for i, x in enumerate([a1, a2, novo, velho, loja, recebida], start=1):
+    for i, x in enumerate([a1, a2, a3, novo, velho, loja, recebida], start=1):
         docs.append({"nsu": i, "tipo": "NFSE", "xml": x})
-    docs.append({"nsu": 7, "tipo": "EVENTO", "xml": cancelamento(chave_novo)})
+    docs.append({"nsu": 8, "tipo": "EVENTO", "xml": cancelamento(chave_novo)})
     paginas = [docs[:4], docs[4:], []]
 
     def pagina_falsa(cliente, cnpj, nsu):
@@ -89,9 +90,9 @@ def test_busca_previa_e_importacao(client, db, prestador_teste, vinculo_teste, m
     r = client.post("/api/importar/nacional/buscar", json={})
     assert r.status_code == 200, r.text
     previa = r.json()
-    assert previa["terminou"] and previa["recebidas"] == 1 and previa["total_notas"] == 5
+    assert previa["terminou"] and previa["recebidas"] == 1 and previa["total_notas"] == 6
     grupos = {g["documento"]: g for g in previa["grupos"]}
-    assert grupos["11222333000181"]["sugestao"] == "vinculo" and grupos["11222333000181"]["quantidade"] == 2
+    assert grupos["11222333000181"]["sugestao"] == "vinculo" and grupos["11222333000181"]["quantidade"] == 3
     assert grupos["12345678909"]["sugestao"] == "avulsa"
     assert grupos["44555666000199"]["sugestao"] == "novo" and grupos["44555666000199"]["canceladas"] == 1
 
@@ -104,7 +105,9 @@ def test_busca_previa_e_importacao(client, db, prestador_teste, vinculo_teste, m
     r = client.post("/api/importar/nacional", json={"mapeamento": mapa})
     assert r.status_code == 200, r.text
     res = r.json()
-    assert res["importadas"] == 5 and res["vinculos_criados"] == 2 and res["puladas"] == []
+    # três notas do mesmo CNPJ em jan: uma por vínculo e a terceira (histórico
+    # com duas no mês) vai pro mais parecido em vez de ser pulada
+    assert res["importadas"] == 6 and res["vinculos_criados"] == 2 and res["puladas"] == []
 
     notas = {e.n_dps: e for e in db.query(Emissao).filter(Emissao.origem == "importada")}
     assert notas[1].prestador_tomador_id == vinculo_teste.id and notas[2].prestador_tomador_id == irmao.id
@@ -113,7 +116,8 @@ def test_busca_previa_e_importacao(client, db, prestador_teste, vinculo_teste, m
     assert db.query(Envio).filter(Envio.emissao_id == notas[1].id, Envio.status == "enviado").count() == 1
     antigo = db.get(PrestadorTomador, notas[4].prestador_tomador_id)
     assert antigo.ativo is False  # não recebe nota há meses
-    assert prestador_teste.adn_ultimo_nsu == 7
+    assert notas[8].prestador_tomador_id == vinculo_teste.id
+    assert prestador_teste.adn_ultimo_nsu == 8
 
     # repetir não duplica
     assert client.post("/api/importar/nacional", json={"mapeamento": mapa}).json()["importadas"] == 0

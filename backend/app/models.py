@@ -460,7 +460,9 @@ Index(
     Emissao.competencia,
     func.coalesce(Emissao.tomador_documento, ""),
     unique=True,
-    postgresql_where=(Emissao.estado != "cancelada"),
+    # Importadas do Emissor Nacional ficam de fora (histórico pode ter mais
+    # de uma nota no mês pro mesmo tomador) — migração b4d6e8f0a213.
+    postgresql_where=(Emissao.estado != "cancelada") & (Emissao.origem == "ana"),
 )
 
 

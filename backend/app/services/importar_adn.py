@@ -424,17 +424,12 @@ def importar(db: Session, prestador: Prestador, mapeamento: list[dict]) -> dict:
                 candidatos = sorted(
                     irmaos, key=lambda v: (-round(_parecido(v.template_descricao, nota["descricao"]), 2), v.id != vinculo.id)
                 )
-        destino = None
-        for v in candidatos:
-            if cancelada or (v.id, competencia, documento_avulso or "") not in ocupados:
-                destino = v
-                break
-        if destino is None:
-            puladas.append({
-                "chave": nota["chave"],
-                "motivo": f"{candidatos[0].apelido} já tem nota ativa em {competencia[5:]}/{competencia[:4]} (nº {nota['n_nfse']}).",
-            })
-            continue
+        # Prefere o vínculo ainda sem nota no mês; se todos já têm (histórico
+        # com duas notas no mês), vai pro mais parecido mesmo — importadas
+        # não entram na regra de uma nota por mês.
+        destino = next(
+            (v for v in candidatos if cancelada or (v.id, competencia, documento_avulso or "") not in ocupados), candidatos[0]
+        )
         toma = nota["toma"]
         snapshot = {
             "razao_social": toma["nome"], "cnpj": toma["documento"], "tipo_documento": toma["tipo"],
