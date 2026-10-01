@@ -403,7 +403,7 @@ class Emissao(Base):
     valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
 
     serie: Mapped[str] = mapped_column(String(5), nullable=False)
-    n_dps: Mapped[int | None] = mapped_column()
+    n_dps: Mapped[int | None] = mapped_column(BigInteger)
     chave_acesso: Mapped[str | None] = mapped_column(String(50), unique=True)
 
     estado: Mapped[str] = mapped_column(String(20), nullable=False, server_default="rascunho")

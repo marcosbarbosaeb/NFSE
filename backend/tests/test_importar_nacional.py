@@ -72,7 +72,7 @@ def test_busca_previa_e_importacao(client, db, prestador_teste, vinculo_teste, m
     a3, _ = nfse(8, "11222333000181", "TOMADOR", "2026-01", "70.00", desc="Comissão de teste - complementar")
     novo, chave_novo = nfse(3, "44555666000199", "Empresa Nova SA", "2026-02", "300.00")
     velho, _ = nfse(4, "77888999000111", "Cliente Antigo", "2025-06", "80.00")
-    loja, _ = nfse(5, "12345678909", "Vendedor PF", "2026-02", "10.00", tipo="CPF", interm="11222333000181")
+    loja, _ = nfse(2200000000031, "12345678909", "Vendedor PF", "2026-02", "10.00", tipo="CPF", interm="11222333000181")
     recebida, _ = nfse(6, PREST, "Eu", "2026-02", "999.00", prest="99999999000199")
     for i, x in enumerate([a1, a2, a3, novo, velho, loja, recebida], start=1):
         docs.append({"nsu": i, "tipo": "NFSE", "xml": x})
@@ -111,7 +111,7 @@ def test_busca_previa_e_importacao(client, db, prestador_teste, vinculo_teste, m
 
     notas = {e.n_dps: e for e in db.query(Emissao).filter(Emissao.origem == "importada")}
     assert notas[1].prestador_tomador_id == vinculo_teste.id and notas[2].prestador_tomador_id == irmao.id
-    assert notas[5].tomador_documento == "12345678909" and notas[5].estado == "confirmado"
+    assert notas[2200000000031].tomador_documento == "12345678909" and notas[2200000000031].estado == "confirmado"
     assert notas[3].estado == "cancelada"
     assert db.query(Envio).filter(Envio.emissao_id == notas[1].id, Envio.status == "enviado").count() == 1
     antigo = db.get(PrestadorTomador, notas[4].prestador_tomador_id)

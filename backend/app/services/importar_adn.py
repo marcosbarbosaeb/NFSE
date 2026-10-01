@@ -343,8 +343,9 @@ def _novo_vinculo(db: Session, prestador: Prestador, nota: dict) -> PrestadorTom
         if tomador is None:
             tomador = Tomador(
                 id=uuid.uuid4(), cnpj=toma["documento"], razao_social=(toma["nome"] or toma["documento"])[:200],
-                cod_municipio=toma["cMun"] or prestador.cod_municipio, cep=toma["CEP"], logradouro=toma["xLgr"],
-                numero=toma["nro"], complemento=toma["xCpl"], bairro=toma["xBairro"], status="aprovado",
+                cod_municipio=(toma["cMun"] or prestador.cod_municipio)[:7], cep=_corta(toma["CEP"], 8),
+                logradouro=_corta(toma["xLgr"], 200), numero=_corta(toma["nro"], 20), complemento=_corta(toma["xCpl"], 100),
+                bairro=_corta(toma["xBairro"], 100), status="aprovado",
             )
             db.add(tomador)
             db.flush()
@@ -355,10 +356,10 @@ def _novo_vinculo(db: Session, prestador: Prestador, nota: dict) -> PrestadorTom
     vinculo = PrestadorTomador(
         id=uuid.uuid4(), prestador_id=prestador.id, tomador_id=tomador.id,
         apelido=_apelido_livre(db, prestador.id, toma["nome"] or "Tomador"),
-        cod_local_prestacao=nota["cLocPrestacao"] or prestador.cod_municipio,
-        cod_trib_nacional=(nota["cTribNac"] or "000000")[:6], cod_trib_municipal=(nota["cTribMun"] or None),
-        cod_nbs=nota["cNBS"], template_descricao=nota["descricao"] or "Serviço prestado",
-        serie=nota["serie"][:5], ativo=True, sem_nota=sem_nota,
+        cod_local_prestacao=(nota["cLocPrestacao"] or prestador.cod_municipio)[:7],
+        cod_trib_nacional=(nota["cTribNac"] or "000000")[:6], cod_trib_municipal=_corta(nota["cTribMun"], 5),
+        cod_nbs=_corta(nota["cNBS"], 12), template_descricao=nota["descricao"] or "Serviço prestado",
+        serie="1", ativo=True, sem_nota=sem_nota,
     )
     db.add(vinculo)
     db.flush()
@@ -491,3 +492,7 @@ def _data_hora(texto: str | None) -> datetime.datetime | None:
 
 def _meses_entre(a: str, b: str) -> int:
     return (int(b[:4]) - int(a[:4])) * 12 + int(b[5:7]) - int(a[5:7])
+
+
+def _corta(valor: str | None, tamanho: int) -> str | None:
+    return valor[:tamanho] if valor else None
