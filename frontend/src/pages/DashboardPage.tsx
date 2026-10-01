@@ -1,4 +1,5 @@
 import {
+  EyeOff,
   AlertTriangle,
   ArrowRight,
   CalendarDays,
@@ -63,6 +64,14 @@ export function DashboardPage() {
   const [carregando, setCarregando] = useState(true)
 
   const [proximos, setProximos] = useState<Proximos | null>(null)
+
+  // "Ignorar este aviso" — atraso consciente (ex.: nota que sai depois do pagamento).
+  function ignorarPendencia(chave: string) {
+    setProximos((p) =>
+      p ? { ...p, pendencias: p.pendencias.filter((x) => x.chave !== chave), total_pendencias: Math.max(0, p.total_pendencias - 1) } : p,
+    )
+    api.post("/painel/pendencias/ignorar", { chave }).catch(() => setRecarga((n) => n + 1))
+  }
   const [recarga, setRecarga] = useState(0)
   const navigate = useNavigate()
 
@@ -317,10 +326,10 @@ export function DashboardPage() {
                   {proximos.pendencias.length > 0 && (
                     <ul className="flex flex-col gap-1.5">
                       {proximos.pendencias.map((p, i) => (
-                        <li key={`p${i}`}>
+                        <li key={`p${i}`} className="group relative">
                           <Link
                             to={p.link}
-                            className="-mx-2 flex items-start gap-2.5 rounded-lg px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-700/40"
+                            className={`-mx-2 flex items-start gap-2.5 rounded-lg px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-700/40 ${p.chave ? "pr-9" : ""}`}
                           >
                             <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${COR_PENDENCIA[p.tipo] ?? "bg-slate-400"}`} />
                             <div className="min-w-0 flex-1">
@@ -333,6 +342,17 @@ export function DashboardPage() {
                             </div>
                             <span className="shrink-0 text-xs font-semibold text-primary-600">{p.acao} →</span>
                           </Link>
+                          {p.chave && (
+                            <button
+                              type="button"
+                              onClick={() => ignorarPendencia(p.chave!)}
+                              title="Ignorar este aviso (atraso consciente)"
+                              aria-label={`Ignorar o aviso: ${p.titulo}`}
+                              className="absolute right-0 top-1 rounded p-1 text-slate-300 opacity-60 hover:bg-slate-100 hover:text-slate-500 focus-visible:opacity-100 group-hover:opacity-100 dark:text-slate-500 dark:hover:bg-slate-700"
+                            >
+                              <EyeOff className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </li>
                       ))}
                       {proximos.total_pendencias > proximos.pendencias.length && (

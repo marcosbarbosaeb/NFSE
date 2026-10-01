@@ -663,6 +663,7 @@ export function NfsePage() {
           ambienteTeste={ambienteTeste}
           vinculoInicial={searchParams.get("gerar")}
           competenciaInicial={searchParams.get("competencia")}
+          valorInicial={searchParams.get("valor")}
           onClose={() => {
             setModalNova(false)
             if (searchParams.get("gerar") || searchParams.get("nova")) navigate("/app/nfse", { replace: true })
@@ -748,6 +749,7 @@ function NovaEmissaoModal({
   ambienteTeste,
   vinculoInicial,
   competenciaInicial,
+  valorInicial,
   onClose,
   onEscolherShopee,
   onCriada,
@@ -757,6 +759,8 @@ function NovaEmissaoModal({
   ambienteTeste?: boolean
   vinculoInicial?: string | null
   competenciaInicial?: string | null
+  /** Tomador que paga antes da nota: o aviso já traz o valor que caiu. */
+  valorInicial?: string | null
   onClose: () => void
   onEscolherShopee: (vinculo: VinculoResumo) => void
   onCriada: (emissao: Emissao) => void
@@ -770,7 +774,10 @@ function NovaEmissaoModal({
   const [dataCompetencia, setDataCompetencia] = useState(() => dataPadraoDaCompetencia(competenciaInicial))
   const dataEfetiva = /^\d{4}-\d{2}-\d{2}$/.test(dataCompetencia) ? dataCompetencia : hojeLocal()
   const competencia = dataEfetiva.slice(0, 7)
-  const [valor, setValor] = useState("")
+  const [valor, setValor] = useState(() => {
+    const n = Number(valorInicial)
+    return valorInicial && Number.isFinite(n) && n > 0 ? n.toFixed(2) : ""
+  })
   const [ordem, setOrdem] = useState("")
   // Pré-preenchida com a alíquota de referência de Configurações, quando
   // existir — sempre editável, nunca aplicada sem a pessoa ver/confirmar

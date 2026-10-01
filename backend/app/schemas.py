@@ -31,6 +31,7 @@ class VinculoResumo(BaseModel):
     emissao_quantidade: int = 0
     metodo_captura_valor: str = "manual"
     sem_nota: bool = False
+    nota_apos_pagamento: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -359,6 +360,8 @@ class PendenciaItem(BaseModel):
     vinculo_id: uuid.UUID | None = None
     valor: float | None = None
     competencia: str | None = None
+    # Pra "ignorar este aviso" (POST /api/painel/pendencias/ignorar).
+    chave: str | None = None
 
 
 class AgendaItem(BaseModel):
@@ -569,6 +572,7 @@ class VinculoDetalheResponse(BaseModel):
     envio_canal: str | None = None
     portal_url: str | None = None
     sem_nota: bool = False
+    nota_apos_pagamento: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -603,6 +607,7 @@ class VinculoCriarRequest(BaseModel):
     envio_canal: str | None = Field(default=None, pattern=r"^(email|whatsapp|portal|nenhum)$")
     portal_url: str | None = Field(default=None, max_length=400)
     sem_nota: bool | None = None
+    nota_apos_pagamento: bool | None = None
 
     @model_validator(mode="after")
     def _exatamente_um_tomador(self):
@@ -638,6 +643,7 @@ class VinculoAtualizarRequest(BaseModel):
     envio_canal: str | None = Field(default=None, pattern=r"^(email|whatsapp|portal|nenhum)$")
     portal_url: str | None = Field(default=None, max_length=400)
     sem_nota: bool | None = None
+    nota_apos_pagamento: bool | None = None
 
 
 class PrestadorResponse(BaseModel):
@@ -1290,3 +1296,8 @@ class ImportarPlanilhaResponse(BaseModel):
     retiradas: int
     rotinas: int
     avisos: list[str]
+
+
+class IgnorarPendenciaRequest(BaseModel):
+    chave: str = Field(min_length=3, max_length=100)
+    ignorar: bool = True

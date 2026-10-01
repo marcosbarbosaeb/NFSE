@@ -39,7 +39,7 @@ def _grupos(db: Session) -> list[dict]:
             Emissao.valor, Emissao.criado_em, PrestadorTomador.apelido,
         )
         .join(PrestadorTomador, PrestadorTomador.id == Emissao.prestador_tomador_id)
-        .filter(Emissao.estado.in_(ESTADOS_COBRAVEIS))
+        .filter(Emissao.estado.in_(ESTADOS_COBRAVEIS), PrestadorTomador.nota_apos_pagamento.is_(False))
         .order_by(Emissao.criado_em)
         .all()
     )

@@ -58,7 +58,7 @@ from app.config import get_settings
 from app.database import definir_prestador_atual, get_db
 from app.fiscal.dps import DescricaoIncompletaError
 from app.models import (
-    Assinatura, Certificado, Despesa, DespesaRecorrente, Emissao, Envio, LoteAcao, PagamentoRecebido, Prestador, RotinaMensal, Usuario,
+    AjusteEvento, Assinatura, Certificado, Despesa, DespesaRecorrente, Emissao, Envio, LoteAcao, PagamentoRecebido, Prestador, RotinaMensal, Usuario,
 )
 from app.schemas import (
     AjusteOcorrenciaRequest,
@@ -93,6 +93,7 @@ from app.schemas import (
     ModeloEmailPadraoResponse,
     PreviaShopeeResponse,
     EnviarGeralRequest,
+    IgnorarPendenciaRequest,
     AtualizarDespesaRequest,
     ContaFixaAtualizarRequest,
     ContaFixaRequest,
@@ -1000,7 +1001,7 @@ def api_listar_vinculos(todos: bool = False, competencia: str | None = None, db:
             emissao_id=emissao["id"] if emissao else None, emissao_estado=emissao["estado"] if emissao else None,
             emissao_valor=round(emissao["valor"], 2) if emissao else None,
             emissao_quantidade=emissao["quantidade"] if emissao else 0,
-            metodo_captura_valor=v.metodo_captura_valor, sem_nota=v.sem_nota,
+            metodo_captura_valor=v.metodo_captura_valor, sem_nota=v.sem_nota, nota_apos_pagamento=v.nota_apos_pagamento,
         ))
     return resposta
 
@@ -1113,6 +1114,7 @@ def api_criar_vinculo(
     vinculo.envio_canal = req.envio_canal
     vinculo.portal_url = (req.portal_url or "").strip() or None
     vinculo.sem_nota = bool(req.sem_nota)
+    vinculo.nota_apos_pagamento = bool(req.nota_apos_pagamento)
     db.commit()
     return vinculo
 
@@ -1133,8 +1135,9 @@ def api_atualizar_vinculo(vinculo_id: uuid.UUID, req: VinculoAtualizarRequest, d
         campos["cod_nbs"] = _validar_nbs(campos["cod_nbs"])
     if campos.get("incluir_intermediario") is None:
         campos.pop("incluir_intermediario", None)
-    if campos.get("sem_nota") is None:
-        campos.pop("sem_nota", None)
+    for flag in ("sem_nota", "nota_apos_pagamento"):
+        if campos.get(flag) is None:
+            campos.pop(flag, None)
     if "portal_url" in campos:
         campos["portal_url"] = (campos["portal_url"] or "").strip() or None
     if campos.get("cod_trib_nacional") is not None and campos["cod_trib_nacional"] != vinculo.cod_trib_nacional:
@@ -2520,6 +2523,21 @@ def api_importar_planilha(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
     return resultado
+
+
+@app.post("/api/painel/pendencias/ignorar")
+def api_ignorar_pendencia(
+    req: IgnorarPendenciaRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """"Ignorar este aviso" na Visão geral (atraso consciente) — some só
+    aquela ocorrência (ex.: gerar a nota de X em 10/2026)."""
+    ajuste = db.query(AjusteEvento).filter_by(tipo="pendencia", chave=req.chave).one_or_none()
+    if req.ignorar and ajuste is None:
+        db.add(AjusteEvento(id=uuid.uuid4(), prestador_id=prestador_id, tipo="pendencia", chave=req.chave, oculto=True))
+    elif not req.ignorar and ajuste is not None:
+        db.delete(ajuste)
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/api/painel/proximos", response_model=ProximosResponse)

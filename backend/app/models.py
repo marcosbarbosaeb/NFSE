@@ -342,6 +342,9 @@ class PrestadorTomador(Base):
     # Só controle de recebimento (parceria, bônus, PayPal, tomador
     # estrangeiro importado): a Ana não gera nota pra ele (28/09/2026).
     sem_nota: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
+    # Paga antes da nota (Mercado Livre, Amazon): a nota do que caiu num mês
+    # sai no mês seguinte — nunca fica "a receber" (01/10/2026).
+    nota_apos_pagamento: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     # Últimas escolhas no envio ao fornecedor (29/09/2026: "salve sempre as
     # últimas configurações que a pessoa usar em cada tomador").
     envio_canal: Mapped[str | None] = mapped_column(String(10))

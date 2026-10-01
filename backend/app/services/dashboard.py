@@ -344,20 +344,48 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
     competencia_tem_nota = {
         v for (v,) in db.query(Emissao.prestador_tomador_id).filter(Emissao.competencia == competencia, Emissao.estado != "cancelada")
     }
+    ignoradas = {c for (c,) in db.query(AjusteEvento.chave).filter(AjusteEvento.tipo == "pendencia", AjusteEvento.oculto.is_(True))}
+    mes_anterior = _mes_anterior(competencia)
+    pagos_mes_anterior: dict = {}
+    for vid, valor in db.query(PagamentoRecebido.prestador_tomador_id, PagamentoRecebido.valor).filter(
+        PagamentoRecebido.competencia == mes_anterior
+    ):
+        pagos_mes_anterior[vid] = pagos_mes_anterior.get(vid, Decimal(0)) + valor
     for v in listar_vinculos_ativos(db):
-        if v.id not in competencia_tem_nota and not v.sem_nota:
-            quando = f" (dia {v.dia_limite_emissao})" if v.dia_limite_emissao else ""
+        if v.id in competencia_tem_nota or v.sem_nota:
+            continue
+        chave = f"gerar:{v.id}:{competencia}"
+        if chave in ignoradas:
+            continue
+        if v.nota_apos_pagamento:
+            # Paga antes da nota: a nota deste mês é do que caiu no mês
+            # anterior — sem pagamento lá, não tem o que gerar ainda.
+            caiu = pagos_mes_anterior.get(v.id)
+            if not caiu:
+                continue
             pendencias.append({
-                "tipo": "gerar", "titulo": f"Gerar a nota de {v.apelido}{quando}", "acao": "Gerar",
-                "competencia": competencia, "link": f"/app/nfse?gerar={v.id}&competencia={competencia}",
+                "tipo": "gerar", "titulo": f"Gerar a nota de {v.apelido} do que caiu em {mes_anterior[5:]}/{mes_anterior[:4]}",
+                "acao": "Gerar", "competencia": competencia, "valor": float(caiu), "vinculo_id": v.id, "chave": chave,
+                "link": f"/app/nfse?gerar={v.id}&competencia={competencia}&valor={caiu}",
             })
+            continue
+        quando = f" (dia {v.dia_limite_emissao})" if v.dia_limite_emissao else ""
+        pendencias.append({
+            "tipo": "gerar", "titulo": f"Gerar a nota de {v.apelido}{quando}", "acao": "Gerar", "vinculo_id": v.id,
+            "competencia": competencia, "link": f"/app/nfse?gerar={v.id}&competencia={competencia}", "chave": chave,
+        })
 
-    for g in notas_abertas.notas_em_aberto(db, hoje)[:5]:
+    for g in notas_abertas.notas_em_aberto(db, hoje):
+        chave = f"receber:{g['vinculo_id']}:{g['competencia']}"
+        if chave in ignoradas:
+            continue
         pendencias.append({
             "tipo": "receber", "titulo": f"Receber de {g['apelido']}", "acao": "Dar baixa",
             "valor": g["valor"], "competencia": g["competencia"], "vinculo_id": g["vinculo_id"],
-            "link": "/app/financeiro#a-receber",
+            "link": "/app/financeiro#a-receber", "chave": chave,
         })
+        if sum(1 for p in pendencias if p["tipo"] == "receber") >= 5:
+            break
 
     eventos = eventos_calendario(db, prestador_id, hoje, hoje + datetime.timedelta(days=30))
     agenda = [
@@ -386,3 +414,8 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
     ordem = {"erro": 0, "prefeitura": 1, "assinar": 2, "enviar_tomador": 3, "gerar": 4, "receber": 5}
     agrupadas.sort(key=lambda p: ordem.get(p["tipo"], 9))
     return {"pendencias": agrupadas[:10], "total_pendencias": len(agrupadas), "agenda": agenda}
+
+
+def _mes_anterior(competencia: str) -> str:
+    ano, mes = int(competencia[:4]), int(competencia[5:7])
+    return f"{ano - 1:04d}-12" if mes == 1 else f"{ano:04d}-{mes - 1:02d}"

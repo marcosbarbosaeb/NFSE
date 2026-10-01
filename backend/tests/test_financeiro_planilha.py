@@ -74,7 +74,7 @@ def test_leitura_da_planilha():
     assert blocos["rotinas"] == [{"nome": "Extrato Inter", "feitos": [1, 2]}, {"nome": "NF Facebook", "feitos": [1]}]
     merc = blocos["recebidos"][1]
     nf = importar_planilha._achar_nf(merc["nome"], blocos["nf"])
-    assert importar_planilha.deslocamento(merc["valores"], nf["valores"]) == 1  # pago em jan = nota de fev
+    assert importar_planilha.deslocamento(merc["valores"], nf["valores"]) == 1  # caiu em jan, nota em fev
 
 
 def test_importar_planilha_e_financeiro(client, db, prestador_teste, vinculo_teste, monkeypatch):
@@ -142,18 +142,23 @@ def test_importar_planilha_e_financeiro(client, db, prestador_teste, vinculo_tes
 
 
 def test_contas_fixas_e_lancamento_manual(client, db, prestador_teste, monkeypatch):
-    monkeypatch.setattr("app.main.hoje_br", lambda: datetime.date(2026, 9, 10))
+    import calendar
+
+    hoje = datetime.date.today()
+    monkeypatch.setattr("app.main.hoje_br", lambda: hoje)
+    comp = f"{hoje.year:04d}-{hoje.month:02d}"
     r = client.post("/api/financeiro/contas-fixas", json={"nome": "Cartão Inter", "categoria": "Cartão", "dia_vencimento": 31})
     assert r.status_code == 200, r.text
     conta_id = r.json()["id"]
-    mes = client.get("/api/financeiro/mes?competencia=2026-09").json()
+    mes = client.get(f"/api/financeiro/mes?competencia={comp}").json()
     cartao = next(c for c in mes["contas"] if c["descricao"] == "Cartão Inter")
-    assert cartao["vencimento"] == "2026-09-30" and cartao["valor_a_definir"]
+    ultimo = calendar.monthrange(hoje.year, hoje.month)[1]
+    assert cartao["vencimento"] == f"{comp}-{ultimo:02d}" and cartao["valor_a_definir"]
     # mês anterior à criação não ganha lançamento
     antes = client.get("/api/financeiro/mes?competencia=2025-01").json()
     assert all(c["descricao"] != "Cartão Inter" for c in antes["contas"])
 
-    r = client.post("/api/despesas", json={"categoria": "Distribuição de lucros", "competencia": "2026-09", "valor": 1000, "tipo": "retirada", "conta": "Inter"})
+    r = client.post("/api/despesas", json={"categoria": "Distribuição de lucros", "competencia": comp, "valor": 1000, "tipo": "retirada", "conta": "Inter"})
     assert r.status_code == 200 and r.json()["tipo"] == "retirada" and r.json()["pago"]
     assert client.delete(f"/api/despesas/{r.json()['id']}").status_code == 200
 
@@ -163,3 +168,49 @@ def test_contas_fixas_e_lancamento_manual(client, db, prestador_teste, monkeypat
 
     r = client.post("/api/financeiro/rotinas", json={"nome": "Conferir PayPal"})
     assert r.status_code == 200 and db.query(RotinaMensal).count() == 1
+
+
+def test_tomador_que_paga_antes_da_nota(client, db, prestador_teste, vinculo_teste, monkeypatch):
+    """Mercado Livre/Amazon: o dinheiro cai sem nota e a nota sai no mês
+    seguinte com o valor que caiu — nunca fica "a receber"; o aviso de gerar
+    só aparece quando já caiu pagamento, e dá pra ignorar um aviso."""
+    from app.models import PagamentoRecebido
+    from app.services.dashboard import proximos
+    from app.services.motor_emissao import montar
+
+    # importação: linha com deslocamento 1 marca o tomador e mantém o mês do pagamento
+    arquivo = {"arquivo": ("c.xlsx", planilha(), "application/octet-stream")}
+    escolhas = {"receitas": [{"linha": 1, "acao": "vinculo", "vinculo_id": str(vinculo_teste.id), "deslocamento": 1}],
+                "despesas": False, "recorrentes": False, "retiradas": False, "rotinas": False}
+    r = client.post("/api/importar/planilha", files=arquivo, data={"ano": "2026", "escolhas": json.dumps(escolhas)})
+    assert r.status_code == 200, r.text
+    assert vinculo_teste.nota_apos_pagamento is True
+    comps = sorted(c for (c,) in db.query(PagamentoRecebido.competencia).filter_by(prestador_tomador_id=vinculo_teste.id))
+    assert comps == ["2026-01", "2026-02", "2026-04"]
+
+    # nota de março (do que caiu em fevereiro) não fica "a receber"
+    e = criar_rascunho(db, vinculo_teste, competencia="2026-03", valor=20, tpAmb="2")
+    montar(db, e)
+    assert client.get("/api/painel/notas-abertas").status_code in (200, 404)
+    from app.services import a_receber
+    assert all(g["vinculo_id"] != vinculo_teste.id for g in a_receber.notas_em_aberto(db, datetime.date(2026, 9, 1)))
+
+    # maio: caiu pagamento em abril → aviso de gerar com o valor; junho: nada caiu em maio → sem aviso
+    p = proximos(db, prestador_teste.id, datetime.date(2026, 5, 10))
+    gerar = [x for x in p["pendencias"] if x["tipo"] == "gerar" and x.get("vinculo_id") == vinculo_teste.id]
+    assert gerar and gerar[0]["valor"] == 40 and "valor=40" in gerar[0]["link"]
+    p = proximos(db, prestador_teste.id, datetime.date(2026, 6, 10))
+    assert not [x for x in p["pendencias"] if x["tipo"] == "gerar" and x.get("vinculo_id") == vinculo_teste.id]
+
+    # ignorar um aviso
+    chave = gerar[0]["chave"]
+    assert client.post("/api/painel/pendencias/ignorar", json={"chave": chave}).status_code == 200
+    p = proximos(db, prestador_teste.id, datetime.date(2026, 5, 10))
+    assert not [x for x in p["pendencias"] if x.get("chave") == chave]
+    client.post("/api/painel/pendencias/ignorar", json={"chave": chave, "ignorar": False})
+    p = proximos(db, prestador_teste.id, datetime.date(2026, 5, 10))
+    assert [x for x in p["pendencias"] if x.get("chave") == chave]
+
+    # dá pra marcar/desmarcar na ficha do tomador
+    r = client.patch(f"/api/vinculos/{vinculo_teste.id}", json={"nota_apos_pagamento": False})
+    assert r.status_code == 200 and r.json()["nota_apos_pagamento"] is False

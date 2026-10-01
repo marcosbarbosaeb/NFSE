@@ -40,6 +40,8 @@ export interface VinculoResumo {
   metodo_captura_valor?: string
   /** Só controle de recebimento — a Ana não gera nota pra ele. */
   sem_nota?: boolean
+  /** Paga antes da nota (ex.: Mercado Livre): a nota sai no mês seguinte, nunca fica "a receber". */
+  nota_apos_pagamento?: boolean
 }
 
 export interface VendedorShopee {
@@ -161,6 +163,7 @@ export interface VinculoDetalhe {
   envio_canal?: FormaEnvio | null
   portal_url?: string | null
   sem_nota?: boolean
+  nota_apos_pagamento?: boolean
 }
 
 export interface VinculoCriarRequest {
@@ -188,6 +191,7 @@ export interface VinculoCriarRequest {
   envio_canal?: FormaEnvio | null
   portal_url?: string | null
   sem_nota?: boolean
+  nota_apos_pagamento?: boolean
 }
 
 export type VinculoAtualizarRequest = Partial<Omit<VinculoCriarRequest, "tomador_id" | "novo_tomador">> & {
@@ -594,6 +598,8 @@ export interface PendenciaItem {
   vinculo_id?: string | null
   valor?: number | null
   competencia?: string | null
+  /** POST /painel/pendencias/ignorar {chave, ignorar} — "ignorar este aviso". */
+  chave?: string | null
 }
 
 export interface AgendaItem {
