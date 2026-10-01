@@ -349,7 +349,7 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
     )
     for e in ativas:
         snap = e.tomador_snapshot or {}
-        nome = snap.get("razao_social") if e.tomador_documento else snap.get("apelido")
+        nome = (snap.get("razao_social") or "vendedor") if e.tomador_documento else snap.get("apelido")
         base = {"emissao_id": e.id, "valor": float(e.valor), "competencia": e.competencia, "link": f"/app/nfse/{e.id}"}
         if e.estado == "montado":
             pendencias.append({**base, "tipo": "assinar", "titulo": f"Assinar a nota de {nome}", "acao": "Assinar"})

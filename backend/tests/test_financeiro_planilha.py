@@ -245,7 +245,7 @@ def test_vendedores_shopee_separados_e_sem_cobranca(client, db, prestador_teste,
     montar(db, principal)
     for i in range(3):
         e = criar_rascunho(db, vinculo_teste, competencia="2026-09", valor=5, tpAmb="2", tomador_avulso={
-            "documento": f"1122233300011{i}", "tipo_documento": "CNPJ", "razao_social": f"Loja {i}",
+            "documento": f"1122233300011{i}", "tipo_documento": "CNPJ", "razao_social": f"Loja {i}" if i else None,
             "email": None, "endereco": {}, "pais": "BR", "lojas": [],
         })
         montar(db, e)
