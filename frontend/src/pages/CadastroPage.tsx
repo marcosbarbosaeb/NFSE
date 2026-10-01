@@ -16,6 +16,8 @@ export function CadastroPage() {
   const { usuario, loginComGoogle } = useAuth()
   const [searchParams] = useSearchParams()
   const [codigoIndicacao] = useState(() => guardarCodigoIndicacao(searchParams))
+  // /cadastro?teste=1 — conta de teste (notas só em homologação).
+  const modoTeste = searchParams.get("teste") === "1"
   // Marco 16, item 1 — volta de /api/auth/google/callback quando a conta
   // Google usada ainda não tem cadastro aqui (ver app/services/
   // google_oauth.py: não dá pra criar a conta só com o que a Google manda,
@@ -114,7 +116,8 @@ export function CadastroPage() {
         cpf_cnpj: cnpj.replace(/\D/g, ""),
         cod_municipio: codMunicipio.replace(/\D/g, ""),
         ...(enderecoAutopreenchido ?? {}),
-        codigo_indicacao: codigoIndicacao,
+        codigo_indicacao: modoTeste ? null : codigoIndicacao,
+        modo_teste: modoTeste,
       }
       const resp = await api.post<{ mensagem: string; email: string }>("/cadastro", payload)
       esquecerCodigoIndicacao()
@@ -153,7 +156,13 @@ export function CadastroPage() {
             </div>
           ) : (
             <form onSubmit={onSubmit} className="flex flex-col gap-3">
-              {codigoIndicacao && (
+              {modoTeste && (
+                <p className="rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
+                  <strong>Conta de teste.</strong> Faça tudo como um cliente novo: as notas saem só em homologação (sem valor fiscal) e os
+                  e-mails de nota vão só pro e-mail desta conta. Pode usar o mesmo CNPJ de uma conta real.
+                </p>
+              )}
+              {codigoIndicacao && !modoTeste && (
                 <p className="rounded-lg bg-success-50 px-3 py-2 text-sm text-success-700">
                   Você chegou por indicação de um amigo (código {codigoIndicacao.toUpperCase()}).
                 </p>

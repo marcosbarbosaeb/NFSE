@@ -58,7 +58,9 @@ class Prestador(Base):
     __tablename__ = "prestador"
 
     id: Mapped[uuid.UUID] = _uuid_pk()
-    cpf_cnpj: Mapped[str] = mapped_column(String(14), unique=True, nullable=False)
+    # Único só entre contas reais (índice parcial uq_prestador_cnpj_real) —
+    # a conta de teste repete o CNPJ.
+    cpf_cnpj: Mapped[str] = mapped_column(String(14), nullable=False)
     inscricao_municipal: Mapped[str | None] = mapped_column(String(30))
     razao_social: Mapped[str] = mapped_column(String(200), nullable=False)
 
@@ -110,6 +112,10 @@ class Prestador(Base):
     # Ambiente das notas novas: "1" produção, "2" homologação (teste). Saiu
     # da tela de gerar nota em 28/09/2026 e virou configuração da conta.
     tp_amb_padrao: Mapped[str] = mapped_column(String(1), nullable=False, default="1", server_default="1")
+    # Conta de teste (01/10/2026): começa em branco como um usuário novo, mas
+    # as notas saem só em homologação (sem valor fiscal) e os e-mails vão só
+    # pra quem testa. Pode repetir o CNPJ de uma conta real.
+    modo_teste: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     # Importação do Emissor Nacional: último NSU lido na distribuição do ADN.
     adn_ultimo_nsu: Mapped[int | None] = mapped_column(BigInteger)
     nome_fantasia: Mapped[str | None] = mapped_column(String(200))
@@ -131,6 +137,11 @@ class Prestador(Base):
     usuarios: Mapped[list["Usuario"]] = relationship(back_populates="prestador")
     eventos_manuais: Mapped[list["EventoManual"]] = relationship(back_populates="prestador")
     assinatura: Mapped["Assinatura | None"] = relationship(back_populates="prestador", uselist=False)
+
+
+Index(
+    "uq_prestador_cnpj_real", Prestador.cpf_cnpj, unique=True, postgresql_where=(Prestador.modo_teste.is_(False)),
+)
 
 
 class Usuario(Base):

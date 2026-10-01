@@ -3,6 +3,8 @@ export interface Usuario {
   prestador_id: string
   demo?: boolean
   nome?: string | null
+  /** Empresa ativa é conta de teste: notas só em homologação, e-mails só pra quem testa. */
+  teste?: boolean
 }
 
 export interface CadastroRequest {
@@ -17,6 +19,8 @@ export interface CadastroRequest {
   complemento?: string | null
   bairro?: string | null
   codigo_indicacao?: string | null
+  /** /cadastro?teste=1 — conta de teste. */
+  modo_teste?: boolean
 }
 
 export interface VinculoResumo {
@@ -550,6 +554,7 @@ export interface Prestador {
   aliquota_atual: number | null
   aliquota_atualizada_em: string | null
   tp_amb_padrao?: "1" | "2"
+  modo_teste?: boolean
   email_assunto_padrao?: string | null
   email_mensagem_padrao?: string | null
   email_anexos_padrao?: "pdf_xml" | "pdf" | "xml" | null

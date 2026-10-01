@@ -451,6 +451,8 @@ class UsuarioResponse(BaseModel):
     # Conta do ambiente de simulação (ver app/services/demo.py).
     demo: bool = False
     nome: str | None = None
+    # Empresa ativa é conta de teste (notas só em homologação).
+    teste: bool = False
 
 
 class GoogleOAuthUrlResponse(BaseModel):
@@ -482,6 +484,8 @@ class CadastroRequest(BaseModel):
     numero: str | None = Field(default=None, max_length=20)
     complemento: str | None = Field(default=None, max_length=100)
     bairro: str | None = Field(default=None, max_length=100)
+    # Conta de teste (link /cadastro?teste=1): notas só em homologação.
+    modo_teste: bool = False
 
 
 class CadastroResponse(BaseModel):
@@ -672,6 +676,7 @@ class PrestadorResponse(BaseModel):
     aliquota_atualizada_em: date | None = None
     dia_lembrete_aliquota: int | None = None
     tp_amb_padrao: str = "1"
+    modo_teste: bool = False
     nome_fantasia: str | None = None
     op_simples_nacional: str | None = None
     regime_apuracao_sn: str | None = None

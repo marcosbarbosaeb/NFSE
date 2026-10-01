@@ -616,6 +616,12 @@ function AmbienteNotasCard({ prestador, onAtualizado }: { prestador: Prestador; 
         <TituloSecao icone={FlaskConical}>Ambiente das notas</TituloSecao>
         {teste ? <Badge variant="warning">Teste (homologação)</Badge> : <Badge variant="success">Produção</Badge>}
       </div>
+      {prestador.modo_teste ? (
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Esta é uma <strong>conta de teste</strong>: as notas saem sempre em homologação (ambiente de teste da Receita) e não valem como
+          nota fiscal. Os e-mails de nota vão só pro e-mail desta conta.
+        </p>
+      ) : (
       <label className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-300">
         <input
           type="checkbox"
@@ -633,6 +639,7 @@ function AmbienteNotasCard({ prestador, onAtualizado }: { prestador: Prestador; 
           </span>
         </span>
       </label>
+      )}
       {erro && <p className="mt-2 text-xs text-danger-600">{erro}</p>}
     </Card>
   )

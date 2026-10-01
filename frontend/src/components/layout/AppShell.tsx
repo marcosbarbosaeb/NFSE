@@ -31,6 +31,22 @@ function FaixaSimulacao() {
   )
 }
 
+// Conta de teste (01/10/2026): fluxo de usuário novo, notas só em homologação.
+function FaixaContaTeste() {
+  const { usuario } = useAuth()
+  if (!usuario?.teste || usuario.demo) return null
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-warning-600 px-4 py-2 text-center text-sm text-white">
+      <span className="flex items-center gap-1.5 font-semibold">
+        <FlaskConical size={15} /> Conta de teste
+      </span>
+      <span className="text-white/95">
+        As notas saem só em homologação (sem valor fiscal) e os e-mails de nota vão só pro seu e-mail.
+      </span>
+    </div>
+  )
+}
+
 export function AppShell() {
   const [menuAberto, setMenuAberto] = useState(false)
   return (
@@ -38,6 +54,7 @@ export function AppShell() {
       <Sidebar aberto={menuAberto} onFechar={() => setMenuAberto(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <FaixaSimulacao />
+        <FaixaContaTeste />
         <Topbar onAbrirMenu={() => setMenuAberto(true)} />
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <Suspense fallback={<p className="py-10 text-center text-sm text-slate-400">Carregando...</p>}>

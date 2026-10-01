@@ -408,6 +408,11 @@ def enviar_email(
         anexos.append((nome_xml, conteudo_xml.encode("utf-8")))
 
     prestador = db.get(Prestador, prestador_id)
+    teste = email_da_conta_teste(db, prestador)
+    if teste:
+        # Conta de teste: nada sai pros tomadores — vai só pra quem testa.
+        destinos, copias, destino = [teste], [], teste
+        modelo["assunto"] = f"[TESTE] {modelo['assunto']}"[:300]
     envio = _novo_envio(db, emissao, "email", destino[:200] if destino else None)
     try:
         get_email_sender().enviar(
@@ -530,6 +535,10 @@ def enviar_geral(
         modelo["texto"] = mensagens.renderizar_modelo(texto.strip(), dados)
     anexos = _anexos_da_nota(db, emissao, prestador_id, modelo["anexos"])
     prestador = db.get(Prestador, prestador_id)
+    teste = email_da_conta_teste(db, prestador)
+    if teste:
+        destinos = [teste]
+        modelo["assunto"] = f"[TESTE] {modelo['assunto']}"[:300]
     envio = _novo_envio(db, emissao, "email_geral", ", ".join(destinos)[:200])
     try:
         get_email_sender().enviar(
@@ -552,3 +561,17 @@ def marcar_enviada(db: Session, emissao: Emissao, forma: str) -> Envio:
     envio.status, envio.enviado_em = "enviado", datetime.datetime.now(datetime.timezone.utc)
     db.flush()
     return envio
+
+
+def email_da_conta_teste(db: Session, prestador: Prestador | None) -> str | None:
+    """Conta de teste (01/10/2026): o e-mail de login de quem testa — os
+    e-mails de nota vão só pra ele, nunca pros tomadores de verdade."""
+    if prestador is None or not prestador.modo_teste:
+        return None
+    from app.models import Usuario, UsuarioPrestador
+
+    usuario = (
+        db.query(Usuario).join(UsuarioPrestador, UsuarioPrestador.usuario_id == Usuario.id)
+        .filter(UsuarioPrestador.prestador_id == prestador.id).order_by(Usuario.criado_em).first()
+    )
+    return usuario.email if usuario else None

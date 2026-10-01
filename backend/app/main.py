@@ -567,6 +567,7 @@ def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
             cpf_cnpj=req.cpf_cnpj, cod_municipio=req.cod_municipio,
             cep=req.cep, logradouro=req.logradouro, numero=req.numero,
             complemento=req.complemento, bairro=req.bairro, codigo_indicacao=req.codigo_indicacao,
+            modo_teste=req.modo_teste,
         )
     except CadastroEmailJaCadastradoError:
         raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")
@@ -626,9 +627,11 @@ def api_auth_me(request: Request, db: Session = Depends(get_db)):
     if not contas.validar_sessao(db, request, usuario):
         request.session.clear()
         raise HTTPException(status_code=401, detail="Sessão encerrada neste aparelho.")
+    ativa = contas.empresa_ativa(db, request, usuario)
+    definir_prestador_atual(db, ativa)
+    teste = bool(db.query(Prestador.modo_teste).filter(Prestador.id == ativa).scalar())
     return UsuarioResponse(
-        email=usuario.email, prestador_id=contas.empresa_ativa(db, request, usuario),
-        demo=eh_email_demo(usuario.email), nome=usuario.nome,
+        email=usuario.email, prestador_id=ativa, demo=eh_email_demo(usuario.email), nome=usuario.nome, teste=teste,
     )
 
 
@@ -1302,7 +1305,7 @@ def api_preferencias_prestador(
         raise HTTPException(status_code=404, detail="Prestador não encontrado.")
     for campo, valor in req.model_dump(exclude_unset=True).items():
         if campo == "tp_amb_padrao":
-            if valor:
+            if valor and not prestador.modo_teste:
                 prestador.tp_amb_padrao = valor
         else:
             setattr(prestador, campo, (valor or "").strip() or None)
@@ -1418,7 +1421,17 @@ def api_verificar_duplicata(vinculo_id: uuid.UUID, competencia: str, db: Session
 
 def _tp_amb_da_conta(db: Session, prestador_id: uuid.UUID) -> str:
     prestador = db.get(Prestador, prestador_id)
+    if prestador is not None and prestador.modo_teste:
+        return "2"  # conta de teste: sempre homologação
     return (prestador.tp_amb_padrao if prestador else None) or "1"
+
+
+def _tp_amb_da_nota(db: Session, prestador_id: uuid.UUID, pedido: str | None) -> str:
+    """Conta de teste é sempre homologação, mesmo se pedirem produção."""
+    prestador = db.get(Prestador, prestador_id)
+    if prestador is not None and prestador.modo_teste:
+        return "2"
+    return pedido or _tp_amb_da_conta(db, prestador_id)
 
 
 @app.post("/api/dps", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}})
@@ -1445,7 +1458,7 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
     try:
         emissao = criar_rascunho(
             db, vinculo, competencia=competencia, valor=req.valor,
-            ordem=req.ordem, aliq_sn=req.aliq_sn, tpAmb=req.tpAmb or _tp_amb_da_conta(db, vinculo.prestador_id),
+            ordem=req.ordem, aliq_sn=req.aliq_sn, tpAmb=_tp_amb_da_nota(db, vinculo.prestador_id, req.tpAmb),
             dcompet=req.data_competencia.isoformat() if req.data_competencia else None,
         )
         emissao = montar_emissao(db, emissao)

@@ -64,6 +64,7 @@ def criar_cadastro(
     complemento: str | None = None,
     bairro: str | None = None,
     codigo_indicacao: str | None = None,
+    modo_teste: bool = False,
 ) -> Usuario:
     email_norm = email.strip().lower()
     cnpj_norm = "".join(c for c in cpf_cnpj if c.isdigit())
@@ -100,6 +101,8 @@ def criar_cadastro(
         numero=numero,
         complemento=complemento,
         bairro=bairro,
+        modo_teste=modo_teste,
+        tp_amb_padrao="2" if modo_teste else "1",
     )
     db.add(prestador)
     try:
@@ -118,7 +121,8 @@ def criar_cadastro(
     criar_assinatura_trial(db, prestador_id)
     # Veio por um link de indicação (?ref=CODIGO): conta pro desconto de quem
     # indicou quando esta conta assinar (ver app/services/indicacao.py).
-    registrar_indicacao(db, codigo_indicacao, prestador_id, razao_social)
+    if not modo_teste:
+        registrar_indicacao(db, codigo_indicacao, prestador_id, razao_social)
 
     token = _gerar_token()
     usuario = Usuario(

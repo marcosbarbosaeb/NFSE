@@ -1,6 +1,8 @@
 """Conta e empresas (29/09/2026): sessões no servidor, desconectar aparelho,
 login por código no e-mail, vários CNPJs no mesmo login, dados do emitente
 editáveis e excluir empresa/conta."""
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -121,3 +123,65 @@ def test_excluir_empresa_e_conta(cliente, db, prestador_teste):
     assert client.request("DELETE", "/api/conta", json={"confirmacao": "excluir"}).status_code == 200
     assert db.get(Usuario, usuario_id) is None
     assert db.query(Sessao).filter_by(usuario_id=usuario_id).count() == 0
+
+
+def test_conta_de_teste(db, monkeypatch):
+    """Conta de teste: repete o CNPJ de uma conta real, nota sempre em
+    homologação e e-mail de nota só pra quem testa."""
+    import app.services.cadastro as cadastro
+    import app.services.envio_direto as envio_direto
+    from app.config import get_settings
+    from app.models import Prestador, PrestadorTomador, Tomador, Usuario
+    from app.services.motor_emissao import montar
+
+    monkeypatch.setattr(cadastro, "_enviar_email_confirmacao", lambda *a, **k: None)
+    real = cadastro.criar_cadastro(db, email="real@x.com", senha="12345678", razao_social="Real", cpf_cnpj="98765432000110", cod_municipio="3106200")
+    teste = cadastro.criar_cadastro(
+        db, email="teste@x.com", senha="12345678", razao_social="Teste", cpf_cnpj="98765432000110", cod_municipio="3106200", modo_teste=True,
+    )
+    assert teste.prestador_id != real.prestador_id
+
+    from app.database import definir_prestador_atual
+    definir_prestador_atual(db, teste.prestador_id)
+    p = db.get(Prestador, teste.prestador_id)
+    assert p.modo_teste and p.tp_amb_padrao == "2"
+
+    db.commit = db.flush
+    from app.main import app, prestador_atual_id
+    from app.database import get_db
+
+    app.dependency_overrides[get_db] = lambda: (yield db)
+    app.dependency_overrides[prestador_atual_id] = lambda: teste.prestador_id
+    try:
+        client = TestClient(app)
+        t = Tomador(id=uuid.uuid4(), cnpj="11222333000181", razao_social="T", cod_municipio="3550308")
+        db.add(t)
+        db.flush()
+        v = PrestadorTomador(
+            id=uuid.uuid4(), prestador_id=teste.prestador_id, tomador_id=t.id, apelido="T", cod_local_prestacao="3106200",
+            cod_trib_nacional="170601", template_descricao="Serviço", ativo=True, email_contato="tomador@real.com",
+        )
+        db.add(v)
+        db.flush()
+        r = client.post("/api/dps", json={"vinculo_id": str(v.id), "competencia": "2026-09", "valor": 10, "tpAmb": "1"})
+        assert r.status_code == 200, r.text
+        from app.models import Emissao
+        e = db.get(Emissao, uuid.UUID(r.json()["id"]))
+        assert e.tomador_snapshot["tpAmb"] == "2"
+        assert client.patch("/api/prestador/preferencias", json={"tp_amb_padrao": "1"}).json()["tp_amb_padrao"] == "2"
+
+        enviados = []
+
+        class Falso:
+            def enviar(self, **kw):
+                enviados.append(kw)
+
+        monkeypatch.setattr(envio_direto, "get_email_sender", lambda: Falso())
+        monkeypatch.setattr(envio_direto, "motivo_email_desabilitado", lambda vinculo, destino=None: None)
+        v.email_anexos = "xml"
+        r = client.post(f"/api/dps/{e.id}/enviar-email", json={})
+        assert r.status_code == 200, r.text
+        assert enviados[-1]["destinatario"] == ["teste@x.com"] and enviados[-1]["assunto"].startswith("[TESTE]")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(prestador_atual_id, None)
