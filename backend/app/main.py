@@ -93,6 +93,7 @@ from app.schemas import (
     ModeloEmailPadraoResponse,
     PreviaShopeeResponse,
     EnviarGeralRequest,
+    MoverNotaRequest,
     LimparImportadasRequest,
     RecebimentoSemNotaResponse,
     IgnorarPendenciaRequest,
@@ -1401,7 +1402,8 @@ def _para_resposta(emissao: Emissao) -> EmissaoResponse:
         descricao=snap.get("descricao_renderizada", ""),
         xml=emissao.xml_assinado or emissao.xml_dps,
         chave_acesso=emissao.chave_acesso, erro_detalhe=emissao.erro_detalhe,
-        atualizado_em=emissao.atualizado_em,
+        atualizado_em=emissao.atualizado_em, origem=emissao.origem or "ana", vinculo_id=emissao.prestador_tomador_id,
+        avulsa=bool(emissao.tomador_documento),
     )
 
 
@@ -1477,6 +1479,7 @@ def api_listar_dps(
     vinculo_id: uuid.UUID | None = None,
     estado: str | None = None,
     pagamento: str | None = None,
+    grupo: str | None = Query(default=None, pattern=r"^(notas|vendedores)$"),
     db: Session = Depends(db_sessao),
 ):
     """Marco 14 — tela 'NFS-e': lista completa (todas as competências),
@@ -1490,7 +1493,7 @@ def api_listar_dps(
         raise HTTPException(status_code=422, detail="ano deve estar no formato AAAA")
     if pagamento is not None and pagamento not in ("recebido", "pendente"):
         raise HTTPException(status_code=422, detail="pagamento deve ser 'recebido' ou 'pendente'")
-    return listar_emissoes(db, ano=ano, vinculo_id=vinculo_id, estado=estado, pagamento=pagamento)
+    return listar_emissoes(db, ano=ano, vinculo_id=vinculo_id, estado=estado, pagamento=pagamento, grupo=grupo)
 
 
 @app.post("/api/dps/importar-csv", response_model=ImportacaoCsvResponse, responses={400: {"model": ErroResponse}})
@@ -1694,6 +1697,38 @@ def api_zip_notas(
         raise HTTPException(status_code=404, detail="Nenhuma nota com XML nessa seleção.")
     nome_zip = f"notas_{competencia or 'selecao'}.zip"
     return Response(content=buffer.getvalue(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{nome_zip}"'})
+
+
+@app.delete("/api/dps/{emissao_id}", responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
+def api_apagar_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
+    """Apaga uma nota que nunca virou NFS-e (rascunho, montada, assinada ou
+    recusada) — ex.: as notas de teste. Autorizada/enviada não: essa se
+    cancela."""
+    emissao = _emissao_ou_404(db, emissao_id)
+    if emissao.estado not in ("rascunho", "montado", "assinado", "erro"):
+        raise HTTPException(status_code=409, detail="Só dá pra apagar nota que não foi autorizada pela prefeitura. Essa precisa ser cancelada.")
+    db.query(Envio).filter(Envio.emissao_id == emissao.id).delete(synchronize_session=False)
+    db.delete(emissao)
+    db.commit()
+    return {"ok": True}
+
+
+@app.patch("/api/dps/{emissao_id}/tomador", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
+def api_mover_nota(emissao_id: uuid.UUID, req: MoverNotaRequest, db: Session = Depends(db_sessao)):
+    """Muda o tomador (vínculo) de uma nota importada do Emissor Nacional —
+    ex.: AWIN x AWIN Rchlo, mesmo CNPJ. Notas geradas pela Ana não mudam."""
+    emissao = _emissao_ou_404(db, emissao_id)
+    if emissao.origem != "importada":
+        raise HTTPException(status_code=409, detail="Só notas importadas do Emissor Nacional mudam de tomador.")
+    vinculo = buscar_vinculo(db, req.vinculo_id)
+    if vinculo is None:
+        raise HTTPException(status_code=404, detail="Tomador não encontrado.")
+    emissao.prestador_tomador_id = vinculo.id
+    emissao.tomador_snapshot = {**(emissao.tomador_snapshot or {}), "apelido": vinculo.apelido}
+    db.flush()
+    resposta = _para_resposta(emissao)  # antes do commit (RLS vale só na transação)
+    db.commit()
+    return resposta
 
 
 @app.get("/api/dps/{emissao_id}", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}})

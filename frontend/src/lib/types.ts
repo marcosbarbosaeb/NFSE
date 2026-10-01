@@ -97,6 +97,8 @@ export interface EmissaoResumoLinha {
   tem_email?: boolean
   homologacao?: boolean
   envio_forma?: FormaEnvio | null
+  /** Linha das notas de vendedores da Shopee (pagamento junto com a nota da Shopee). */
+  vendedores?: boolean
 }
 
 export interface AtencaoItem {
@@ -363,7 +365,7 @@ export interface ConsultaCnpj {
 export interface Emissao {
   id: string
   estado: string
-  n_dps: number
+  n_dps: number | null
   serie: string
   competencia: string
   valor: number
@@ -374,6 +376,10 @@ export interface Emissao {
   chave_acesso: string | null
   erro_detalhe: string | null
   atualizado_em: string
+  /** 'importada' = trazida do Emissor Nacional (dá pra mudar de tomador). */
+  origem?: "ana" | "importada"
+  vinculo_id?: string | null
+  avulsa?: boolean
 }
 
 export interface PrestadorVisual {

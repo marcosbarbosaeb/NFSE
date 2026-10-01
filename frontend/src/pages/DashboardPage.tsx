@@ -234,7 +234,15 @@ export function DashboardPage() {
                       {resumo.emissoes.map((linha) => (
                         <tr
                           key={linha.emissao_id}
-                          onClick={() => navigate((linha.quantidade ?? 1) > 1 ? "/app/nfse" : `/app/nfse/${linha.emissao_id}`)}
+                          onClick={() =>
+                            navigate(
+                              linha.vendedores
+                                ? "/app/nfse?aba=vendedores"
+                                : (linha.quantidade ?? 1) > 1
+                                  ? "/app/nfse"
+                                  : `/app/nfse/${linha.emissao_id}`,
+                            )
+                          }
                           className="cursor-pointer border-b border-slate-50 last:border-0 hover:bg-slate-50 dark:border-slate-700/40 dark:hover:bg-slate-700/40"
                         >
                           <td className="py-3">
@@ -263,13 +271,17 @@ export function DashboardPage() {
                             </>
                           )}
                           <td className="py-3">
-                            <BaixaPagamento
-                              vinculoId={linha.vinculo_id}
-                              competencia={linha.competencia}
-                              valor={linha.valor}
-                              recebido={linha.pagamento_recebido}
-                              onMudou={() => setRecarga((n) => n + 1)}
-                            />
+                            {linha.vendedores ? (
+                              <Badge variant="neutral">Na nota da Shopee</Badge>
+                            ) : (
+                              <BaixaPagamento
+                                vinculoId={linha.vinculo_id}
+                                competencia={linha.competencia}
+                                valor={linha.valor}
+                                recebido={linha.pagamento_recebido}
+                                onMudou={() => setRecarga((n) => n + 1)}
+                              />
+                            )}
                           </td>
                         </tr>
                       ))}

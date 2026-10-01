@@ -115,6 +115,12 @@ function badgePagamento(recebido: boolean) {
 export function NfsePage() {
   const [ano, setAno] = useState<string>(String(ANO_ATUAL))
   const [vinculoFiltro, setVinculoFiltro] = useState("")
+  // Notas dos vendedores da Shopee numa aba própria (01/10/2026): são
+  // centenas de notas pequenas e o pagamento delas vem junto com a nota da
+  // Shopee — não se misturam com as demais.
+  const [grupo, setGrupo] = useState<"notas" | "vendedores">(() =>
+    new URLSearchParams(window.location.search).get("aba") === "vendedores" ? "vendedores" : "notas",
+  )
   // Mês da competência (01..12) dentro do ano escolhido — filtro no cliente.
   const [mesFiltro, setMesFiltro] = useState("")
   const [pagamentoFiltro, setPagamentoFiltro] = useState<"" | "recebido" | "pendente">("")
@@ -180,6 +186,7 @@ export function NfsePage() {
     const params = new URLSearchParams()
     if (ano) params.set("ano", ano)
     if (vinculoFiltro) params.set("vinculo_id", vinculoFiltro)
+    params.set("grupo", grupo)
     api
       .get<EmissaoListaLinha[]>(`/dps?${params.toString()}`)
       .then((dados) => pedido === pedidoAtual.current && setEmissoes(dados))
@@ -187,7 +194,12 @@ export function NfsePage() {
       .finally(() => pedido === pedidoAtual.current && setCarregando(false))
   }
 
-  useEffect(recarregar, [ano, vinculoFiltro])
+  useEffect(recarregar, [ano, vinculoFiltro, grupo])
+  const temShopee = vinculos.some((v) => v.metodo_captura_valor === "csv")
+  function trocarGrupo(g: "notas" | "vendedores") {
+    setGrupo(g)
+    setSelecionadas(new Set())
+  }
 
   // Trocar ano/tomador recarrega a lista — a seleção anterior não vale mais.
   function trocarAno(valor: string) {
@@ -394,6 +406,7 @@ export function NfsePage() {
           value={confronto.totalEmitidas}
           sublabel={competenciaFiltro ? `em ${formatCompetenciaLonga(competenciaFiltro)}` : ano ? `em ${ano}` : "no período"}
         />
+        {grupo === "notas" && (<>
         <StatCard
           icon={<CheckCircle2 size={18} />}
           iconClassName="bg-success-50 text-success-600"
@@ -409,9 +422,39 @@ export function NfsePage() {
           sublabel={formatBRL(confronto.valorPendente)}
           sublabelClassName="text-warning-600"
         />
+        </>)}
+        {grupo === "vendedores" && (
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600 sm:col-span-2 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            <p className="font-medium text-slate-800 dark:text-slate-100">Pagamento indireto</p>
+            <p className="mt-1">
+              A Shopee paga a comissão inteira (dela + dos vendedores) junto com a nota da Shopee. Estas notas não têm cobrança própria —
+              o recebimento é controlado na nota da Shopee, na aba Notas.
+            </p>
+          </div>
+        )}
       </div>
 
       <Card className="p-5">
+        {(temShopee || grupo === "vendedores") && (
+          <div role="tablist" aria-label="Tipo de nota" className="mb-4 flex gap-1 border-b border-slate-200 dark:border-slate-700">
+            {([["notas", "Notas"], ["vendedores", "Vendedores Shopee"]] as const).map(([id, rotulo]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={grupo === id}
+                onClick={() => trocarGrupo(id)}
+                className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+                  grupo === id
+                    ? "border-primary-600 text-primary-700 dark:text-primary-300"
+                    : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                }`}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <select value={ano} onChange={(e) => trocarAno(e.target.value)} aria-label="Ano" className={SELECT_FILTRO}>
             {ANOS.map((a) => (
@@ -627,7 +670,9 @@ export function NfsePage() {
                     <SeloTomador nota={e} onMudou={recarregar} />
                   </td>
                   <td className="py-3">
-                    {e.estado === "cancelada" || e.estado === "substituida" ? (
+                    {e.avulsa ? (
+                      <span title="A Shopee paga junto com a nota dela"><Badge variant="neutral">Na nota da Shopee</Badge></span>
+                    ) : e.estado === "cancelada" || e.estado === "substituida" ? (
                       badgePagamento(e.pagamento_recebido)
                     ) : (
                       <BaixaPagamento
@@ -697,6 +742,7 @@ export function NfsePage() {
               setMesFiltro(mesComp)
             }
             trocarVinculo(shopee.id)
+            trocarGrupo("vendedores")
             setBusca("")
             setPagamentoFiltro("")
             setShopee(null)
@@ -818,6 +864,10 @@ function NovaEmissaoModal({
   const [duplicata, setDuplicata] = useState<VerificarDuplicata | null>(null)
 
   const vinculo = vinculos.find((v) => v.id === vinculoId)
+  // Shopee (01/10/2026): a nota da própria Shopee (valor que ela informa)
+  // sai por aqui; as dos vendedores, pelo relatório.
+  const [notaDaShopee, setNotaDaShopee] = useState(false)
+  const ehRelatorio = vinculo?.metodo_captura_valor === "csv" && !notaDaShopee
   const precisaOrdem = vinculo?.template_descricao.includes("{ordem}") ?? false
   const mostrarOrdem = precisaOrdem || vinculo?.metodo_captura_valor === "pdf"
 
@@ -921,15 +971,29 @@ function NovaEmissaoModal({
           </select>
         </FieldWrap>
 
-        {vinculo?.metodo_captura_valor === "csv" && (
+        {notaDaShopee && vinculo?.metodo_captura_valor === "csv" && (
+          <p className="rounded-lg bg-primary-50/60 px-3 py-2 text-xs text-slate-600 dark:bg-primary-900/20 dark:text-slate-300">
+            Nota da Shopee: informe o valor da comissão da Shopee.{" "}
+            <button type="button" className="font-semibold text-primary-600 hover:underline" onClick={() => setNotaDaShopee(false)}>
+              Gerar as dos vendedores
+            </button>
+          </p>
+        )}
+        {ehRelatorio && (
           <div className="rounded-xl border border-primary-100 bg-primary-50/60 p-4 text-sm text-slate-700 dark:border-primary-900/40 dark:bg-primary-900/20 dark:text-slate-200">
             <p>
               <strong>{vinculo.apelido}</strong> usa o relatório mensal em planilha: sai uma nota pra cada vendedor que te pagou
               comissão, direto do arquivo.
             </p>
             <Button type="button" variant="accent" className="mt-3" onClick={() => onEscolherShopee(vinculo)}>
-              <FileSpreadsheet size={16} /> Enviar o relatório
+              <FileSpreadsheet size={16} /> Notas dos vendedores (relatório)
             </Button>
+            <Button type="button" variant="outline" className="mt-3 ml-2" onClick={() => setNotaDaShopee(true)}>
+              Nota da Shopee
+            </Button>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              A nota da Shopee leva o valor que a Shopee informa pra ela; o pagamento dela vem junto com o dos vendedores.
+            </p>
           </div>
         )}
         {vinculo?.metodo_captura_valor === "pdf" && (
@@ -943,7 +1007,7 @@ function NovaEmissaoModal({
           />
         )}
 
-        {vinculo?.metodo_captura_valor !== "csv" && (
+        {!ehRelatorio && (
           <>
         {doRecebimento && (
           <p className="rounded-lg bg-primary-50 px-4 py-3 text-sm text-primary-800 dark:bg-primary-900/30 dark:text-primary-200">
@@ -993,7 +1057,7 @@ function NovaEmissaoModal({
           </>
         )}
 
-        {ambienteTeste && vinculo?.metodo_captura_valor !== "csv" && (
+        {ambienteTeste && !ehRelatorio && (
           <p className="rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
             Sua conta está gerando notas de <strong>teste</strong> (homologação). Pra emitir de verdade, desligue em
             Empresa › Notas.
@@ -1009,7 +1073,7 @@ function NovaEmissaoModal({
               Ver a nota
             </Button>
           ) : (
-            vinculo?.metodo_captura_valor !== "csv" && (
+            !ehRelatorio && (
               <div className="flex flex-row-reverse flex-wrap gap-3">
                 <Button
                   type="submit"

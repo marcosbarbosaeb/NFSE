@@ -39,7 +39,9 @@ def _grupos(db: Session) -> list[dict]:
             Emissao.valor, Emissao.criado_em, PrestadorTomador.apelido,
         )
         .join(PrestadorTomador, PrestadorTomador.id == Emissao.prestador_tomador_id)
-        .filter(Emissao.estado.in_(ESTADOS_COBRAVEIS))
+        # Notas de vendedores da Shopee não têm cobrança própria: a Shopee
+        # paga tudo junto na nota dela (01/10/2026).
+        .filter(Emissao.estado.in_(ESTADOS_COBRAVEIS), Emissao.tomador_documento.is_(None))
         .order_by(Emissao.criado_em)
         .all()
     )
@@ -75,7 +77,7 @@ def recebimentos_sem_nota(db: Session, desde: str | None = None) -> list[dict]:
     daquele recebimento (POST /api/dps com pagamento_id)."""
     com_nota = {
         (v, c) for v, c in db.query(Emissao.prestador_tomador_id, Emissao.competencia)
-        .filter(Emissao.estado.notin_(("cancelada", "substituida"))).distinct()
+        .filter(Emissao.estado.notin_(("cancelada", "substituida")), Emissao.tomador_documento.is_(None)).distinct()
     }
     query = (
         db.query(PagamentoRecebido, PrestadorTomador.apelido)

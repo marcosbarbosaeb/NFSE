@@ -232,3 +232,35 @@ def test_recebimento_sem_nota_e_gerar_nota_dele(client, db, prestador_teste, vin
     from app.models import PagamentoRecebido
     comps = sorted(c for (c,) in db.query(PagamentoRecebido.competencia).filter_by(prestador_tomador_id=vinculo_teste.id))
     assert comps[:3] == ["2026-02", "2026-03", "2026-05"]
+
+
+def test_vendedores_shopee_separados_e_sem_cobranca(client, db, prestador_teste, vinculo_teste):
+    """Notas de vendedores da Shopee: aba própria e fora do "a receber" — a
+    Shopee paga tudo junto na nota dela (01/10/2026)."""
+    from app.services import a_receber
+    from app.services.dashboard import resumo_mes as resumo_do_mes
+    from app.services.motor_emissao import montar
+
+    principal = criar_rascunho(db, vinculo_teste, competencia="2026-09", valor=100, tpAmb="2")
+    montar(db, principal)
+    for i in range(3):
+        e = criar_rascunho(db, vinculo_teste, competencia="2026-09", valor=5, tpAmb="2", tomador_avulso={
+            "documento": f"1122233300011{i}", "tipo_documento": "CNPJ", "razao_social": f"Loja {i}",
+            "email": None, "endereco": {}, "pais": "BR", "lojas": [],
+        })
+        montar(db, e)
+    notas = client.get("/api/dps?grupo=notas").json()
+    vend = client.get("/api/dps?grupo=vendedores").json()
+    assert len(notas) == 1 and len(vend) == 3 and all(v["avulsa"] for v in vend)
+    abertas = a_receber.notas_em_aberto(db, datetime.date(2026, 10, 1))
+    assert [g["valor"] for g in abertas if g["vinculo_id"] == vinculo_teste.id] == [100.0]
+
+    # Shopee pagou o total (100 + vendedores): a nota da Shopee fica paga
+    client.post("/api/pagamentos", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-09", "valor": 115})
+    assert not [g for g in a_receber.notas_em_aberto(db, datetime.date(2026, 10, 1)) if g["vinculo_id"] == vinculo_teste.id]
+
+    linhas = resumo_do_mes(db, prestador_teste.id, "2026-09")["emissoes"]
+    assert sorted(l.get("vendedores", False) for l in linhas if l["vinculo_id"] == vinculo_teste.id) == [False, True]
+
+    # apagar nota que não saiu
+    assert client.delete(f"/api/dps/{principal.id}").status_code == 200

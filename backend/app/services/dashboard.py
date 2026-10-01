@@ -195,7 +195,15 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
     pagos = {
         v for (v,) in db.query(PagamentoRecebido.prestador_tomador_id).filter(PagamentoRecebido.competencia == competencia).distinct()
     }
-    primeiras = [notas[0].id for notas in notas_por_vinculo.values()]
+    # Notas de vendedores da Shopee (avulsas) ficam numa linha própria e
+    # fora do controle de pagamento: a Shopee paga tudo junto na nota dela.
+    vendedores_por_vinculo: dict[uuid.UUID, list[Emissao]] = {}
+    for vid, notas in list(notas_por_vinculo.items()):
+        avulsas = [e for e in notas if e.tomador_documento]
+        if avulsas:
+            vendedores_por_vinculo[vid] = avulsas
+            notas_por_vinculo[vid] = [e for e in notas if not e.tomador_documento]
+    primeiras = [notas[0].id for notas in notas_por_vinculo.values() if notas]
     ultimo_envio: dict[uuid.UUID, str] = {}
     if primeiras:
         for emissao_id, status in (
@@ -209,6 +217,17 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
         # Shopee: várias notas no mês (uma por vendedor) — vira uma linha só,
         # somando os valores.
         do_mes = notas_por_vinculo.get(vinculo.id, [])
+        vendedores = vendedores_por_vinculo.get(vinculo.id, [])
+        if vendedores:
+            emissoes.append({
+                "emissao_id": vendedores[0].id, "vinculo_id": vinculo.id, "quantidade": len(vendedores),
+                "apelido": f"{vinculo.apelido} — vendedores ({len(vendedores)} notas)", "tomador_razao_social": "vários vendedores",
+                "competencia": competencia, "valor": float(sum((e.valor for e in vendedores), Decimal(0))),
+                "estado": vendedores[0].estado, "estado_label": ESTADO_NFSE_LABEL.get(vendedores[0].estado, vendedores[0].estado),
+                "envio_status": None, "pagamento_recebido": vinculo.id in pagos, "tem_pdf": False, "tem_email": False,
+                "homologacao": (vendedores[0].tomador_snapshot or {}).get("tpAmb") == "2", "envio_forma": "email",
+                "vendedores": True,
+            })
         emissao = do_mes[0] if do_mes else None
         valor_mes = sum((e.valor for e in do_mes if e.estado in notas_abertas.ESTADOS_COBRAVEIS), Decimal(0))
         if emissao is None:
@@ -342,7 +361,9 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
             pendencias.append({**base, "tipo": "enviar_tomador", "titulo": f"Mandar a nota pra {nome}", "acao": "Enviar"})
 
     competencia_tem_nota = {
-        v for (v,) in db.query(Emissao.prestador_tomador_id).filter(Emissao.competencia == competencia, Emissao.estado != "cancelada")
+        v for (v,) in db.query(Emissao.prestador_tomador_id).filter(
+            Emissao.competencia == competencia, Emissao.estado != "cancelada", Emissao.tomador_documento.is_(None)
+        )
     }
     ignoradas = {c for (c,) in db.query(AjusteEvento.chave).filter(AjusteEvento.tipo == "pendencia", AjusteEvento.oculto.is_(True))}
     for v in listar_vinculos_ativos(db):

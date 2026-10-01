@@ -1,4 +1,6 @@
 import {
+  ArrowLeftRight,
+  Trash2,
   AlertTriangle,
   Ban,
   CheckCircle2,
@@ -22,7 +24,7 @@ import { FieldWrap } from "../components/ui/Field"
 import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { formatBRL } from "../lib/format"
-import type { CanalEnvio, Envio, NotaVisual, OpcoesEnvio } from "../lib/types"
+import type { CanalEnvio, Emissao, Envio, NotaVisual, OpcoesEnvio, VinculoResumo } from "../lib/types"
 
 // Marco 16, item 7 — motivos de cancelamento aceitos pela Sefin (mesmo
 // vocabulário de app/fiscal/eventos.MOTIVOS_CANCELAMENTO no backend).
@@ -76,6 +78,48 @@ export function EmissaoDetalhePage() {
   // pessoa entra na nota e configura o envio dela.
   const [opcoes, setOpcoes] = useState<OpcoesEnvio | null>(null)
   const [linkCopiado, setLinkCopiado] = useState(false)
+
+  // 01/10/2026 — apagar nota que não saiu (ex.: teste) e mudar o tomador de
+  // nota importada do Emissor Nacional (AWIN x AWIN Rchlo, mesmo CNPJ).
+  const [dados, setDados] = useState<Emissao | null>(null)
+  const [vinculos, setVinculos] = useState<VinculoResumo[]>([])
+  const [modalApagar, setModalApagar] = useState(false)
+  const [modalMover, setModalMover] = useState(false)
+  const [destino, setDestino] = useState("")
+
+  useEffect(() => {
+    if (!id) return
+    api.get<Emissao>(`/dps/${id}`).then(setDados).catch(() => setDados(null))
+  }, [id])
+
+  async function apagar() {
+    if (!id) return
+    setProcessando(true)
+    setErroAcao(null)
+    try {
+      await api.delete(`/dps/${id}`)
+      navigate("/app/nfse")
+    } catch (err) {
+      setErroAcao(err instanceof ApiError ? formatarErro(err.detail) : "Falha ao apagar.")
+    } finally {
+      setProcessando(false)
+    }
+  }
+
+  async function mover() {
+    if (!id || !destino) return
+    setProcessando(true)
+    setErroAcao(null)
+    try {
+      setDados(await api.patch<Emissao>(`/dps/${id}/tomador`, { vinculo_id: destino }))
+      setModalMover(false)
+      carregar()
+    } catch (err) {
+      setErroAcao(err instanceof ApiError ? formatarErro(err.detail) : "Falha ao mudar o tomador.")
+    } finally {
+      setProcessando(false)
+    }
+  }
 
   useEffect(() => {
     if (!id) return
@@ -318,6 +362,33 @@ export function EmissaoDetalhePage() {
           <Button variant="outline" onClick={baixarXml} disabled={!nota.xml_disponivel}>
             <Download size={15} /> Baixar XML
           </Button>
+          {dados?.origem === "importada" && !dados.avulsa && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setErroAcao(null)
+                setDestino(dados.vinculo_id ?? "")
+                api.get<VinculoResumo[]>("/vinculos?todos=true").then(setVinculos).catch(() => setVinculos([]))
+                setModalMover(true)
+              }}
+              disabled={processando}
+            >
+              <ArrowLeftRight size={15} /> Mudar de tomador
+            </Button>
+          )}
+          {["rascunho", "montado", "assinado", "erro"].includes(nota.estado) && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setErroAcao(null)
+                setModalApagar(true)
+              }}
+              disabled={processando}
+              className="!border-danger-300 !text-danger-700 hover:!bg-danger-50"
+            >
+              <Trash2 size={15} /> Apagar nota
+            </Button>
+          )}
           <Button variant="outline" onClick={verMensagemPronta} disabled={!nota.xml_disponivel}>
             <MessageSquareText size={15} /> Mensagem pronta
           </Button>
@@ -494,6 +565,56 @@ export function EmissaoDetalhePage() {
               </Button>
             </div>
           </form>
+        </Modal>
+      )}
+      {modalApagar && (
+        <Modal titulo="Apagar nota" onClose={() => (processando ? null : setModalApagar(false))}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              Esta nota não foi autorizada pela prefeitura, então dá pra apagar sem cancelar. Ela some da lista e do financeiro.
+            </p>
+            {erroAcao && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erroAcao}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setModalApagar(false)} disabled={processando}>
+                Voltar
+              </Button>
+              <Button variant="accent" onClick={apagar} disabled={processando} className="!bg-danger-600 hover:!bg-danger-700">
+                <Trash2 size={15} /> {processando ? "Apagando..." : "Apagar"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {modalMover && (
+        <Modal titulo="Mudar de tomador" onClose={() => (processando ? null : setModalMover(false))}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              Nota importada do Emissor Nacional. Escolha a qual tomador ela pertence (útil quando o mesmo CNPJ tem mais de um cadastro,
+              como AWIN e AWIN Rchlo). A nota em si não muda.
+            </p>
+            <select
+              value={destino}
+              onChange={(e) => setDestino(e.target.value)}
+              aria-label="Tomador"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+            >
+              {vinculos.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.apelido}
+                  {v.tomador_cnpj ? ` — ${v.tomador_cnpj}` : ""}
+                </option>
+              ))}
+            </select>
+            {erroAcao && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erroAcao}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setModalMover(false)} disabled={processando}>
+                Voltar
+              </Button>
+              <Button variant="accent" onClick={mover} disabled={processando || !destino || destino === dados?.vinculo_id}>
+                {processando ? "Salvando..." : "Mudar"}
+              </Button>
+            </div>
+          </div>
         </Modal>
       )}
     </div>

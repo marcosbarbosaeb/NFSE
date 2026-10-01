@@ -85,7 +85,7 @@ class GerarDpsRequest(BaseModel):
 class EmissaoResponse(BaseModel):
     id: uuid.UUID
     estado: str
-    n_dps: int
+    n_dps: int | None = None
     serie: str
     competencia: str
     valor: float
@@ -96,6 +96,9 @@ class EmissaoResponse(BaseModel):
     chave_acesso: str | None = None
     erro_detalhe: str | None = None
     atualizado_em: datetime
+    origem: str = "ana"
+    vinculo_id: uuid.UUID | None = None
+    avulsa: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -189,7 +192,7 @@ class NotaVisualResponse(BaseModel):
     ambiente_label: str | None = None
     id_dps: str | None = None
     serie: str
-    n_dps: int
+    n_dps: int | None = None
     competencia: str
     dh_emissao: str | None = None
     chave_acesso: str | None = None
@@ -319,6 +322,8 @@ class EmissaoResumoLinha(BaseModel):
     tem_email: bool = False
     homologacao: bool = False
     envio_forma: str | None = None
+    # Linha das notas de vendedores da Shopee (pagamento indireto).
+    vendedores: bool = False
 
 
 class AtencaoItem(BaseModel):
@@ -1327,3 +1332,7 @@ class IgnorarPendenciaRequest(BaseModel):
     chave: str = Field(min_length=3, max_length=100)
     ignorar: bool = True
 
+
+
+class MoverNotaRequest(BaseModel):
+    vinculo_id: uuid.UUID

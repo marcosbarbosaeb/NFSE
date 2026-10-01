@@ -39,6 +39,7 @@ def listar_emissoes(
     vinculo_id: uuid.UUID | None = None,
     estado: str | None = None,
     pagamento: str | None = None,
+    grupo: str | None = None,
 ) -> list[dict]:
     """`pagamento`: None = sem filtro; "recebido" só as com algum
     PagamentoRecebido pro mesmo vínculo+competência; "pendente" as sem
@@ -64,6 +65,12 @@ def listar_emissoes(
         query = query.filter(Emissao.prestador_tomador_id == vinculo_id)
     if estado:
         query = query.filter(Emissao.estado == estado)
+    # "notas" = as normais; "vendedores" = as dos vendedores da Shopee
+    # (centenas de notas pequenas, numa aba própria — 01/10/2026).
+    if grupo == "notas":
+        query = query.filter(Emissao.tomador_documento.is_(None))
+    elif grupo == "vendedores":
+        query = query.filter(Emissao.tomador_documento.isnot(None))
 
     pares_pagos = _pares_com_pagamento(db)
     emissoes = query.all()
