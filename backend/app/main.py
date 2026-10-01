@@ -93,6 +93,7 @@ from app.schemas import (
     ModeloEmailPadraoResponse,
     PreviaShopeeResponse,
     EnviarGeralRequest,
+    ConciliarRequest,
     MoverNotaRequest,
     LimparImportadasRequest,
     RecebimentoSemNotaResponse,
@@ -2481,6 +2482,20 @@ def api_recebimentos_sem_nota(db: Session = Depends(db_sessao)):
         for r in recebimentos_sem_nota(db, desde)
         if f"semnota:{r['vinculo_id']}:{r['competencia']}" not in ignoradas
     ]
+
+
+@app.post("/api/financeiro/conciliar")
+def api_conciliar(req: ConciliarRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """"Considerar recebidas" — notas antigas que eram controladas em outra
+    plataforma saem do "a receber" sem lançar valor (o recebido não muda)."""
+    from app.services import a_receber as ar
+
+    pares = [(i.vinculo_id, i.competencia) for i in req.itens]
+    if req.ate:
+        pares += [(g["vinculo_id"], g["competencia"]) for g in ar.notas_em_aberto(db) if g["competencia"] <= req.ate]
+    feitos = ar.conciliar(db, prestador_id, pares)
+    db.commit()
+    return {"conciliadas": feitos}
 
 
 @app.get("/api/financeiro/mes", response_model=ContasDoMesResponse)

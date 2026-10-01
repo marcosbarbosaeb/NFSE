@@ -1336,3 +1336,16 @@ class IgnorarPendenciaRequest(BaseModel):
 
 class MoverNotaRequest(BaseModel):
     vinculo_id: uuid.UUID
+
+
+class ConciliarItem(BaseModel):
+    vinculo_id: uuid.UUID
+    competencia: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+class ConciliarRequest(BaseModel):
+    """Notas pra dar como recebidas sem lançar valor (histórico controlado em
+    outra plataforma). `ate`: em vez da lista, todas as em aberto até esse
+    mês (AAAA-MM)."""
+    itens: list[ConciliarItem] = Field(default=[], max_length=2000)
+    ate: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")

@@ -264,3 +264,17 @@ def test_vendedores_shopee_separados_e_sem_cobranca(client, db, prestador_teste,
 
     # apagar nota que não saiu
     assert client.delete(f"/api/dps/{principal.id}").status_code == 200
+
+
+def test_conciliar_historico_sem_mexer_no_recebido(client, db, prestador_teste, vinculo_teste):
+    from app.services import a_receber
+    from app.services.motor_emissao import montar
+
+    for comp in ("2026-01", "2026-05", "2026-09"):
+        montar(db, criar_rascunho(db, vinculo_teste, competencia=comp, valor=10, tpAmb="2"))
+    r = client.post("/api/financeiro/conciliar", json={"ate": "2026-05"})
+    assert r.status_code == 200 and r.json() == {"conciliadas": 2}
+    abertas = [g["competencia"] for g in a_receber.notas_em_aberto(db, datetime.date(2026, 10, 1)) if g["vinculo_id"] == vinculo_teste.id]
+    assert abertas == ["2026-09"]
+    assert client.get("/api/pagamentos?ano=2026").json() == []
+    assert client.get("/api/financeiro/resumo?ano=2026").json()["totais"]["recebido"] == 0

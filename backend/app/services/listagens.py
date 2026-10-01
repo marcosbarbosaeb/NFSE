@@ -135,6 +135,8 @@ def listar_pagamentos(
     query = (
         db.query(PagamentoRecebido, PrestadorTomador.apelido)
         .join(PrestadorTomador, PagamentoRecebido.prestador_tomador_id == PrestadorTomador.id)
+        # Baixa de conciliação (histórico, sem valor) não é recebimento.
+        .filter(PagamentoRecebido.origem != "conciliacao")
         .order_by(PagamentoRecebido.criado_em.desc())
     )
     if ano and por_recebimento:

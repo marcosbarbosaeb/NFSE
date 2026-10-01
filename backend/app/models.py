@@ -499,7 +499,7 @@ class PagamentoRecebido(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
-        CheckConstraint("origem IN ('manual', 'extrato', 'planilha')", name="ck_pagamento_origem"),
+        CheckConstraint("origem IN ('manual', 'extrato', 'planilha', 'conciliacao')", name="ck_pagamento_origem"),
     )
 
 

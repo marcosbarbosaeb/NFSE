@@ -153,3 +153,22 @@ def avisos_abertas_ha_muito(db: Session, hoje: datetime.date | None = None, limi
             "link_label": "Ver todas",
         })
     return avisos
+
+
+def conciliar(db: Session, prestador_id: uuid.UUID, pares: list[tuple[uuid.UUID, str]]) -> int:
+    """Dá baixa sem valor (origem 'conciliacao') nas notas (tomador + mês)
+    que eram controladas em outra plataforma — saem do "a receber" sem
+    mexer no total recebido."""
+    pagos = _pares_pagos(db)
+    feitos = 0
+    for vinculo_id, competencia in pares:
+        if (vinculo_id, competencia) in pagos:
+            continue
+        db.add(PagamentoRecebido(
+            id=uuid.uuid4(), prestador_tomador_id=vinculo_id, prestador_id=prestador_id, competencia=competencia,
+            valor=Decimal(0), origem="conciliacao",
+        ))
+        pagos.add((vinculo_id, competencia))
+        feitos += 1
+    db.flush()
+    return feitos
