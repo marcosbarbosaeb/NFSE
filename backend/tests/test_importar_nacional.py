@@ -87,7 +87,7 @@ def test_busca_previa_e_importacao(client, db, prestador_teste, vinculo_teste, m
     monkeypatch.setattr("app.main._cliente_producao", lambda db, p: object())
     importar_adn._buscas.pop(prestador_teste.id, None)
 
-    r = client.post("/api/importar/nacional/buscar", json={})
+    r = client.post("/api/importar/nacional/buscar", json={"desde": "2025-01"})
     assert r.status_code == 200, r.text
     previa = r.json()
     assert previa["terminou"] and previa["recebidas"] == 1 and previa["total_notas"] == 6
@@ -119,8 +119,14 @@ def test_busca_previa_e_importacao(client, db, prestador_teste, vinculo_teste, m
     assert notas[8].prestador_tomador_id == vinculo_teste.id
     assert prestador_teste.adn_ultimo_nsu == 8
 
+    # limpar o histórico antes de 2026: some a nota de 2025 e o tomador dela
+    r = client.post("/api/importar/nacional/limpar", json={"antes": "2026-01"})
+    assert r.status_code == 200 and r.json() == {"notas": 1, "tomadores": 1}
+    assert db.get(PrestadorTomador, antigo.id) is None
+
     # repetir não duplica
-    assert client.post("/api/importar/nacional", json={"mapeamento": mapa}).json()["importadas"] == 0
+    # (a de 2025 volta, porque saiu na limpeza; as outras não duplicam)
+    assert client.post("/api/importar/nacional", json={"mapeamento": mapa}).json()["importadas"] == 1
     # o vínculo novo aparece sem o CNPJ interno? (CNPJ real aqui)
     lista = client.get("/api/vinculos?todos=true").json()
     assert any(v["apelido"] == "Empresa Nova SA" for v in lista)

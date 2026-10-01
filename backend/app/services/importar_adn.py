@@ -210,6 +210,9 @@ class _Busca:
     canceladas: set[str] = field(default_factory=set)
     recebidas: int = 0
     terminou: bool = False
+    # Só notas com competência a partir daqui (01/10/2026: histórico longo
+    # pesa e o controle começa no ano atual).
+    desde: str | None = None
     atualizado: float = field(default_factory=time.time)
 
 
@@ -217,24 +220,26 @@ _buscas: dict[uuid.UUID, _Busca] = {}
 _lock = threading.Lock()
 
 
-def _busca(prestador_id: uuid.UUID, nsu_inicial: int, recomecar: bool) -> _Busca:
+def _busca(prestador_id: uuid.UUID, nsu_inicial: int, recomecar: bool, desde: str | None = None) -> _Busca:
     with _lock:
         for chave in [k for k, v in _buscas.items() if time.time() - v.atualizado > CACHE_TTL_S]:
             _buscas.pop(chave, None)
         b = _buscas.get(prestador_id)
         if b is None or recomecar:
-            b = _Busca(nsu=nsu_inicial)
+            b = _Busca(nsu=nsu_inicial, desde=desde)
             _buscas[prestador_id] = b
+        elif desde is not None:
+            b.desde = desde
         return b
 
 
 def buscar(
     db: Session, prestador: Prestador, cliente: ClienteSefin, *, recomecar: bool = False, desde_inicio: bool = False,
-    ler_pagina_fn=None,
+    ler_pagina_fn=None, desde: str | None = None,
 ) -> dict:
     """Lê mais algumas páginas do ADN e devolve a prévia até aqui."""
     inicio = 0 if desde_inicio else (prestador.adn_ultimo_nsu or 0)
-    b = _busca(prestador.id, inicio, recomecar or desde_inicio)
+    b = _busca(prestador.id, inicio, recomecar or desde_inicio, desde)
     cnpj = re.sub(r"\D", "", prestador.cpf_cnpj)
     for _ in range(PAGINAS_POR_CHAMADA):
         if b.terminou:
@@ -255,6 +260,8 @@ def buscar(
                 b.recebidas += 1  # nota que a empresa RECEBEU (serviço comprado)
                 continue
             if nota["tp_amb"] not in (None, "1"):
+                continue
+            if b.desde and (nota["dcompet"] or "")[:7] < b.desde:
                 continue
             nota["xml"] = doc["xml"]
             nota["nsu"] = doc["nsu"]
@@ -399,9 +406,10 @@ def importar(db: Session, prestador: Prestador, mapeamento: list[dict]) -> dict:
         if not re.fullmatch(r"\d{4}-\d{2}", competencia):
             puladas.append({"chave": nota["chave"], "motivo": "Nota sem data de competência."})
             continue
-        if (nota["serie"], nota["n_dps"]) in numeros:
-            puladas.append({"chave": nota["chave"], "motivo": f"Já existe a DPS {nota['serie']}/{nota['n_dps']} aqui."})
-            continue
+        # Número de DPS já usado aqui (ex.: por uma nota de teste em
+        # homologação): a nota entra sem o número — a chave de acesso
+        # continua identificando ela.
+        n_dps = None if (nota["serie"], nota["n_dps"]) in numeros else nota["n_dps"]
         cancelada = nota["chave"] in b.canceladas
         documento_avulso = None
         if acao == "novo":
@@ -449,7 +457,7 @@ def importar(db: Session, prestador: Prestador, mapeamento: list[dict]) -> dict:
         emitida = _data_hora(nota["dh_emi"]) or agora
         emissao = Emissao(
             id=uuid.uuid4(), prestador_tomador_id=destino.id, prestador_id=prestador.id, competencia=competencia,
-            valor=Decimal(nota["valor"]), serie=nota["serie"][:5], n_dps=nota["n_dps"], chave_acesso=nota["chave"],
+            valor=Decimal(nota["valor"]), serie=nota["serie"][:5], n_dps=n_dps, chave_acesso=nota["chave"],
             estado="cancelada" if cancelada else "confirmado", tomador_snapshot=snapshot,
             tomador_documento=documento_avulso, xml_resposta=nota["xml"].decode("utf-8"), origem="importada",
             criado_em=emitida, atualizado_em=emitida,
@@ -496,3 +504,24 @@ def _meses_entre(a: str, b: str) -> int:
 
 def _corta(valor: str | None, tamanho: int) -> str | None:
     return valor[:tamanho] if valor else None
+
+
+def remover_importadas(db: Session, antes: str) -> dict:
+    """Tira as notas importadas com competência antes de `antes` (AAAA-MM)
+    e os tomadores que só existiam por causa delas (sem nota, sem pagamento,
+    inativos). Notas geradas pela Ana nunca são tocadas."""
+    ids = [i for (i,) in db.query(Emissao.id).filter(Emissao.origem == "importada", Emissao.competencia < antes)]
+    if ids:
+        db.query(Envio).filter(Envio.emissao_id.in_(ids)).delete(synchronize_session=False)
+        db.query(Emissao).filter(Emissao.id.in_(ids)).delete(synchronize_session=False)
+    from app.models import PagamentoRecebido
+
+    vinculos = 0
+    for v in db.query(PrestadorTomador).filter(PrestadorTomador.ativo.is_(False), PrestadorTomador.excluido_em.is_(None)):
+        tem_nota = db.query(Emissao.id).filter(Emissao.prestador_tomador_id == v.id).first()
+        tem_pagamento = db.query(PagamentoRecebido.id).filter(PagamentoRecebido.prestador_tomador_id == v.id).first()
+        if not tem_nota and not tem_pagamento:
+            db.delete(v)
+            vinculos += 1
+    db.flush()
+    return {"notas": len(ids), "tomadores": vinculos}

@@ -87,6 +87,9 @@ const pessoaOuExterior = (g: GrupoImportacao) => g.tipo !== "CNPJ"
 
 export function ImportarNacionalModal({ onClose, onConcluido }: { onClose: () => void; onConcluido: () => void }) {
   const [fase, setFase] = useState<Fase>("carregando")
+  // Só notas a partir deste mês (padrão: janeiro do ano atual — o controle
+  // começa no ano corrente e o histórico longo pesa).
+  const [desde, setDesde] = useState(() => `${new Date().getFullYear()}-01`)
   const [previa, setPrevia] = useState<PreviaNacional | null>(null)
   const [vinculos, setVinculos] = useState<VinculoResumo[]>([])
   const [regras, setRegras] = useState<Record<string, Regra>>({})
@@ -156,13 +159,16 @@ export function ImportarNacionalModal({ onClose, onConcluido }: { onClose: () =>
     setParando(false)
     setErro(null)
     setFase("buscando")
-    let corpo: Record<string, boolean> = modo === "desde_inicio" ? { desde_inicio: true } : modo === "recomecar" ? { recomecar: true } : {}
+    let corpo: Record<string, boolean | string> = {
+      ...(modo === "desde_inicio" ? { desde_inicio: true } : modo === "recomecar" ? { recomecar: true } : {}),
+      ...(/^\d{4}-\d{2}$/.test(desde) ? { desde } : {}),
+    }
     if (modo !== "continuar") setRegras({})
     let ultima: PreviaNacional | null = null
     try {
       for (;;) {
         const p = await api.post<PreviaNacional>("/importar/nacional/buscar", corpo)
-        corpo = {}
+        corpo = /^\d{4}-\d{2}$/.test(desde) ? { desde } : {}
         if (!montado.current) return
         receber(p)
         ultima = p
@@ -291,7 +297,7 @@ export function ImportarNacionalModal({ onClose, onConcluido }: { onClose: () =>
         </p>
       )}
 
-      {fase === "intro" && <Intro previa={previa} onBuscar={buscar} temErro={Boolean(erro)} onClose={fechar} />}
+      {fase === "intro" && <Intro previa={previa} onBuscar={buscar} temErro={Boolean(erro)} onClose={fechar} desde={desde} onDesde={setDesde} />}
 
       {fase === "buscando" && (
         <div className="flex flex-col items-center gap-4 py-8 text-center" aria-live="polite">
@@ -509,11 +515,15 @@ function Intro({
   onBuscar,
   temErro,
   onClose,
+  desde,
+  onDesde,
 }: {
   previa: PreviaNacional | null
   onBuscar: (modo: "continuar" | "recomecar" | "desde_inicio") => void
   temErro: boolean
   onClose: () => void
+  desde: string
+  onDesde: (v: string) => void
 }) {
   const itens = [
     {
@@ -539,6 +549,16 @@ function Intro({
           </li>
         ))}
       </ul>
+      <label className="flex flex-wrap items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+        Importar notas a partir de
+        <input
+          type="month"
+          value={desde}
+          onChange={(e) => onDesde(e.target.value)}
+          className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+        />
+        <span className="text-xs text-slate-400 dark:text-slate-500">notas mais antigas ficam de fora do controle</span>
+      </label>
       <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
         Precisa do certificado A1 carregado em Empresa › Certificado.
         {previa && previa.nsu > 0 && ` A leitura continua de onde parou da última vez (NSU ${previa.nsu.toLocaleString("pt-BR")}).`}

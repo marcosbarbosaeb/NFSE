@@ -1168,6 +1168,12 @@ class MarcarEnviadaRequest(BaseModel):
 class BuscarNacionalRequest(BaseModel):
     recomecar: bool = False
     desde_inicio: bool = False
+    # Só notas a partir desta competência (AAAA-MM). Sem = janeiro do ano atual.
+    desde: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+class LimparImportadasRequest(BaseModel):
+    antes: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
 class GrupoImportacaoResponse(BaseModel):

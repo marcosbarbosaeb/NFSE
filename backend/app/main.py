@@ -93,6 +93,7 @@ from app.schemas import (
     ModeloEmailPadraoResponse,
     PreviaShopeeResponse,
     EnviarGeralRequest,
+    LimparImportadasRequest,
     RecebimentoSemNotaResponse,
     IgnorarPendenciaRequest,
     AtualizarDespesaRequest,
@@ -2390,9 +2391,21 @@ def api_buscar_nacional(
     chama de novo enquanto `terminou` for falso)."""
     cliente = _cliente_producao(db, prestador_id)
     try:
-        return importar_adn.buscar(db, db.get(Prestador, prestador_id), cliente, recomecar=req.recomecar, desde_inicio=req.desde_inicio)
+        return importar_adn.buscar(
+            db, db.get(Prestador, prestador_id), cliente, recomecar=req.recomecar, desde_inicio=req.desde_inicio,
+            desde=req.desde or f"{hoje_br().year:04d}-01",
+        )
     except importar_adn.ImportacaoAdnError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/importar/nacional/limpar", dependencies=[Depends(exigir_conta_real)])
+def api_limpar_importadas(req: LimparImportadasRequest, db: Session = Depends(db_sessao)):
+    """Tira do controle as notas importadas antes de um mês (histórico que
+    não vai ser acompanhado). Notas geradas pela Ana ficam."""
+    resultado = importar_adn.remover_importadas(db, req.antes)
+    db.commit()
+    return resultado
 
 
 @app.post(
