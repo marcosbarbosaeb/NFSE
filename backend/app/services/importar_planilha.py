@@ -249,6 +249,10 @@ def importar(db: Session, prestador: Prestador, conteudo: bytes, ano: int, escol
     res = {"pagamentos": 0, "pagamentos_existentes": 0, "tomadores_criados": 0, "despesas": 0, "contas_fixas": 0,
            "retiradas": 0, "rotinas": 0, "avisos": []}
     por_linha = {int(e["linha"]): e for e in escolhas.get("receitas", [])}
+    # O que já existia antes desta importação (reimportar não duplica). Várias
+    # linhas da planilha podem ir pro mesmo tomador (Lancôme, Kérastase e YSL
+    # são todas da +Tec): aí os valores do mês se somam.
+    preexistentes = {(v, c) for v, c in db.query(PagamentoRecebido.prestador_tomador_id, PagamentoRecebido.competencia)}
 
     for r in dados["receitas"]:
         e = por_linha.get(r["linha"])
@@ -278,19 +282,17 @@ def importar(db: Session, prestador: Prestador, conteudo: bytes, ano: int, escol
         # 1 = paga antes da nota (Mercado Livre, Amazon): o que caiu em janeiro
         # é a nota de fevereiro — o pagamento entra no mês da nota, pra bater.
         desl = int(e.get("deslocamento", r["deslocamento"]) or 0)
-        ja = {c for (c,) in db.query(PagamentoRecebido.competencia).filter(PagamentoRecebido.prestador_tomador_id == vinculo.id)}
         for mes, valor in enumerate(r["valores"], start=1):
             if not valor or valor <= 0:
                 continue
             competencia = _competencia(ano, mes + desl)
-            if competencia in ja:
+            if (vinculo.id, competencia) in preexistentes:
                 res["pagamentos_existentes"] += 1
                 continue
             db.add(PagamentoRecebido(
                 id=uuid.uuid4(), prestador_tomador_id=vinculo.id, prestador_id=prestador.id, competencia=competencia,
                 valor=Decimal(str(round(valor, 2))), origem="planilha",
             ))
-            ja.add(competencia)
             res["pagamentos"] += 1
     db.flush()
 

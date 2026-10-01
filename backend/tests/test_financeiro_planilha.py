@@ -141,6 +141,21 @@ def test_importar_planilha_e_financeiro(client, db, prestador_teste, vinculo_tes
     assert resumo["categorias"][0]["categoria"] in ("Simples Nacional", "Contabilidade")
 
 
+def test_planilha_soma_linhas_do_mesmo_tomador(client, db, vinculo_teste):
+    from app.models import PagamentoRecebido
+
+    arquivo = {"arquivo": ("c.xlsx", planilha(), "application/octet-stream")}
+    escolhas = {"receitas": [
+        {"linha": 0, "acao": "vinculo", "vinculo_id": str(vinculo_teste.id), "deslocamento": 0},
+        {"linha": 1, "acao": "vinculo", "vinculo_id": str(vinculo_teste.id), "deslocamento": 0},
+    ], "despesas": False, "recorrentes": False, "retiradas": False, "rotinas": False}
+    r = client.post("/api/importar/planilha", files=arquivo, data={"ano": "2026", "escolhas": json.dumps(escolhas)})
+    assert r.status_code == 200 and r.json()["pagamentos"] == 7
+    jan = db.query(PagamentoRecebido).filter_by(prestador_tomador_id=vinculo_teste.id, competencia="2026-01").all()
+    assert sorted(float(p.valor) for p in jan) == [10, 100]
+    assert client.post("/api/importar/planilha", files=arquivo, data={"ano": "2026", "escolhas": json.dumps(escolhas)}).json()["pagamentos"] == 0
+
+
 def test_contas_fixas_e_lancamento_manual(client, db, prestador_teste, monkeypatch):
     import calendar
 
