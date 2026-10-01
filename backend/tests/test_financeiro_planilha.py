@@ -170,47 +170,50 @@ def test_contas_fixas_e_lancamento_manual(client, db, prestador_teste, monkeypat
     assert r.status_code == 200 and db.query(RotinaMensal).count() == 1
 
 
-def test_tomador_que_paga_antes_da_nota(client, db, prestador_teste, vinculo_teste, monkeypatch):
-    """Mercado Livre/Amazon: o dinheiro cai sem nota e a nota sai no mês
-    seguinte com o valor que caiu — nunca fica "a receber"; o aviso de gerar
-    só aparece quando já caiu pagamento, e dá pra ignorar um aviso."""
-    from app.models import PagamentoRecebido
+def test_recebimento_sem_nota_e_gerar_nota_dele(client, db, prestador_teste, vinculo_teste, monkeypatch):
+    """Mercado Livre/Amazon pagam antes da nota: o recebimento sem nota no
+    mês vira aviso com "gerar nota", e a nota gerada dele fica no mês do
+    recebimento (com a data de competência de hoje). Avisos podem ser
+    ignorados."""
     from app.services.dashboard import proximos
-    from app.services.motor_emissao import montar
 
-    # importação: linha com deslocamento 1 marca o tomador e mantém o mês do pagamento
+    hoje = datetime.date(2026, 10, 1)
+    monkeypatch.setattr("app.main.hoje_br", lambda: hoje)
+    r = client.post("/api/pagamentos", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-09", "valor": 1234.5})
+    assert r.status_code == 200 and r.json()["sem_nota"] is True
+    pagamento_id = r.json()["id"]
+
+    lista = client.get("/api/financeiro/recebimentos-sem-nota").json()
+    assert [x["competencia"] for x in lista] == ["2026-09"] and lista[0]["valor"] == 1234.5
+    p = proximos(db, prestador_teste.id, hoje)
+    aviso = next(x for x in p["pendencias"] if x["tipo"] == "nota_recebimento")
+    assert f"pagamento={pagamento_id}" in aviso["link"]
+
+    # ignorar e voltar
+    assert client.post("/api/painel/pendencias/ignorar", json={"chave": aviso["chave"]}).status_code == 200
+    assert client.get("/api/financeiro/recebimentos-sem-nota").json() == []
+    client.post("/api/painel/pendencias/ignorar", json={"chave": aviso["chave"], "ignorar": False})
+
+    # gerar a nota do recebimento: fica em 09/2026, data de competência hoje
+    r = client.post("/api/dps", json={
+        "vinculo_id": str(vinculo_teste.id), "competencia": "2026-10", "data_competencia": "2026-10-01",
+        "valor": 1234.5, "pagamento_id": pagamento_id,
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["competencia"] == "2026-09"
+    assert client.get("/api/financeiro/recebimentos-sem-nota").json() == []
+    from app.services import a_receber
+    assert all(g["competencia"] != "2026-09" for g in a_receber.notas_em_aberto(db, hoje))
+
+    # recebimento de um mês que já tem nota não avisa
+    r = client.post("/api/pagamentos", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-09", "valor": 1})
+    assert r.json()["sem_nota"] is False
+
+    # planilha: pagamento de quem paga antes entra no mês da nota
     arquivo = {"arquivo": ("c.xlsx", planilha(), "application/octet-stream")}
     escolhas = {"receitas": [{"linha": 1, "acao": "vinculo", "vinculo_id": str(vinculo_teste.id), "deslocamento": 1}],
                 "despesas": False, "recorrentes": False, "retiradas": False, "rotinas": False}
-    r = client.post("/api/importar/planilha", files=arquivo, data={"ano": "2026", "escolhas": json.dumps(escolhas)})
-    assert r.status_code == 200, r.text
-    assert vinculo_teste.nota_apos_pagamento is True
+    assert client.post("/api/importar/planilha", files=arquivo, data={"ano": "2026", "escolhas": json.dumps(escolhas)}).status_code == 200
+    from app.models import PagamentoRecebido
     comps = sorted(c for (c,) in db.query(PagamentoRecebido.competencia).filter_by(prestador_tomador_id=vinculo_teste.id))
-    assert comps == ["2026-01", "2026-02", "2026-04"]
-
-    # nota de março (do que caiu em fevereiro) não fica "a receber"
-    e = criar_rascunho(db, vinculo_teste, competencia="2026-03", valor=20, tpAmb="2")
-    montar(db, e)
-    assert client.get("/api/painel/notas-abertas").status_code in (200, 404)
-    from app.services import a_receber
-    assert all(g["vinculo_id"] != vinculo_teste.id for g in a_receber.notas_em_aberto(db, datetime.date(2026, 9, 1)))
-
-    # maio: caiu pagamento em abril → aviso de gerar com o valor; junho: nada caiu em maio → sem aviso
-    p = proximos(db, prestador_teste.id, datetime.date(2026, 5, 10))
-    gerar = [x for x in p["pendencias"] if x["tipo"] == "gerar" and x.get("vinculo_id") == vinculo_teste.id]
-    assert gerar and gerar[0]["valor"] == 40 and "valor=40" in gerar[0]["link"]
-    p = proximos(db, prestador_teste.id, datetime.date(2026, 6, 10))
-    assert not [x for x in p["pendencias"] if x["tipo"] == "gerar" and x.get("vinculo_id") == vinculo_teste.id]
-
-    # ignorar um aviso
-    chave = gerar[0]["chave"]
-    assert client.post("/api/painel/pendencias/ignorar", json={"chave": chave}).status_code == 200
-    p = proximos(db, prestador_teste.id, datetime.date(2026, 5, 10))
-    assert not [x for x in p["pendencias"] if x.get("chave") == chave]
-    client.post("/api/painel/pendencias/ignorar", json={"chave": chave, "ignorar": False})
-    p = proximos(db, prestador_teste.id, datetime.date(2026, 5, 10))
-    assert [x for x in p["pendencias"] if x.get("chave") == chave]
-
-    # dá pra marcar/desmarcar na ficha do tomador
-    r = client.patch(f"/api/vinculos/{vinculo_teste.id}", json={"nota_apos_pagamento": False})
-    assert r.status_code == 200 and r.json()["nota_apos_pagamento"] is False
+    assert comps[:3] == ["2026-02", "2026-03", "2026-05"]

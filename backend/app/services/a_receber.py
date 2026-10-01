@@ -39,7 +39,7 @@ def _grupos(db: Session) -> list[dict]:
             Emissao.valor, Emissao.criado_em, PrestadorTomador.apelido,
         )
         .join(PrestadorTomador, PrestadorTomador.id == Emissao.prestador_tomador_id)
-        .filter(Emissao.estado.in_(ESTADOS_COBRAVEIS), PrestadorTomador.nota_apos_pagamento.is_(False))
+        .filter(Emissao.estado.in_(ESTADOS_COBRAVEIS))
         .order_by(Emissao.criado_em)
         .all()
     )
@@ -66,6 +66,35 @@ def _grupos(db: Session) -> list[dict]:
 def calcular(db: Session) -> tuple[list[dict], set]:
     """Grupos + competências pagas, pra reaproveitar numa mesma tela."""
     return _grupos(db), _pares_pagos(db)
+
+
+def recebimentos_sem_nota(db: Session, desde: str | None = None) -> list[dict]:
+    """O lado contrário do "a receber" (01/10/2026): dinheiro que caiu de um
+    tomador num mês em que não há nota dele — caso do Mercado Livre e da
+    Amazon, que pagam antes e a nota sai depois. A tela oferece gerar a nota
+    daquele recebimento (POST /api/dps com pagamento_id)."""
+    com_nota = {
+        (v, c) for v, c in db.query(Emissao.prestador_tomador_id, Emissao.competencia)
+        .filter(Emissao.estado.notin_(("cancelada", "substituida"))).distinct()
+    }
+    query = (
+        db.query(PagamentoRecebido, PrestadorTomador.apelido)
+        .join(PrestadorTomador, PrestadorTomador.id == PagamentoRecebido.prestador_tomador_id)
+        .filter(PrestadorTomador.sem_nota.is_(False))
+    )
+    if desde:
+        query = query.filter(PagamentoRecebido.competencia >= desde)
+    grupos: dict[tuple, dict] = {}
+    for p, apelido in query.order_by(PagamentoRecebido.competencia, PagamentoRecebido.criado_em):
+        chave = (p.prestador_tomador_id, p.competencia)
+        if chave in com_nota:
+            continue
+        g = grupos.setdefault(chave, {
+            "pagamento_id": p.id, "vinculo_id": p.prestador_tomador_id, "apelido": apelido,
+            "competencia": p.competencia, "valor": Decimal(0), "data_recebimento": p.data_recebimento,
+        })
+        g["valor"] += p.valor
+    return [{**g, "valor": float(g["valor"])} for g in grupos.values()]
 
 
 def notas_em_aberto(db: Session, hoje: datetime.date | None = None, base: tuple | None = None) -> list[dict]:

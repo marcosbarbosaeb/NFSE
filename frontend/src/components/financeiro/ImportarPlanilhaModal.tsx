@@ -261,9 +261,9 @@ export function ImportarPlanilhaModal({ onClose, onImportado }: { onClose: () =>
               </span>
             </div>
             <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-              Diga a qual tomador cada linha pertence. Em “Nota e pagamento”: algumas fontes pagam antes da nota — ex.: no Mercado Livre o dinheiro
-              cai sem nota e a nota do que caiu em janeiro sai em fevereiro. A Ana compara com as “NF geradas” da planilha e já sugere; confira.
-              Quem paga antes fica marcado assim no cadastro e as notas dele não viram “a receber”.
+              Diga a qual tomador cada linha pertence. Em “Mês do pagamento”: algumas fontes pagam antes da nota — ex.: no Mercado Livre o que
+              caiu em janeiro é a nota de fevereiro, então o recebimento entra junto da nota de fevereiro. A Ana compara com as “NF geradas” da
+              planilha e já sugere; confira.
             </p>
             {previa.receitas.length === 0 ? (
               <p className="py-3 text-center text-sm text-slate-400 dark:text-slate-500">Nenhuma linha de recebimento encontrada.</p>
@@ -304,15 +304,15 @@ export function ImportarPlanilhaModal({ onClose, onImportado }: { onClose: () =>
                           </select>
                         </label>
                         <label className="block">
-                          <span className="mb-0.5 block text-xs text-slate-500 dark:text-slate-400">Nota e pagamento</span>
+                          <span className="mb-0.5 block text-xs text-slate-500 dark:text-slate-400">Mês do pagamento</span>
                           <select
                             value={e.deslocamento}
                             disabled={ignorada}
                             onChange={(ev) => mudarReceita(r.linha, { deslocamento: ev.target.value === "1" ? 1 : 0 })}
                             className={`${classeCampo} py-1.5 disabled:opacity-50`}
                           >
-                            <option value={0}>Nota primeiro, depois o pagamento</option>
-                            <option value={1}>Paga antes — nota no mês seguinte</option>
+                            <option value={0}>Mesmo mês da nota</option>
+                            <option value={1}>Paga antes — é a nota do mês seguinte</option>
                           </select>
                         </label>
                       </div>

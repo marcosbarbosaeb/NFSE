@@ -2,6 +2,7 @@ import { FileSpreadsheet, FileUp, Pencil, Plus, Trash2 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { Link, useLocation, useSearchParams } from "react-router-dom"
 import { BaixaPagamento } from "../components/BaixaPagamento"
+import { RecebimentosSemNotaCard } from "../components/financeiro/RecebimentosSemNota"
 import { ContasDoMesPainel } from "../components/financeiro/ContasDoMesPainel"
 import { ImportarPlanilhaModal } from "../components/financeiro/ImportarPlanilhaModal"
 import { LancamentoModal } from "../components/financeiro/LancamentoModal"
@@ -98,8 +99,11 @@ export function FinanceiroPage() {
     api.get<VinculoResumo[]>("/vinculos").then(setVinculos).catch(() => {})
   }, [])
 
+  const [recargaSemNota, setRecargaSemNota] = useState(0)
+
   function recarregar() {
     setErro(null)
+    setRecargaSemNota((n) => n + 1)
     api
       .get<ResumoFinanceiro>(`/financeiro/resumo?ano=${ano}`)
       .then((r) => {
@@ -255,6 +259,8 @@ export function FinanceiroPage() {
       {/* "Nos recebimentos coloque os pagamentos também" (28/09/2026): as
           notas que ainda não foram pagas, de todos os meses, com a baixa ali
           mesmo (passa o mouse em "Pendente"). */}
+      <RecebimentosSemNotaCard recarga={recargaSemNota} />
+
       <Card className="scroll-mt-20 p-5" id="a-receber">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <div>

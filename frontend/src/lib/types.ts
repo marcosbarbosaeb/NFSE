@@ -40,8 +40,6 @@ export interface VinculoResumo {
   metodo_captura_valor?: string
   /** Só controle de recebimento — a Ana não gera nota pra ele. */
   sem_nota?: boolean
-  /** Paga antes da nota (ex.: Mercado Livre): a nota sai no mês seguinte, nunca fica "a receber". */
-  nota_apos_pagamento?: boolean
 }
 
 export interface VendedorShopee {
@@ -163,7 +161,6 @@ export interface VinculoDetalhe {
   envio_canal?: FormaEnvio | null
   portal_url?: string | null
   sem_nota?: boolean
-  nota_apos_pagamento?: boolean
 }
 
 export interface VinculoCriarRequest {
@@ -191,7 +188,6 @@ export interface VinculoCriarRequest {
   envio_canal?: FormaEnvio | null
   portal_url?: string | null
   sem_nota?: boolean
-  nota_apos_pagamento?: boolean
 }
 
 export type VinculoAtualizarRequest = Partial<Omit<VinculoCriarRequest, "tomador_id" | "novo_tomador">> & {
@@ -295,6 +291,7 @@ export interface ConfirmarExtratoResultado {
   erro: number
   despesas_registradas?: number
   itens: ItemConfirmadoExtrato[]
+  sem_nota?: RecebimentoSemNota[]
 }
 
 // --- Marco 14: NFS-e (lista + nova emissão + detalhe), Recebimentos, Despesas, Configurações ---
@@ -329,6 +326,8 @@ export interface GerarDpsRequest {
   tpAmb?: string
   /** AAAA-MM-DD — dia de competência escolhido; sem = hoje. */
   data_competencia?: string | null
+  /** Nota de um recebimento que chegou sem nota: fica no mês do recebimento. */
+  pagamento_id?: string | null
 }
 
 export interface VerificarDuplicata {
@@ -468,6 +467,22 @@ export interface Pagamento {
   competencia: string
   valor: number
   data_recebimento: string | null
+  /** Resposta do POST /pagamentos: caiu sem nota do tomador nesse mês. */
+  sem_nota?: boolean
+  vinculo_id?: string | null
+}
+
+/** GET /financeiro/recebimentos-sem-nota — dinheiro que caiu sem nota no mês
+ * (ex.: Mercado Livre paga antes). Gerar: /app/nfse?gerar={vinculo_id}&pagamento={pagamento_id}.
+ * Ignorar: POST /painel/pendencias/ignorar {chave}. */
+export interface RecebimentoSemNota {
+  pagamento_id: string
+  vinculo_id: string
+  apelido: string
+  competencia: string
+  valor: number
+  data_recebimento: string | null
+  chave: string
 }
 
 export interface RegistrarPagamentoRequest {

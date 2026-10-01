@@ -46,6 +46,7 @@ import type {
   Prestador,
   VerificarDuplicata,
   VinculoResumo,
+  RecebimentoSemNota,
 } from "../lib/types"
 
 const ANO_ATUAL = new Date().getFullYear()
@@ -664,6 +665,7 @@ export function NfsePage() {
           vinculoInicial={searchParams.get("gerar")}
           competenciaInicial={searchParams.get("competencia")}
           valorInicial={searchParams.get("valor")}
+          pagamentoId={searchParams.get("pagamento")}
           onClose={() => {
             setModalNova(false)
             if (searchParams.get("gerar") || searchParams.get("nova")) navigate("/app/nfse", { replace: true })
@@ -750,6 +752,7 @@ function NovaEmissaoModal({
   vinculoInicial,
   competenciaInicial,
   valorInicial,
+  pagamentoId,
   onClose,
   onEscolherShopee,
   onCriada,
@@ -761,6 +764,8 @@ function NovaEmissaoModal({
   competenciaInicial?: string | null
   /** Tomador que paga antes da nota: o aviso já traz o valor que caiu. */
   valorInicial?: string | null
+  /** Gerar a nota de um recebimento que chegou sem nota (fica no mês dele). */
+  pagamentoId?: string | null
   onClose: () => void
   onEscolherShopee: (vinculo: VinculoResumo) => void
   onCriada: (emissao: Emissao) => void
@@ -773,11 +778,32 @@ function NovaEmissaoModal({
   // dia daquele mês. A competência (AAAA-MM) sai da data escolhida.
   const [dataCompetencia, setDataCompetencia] = useState(() => dataPadraoDaCompetencia(competenciaInicial))
   const dataEfetiva = /^\d{4}-\d{2}-\d{2}$/.test(dataCompetencia) ? dataCompetencia : hojeLocal()
-  const competencia = dataEfetiva.slice(0, 7)
+  // Recebimento sem nota (ex.: Mercado Livre paga antes): a nota fica no mês
+  // do recebimento pra baterem; a data de competência da nota segue a escolhida.
+  const [recebimento, setRecebimento] = useState<RecebimentoSemNota | null>(null)
+  const doRecebimento = recebimento && recebimento.vinculo_id === vinculoId ? recebimento : null
+  const competencia = doRecebimento ? doRecebimento.competencia : dataEfetiva.slice(0, 7)
   const [valor, setValor] = useState(() => {
     const n = Number(valorInicial)
     return valorInicial && Number.isFinite(n) && n > 0 ? n.toFixed(2) : ""
   })
+  useEffect(() => {
+    if (!pagamentoId) return
+    let vivo = true
+    api
+      .get<RecebimentoSemNota[]>("/financeiro/recebimentos-sem-nota")
+      .then((lista) => {
+        const r = lista.find((x) => x.pagamento_id === pagamentoId)
+        if (!vivo || !r) return
+        setRecebimento(r)
+        setVinculoId(r.vinculo_id)
+        setValor(r.valor.toFixed(2))
+      })
+      .catch(() => undefined)
+    return () => {
+      vivo = false
+    }
+  }, [pagamentoId])
   const [ordem, setOrdem] = useState("")
   // Pré-preenchida com a alíquota de referência de Configurações, quando
   // existir — sempre editável, nunca aplicada sem a pessoa ver/confirmar
@@ -845,6 +871,7 @@ function NovaEmissaoModal({
         vinculo_id: vinculoId,
         competencia,
         data_competencia: dataEfetiva,
+        pagamento_id: doRecebimento?.pagamento_id ?? null,
         valor: Number(valor),
         ordem: ordem || null,
         aliq_sn: aliqSn,
@@ -918,6 +945,12 @@ function NovaEmissaoModal({
 
         {vinculo?.metodo_captura_valor !== "csv" && (
           <>
+        {doRecebimento && (
+          <p className="rounded-lg bg-primary-50 px-4 py-3 text-sm text-primary-800 dark:bg-primary-900/30 dark:text-primary-200">
+            Nota do recebimento de {formatBRL(doRecebimento.valor)} em {formatCompetenciaLonga(doRecebimento.competencia)}. Ela fica junto
+            desse recebimento no financeiro; a data de competência da nota é a escolhida abaixo.
+          </p>
+        )}
         <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
           <CampoData valor={dataCompetencia} onChange={setDataCompetencia} />
           <Field

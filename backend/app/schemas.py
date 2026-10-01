@@ -31,7 +31,6 @@ class VinculoResumo(BaseModel):
     emissao_quantidade: int = 0
     metodo_captura_valor: str = "manual"
     sem_nota: bool = False
-    nota_apos_pagamento: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -78,6 +77,9 @@ class GerarDpsRequest(BaseModel):
     # Dia de competência escolhido no calendário (29/09/2026). Quando vem,
     # a competência (AAAA-MM) passa a ser o mês dele.
     data_competencia: date | None = None
+    # Gerar a nota de um recebimento que chegou sem nota: a nota fica no mês
+    # do recebimento (01/10/2026).
+    pagamento_id: uuid.UUID | None = None
 
 
 class EmissaoResponse(BaseModel):
@@ -234,6 +236,9 @@ class PagamentoResponse(BaseModel):
     competencia: str
     valor: float
     data_recebimento: date | None
+    # Caiu sem nota emitida pra esse tomador nesse mês — a tela oferece gerar.
+    sem_nota: bool = False
+    vinculo_id: uuid.UUID | None = None
 
     model_config = {"from_attributes": True}
 
@@ -572,7 +577,6 @@ class VinculoDetalheResponse(BaseModel):
     envio_canal: str | None = None
     portal_url: str | None = None
     sem_nota: bool = False
-    nota_apos_pagamento: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -607,7 +611,6 @@ class VinculoCriarRequest(BaseModel):
     envio_canal: str | None = Field(default=None, pattern=r"^(email|whatsapp|portal|nenhum)$")
     portal_url: str | None = Field(default=None, max_length=400)
     sem_nota: bool | None = None
-    nota_apos_pagamento: bool | None = None
 
     @model_validator(mode="after")
     def _exatamente_um_tomador(self):
@@ -643,7 +646,6 @@ class VinculoAtualizarRequest(BaseModel):
     envio_canal: str | None = Field(default=None, pattern=r"^(email|whatsapp|portal|nenhum)$")
     portal_url: str | None = Field(default=None, max_length=400)
     sem_nota: bool | None = None
-    nota_apos_pagamento: bool | None = None
 
 
 class PrestadorResponse(BaseModel):
@@ -892,12 +894,24 @@ class ItemConfirmadoExtratoResponse(BaseModel):
     pagamento_id: uuid.UUID | None = None
 
 
+class RecebimentoSemNotaResponse(BaseModel):
+    pagamento_id: uuid.UUID
+    vinculo_id: uuid.UUID
+    apelido: str
+    competencia: str
+    valor: float
+    data_recebimento: date | None = None
+    chave: str
+
+
 class ConfirmarExtratoResponse(BaseModel):
     total: int
     sucesso: int
     erro: int
     itens: list[ItemConfirmadoExtratoResponse]
     despesas_registradas: int = 0
+    # Recebimentos que caíram sem nota do tomador naquele mês (01/10/2026).
+    sem_nota: list[RecebimentoSemNotaResponse] = []
 
 
 class VendedorShopeeResponse(BaseModel):
@@ -1301,3 +1315,4 @@ class ImportarPlanilhaResponse(BaseModel):
 class IgnorarPendenciaRequest(BaseModel):
     chave: str = Field(min_length=3, max_length=100)
     ignorar: bool = True
+

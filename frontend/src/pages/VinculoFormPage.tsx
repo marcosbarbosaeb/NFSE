@@ -73,7 +73,6 @@ interface FormState {
   incluir_intermediario: boolean
   /** Só controle de recebimento — a Ana não gera nota pra este tomador. */
   sem_nota: boolean
-  nota_apos_pagamento: boolean
 }
 
 const ESTADO_INICIAL: FormState = {
@@ -96,7 +95,6 @@ const ESTADO_INICIAL: FormState = {
   cod_nbs: "",
   incluir_intermediario: false,
   sem_nota: false,
-  nota_apos_pagamento: false,
 }
 
 // 29/09/2026: "cada tomador pede a nota de um jeito" — portal próprio,
@@ -203,7 +201,6 @@ export function VinculoFormPage() {
           cod_nbs: mascaraNbs(v.cod_nbs ?? ""),
           incluir_intermediario: Boolean(v.incluir_intermediario),
           sem_nota: Boolean(v.sem_nota),
-          nota_apos_pagamento: Boolean(v.nota_apos_pagamento),
         })
         setTomadorSelecionado(v.tomador)
         // Abre a seção do e-mail se o tomador já tem algo personalizado.
@@ -379,7 +376,6 @@ export function VinculoFormPage() {
         cod_nbs: nbs || null,
         incluir_intermediario: form.incluir_intermediario,
         sem_nota: form.sem_nota,
-        nota_apos_pagamento: form.nota_apos_pagamento,
       }
 
       if (editando && id) {
@@ -609,28 +605,6 @@ export function VinculoFormPage() {
               </span>
             </span>
           </label>
-          {!form.sem_nota && (
-            <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700">
-              <input
-                type="checkbox"
-                role="switch"
-                checked={form.nota_apos_pagamento}
-                onChange={(e) => atualizarCampo("nota_apos_pagamento", e.target.checked)}
-                className="peer sr-only"
-              />
-              <span
-                aria-hidden
-                className="relative mt-0.5 inline-flex h-5 w-9 shrink-0 rounded-full bg-slate-300 transition-colors peer-checked:bg-primary-600 peer-focus-visible:ring-2 peer-focus-visible:ring-primary-300 dark:bg-slate-600 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-4"
-              />
-              <span className="text-sm text-slate-700 dark:text-slate-300">
-                Paga antes da nota — a nota sai no mês seguinte, com o valor que caiu
-                <span className="mt-0.5 block text-xs text-slate-400 dark:text-slate-500">
-                  Ex.: Mercado Livre e Amazon. As notas deste tomador não ficam “a receber”, e o aviso de gerar a nota só aparece depois que você
-                  registrar o pagamento do mês anterior (já com o valor).
-                </span>
-              </span>
-            </label>
-          )}
           {editando && tomadorSelecionado && !tomadorSelecionado.cnpj && !form.sem_nota && (
             <p className="mb-4 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
               Este tomador não tem CNPJ cadastrado — sem ele a Ana não consegue gerar nota. Deixe como “só controle” ou cadastre o

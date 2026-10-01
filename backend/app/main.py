@@ -93,6 +93,7 @@ from app.schemas import (
     ModeloEmailPadraoResponse,
     PreviaShopeeResponse,
     EnviarGeralRequest,
+    RecebimentoSemNotaResponse,
     IgnorarPendenciaRequest,
     AtualizarDespesaRequest,
     ContaFixaAtualizarRequest,
@@ -207,7 +208,7 @@ from app.limites import limitador, limite  # noqa: F401 — limitador: os testes
 from app.services import contas, financeiro, importar_adn, importar_planilha, lotes, mensagens
 from app.services.indicacao import resumo as resumo_indicacao
 from app.services.email import EmailEnvioError, get_email_sender
-from app.services.a_receber import notas_em_aberto
+from app.services.a_receber import notas_em_aberto, recebimentos_sem_nota
 from app.services.dashboard import proximos as proximos_do_painel
 from app.services.envio_direto import (
     EmailIndisponivelError,
@@ -1001,7 +1002,7 @@ def api_listar_vinculos(todos: bool = False, competencia: str | None = None, db:
             emissao_id=emissao["id"] if emissao else None, emissao_estado=emissao["estado"] if emissao else None,
             emissao_valor=round(emissao["valor"], 2) if emissao else None,
             emissao_quantidade=emissao["quantidade"] if emissao else 0,
-            metodo_captura_valor=v.metodo_captura_valor, sem_nota=v.sem_nota, nota_apos_pagamento=v.nota_apos_pagamento,
+            metodo_captura_valor=v.metodo_captura_valor, sem_nota=v.sem_nota,
         ))
     return resposta
 
@@ -1114,7 +1115,6 @@ def api_criar_vinculo(
     vinculo.envio_canal = req.envio_canal
     vinculo.portal_url = (req.portal_url or "").strip() or None
     vinculo.sem_nota = bool(req.sem_nota)
-    vinculo.nota_apos_pagamento = bool(req.nota_apos_pagamento)
     db.commit()
     return vinculo
 
@@ -1135,9 +1135,8 @@ def api_atualizar_vinculo(vinculo_id: uuid.UUID, req: VinculoAtualizarRequest, d
         campos["cod_nbs"] = _validar_nbs(campos["cod_nbs"])
     if campos.get("incluir_intermediario") is None:
         campos.pop("incluir_intermediario", None)
-    for flag in ("sem_nota", "nota_apos_pagamento"):
-        if campos.get(flag) is None:
-            campos.pop(flag, None)
+    if campos.get("sem_nota") is None:
+        campos.pop("sem_nota", None)
     if "portal_url" in campos:
         campos["portal_url"] = (campos["portal_url"] or "").strip() or None
     if campos.get("cod_trib_nacional") is not None and campos["cod_trib_nacional"] != vinculo.cod_trib_nacional:
@@ -1435,6 +1434,14 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
     competencia = req.competencia
     if req.data_competencia is not None:
         competencia = f"{req.data_competencia.year:04d}-{req.data_competencia.month:02d}"
+    if req.pagamento_id is not None:
+        # Nota de um recebimento que chegou sem nota (ML/Amazon): fica no mês
+        # do recebimento pra baterem; a data de competência da nota é a de
+        # hoje (ou a escolhida).
+        pagamento = db.get(PagamentoRecebido, req.pagamento_id)
+        if pagamento is None or pagamento.prestador_tomador_id != vinculo.id:
+            raise HTTPException(status_code=404, detail="Recebimento não encontrado pra este tomador.")
+        competencia = pagamento.competencia
     try:
         emissao = criar_rascunho(
             db, vinculo, competencia=competencia, valor=req.valor,
@@ -2011,11 +2018,18 @@ def api_registrar_pagamento(req: RegistrarPagamentoRequest, db: Session = Depend
     if vinculo is None:
         raise HTTPException(status_code=404, detail="Vínculo não encontrado (ou não pertence ao prestador ativo)")
     pagamento = registrar_pagamento(db, vinculo, competencia=req.competencia, valor=req.valor, data_recebimento=req.data_recebimento)
-    db.commit()
-    return PagamentoResponse(
+    # Antes do commit: depois dele a transação nova não tem o prestador (RLS).
+    resposta = PagamentoResponse(
         id=pagamento.id, apelido=vinculo.apelido, competencia=pagamento.competencia,
         valor=float(pagamento.valor), data_recebimento=pagamento.data_recebimento,
+        sem_nota=not vinculo.sem_nota and not db.query(Emissao.id).filter(
+            Emissao.prestador_tomador_id == vinculo.id, Emissao.competencia == pagamento.competencia,
+            Emissao.estado.notin_(("cancelada", "substituida")),
+        ).first(),
+        vinculo_id=vinculo.id,
     )
+    db.commit()
+    return resposta
 
 
 @app.delete("/api/pagamentos")
@@ -2092,13 +2106,25 @@ def api_confirmar_extrato(
     # forma que está e importe as saídas abaixo").
     for d in req.despesas:
         registrar_despesa(db, prestador_id, categoria=d.categoria.strip(), competencia=d.competencia, valor=d.valor)
+    sem_nota = _sem_nota_dos_pagamentos(db, [r.pagamento_id for r in resultados if r.ok and r.pagamento_id])
     if sucesso > 0 or req.despesas:
         db.commit()
     return ConfirmarExtratoResponse(
         total=len(resultados), sucesso=sucesso, erro=len(resultados) - sucesso,
         itens=[{"indice": r.indice, "ok": r.ok, "mensagem": r.mensagem, "pagamento_id": r.pagamento_id} for r in resultados],
-        despesas_registradas=len(req.despesas),
+        despesas_registradas=len(req.despesas), sem_nota=sem_nota,
     )
+
+
+def _sem_nota_dos_pagamentos(db: Session, ids: list) -> list[dict]:
+    if not ids:
+        return []
+    pares = {(p.prestador_tomador_id, p.competencia) for p in db.query(PagamentoRecebido).filter(PagamentoRecebido.id.in_(ids))}
+    menor = min(c for _, c in pares)
+    return [
+        {**r, "chave": f"semnota:{r['vinculo_id']}:{r['competencia']}"}
+        for r in recebimentos_sem_nota(db, menor) if (r["vinculo_id"], r["competencia"]) in pares
+    ]
 
 
 def _vinculo_shopee(db: Session, vinculo_id: uuid.UUID):
@@ -2380,6 +2406,20 @@ _COMPETENCIA_RE = r"^\d{4}-(0[1-9]|1[0-2])$"
 @app.get("/api/financeiro/resumo", response_model=ResumoFinanceiroResponse)
 def api_resumo_financeiro(ano: str = Query(pattern=r"^\d{4}$"), db: Session = Depends(db_sessao)):
     return financeiro.resumo_anual(db, ano)
+
+
+@app.get("/api/financeiro/recebimentos-sem-nota", response_model=list[RecebimentoSemNotaResponse])
+def api_recebimentos_sem_nota(db: Session = Depends(db_sessao)):
+    """Dinheiro que caiu sem nota emitida pro tomador naquele mês (últimos 12
+    meses, sem os avisos ignorados)."""
+    hoje = hoje_br()
+    desde = f"{hoje.year - 1:04d}-{hoje.month:02d}"
+    ignoradas = {c for (c,) in db.query(AjusteEvento.chave).filter(AjusteEvento.tipo == "pendencia", AjusteEvento.oculto.is_(True))}
+    return [
+        {**r, "chave": f"semnota:{r['vinculo_id']}:{r['competencia']}"}
+        for r in recebimentos_sem_nota(db, desde)
+        if f"semnota:{r['vinculo_id']}:{r['competencia']}" not in ignoradas
+    ]
 
 
 @app.get("/api/financeiro/mes", response_model=ContasDoMesResponse)

@@ -53,6 +53,7 @@ const COR_PENDENCIA: Record<string, string> = {
   prefeitura: "bg-warning-600",
   assinar: "bg-warning-600",
   enviar_tomador: "bg-primary-600",
+  nota_recebimento: "bg-accent-600",
   gerar: "bg-accent-600",
   receber: "bg-success-600",
 }

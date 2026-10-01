@@ -275,16 +275,14 @@ def importar(db: Session, prestador: Prestador, conteudo: bytes, ano: int, escol
             if vinculo is None:
                 res["avisos"].append(f"{r['nome']}: tomador escolhido não existe — linha pulada.")
                 continue
-        # 1 = "paga antes da nota" (Mercado Livre, Amazon): o pagamento fica no
-        # mês em que caiu e o tomador passa a ser marcado assim — a nota do
-        # mês seguinte não vira "a receber" (01/10/2026).
-        if int(e.get("deslocamento", r["deslocamento"]) or 0) == 1 and not vinculo.sem_nota:
-            vinculo.nota_apos_pagamento = True
+        # 1 = paga antes da nota (Mercado Livre, Amazon): o que caiu em janeiro
+        # é a nota de fevereiro — o pagamento entra no mês da nota, pra bater.
+        desl = int(e.get("deslocamento", r["deslocamento"]) or 0)
         ja = {c for (c,) in db.query(PagamentoRecebido.competencia).filter(PagamentoRecebido.prestador_tomador_id == vinculo.id)}
         for mes, valor in enumerate(r["valores"], start=1):
             if not valor or valor <= 0:
                 continue
-            competencia = _competencia(ano, mes)
+            competencia = _competencia(ano, mes + desl)
             if competencia in ja:
                 res["pagamentos_existentes"] += 1
                 continue

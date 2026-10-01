@@ -345,34 +345,29 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
         v for (v,) in db.query(Emissao.prestador_tomador_id).filter(Emissao.competencia == competencia, Emissao.estado != "cancelada")
     }
     ignoradas = {c for (c,) in db.query(AjusteEvento.chave).filter(AjusteEvento.tipo == "pendencia", AjusteEvento.oculto.is_(True))}
-    mes_anterior = _mes_anterior(competencia)
-    pagos_mes_anterior: dict = {}
-    for vid, valor in db.query(PagamentoRecebido.prestador_tomador_id, PagamentoRecebido.valor).filter(
-        PagamentoRecebido.competencia == mes_anterior
-    ):
-        pagos_mes_anterior[vid] = pagos_mes_anterior.get(vid, Decimal(0)) + valor
     for v in listar_vinculos_ativos(db):
         if v.id in competencia_tem_nota or v.sem_nota:
             continue
         chave = f"gerar:{v.id}:{competencia}"
         if chave in ignoradas:
             continue
-        if v.nota_apos_pagamento:
-            # Paga antes da nota: a nota deste mês é do que caiu no mês
-            # anterior — sem pagamento lá, não tem o que gerar ainda.
-            caiu = pagos_mes_anterior.get(v.id)
-            if not caiu:
-                continue
-            pendencias.append({
-                "tipo": "gerar", "titulo": f"Gerar a nota de {v.apelido} do que caiu em {mes_anterior[5:]}/{mes_anterior[:4]}",
-                "acao": "Gerar", "competencia": competencia, "valor": float(caiu), "vinculo_id": v.id, "chave": chave,
-                "link": f"/app/nfse?gerar={v.id}&competencia={competencia}&valor={caiu}",
-            })
-            continue
         quando = f" (dia {v.dia_limite_emissao})" if v.dia_limite_emissao else ""
         pendencias.append({
             "tipo": "gerar", "titulo": f"Gerar a nota de {v.apelido}{quando}", "acao": "Gerar", "vinculo_id": v.id,
             "competencia": competencia, "link": f"/app/nfse?gerar={v.id}&competencia={competencia}", "chave": chave,
+        })
+
+    # Recebimento sem nota (ML/Amazon pagam antes): oferece gerar a nota
+    # daquele valor. Só os últimos meses, pra não virar lista de histórico.
+    desde = _mes_anterior(_mes_anterior(_mes_anterior(competencia)))
+    for r in notas_abertas.recebimentos_sem_nota(db, desde):
+        chave = f"semnota:{r['vinculo_id']}:{r['competencia']}"
+        if chave in ignoradas:
+            continue
+        pendencias.append({
+            "tipo": "nota_recebimento", "titulo": f"Recebimento de {r['apelido']} sem nota", "acao": "Gerar nota",
+            "valor": r["valor"], "competencia": r["competencia"], "vinculo_id": r["vinculo_id"], "chave": chave,
+            "link": f"/app/nfse?gerar={r['vinculo_id']}&pagamento={r['pagamento_id']}",
         })
 
     for g in notas_abertas.notas_em_aberto(db, hoje):
@@ -411,7 +406,7 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
         else:
             agrupadas += do_tipo
     agrupadas += [p for p in pendencias if p["tipo"] not in agrupaveis]
-    ordem = {"erro": 0, "prefeitura": 1, "assinar": 2, "enviar_tomador": 3, "gerar": 4, "receber": 5}
+    ordem = {"erro": 0, "prefeitura": 1, "assinar": 2, "enviar_tomador": 3, "nota_recebimento": 4, "gerar": 5, "receber": 6}
     agrupadas.sort(key=lambda p: ordem.get(p["tipo"], 9))
     return {"pendencias": agrupadas[:10], "total_pendencias": len(agrupadas), "agenda": agenda}
 

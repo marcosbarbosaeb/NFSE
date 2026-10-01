@@ -5,6 +5,7 @@ import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { Field, FieldWrap } from "../components/ui/Field"
 import { Modal } from "../components/ui/Modal"
+import { ListaSemNota } from "../components/financeiro/RecebimentosSemNota"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { competenciaAtual, formatBRL } from "../lib/format"
 import type {
@@ -159,6 +160,8 @@ export function RegistrarPagamentoModal({
   const [dataRecebimento, setDataRecebimento] = useState("")
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  // Recebimento que caiu sem nota do tomador no mês: oferece gerar a nota.
+  const [semNota, setSemNota] = useState<Pagamento | null>(null)
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -171,8 +174,9 @@ export function RegistrarPagamentoModal({
         valor: Number(valor),
         data_recebimento: dataRecebimento || null,
       }
-      await api.post("/pagamentos", payload)
-      onRegistrado()
+      const resp = await api.post<Pagamento>("/pagamentos", payload)
+      if (resp.sem_nota && resp.vinculo_id) setSemNota(resp)
+      else onRegistrado()
     } catch (err) {
       setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
     } finally {
@@ -181,7 +185,23 @@ export function RegistrarPagamentoModal({
   }
 
   return (
-    <Modal titulo="Registrar recebimento" onClose={onClose}>
+    <Modal titulo="Registrar recebimento" onClose={semNota ? onRegistrado : onClose}>
+      {semNota && semNota.vinculo_id ? (
+        <div className="flex flex-col gap-4">
+          <p className="rounded-lg bg-success-50 px-4 py-3 text-sm text-success-700">Recebimento registrado.</p>
+          <ListaSemNota
+            itens={[{
+              pagamento_id: semNota.id, vinculo_id: semNota.vinculo_id, apelido: semNota.apelido, competencia: semNota.competencia,
+              valor: semNota.valor, data_recebimento: semNota.data_recebimento, chave: `semnota:${semNota.vinculo_id}:${semNota.competencia}`,
+            }]}
+          />
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" onClick={onRegistrado}>
+              Agora não
+            </Button>
+          </div>
+        </div>
+      ) : (
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
 
@@ -233,6 +253,7 @@ export function RegistrarPagamentoModal({
           </Button>
         </div>
       </form>
+      )}
     </Modal>
   )
 }
@@ -542,6 +563,7 @@ export function ImportarExtratoModal({
             {resultado.sucesso === 1 ? "" : "s"}
             {(resultado.despesas_registradas ?? 0) > 0 && ` e ${resultado.despesas_registradas} despesa(s) registrada(s)`}.
           </p>
+          <ListaSemNota itens={resultado.sem_nota ?? []} />
           {resultado.erro > 0 && (
             <ul className="flex flex-col gap-1 text-sm text-danger-700">
               {resultado.itens
