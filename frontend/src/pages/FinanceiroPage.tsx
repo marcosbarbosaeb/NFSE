@@ -449,7 +449,16 @@ export function FinanceiroPage() {
           }}
         />
       )}
-      {modal === "extrato" && <ImportarExtratoModal vinculos={vinculos} onClose={fecharModal} onImportado={recarregar} />}
+      {modal === "extrato" && (
+        <ImportarExtratoModal
+          vinculos={vinculos}
+          onClose={fecharModal}
+          onImportado={() => {
+            recarregar()
+            api.get<VinculoResumo[]>("/vinculos").then(setVinculos).catch(() => {})
+          }}
+        />
+      )}
       {modal === "despesa" && (
         <LancamentoModal
           despesa={emEdicao}

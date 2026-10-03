@@ -268,11 +268,22 @@ export interface TransacaoExtraida {
   descricao: string
   valor: number
   credito: boolean
+  // Sugestões de classificação (03/10/2026)
+  chave?: string
+  vinculo_id?: string | null
+  competencia?: string | null
+  categoria?: string | null
+  tipo_despesa?: "despesa" | "retirada"
+  origem_sugestao?: "lembrado" | "nome" | "valor" | null
+  nota?: { competencia: string; valor: number; exata: boolean } | null
+  ja_lancado?: boolean
 }
 
 export interface ExtratoExtraido {
   total_transacoes: number
   transacoes: TransacaoExtraida[]
+  categorias?: string[]
+  categorias_retirada?: string[]
   formato?: string
   linhas_lidas?: number
 }
@@ -282,6 +293,7 @@ export interface ItemConfirmarExtrato {
   competencia: string
   valor: number
   data_recebimento?: string | null
+  descricao?: string | null
 }
 
 export interface ItemConfirmadoExtrato {

@@ -142,7 +142,8 @@ def sugerir(db: Session, transacoes: list) -> list[dict]:
         credito, vinculo, origem = t.credito, None, None
         categoria, tipo_despesa = categoria_sugerida(t.descricao), "despesa"
 
-        regra = regras.get(chave_da_descricao(t.descricao))
+        chave = chave_da_descricao(t.descricao)
+        regra = regras.get(chave) if chave else None
         if regra is not None:
             credito, origem = regra.credito, "lembrado"
             if regra.credito:
@@ -171,6 +172,7 @@ def sugerir(db: Session, transacoes: list) -> list[dict]:
                 nota = {"competencia": alvo["competencia"], "valor": float(alvo["valor"]), "exata": exata is not None}
 
         saida.append({
+            "chave": chave,
             "credito": credito,
             "vinculo_id": vinculo.id if vinculo is not None else None,
             "competencia": competencia,

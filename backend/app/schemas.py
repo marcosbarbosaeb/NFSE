@@ -869,6 +869,7 @@ class TransacaoExtraidaResponse(BaseModel):
     valor: float
     credito: bool
     # Sugestões de classificação (03/10/2026, app/services/classificar_extrato.py).
+    chave: str = ""  # linhas com a mesma chave são "o mesmo lançamento"
     vinculo_id: uuid.UUID | None = None
     competencia: str | None = None
     categoria: str | None = None
