@@ -4,10 +4,9 @@ pagamentos que ficam pendentes"; "notas abertas há mais de dois meses também
 devem entrar no Precisa da sua atenção"; "nos recebimentos coloque os
 pagamentos também".
 
-Mesma aproximação do resto do sistema (ver app/services/dashboard.py): o
-pagamento é por tomador + competência, então uma competência com qualquer
-pagamento registrado conta como recebida. Notas de um mesmo tomador na mesma
-competência (Shopee: uma por vendedor) viram um grupo só.
+A baixa é POR NOTA desde 03/10/2026 (ver `Baixas`): cada recebimento fica
+ligado à nota que ele paga. Só o histórico sem nota (planilha, conciliação)
+continua valendo pro mês inteiro do tomador.
 """
 import datetime
 import uuid
@@ -25,49 +24,81 @@ ESTADOS_COBRAVEIS = ("montado", "assinado", "submetido", "confirmado")
 DIAS_ABERTA_ALERTA = 60
 
 
-def _pares_pagos(db: Session) -> set[tuple[uuid.UUID, str]]:
-    linhas = db.query(PagamentoRecebido.prestador_tomador_id, PagamentoRecebido.competencia).distinct()
-    return {(v, c) for v, c in linhas}
+class Baixas:
+    """Quem está pago (03/10/2026, "a baixa tem que ser por nota"):
+
+    - pagamento ligado a uma nota (`emissao_id`) dá baixa só nela;
+    - pagamento sem nota (histórico da planilha, conciliação, lançamentos de
+      antes da baixa por nota, ou dinheiro que caiu antes de existir nota)
+      vale pro mês inteiro daquele tomador, como sempre valeu.
+    """
+
+    def __init__(self, db: Session):
+        self.notas: set[uuid.UUID] = set()
+        self.meses: set[tuple[uuid.UUID, str]] = set()
+        # mês em que alguma nota do tomador foi paga (vendedores da Shopee:
+        # a Shopee paga tudo junto na nota dela)
+        self.meses_com_nota_paga: set[tuple[uuid.UUID, str]] = set()
+        linhas = db.query(
+            PagamentoRecebido.emissao_id, PagamentoRecebido.prestador_tomador_id, PagamentoRecebido.competencia
+        ).distinct()
+        for emissao_id, vinculo_id, competencia in linhas:
+            if emissao_id is None:
+                self.meses.add((vinculo_id, competencia))
+            else:
+                self.notas.add(emissao_id)
+                self.meses_com_nota_paga.add((vinculo_id, competencia))
+
+    def paga(self, emissao_id: uuid.UUID, vinculo_id: uuid.UUID, competencia: str) -> bool:
+        return emissao_id in self.notas or (vinculo_id, competencia) in self.meses
+
+    def mes_pago(self, vinculo_id: uuid.UUID, competencia: str) -> bool:
+        chave = (vinculo_id, competencia)
+        return chave in self.meses or chave in self.meses_com_nota_paga
 
 
-def _grupos(db: Session) -> list[dict]:
-    grupos: dict[tuple[uuid.UUID, str], dict] = {}
-    # Só as colunas necessárias (nada de XML/snapshot).
+def _notas(db: Session) -> list[dict]:
+    """Uma linha por nota cobrável. Só as colunas necessárias (nada de
+    XML/snapshot)."""
     emissoes = (
         db.query(
             Emissao.id, Emissao.prestador_tomador_id, Emissao.competencia, Emissao.estado,
-            Emissao.valor, Emissao.criado_em, PrestadorTomador.apelido,
+            Emissao.valor, Emissao.criado_em, Emissao.n_dps, PrestadorTomador.apelido,
         )
         .join(PrestadorTomador, PrestadorTomador.id == Emissao.prestador_tomador_id)
         # Notas de vendedores da Shopee não têm cobrança própria: a Shopee
         # paga tudo junto na nota dela (01/10/2026).
         .filter(Emissao.estado.in_(ESTADOS_COBRAVEIS), Emissao.tomador_documento.is_(None))
-        .order_by(Emissao.criado_em)
+        .order_by(Emissao.competencia, Emissao.criado_em, Emissao.n_dps)
         .all()
     )
-    for e in emissoes:
-        apelido = e.apelido
-        chave = (e.prestador_tomador_id, e.competencia)
-        g = grupos.get(chave)
-        if g is None:
-            g = grupos[chave] = {
-                "vinculo_id": e.prestador_tomador_id,
-                "apelido": apelido,
-                "competencia": e.competencia,
-                "emissao_id": e.id,
-                "estado": e.estado,
-                "valor": Decimal(0),
-                "quantidade": 0,
-                "emitida_em": e.criado_em,
-            }
-        g["valor"] += e.valor
-        g["quantidade"] += 1
-    return list(grupos.values())
+    return [
+        {
+            "vinculo_id": e.prestador_tomador_id, "apelido": e.apelido, "competencia": e.competencia, "emissao_id": e.id,
+            "estado": e.estado, "valor": e.valor, "quantidade": 1, "emitida_em": e.criado_em, "n_dps": e.n_dps,
+        }
+        for e in emissoes
+    ]
 
 
-def calcular(db: Session) -> tuple[list[dict], set]:
-    """Grupos + competências pagas, pra reaproveitar numa mesma tela."""
-    return _grupos(db), _pares_pagos(db)
+def calcular(db: Session) -> tuple[list[dict], Baixas]:
+    """Notas + baixas, pra reaproveitar numa mesma tela."""
+    return _notas(db), Baixas(db)
+
+
+def nota_do_recebimento(db: Session, vinculo_id: uuid.UUID, competencia: str, valor) -> uuid.UUID | None:
+    """Qual nota um recebimento de (tomador, mês, valor) paga, quando a
+    pessoa não escolheu: a em aberto do mesmo valor; senão a única em
+    aberto; senão a de valor mais próximo (de preferência em aberto). Sem
+    nota nenhuma no mês = None (dinheiro que caiu antes da nota)."""
+    notas, baixas = calcular(db)
+    do_mes = [n for n in notas if n["vinculo_id"] == vinculo_id and n["competencia"] == competencia]
+    if not do_mes:
+        return None
+    abertas = [n for n in do_mes if not baixas.paga(n["emissao_id"], vinculo_id, competencia)]
+    alvo = Decimal(str(valor))
+    candidatas = abertas or do_mes
+    return min(candidatas, key=lambda n: abs(n["valor"] - alvo))["emissao_id"]
 
 
 def recebimentos_sem_nota(db: Session, desde: str | None = None) -> list[dict]:
@@ -82,7 +113,7 @@ def recebimentos_sem_nota(db: Session, desde: str | None = None) -> list[dict]:
     query = (
         db.query(PagamentoRecebido, PrestadorTomador.apelido)
         .join(PrestadorTomador, PrestadorTomador.id == PagamentoRecebido.prestador_tomador_id)
-        .filter(PrestadorTomador.sem_nota.is_(False))
+        .filter(PrestadorTomador.sem_nota.is_(False), PagamentoRecebido.emissao_id.is_(None))
     )
     if desde:
         query = query.filter(PagamentoRecebido.competencia >= desde)
@@ -100,13 +131,12 @@ def recebimentos_sem_nota(db: Session, desde: str | None = None) -> list[dict]:
 
 
 def notas_em_aberto(db: Session, hoje: datetime.date | None = None, base: tuple | None = None) -> list[dict]:
-    """Grupos (tomador + competência) sem nenhum pagamento, do mais antigo
-    pro mais novo."""
+    """Notas sem baixa, da mais antiga pra mais nova."""
     hoje = hoje or hoje_br()
-    grupos, pagos = base or calcular(db)
+    notas, baixas = base or calcular(db)
     abertas = []
-    for g in grupos:
-        if (g["vinculo_id"], g["competencia"]) in pagos:
+    for g in notas:
+        if baixas.paga(g["emissao_id"], g["vinculo_id"], g["competencia"]):
             continue
         emitida = data_local(g["emitida_em"]) or hoje
         abertas.append({**g, "valor": float(g["valor"]), "emitida_em": emitida, "dias_em_aberto": (hoje - emitida).days})
@@ -114,14 +144,14 @@ def notas_em_aberto(db: Session, hoje: datetime.date | None = None, base: tuple 
 
 
 def totais(db: Session, base: tuple | None = None) -> dict:
-    grupos, pagos = base or calcular(db)
+    notas, baixas = base or calcular(db)
     a_receber, qtd_aberta, qtd_recebida = Decimal(0), 0, 0
-    for g in grupos:
-        if (g["vinculo_id"], g["competencia"]) in pagos:
-            qtd_recebida += g["quantidade"]
+    for g in notas:
+        if baixas.paga(g["emissao_id"], g["vinculo_id"], g["competencia"]):
+            qtd_recebida += 1
         else:
             a_receber += g["valor"]
-            qtd_aberta += g["quantidade"]
+            qtd_aberta += 1
     recebido = db.query(func.coalesce(func.sum(PagamentoRecebido.valor), 0)).scalar()
     return {
         "a_receber_total": float(a_receber),
@@ -156,19 +186,65 @@ def avisos_abertas_ha_muito(db: Session, hoje: datetime.date | None = None, limi
 
 
 def conciliar(db: Session, prestador_id: uuid.UUID, pares: list[tuple[uuid.UUID, str]]) -> int:
-    """Dá baixa sem valor (origem 'conciliacao') nas notas (tomador + mês)
-    que eram controladas em outra plataforma — saem do "a receber" sem
-    mexer no total recebido."""
-    pagos = _pares_pagos(db)
+    """Dá baixa sem valor (origem 'conciliacao') nas notas em aberto dos
+    (tomador, mês) pedidos — eram controladas em outra plataforma; saem do
+    "a receber" sem mexer no total recebido."""
+    alvo = set(pares)
     feitos = 0
-    for vinculo_id, competencia in pares:
-        if (vinculo_id, competencia) in pagos:
+    for n in notas_em_aberto(db):
+        if (n["vinculo_id"], n["competencia"]) not in alvo:
             continue
         db.add(PagamentoRecebido(
-            id=uuid.uuid4(), prestador_tomador_id=vinculo_id, prestador_id=prestador_id, competencia=competencia,
-            valor=Decimal(0), origem="conciliacao",
+            id=uuid.uuid4(), prestador_tomador_id=n["vinculo_id"], prestador_id=prestador_id, competencia=n["competencia"],
+            valor=Decimal(0), origem="conciliacao", emissao_id=n["emissao_id"],
         ))
-        pagos.add((vinculo_id, competencia))
         feitos += 1
     db.flush()
     return feitos
+
+
+def desfazer_baixa(db: Session, emissao: Emissao) -> int:
+    """Desfaz a baixa de UMA nota. Pagamento ligado a ela é apagado. Se ela
+    estava coberta por um pagamento do mês inteiro (histórico), ele passa a
+    valer só pras outras notas do mês: fica ligado a uma delas e as demais
+    ganham uma baixa sem valor — o total recebido não muda."""
+    vinculo_id, competencia = emissao.prestador_tomador_id, emissao.competencia
+    removidos = (
+        db.query(PagamentoRecebido).filter(PagamentoRecebido.emissao_id == emissao.id).delete(synchronize_session=False)
+    )
+    do_mes = (
+        db.query(PagamentoRecebido)
+        .filter(
+            PagamentoRecebido.prestador_tomador_id == vinculo_id, PagamentoRecebido.competencia == competencia,
+            PagamentoRecebido.emissao_id.is_(None),
+        )
+        .order_by(PagamentoRecebido.criado_em)
+        .all()
+    )
+    if not do_mes:
+        db.flush()
+        return removidos
+    outras = [
+        n for n in _notas(db)
+        if n["vinculo_id"] == vinculo_id and n["competencia"] == competencia and n["emissao_id"] != emissao.id
+    ]
+    if not outras:
+        for p in do_mes:
+            db.delete(p)
+        db.flush()
+        return removidos + len(do_mes)
+    ja_ligadas = {
+        e for (e,) in db.query(PagamentoRecebido.emissao_id).filter(PagamentoRecebido.emissao_id.in_([n["emissao_id"] for n in outras]))
+    }
+    for p in do_mes:
+        p.emissao_id = outras[0]["emissao_id"]
+    ja_ligadas.add(outras[0]["emissao_id"])
+    for n in outras[1:]:
+        if n["emissao_id"] in ja_ligadas:
+            continue
+        db.add(PagamentoRecebido(
+            id=uuid.uuid4(), prestador_tomador_id=vinculo_id, prestador_id=emissao.prestador_id, competencia=competencia,
+            valor=Decimal(0), origem="conciliacao", emissao_id=n["emissao_id"],
+        ))
+    db.flush()
+    return removidos + 1

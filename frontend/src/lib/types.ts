@@ -272,11 +272,21 @@ export interface TransacaoExtraida {
   chave?: string
   vinculo_id?: string | null
   competencia?: string | null
+  emissao_id?: string | null
   categoria?: string | null
   tipo_despesa?: "despesa" | "retirada"
   origem_sugestao?: "lembrado" | "nome" | "valor" | null
-  nota?: { competencia: string; valor: number; exata: boolean } | null
+  nota?: { emissao_id: string; competencia: string; valor: number; exata: boolean } | null
   ja_lancado?: boolean
+}
+
+/** Nota em aberto que um recebimento pode pagar (baixa por nota). */
+export interface NotaParaBaixa {
+  emissao_id: string
+  vinculo_id: string
+  competencia: string
+  valor: number
+  n_dps?: number | null
 }
 
 export interface ExtratoExtraido {
@@ -284,6 +294,7 @@ export interface ExtratoExtraido {
   transacoes: TransacaoExtraida[]
   categorias?: string[]
   categorias_retirada?: string[]
+  notas_abertas?: NotaParaBaixa[]
   formato?: string
   linhas_lidas?: number
 }
@@ -294,6 +305,7 @@ export interface ItemConfirmarExtrato {
   valor: number
   data_recebimento?: string | null
   descricao?: string | null
+  emissao_id?: string | null
 }
 
 export interface ItemConfirmadoExtrato {
@@ -512,6 +524,7 @@ export interface RegistrarPagamentoRequest {
   competencia: string
   valor: number
   data_recebimento?: string | null
+  emissao_id?: string | null
 }
 
 export type TipoLancamento = "despesa" | "retirada"
@@ -664,6 +677,7 @@ export interface NotaAberta {
   quantidade: number
   emitida_em: string
   dias_em_aberto: number
+  n_dps?: number | null
 }
 
 export interface PreviaEmail {

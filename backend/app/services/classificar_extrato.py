@@ -136,6 +136,7 @@ def sugerir(db: Session, transacoes: list) -> list[dict]:
         }
 
     saida = []
+    sugeridas: set[uuid.UUID] = set()
     for t in transacoes:
         valor = Decimal(t.valor).quantize(Decimal("0.01"))
         mes = f"{t.data.year:04d}-{t.data.month:02d}" if t.data else None
@@ -164,18 +165,27 @@ def sugerir(db: Session, transacoes: list) -> list[dict]:
 
         competencia, nota = mes, None
         if vinculo is not None:
-            do_vinculo = [g for g in abertas_por_vinculo.get(vinculo.id, []) if mes is None or g["competencia"] <= mes]
+            # Cada nota em aberto só é sugerida pra UMA linha do extrato.
+            do_vinculo = [
+                g for g in abertas_por_vinculo.get(vinculo.id, [])
+                if (mes is None or g["competencia"] <= mes) and g["emissao_id"] not in sugeridas
+            ]
             exata = next((g for g in do_vinculo if abs(Decimal(str(g["valor"])) - valor) < Decimal("0.005")), None)
             alvo = exata or (do_vinculo[0] if len(do_vinculo) == 1 else None)
             if alvo is not None:
+                sugeridas.add(alvo["emissao_id"])
                 competencia = alvo["competencia"]
-                nota = {"competencia": alvo["competencia"], "valor": float(alvo["valor"]), "exata": exata is not None}
+                nota = {
+                    "emissao_id": alvo["emissao_id"], "competencia": alvo["competencia"], "valor": float(alvo["valor"]),
+                    "exata": exata is not None,
+                }
 
         saida.append({
             "chave": chave,
             "credito": credito,
             "vinculo_id": vinculo.id if vinculo is not None else None,
             "competencia": competencia,
+            "emissao_id": nota["emissao_id"] if nota else None,
             "categoria": categoria,
             "tipo_despesa": tipo_despesa,
             "origem_sugestao": origem,
@@ -183,6 +193,16 @@ def sugerir(db: Session, transacoes: list) -> list[dict]:
             "ja_lancado": bool(t.data) and (t.data, valor) in (recebidos if credito else pagos),
         })
     return saida
+
+
+def notas_para_escolher(db: Session) -> list[dict]:
+    """Notas em aberto, pra tela do extrato oferecer "qual nota esse dinheiro
+    paga" depois que a pessoa escolhe o tomador."""
+    return [
+        {"emissao_id": g["emissao_id"], "vinculo_id": g["vinculo_id"], "competencia": g["competencia"],
+         "valor": g["valor"], "n_dps": g["n_dps"]}
+        for g in a_receber.notas_em_aberto(db)
+    ]
 
 
 def lembrar(

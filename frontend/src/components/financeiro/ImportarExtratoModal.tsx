@@ -2,7 +2,14 @@ import { ArrowLeftRight, Check, X } from "lucide-react"
 import { type FormEvent, useState } from "react"
 import { ApiError, api, formatarErro } from "../../lib/api"
 import { competenciaAtual, formatBRL, formatCompetenciaLonga } from "../../lib/format"
-import type { ConfirmarExtratoResultado, ExtratoExtraido, ItemConfirmarExtrato, TransacaoExtraida, VinculoResumo } from "../../lib/types"
+import type {
+  ConfirmarExtratoResultado,
+  ExtratoExtraido,
+  ItemConfirmarExtrato,
+  NotaParaBaixa,
+  TransacaoExtraida,
+  VinculoResumo,
+} from "../../lib/types"
 import { Button } from "../ui/Button"
 import { Modal } from "../ui/Modal"
 import { ListaSemNota } from "./RecebimentosSemNota"
@@ -23,6 +30,8 @@ interface Linha {
   valor: string
   // receita
   vinculoId: string
+  /** A nota que esse dinheiro paga ("" = nenhuma: caiu antes da nota). */
+  emissaoId: string
   competenciaReceita: string
   // despesa
   categoria: string
@@ -30,7 +39,6 @@ interface Linha {
   competenciaDespesa: string
   // avisos
   origem: TransacaoExtraida["origem_sugestao"]
-  nota: TransacaoExtraida["nota"]
   jaLancado: boolean
   // campo de "novo tomador"/"nova categoria" aberto nesta linha
   criando: boolean
@@ -71,6 +79,16 @@ export function ImportarExtratoModal({
   const [categorias, setCategorias] = useState<string[]>([])
   const [retiradas, setRetiradas] = useState<string[]>([])
   const [criandoTomador, setCriandoTomador] = useState(false)
+  const [notas, setNotas] = useState<NotaParaBaixa[]>([])
+
+  const notasDe = (vinculoId: string) => notas.filter((n) => n.vinculo_id === vinculoId)
+  const igual = (a: number, b: number) => Math.abs(a - b) < 0.005
+  /** Nota que um recebimento desse valor paga: a do mesmo valor; senão a única em aberto. */
+  function notaPara(vinculoId: string, valor: number, mes: string): string {
+    const doTomador = notasDe(vinculoId).filter((n) => n.competencia <= mes)
+    const exata = doTomador.find((n) => igual(n.valor, valor))
+    return exata?.emissao_id ?? (doTomador.length === 1 ? doTomador[0].emissao_id : "")
+  }
 
   async function extrair(e: FormEvent) {
     e.preventDefault()
@@ -84,6 +102,7 @@ export function ImportarExtratoModal({
       setInfo({ formato: resp.formato, linhas_lidas: resp.linhas_lidas })
       setCategorias(resp.categorias ?? [])
       setRetiradas(resp.categorias_retirada ?? [])
+      setNotas(resp.notas_abertas ?? [])
       setLinhas(
         resp.transacoes.map((t) => {
           const mes = t.data ? t.data.slice(0, 7) : competenciaAtual()
@@ -96,12 +115,12 @@ export function ImportarExtratoModal({
             credito: t.credito,
             valor: String(t.valor),
             vinculoId: t.vinculo_id ?? "",
-            competenciaReceita: t.competencia ?? mes,
+            emissaoId: t.emissao_id ?? "",
+            competenciaReceita: mes,
             categoria: t.categoria ?? "Outras despesas",
             tipoDespesa: t.tipo_despesa ?? "despesa",
             competenciaDespesa: mes,
             origem: t.origem_sugestao ?? null,
-            nota: t.nota ?? null,
             jaLancado: Boolean(t.ja_lancado),
             criando: false,
             nome: "",
@@ -125,8 +144,9 @@ export function ImportarExtratoModal({
     setLinhas(
       (atuais) =>
         atuais?.map((l) => {
-          if (l.linha === alvo.linha) return { ...l, vinculoId, criando: false, nome: "", origem: null, nota: null }
-          if (alvo.chave && l.chave === alvo.chave && l.credito && !l.vinculoId) return { ...l, vinculoId }
+          const nota = (x: Linha) => notaPara(vinculoId, Number(x.valor) || 0, x.competenciaDespesa)
+          if (l.linha === alvo.linha) return { ...l, vinculoId, emissaoId: nota(l), criando: false, nome: "", origem: null }
+          if (alvo.chave && l.chave === alvo.chave && l.credito && !l.vinculoId) return { ...l, vinculoId, emissaoId: nota(l) }
           return l
         }) ?? null,
     )
@@ -187,7 +207,8 @@ export function ImportarExtratoModal({
     try {
       const itens: ItemConfirmarExtrato[] = receitasMarcadas.map((l) => ({
         vinculo_id: l.vinculoId,
-        competencia: l.competenciaReceita,
+        emissao_id: l.emissaoId || null,
+        competencia: notas.find((n) => n.emissao_id === l.emissaoId)?.competencia ?? l.competenciaReceita,
         valor: Number(l.valor),
         data_recebimento: l.data || null,
         descricao: l.descricao,
@@ -213,6 +234,11 @@ export function ImportarExtratoModal({
   function linhaDaLista(l: Linha) {
     const comNota = tomadores.filter((v) => !v.sem_nota)
     const soControle = tomadores.filter((v) => v.sem_nota)
+    const notasDoTomador = l.credito && l.vinculoId ? notasDe(l.vinculoId) : []
+    const notaEscolhida = notasDoTomador.find((n) => n.emissao_id === l.emissaoId)
+    const rotuloNota = (n: NotaParaBaixa) =>
+      `Nota de ${formatCompetenciaLonga(n.competencia)} · ${formatBRL(n.valor)}` +
+      (notasDoTomador.some((o) => o !== n && o.competencia === n.competencia && igual(o.valor, n.valor)) && n.n_dps ? ` · nº ${n.n_dps}` : "")
     return (
       <li key={l.linha} className={`flex gap-3 px-3 py-3 ${l.incluir ? "" : "opacity-50"}`}>
         <input
@@ -236,12 +262,16 @@ export function ImportarExtratoModal({
                     como da última vez
                   </span>
                 )}
-                {l.credito && l.nota && l.vinculoId && (
-                  <span className="rounded bg-success-50 px-1.5 py-0.5 font-medium text-success-700">
-                    {l.nota.exata
-                      ? `bate com a nota de ${formatCompetenciaLonga(l.nota.competencia)}`
-                      : `nota em aberto de ${formatCompetenciaLonga(l.nota.competencia)}: ${formatBRL(l.nota.valor)}`}
-                  </span>
+                {notaEscolhida &&
+                  (igual(notaEscolhida.valor, Number(l.valor) || 0) ? (
+                    <span className="rounded bg-success-50 px-1.5 py-0.5 font-medium text-success-700">mesmo valor da nota</span>
+                  ) : (
+                    <span className="rounded bg-warning-50 px-1.5 py-0.5 font-medium text-warning-700">
+                      valor diferente do da nota ({formatBRL(notaEscolhida.valor)})
+                    </span>
+                  ))}
+                {l.credito && l.vinculoId && notasDoTomador.length > 0 && !notaEscolhida && (
+                  <span className="rounded bg-warning-50 px-1.5 py-0.5 font-medium text-warning-700">não dá baixa em nenhuma nota</span>
                 )}
               </p>
             </div>
@@ -300,7 +330,7 @@ export function ImportarExtratoModal({
                 onChange={(e) => (e.target.value === NOVO ? mudar(l.linha, { criando: true }) : escolherTomador(l, e.target.value))}
                 disabled={!l.incluir}
                 aria-label="Tomador"
-                className={`${CAMPO} min-w-[220px] flex-1 ${l.incluir && !l.vinculoId ? "border-warning-400" : ""}`}
+                className={`${CAMPO} min-w-[200px] flex-1 ${l.incluir && !l.vinculoId ? "border-warning-400" : ""}`}
               >
                 <option value="">De qual tomador?</option>
                 {comNota.map((v) => (
@@ -351,15 +381,34 @@ export function ImportarExtratoModal({
                 <option value={NOVO}>+ Nova categoria…</option>
               </select>
             )}
-            <input
-              type="month"
-              value={l.credito ? l.competenciaReceita : l.competenciaDespesa}
-              onChange={(e) => mudar(l.linha, l.credito ? { competenciaReceita: e.target.value } : { competenciaDespesa: e.target.value })}
-              disabled={!l.incluir}
-              aria-label={l.credito ? "Mês da nota que esse dinheiro paga" : "Mês da despesa"}
-              title={l.credito ? "Mês da nota que esse dinheiro paga" : "Mês da despesa"}
-              className={`${CAMPO} w-40`}
-            />
+            {notasDoTomador.length > 0 && !l.criando && (
+              <select
+                value={l.emissaoId}
+                onChange={(e) => mudar(l.linha, { emissaoId: e.target.value })}
+                disabled={!l.incluir}
+                aria-label="Nota que esse dinheiro paga"
+                title="Nota que esse dinheiro paga"
+                className={`${CAMPO} min-w-[200px] flex-1`}
+              >
+                {notasDoTomador.map((n) => (
+                  <option key={n.emissao_id} value={n.emissao_id}>
+                    {rotuloNota(n)}
+                  </option>
+                ))}
+                <option value="">Nenhuma nota (escolher o mês)</option>
+              </select>
+            )}
+            {!(l.credito && notaEscolhida) && (
+              <input
+                type="month"
+                value={l.credito ? l.competenciaReceita : l.competenciaDespesa}
+                onChange={(e) => mudar(l.linha, l.credito ? { competenciaReceita: e.target.value } : { competenciaDespesa: e.target.value })}
+                disabled={!l.incluir}
+                aria-label={l.credito ? "Mês do recebimento" : "Mês da despesa"}
+                title={l.credito ? "Mês do recebimento" : "Mês da despesa"}
+                className={`${CAMPO} w-40`}
+              />
+            )}
             <button
               type="button"
               onClick={() => mudar(l.linha, { credito: !l.credito, criando: false, nome: "" })}
@@ -446,7 +495,7 @@ export function ImportarExtratoModal({
               <div className="flex max-h-[62vh] flex-col gap-4 overflow-y-auto pr-1">
                 {bloco(
                   "Receitas",
-                  "Escolha o tomador e o mês da nota que o dinheiro paga.",
+                  "Escolha o tomador e a nota que o dinheiro paga. A baixa é por nota.",
                   receitas,
                   receitasMarcadas,
                   "bg-success-50 text-success-700 dark:bg-success-900/20 dark:text-success-300",

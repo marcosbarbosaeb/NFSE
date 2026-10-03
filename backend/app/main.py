@@ -1472,6 +1472,8 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except DescricaoIncompletaError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if req.pagamento_id is not None and pagamento.emissao_id is None:
+        pagamento.emissao_id = emissao.id  # esse recebimento paga ESTA nota
     db.commit()
     return _para_resposta(emissao)
 
@@ -2069,7 +2071,13 @@ def api_registrar_pagamento(req: RegistrarPagamentoRequest, db: Session = Depend
     vinculo = buscar_vinculo(db, req.vinculo_id)
     if vinculo is None:
         raise HTTPException(status_code=404, detail="Vínculo não encontrado (ou não pertence ao prestador ativo)")
-    pagamento = registrar_pagamento(db, vinculo, competencia=req.competencia, valor=req.valor, data_recebimento=req.data_recebimento)
+    try:
+        pagamento = registrar_pagamento(
+            db, vinculo, competencia=req.competencia, valor=req.valor, data_recebimento=req.data_recebimento,
+            emissao_id=req.emissao_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     # Antes do commit: depois dele a transação nova não tem o prestador (RLS).
     resposta = PagamentoResponse(
         id=pagamento.id, apelido=vinculo.apelido, competencia=pagamento.competencia,
@@ -2085,10 +2093,23 @@ def api_registrar_pagamento(req: RegistrarPagamentoRequest, db: Session = Depend
 
 
 @app.delete("/api/pagamentos")
-def api_desfazer_pagamento(vinculo_id: uuid.UUID, competencia: str, db: Session = Depends(db_sessao)):
-    """Desfaz a baixa (28/09/2026): apaga o(s) recebimento(s) daquele
-    tomador+competência — a nota volta a aparecer como pendente."""
-    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", competencia):
+def api_desfazer_pagamento(
+    vinculo_id: uuid.UUID | None = None, competencia: str | None = None, emissao_id: uuid.UUID | None = None,
+    db: Session = Depends(db_sessao),
+):
+    """Desfaz a baixa. Com `emissao_id` (03/10/2026, baixa por nota): só
+    daquela nota. Sem ele (telas antigas): apaga o(s) recebimento(s) do
+    tomador+competência."""
+    if emissao_id is not None:
+        from app.services import a_receber as ar
+
+        emissao = db.get(Emissao, emissao_id)
+        if emissao is None:
+            raise HTTPException(status_code=404, detail="Nota não encontrada.")
+        removidos = ar.desfazer_baixa(db, emissao)
+        db.commit()
+        return {"removidos": removidos}
+    if vinculo_id is None or competencia is None or not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", competencia):
         raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
     removidos = (
         db.query(PagamentoRecebido)
@@ -2132,6 +2153,7 @@ def api_extrair_extrato(arquivo: UploadFile = File(...), db: Session = Depends(d
     cats = classificar_extrato.categorias(db)
     return ExtratoExtraidoResponse(
         categorias=cats["despesas"], categorias_retirada=cats["retiradas"],
+        notas_abertas=classificar_extrato.notas_para_escolher(db),
         formato=resultado.formato,
         linhas_lidas=resultado.linhas_lidas,
         total_transacoes=len(transacoes),
@@ -2154,7 +2176,7 @@ def api_confirmar_extrato(
     itens = [
         ItemExtrato(
             vinculo_id=i.vinculo_id, competencia=i.competencia, valor=i.valor, data_recebimento=i.data_recebimento,
-            descricao=i.descricao,
+            descricao=i.descricao, emissao_id=i.emissao_id,
         )
         for i in req.itens
     ]

@@ -18,18 +18,8 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Despesa, Emissao, Envio, PagamentoRecebido, PrestadorTomador
+from app.services.a_receber import Baixas
 from app.services.dashboard import ESTADO_NFSE_LABEL
-
-
-def _pares_com_pagamento(db: Session) -> set[tuple[uuid.UUID, str]]:
-    """Todos os pares (vínculo, competência) que já têm AO MENOS UM
-    PagamentoRecebido — mesma aproximação do dashboard (app/services/
-    dashboard._tem_pagamento): um pagamento parcial já conta como
-    'recebido'. Carregado uma vez só (RLS já limita ao prestador atual;
-    volume é pequeno, um prestador não tem milhares de pagamentos), em vez
-    de uma query por emissão."""
-    linhas = db.query(PagamentoRecebido.prestador_tomador_id, PagamentoRecebido.competencia).distinct()
-    return {(vinculo_id, competencia) for vinculo_id, competencia in linhas}
 
 
 def listar_emissoes(
@@ -72,7 +62,7 @@ def listar_emissoes(
     elif grupo == "vendedores":
         query = query.filter(Emissao.tomador_documento.isnot(None))
 
-    pares_pagos = _pares_com_pagamento(db)
+    baixas = Baixas(db)
     emissoes = query.all()
     # Último envio de cada nota (e-mail/WhatsApp/...) numa query só.
     ultimo_envio: dict[uuid.UUID, str] = {}
@@ -101,7 +91,11 @@ def listar_emissoes(
             "estado": e.estado,
             "estado_label": ESTADO_NFSE_LABEL.get(e.estado, e.estado),
             "criado_em": e.criado_em,
-            "pagamento_recebido": (e.prestador_tomador_id, e.competencia) in pares_pagos,
+            # Baixa por nota; a do vendedor da Shopee acompanha a nota da Shopee.
+            "pagamento_recebido": (
+                baixas.mes_pago(e.prestador_tomador_id, e.competencia) if e.tomador_documento
+                else baixas.paga(e.id, e.prestador_tomador_id, e.competencia)
+            ),
             "envio_status": ultimo_envio.get(e.id),
             "tem_pdf": e.estado == "confirmado",
             "tem_email": bool((e.tomador_snapshot or {}).get("email") if e.tomador_documento else (e.vinculo.email_para or e.vinculo.email_contato)),

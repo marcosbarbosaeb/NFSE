@@ -5,8 +5,8 @@ import { Badge } from "./ui/Badge"
 
 // Status de pagamento clicável (28/09/2026): "Pendente" -> dar baixa (registra
 // o recebimento com o valor da nota); "Recebida" -> desfazer. A importação do
-// extrato continua dando baixa sozinha — o recebimento é por
-// tomador+competência, então a nota já aparece como recebida.
+// extrato também dá baixa. Desde 03/10/2026 a baixa é POR NOTA (emissaoId):
+// duas notas do mesmo tomador no mês são recebidas separadamente.
 
 function hojeISO(): string {
   const d = new Date()
@@ -15,11 +15,14 @@ function hojeISO(): string {
 
 export function BaixaPagamento({
   vinculoId,
+  emissaoId,
   competencia,
   valor,
   recebido,
   onMudou,
 }: {
+  /** A nota que recebe a baixa (03/10/2026: a baixa é por nota). */
+  emissaoId?: string | null
   vinculoId: string | null | undefined
   competencia: string
   valor: number
@@ -62,11 +65,13 @@ export function BaixaPagamento({
     setErro(null)
     try {
       if (recebido) {
-        await api.delete(`/pagamentos?vinculo_id=${vinculoId}&competencia=${competencia}`)
+        await api.delete(emissaoId ? `/pagamentos?emissao_id=${emissaoId}` : `/pagamentos?vinculo_id=${vinculoId}&competencia=${competencia}`)
       } else {
         const valorNum = parseBRL(valorTexto)
         if (valorNum == null || valorNum <= 0) throw new ApiError(422, "Informe o valor recebido.")
-        await api.post("/pagamentos", { vinculo_id: vinculoId, competencia, valor: valorNum, data_recebimento: data || null })
+        await api.post("/pagamentos", {
+          vinculo_id: vinculoId, competencia, valor: valorNum, data_recebimento: data || null, emissao_id: emissaoId ?? null,
+        })
       }
       setAberto(false)
       onMudou()

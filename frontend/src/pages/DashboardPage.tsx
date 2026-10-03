@@ -275,6 +275,7 @@ export function DashboardPage() {
                               <Badge variant="neutral">Na nota da Shopee</Badge>
                             ) : (
                               <BaixaPagamento
+                                emissaoId={linha.emissao_id}
                                 vinculoId={linha.vinculo_id}
                                 competencia={linha.competencia}
                                 valor={linha.valor}

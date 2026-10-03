@@ -289,12 +289,14 @@ export function FinanceiroPage() {
               </thead>
               <tbody>
                 {abertas.map((n) => (
-                  <tr key={`${n.vinculo_id}-${n.competencia}`} className="border-b border-slate-50 last:border-0 dark:border-slate-700/40">
+                  <tr key={n.emissao_id} className="border-b border-slate-50 last:border-0 dark:border-slate-700/40">
                     <td className="py-2.5">
                       <Link to={n.quantidade > 1 ? "/app/nfse" : `/app/nfse/${n.emissao_id}`} className="font-medium text-slate-800 hover:text-primary-600 dark:text-slate-200">
                         {n.apelido}
                       </Link>
-                      {n.quantidade > 1 && <span className="block text-xs text-slate-400">{n.quantidade} notas</span>}
+                      {n.n_dps != null && (abertas ?? []).some((o) => o !== n && o.vinculo_id === n.vinculo_id && o.competencia === n.competencia) && (
+                        <span className="block text-xs text-slate-400">nota nº {n.n_dps}</span>
+                      )}
                     </td>
                     <td className="py-2.5 text-slate-500 dark:text-slate-400">{formatCompetenciaAbrev(n.competencia)}</td>
                     <td className={`py-2.5 ${n.dias_em_aberto > 60 ? "font-semibold text-danger-600" : "text-slate-500 dark:text-slate-400"}`}>
@@ -302,7 +304,7 @@ export function FinanceiroPage() {
                     </td>
                     <td className="py-2.5 text-right text-slate-700 dark:text-slate-200">{formatBRL(n.valor)}</td>
                     <td className="py-2.5 text-right">
-                      <BaixaPagamento vinculoId={n.vinculo_id} competencia={n.competencia} valor={n.valor} recebido={false} onMudou={recarregar} />
+                      <BaixaPagamento emissaoId={n.emissao_id} vinculoId={n.vinculo_id} competencia={n.competencia} valor={n.valor} recebido={false} onMudou={recarregar} />
                     </td>
                   </tr>
                 ))}

@@ -192,9 +192,7 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
             .order_by(Emissao.criado_em)
         ):
             notas_por_vinculo.setdefault(e.prestador_tomador_id, []).append(e)
-    pagos = {
-        v for (v,) in db.query(PagamentoRecebido.prestador_tomador_id).filter(PagamentoRecebido.competencia == competencia).distinct()
-    }
+    baixas = notas_abertas.Baixas(db)
     # Notas de vendedores da Shopee (avulsas) ficam numa linha própria e
     # fora do controle de pagamento: a Shopee paga tudo junto na nota dela.
     vendedores_por_vinculo: dict[uuid.UUID, list[Emissao]] = {}
@@ -203,12 +201,12 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
         if avulsas:
             vendedores_por_vinculo[vid] = avulsas
             notas_por_vinculo[vid] = [e for e in notas if not e.tomador_documento]
-    primeiras = [notas[0].id for notas in notas_por_vinculo.values() if notas]
+    do_mes_ids = [e.id for notas in notas_por_vinculo.values() for e in notas]
     ultimo_envio: dict[uuid.UUID, str] = {}
-    if primeiras:
+    if do_mes_ids:
         for emissao_id, status in (
             db.query(Envio.emissao_id, Envio.status)
-            .filter(Envio.emissao_id.in_(primeiras), Envio.canal.in_(("email", "whatsapp", "direto_fornecedor")))
+            .filter(Envio.emissao_id.in_(do_mes_ids), Envio.canal.in_(("email", "whatsapp", "direto_fornecedor")))
             .order_by(Envio.criado_em)
         ):
             ultimo_envio[emissao_id] = status
@@ -224,39 +222,39 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
                 "apelido": f"{vinculo.apelido} — vendedores ({len(vendedores)} notas)", "tomador_razao_social": "vários vendedores",
                 "competencia": competencia, "valor": float(sum((e.valor for e in vendedores), Decimal(0))),
                 "estado": vendedores[0].estado, "estado_label": ESTADO_NFSE_LABEL.get(vendedores[0].estado, vendedores[0].estado),
-                "envio_status": None, "pagamento_recebido": vinculo.id in pagos, "tem_pdf": False, "tem_email": False,
+                "envio_status": None, "pagamento_recebido": baixas.mes_pago(vinculo.id, competencia), "tem_pdf": False, "tem_email": False,
                 "homologacao": (vendedores[0].tomador_snapshot or {}).get("tpAmb") == "2", "envio_forma": "email",
                 "vendedores": True,
             })
-        emissao = do_mes[0] if do_mes else None
-        valor_mes = sum((e.valor for e in do_mes if e.estado in notas_abertas.ESTADOS_COBRAVEIS), Decimal(0))
-        if emissao is None:
+        if not do_mes:
             aguardando += 1
             continue
 
         emitidas += 1
-        recebido = vinculo.id in pagos
-        if not recebido and valor_mes:
-            a_receber += valor_mes
-            pagamentos_pendentes += 1
-
-        emissoes.append({
-            "emissao_id": emissao.id,
-            "vinculo_id": vinculo.id,
-            "quantidade": len(do_mes),
-            "apelido": vinculo.apelido if len(do_mes) == 1 else f"{vinculo.apelido} ({len(do_mes)} notas)",
-            "tomador_razao_social": vinculo.tomador.razao_social if len(do_mes) == 1 else "vários vendedores",
-            "competencia": emissao.competencia,
-            "valor": float(sum((e.valor for e in do_mes), Decimal(0))),
-            "estado": emissao.estado,
-            "estado_label": ESTADO_NFSE_LABEL.get(emissao.estado, emissao.estado),
-            "envio_status": ultimo_envio.get(emissao.id),
-            "pagamento_recebido": recebido,
-            "tem_pdf": emissao.estado == "confirmado",
-            "tem_email": bool(vinculo.email_para or vinculo.email_contato) if len(do_mes) == 1 else False,
-            "homologacao": (emissao.tomador_snapshot or {}).get("tpAmb") == "2",
-            "envio_forma": vinculo.envio_canal,
-        })
+        # Uma linha por nota (03/10/2026: a baixa é por nota — duas notas do
+        # mesmo tomador no mês são cobradas e recebidas separadamente).
+        for emissao in do_mes:
+            recebido = baixas.paga(emissao.id, vinculo.id, competencia)
+            if not recebido and emissao.estado in notas_abertas.ESTADOS_COBRAVEIS:
+                a_receber += emissao.valor
+                pagamentos_pendentes += 1
+            emissoes.append({
+                "emissao_id": emissao.id,
+                "vinculo_id": vinculo.id,
+                "quantidade": 1,
+                "apelido": vinculo.apelido,
+                "tomador_razao_social": vinculo.tomador.razao_social,
+                "competencia": emissao.competencia,
+                "valor": float(emissao.valor),
+                "estado": emissao.estado,
+                "estado_label": ESTADO_NFSE_LABEL.get(emissao.estado, emissao.estado),
+                "envio_status": ultimo_envio.get(emissao.id),
+                "pagamento_recebido": recebido,
+                "tem_pdf": emissao.estado == "confirmado",
+                "tem_email": bool(vinculo.email_para or vinculo.email_contato),
+                "homologacao": (emissao.tomador_snapshot or {}).get("tpAmb") == "2",
+                "envio_forma": vinculo.envio_canal,
+            })
 
     recebido_no_mes = _soma_pagamentos(db, prestador_id, competencia)
     recebido_mes_anterior = _soma_pagamentos(db, prestador_id, anterior)
@@ -392,8 +390,9 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
         })
 
     for g in notas_abertas.notas_em_aberto(db, hoje):
-        chave = f"receber:{g['vinculo_id']}:{g['competencia']}"
-        if chave in ignoradas:
+        chave = f"receber:{g['emissao_id']}"
+        # (chave antiga, de quando a baixa era por tomador + mês)
+        if chave in ignoradas or f"receber:{g['vinculo_id']}:{g['competencia']}" in ignoradas:
             continue
         pendencias.append({
             "tipo": "receber", "titulo": f"Receber de {g['apelido']}", "acao": "Dar baixa",

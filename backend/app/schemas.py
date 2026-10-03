@@ -231,6 +231,9 @@ class RegistrarPagamentoRequest(BaseModel):
     competencia: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$", description="AAAA-MM, mês de referência")
     valor: float = Field(gt=0)
     data_recebimento: date | None = None
+    # A nota que esse dinheiro paga (baixa por nota, 03/10/2026). Sem ela, o
+    # servidor escolhe pelo valor entre as notas do tomador no mês.
+    emissao_id: uuid.UUID | None = None
 
 
 class PagamentoResponse(BaseModel):
@@ -398,6 +401,7 @@ class NotaAbertaResponse(BaseModel):
     quantidade: int
     emitida_em: date
     dias_em_aberto: int
+    n_dps: int | None = None
 
 
 # --- Marco 9: canais de envio ---
@@ -872,6 +876,7 @@ class TransacaoExtraidaResponse(BaseModel):
     chave: str = ""  # linhas com a mesma chave são "o mesmo lançamento"
     vinculo_id: uuid.UUID | None = None
     competencia: str | None = None
+    emissao_id: uuid.UUID | None = None  # a nota em aberto que esse dinheiro paga
     categoria: str | None = None
     tipo_despesa: str = "despesa"
     origem_sugestao: str | None = None  # lembrado | nome | valor
@@ -884,6 +889,7 @@ class ExtratoExtraidoResponse(BaseModel):
     transacoes: list[TransacaoExtraidaResponse]
     categorias: list[str] = []
     categorias_retirada: list[str] = []
+    notas_abertas: list[dict] = []
     formato: str = "pdf"
     # Linhas de texto que o arquivo tinha: 0 num PDF = imagem escaneada.
     linhas_lidas: int = 0
@@ -896,6 +902,8 @@ class ItemConfirmarExtratoRequest(BaseModel):
     data_recebimento: date | None = None
     # Texto da linha do extrato: guarda a escolha pra próxima importação.
     descricao: str | None = Field(default=None, max_length=500)
+    # A nota que esse dinheiro paga (baixa por nota, 03/10/2026).
+    emissao_id: uuid.UUID | None = None
 
 
 class DespesaExtratoRequest(BaseModel):

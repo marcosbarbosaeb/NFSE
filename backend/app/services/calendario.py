@@ -52,6 +52,7 @@ from calendar import monthrange
 from sqlalchemy.orm import Session
 
 from app.models import AjusteEvento, Emissao, EventoManual, PagamentoRecebido, Prestador, PrestadorTomador
+from app.services.a_receber import Baixas
 from app.services.vinculos import listar_vinculos_ativos
 from app.tempo import data_local, hoje as hoje_br
 
@@ -146,9 +147,7 @@ def eventos_calendario(db: Session, prestador_id: uuid.UUID, inicio: datetime.da
     # 2) Previsão de recebimento
     # Só quem tem prazo de pagamento configurado, e só o que ainda não foi pago.
     com_prazo = [v.id for v in vinculos if v.dias_para_recebimento is not None]
-    pagos = {
-        (v, c) for v, c in db.query(PagamentoRecebido.prestador_tomador_id, PagamentoRecebido.competencia).distinct()
-    }
+    baixas = Baixas(db)
     emissoes_ativas = (
         db.query(Emissao).filter(Emissao.estado != "cancelada", Emissao.prestador_tomador_id.in_(com_prazo)).order_by(Emissao.criado_em).all()
         if com_prazo else []
@@ -164,7 +163,10 @@ def eventos_calendario(db: Session, prestador_id: uuid.UUID, inicio: datetime.da
         vinculo = vinculos_por_id.get(emissao.prestador_tomador_id)
         if vinculo is None or vinculo.dias_para_recebimento is None:
             continue
-        if (vinculo.id, emissao.competencia) in pagos:
+        if emissao.tomador_documento:
+            if baixas.mes_pago(vinculo.id, emissao.competencia):
+                continue
+        elif baixas.paga(emissao.id, vinculo.id, emissao.competencia):
             continue
         _incluir(eventos, {
             "data": data_local(emissao.criado_em) + datetime.timedelta(days=vinculo.dias_para_recebimento),

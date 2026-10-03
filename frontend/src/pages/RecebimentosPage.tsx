@@ -8,8 +8,8 @@ import { Modal } from "../components/ui/Modal"
 import { ImportarExtratoModal } from "../components/financeiro/ImportarExtratoModal"
 import { ListaSemNota } from "../components/financeiro/RecebimentosSemNota"
 import { ApiError, api, formatarErro } from "../lib/api"
-import { competenciaAtual, formatBRL } from "../lib/format"
-import type { Pagamento, RegistrarPagamentoRequest, VinculoResumo } from "../lib/types"
+import { competenciaAtual, formatBRL, formatCompetenciaLonga } from "../lib/format"
+import type { NotaAberta, Pagamento, RegistrarPagamentoRequest, VinculoResumo } from "../lib/types"
 
 export { ImportarExtratoModal }
 
@@ -158,6 +158,26 @@ export function RegistrarPagamentoModal({
   const [erro, setErro] = useState<string | null>(null)
   // Recebimento que caiu sem nota do tomador no mês: oferece gerar a nota.
   const [semNota, setSemNota] = useState<Pagamento | null>(null)
+  // Baixa por nota (03/10/2026): as notas em aberto do tomador escolhido.
+  const [abertas, setAbertas] = useState<NotaAberta[]>([])
+  const [emissaoId, setEmissaoId] = useState("")
+  const [notaTocada, setNotaTocada] = useState(false)
+
+  useEffect(() => {
+    api.get<NotaAberta[]>("/notas-a-receber").then(setAbertas).catch(() => setAbertas([]))
+  }, [])
+
+  const notasDoTomador = abertas.filter((n) => n.vinculo_id === vinculoId)
+  const nota = notasDoTomador.find((n) => n.emissao_id === emissaoId)
+
+  // Trocar o tomador (ou o valor, enquanto a pessoa não escolheu a nota à
+  // mão) sugere a nota: a do mesmo valor; senão a mais antiga em aberto.
+  useEffect(() => {
+    if (notaTocada) return
+    const doTomador = abertas.filter((n) => n.vinculo_id === vinculoId)
+    const exata = doTomador.find((n) => Math.abs(n.valor - Number(valor)) < 0.005)
+    setEmissaoId(exata?.emissao_id ?? doTomador[0]?.emissao_id ?? "")
+  }, [vinculoId, valor, abertas, notaTocada])
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -166,9 +186,10 @@ export function RegistrarPagamentoModal({
     try {
       const payload: RegistrarPagamentoRequest = {
         vinculo_id: vinculoId,
-        competencia,
+        competencia: nota?.competencia ?? competencia,
         valor: Number(valor),
         data_recebimento: dataRecebimento || null,
+        emissao_id: nota?.emissao_id ?? null,
       }
       const resp = await api.post<Pagamento>("/pagamentos", payload)
       if (resp.sem_nota && resp.vinculo_id) setSemNota(resp)
@@ -205,7 +226,10 @@ export function RegistrarPagamentoModal({
           <select
             required
             value={vinculoId}
-            onChange={(e) => setVinculoId(e.target.value)}
+            onChange={(e) => {
+              setVinculoId(e.target.value)
+              setNotaTocada(false)
+            }}
             className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
           >
             <option value="" disabled>
@@ -219,16 +243,47 @@ export function RegistrarPagamentoModal({
           </select>
         </FieldWrap>
 
-        <div className="grid grid-cols-2 gap-3">
-          <FieldWrap label="Competência">
-            <input
-              required
-              type="month"
-              value={competencia}
-              onChange={(e) => setCompetencia(e.target.value)}
+        {notasDoTomador.length > 0 && (
+          <FieldWrap label="Nota que esse dinheiro paga">
+            <select
+              value={emissaoId}
+              onChange={(e) => {
+                setEmissaoId(e.target.value)
+                setNotaTocada(true)
+                const escolhida = notasDoTomador.find((n) => n.emissao_id === e.target.value)
+                if (escolhida && !valor) setValor(String(escolhida.valor))
+              }}
               className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-            />
+            >
+              {notasDoTomador.map((n) => (
+                <option key={n.emissao_id} value={n.emissao_id}>
+                  Nota de {formatCompetenciaLonga(n.competencia)} · {formatBRL(n.valor)}
+                  {n.n_dps != null && notasDoTomador.some((o) => o !== n && o.competencia === n.competencia) ? ` · nº ${n.n_dps}` : ""}
+                </option>
+              ))}
+              <option value="">Nenhuma nota (dinheiro que caiu antes da nota)</option>
+            </select>
           </FieldWrap>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          {nota ? (
+            <FieldWrap label="Competência">
+              <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-slate-700/40 dark:text-slate-300">
+                {formatCompetenciaLonga(nota.competencia)}
+              </p>
+            </FieldWrap>
+          ) : (
+            <FieldWrap label="Competência">
+              <input
+                required
+                type="month"
+                value={competencia}
+                onChange={(e) => setCompetencia(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+              />
+            </FieldWrap>
+          )}
           <Field label="Valor (R$)" required type="number" step="0.01" min="0.01" value={valor} onChange={(e) => setValor(e.target.value)} />
         </div>
 

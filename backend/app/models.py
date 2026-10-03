@@ -493,6 +493,10 @@ class PagamentoRecebido(Base):
     competencia: Mapped[str] = mapped_column(String(7), nullable=False)
     valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     data_recebimento: Mapped[date | None] = mapped_column(Date)
+    # Baixa por nota (03/10/2026): a nota que este dinheiro paga. Vazio =
+    # pagamento antigo/sem nota, que vale pro mês inteiro do tomador (ver
+    # app/services/a_receber.py).
+    emissao_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("emissao.id", ondelete="SET NULL"))
     origem: Mapped[str] = mapped_column(String(20), nullable=False, server_default="manual")
     confirmado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

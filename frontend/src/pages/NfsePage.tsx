@@ -676,6 +676,7 @@ export function NfsePage() {
                       badgePagamento(e.pagamento_recebido)
                     ) : (
                       <BaixaPagamento
+                        emissaoId={e.id}
                         vinculoId={e.vinculo_id}
                         competencia={e.competencia}
                         valor={e.valor}

@@ -29,6 +29,7 @@ class ItemExtrato:
     valor: float
     data_recebimento: date | None = None
     descricao: str | None = None
+    emissao_id: uuid.UUID | None = None
 
 
 @dataclass
@@ -49,9 +50,9 @@ def confirmar_importacao_extrato(db: Session, itens: list[ItemExtrato]) -> list[
             if vinculo is None:
                 raise ValueError("Vínculo não encontrado (ou não pertence ao prestador ativo).")
             pagamento = registrar_pagamento(
-                db, vinculo, competencia=item.competencia, valor=item.valor, data_recebimento=item.data_recebimento
+                db, vinculo, competencia=item.competencia, valor=item.valor, data_recebimento=item.data_recebimento,
+                emissao_id=item.emissao_id, origem="extrato",
             )
-            pagamento.origem = "extrato"
             lembrar(db, vinculo.prestador_id, item.descricao, credito=True, vinculo_id=vinculo.id)
         except (ValueError, KeyError) as exc:
             savepoint.rollback()
