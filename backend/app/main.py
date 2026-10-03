@@ -72,6 +72,7 @@ from app.schemas import (
     CheckoutSessaoResponse,
     ConfirmarEmailRequest,
     ConfirmarExtratoRequest,
+    FonteReceitaRequest,
     ConfirmarExtratoResponse,
     ConsultaCnpjResponse,
     DashboardResumoResponse,
@@ -241,6 +242,7 @@ from app.services.google_oauth import (
     trocar_code_por_usuario,
 )
 from app.services.importacao_csv import CsvInvalidoError, importar_csv
+from app.services import classificar_extrato
 from app.services.importacao_extrato import ItemExtrato, confirmar_importacao_extrato
 from app.services.listagens import listar_despesas, listar_emissoes, listar_pagamentos
 from app.fiscal.cliente_sefin import ClienteSefin
@@ -2126,13 +2128,16 @@ def api_extrair_extrato(arquivo: UploadFile = File(...), db: Session = Depends(d
     except PdfInvalidoError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     transacoes = resultado.transacoes
+    sugestoes = classificar_extrato.sugerir(db, transacoes)
+    cats = classificar_extrato.categorias(db)
     return ExtratoExtraidoResponse(
+        categorias=cats["despesas"], categorias_retirada=cats["retiradas"],
         formato=resultado.formato,
         linhas_lidas=resultado.linhas_lidas,
         total_transacoes=len(transacoes),
         transacoes=[
-            {"linha": t.linha, "data": t.data, "descricao": t.descricao, "valor": float(t.valor), "credito": t.credito}
-            for t in transacoes
+            {"linha": t.linha, "data": t.data, "descricao": t.descricao, "valor": float(t.valor), **sug}
+            for t, sug in zip(transacoes, sugestoes)
         ],
     )
 
@@ -2147,7 +2152,10 @@ def api_confirmar_extrato(
     um item ruim não derruba os demais (ver
     app/services/importacao_extrato.py)."""
     itens = [
-        ItemExtrato(vinculo_id=i.vinculo_id, competencia=i.competencia, valor=i.valor, data_recebimento=i.data_recebimento)
+        ItemExtrato(
+            vinculo_id=i.vinculo_id, competencia=i.competencia, valor=i.valor, data_recebimento=i.data_recebimento,
+            descricao=i.descricao,
+        )
         for i in req.itens
     ]
     resultados = confirmar_importacao_extrato(db, itens) if itens else []
@@ -2155,7 +2163,11 @@ def api_confirmar_extrato(
     # Saídas do extrato viram despesas (28/09/2026: "importe as entradas da
     # forma que está e importe as saídas abaixo").
     for d in req.despesas:
-        registrar_despesa(db, prestador_id, categoria=d.categoria.strip(), competencia=d.competencia, valor=d.valor)
+        classificar_extrato.registrar_saida(
+            db, prestador_id, categoria=d.categoria, competencia=d.competencia, valor=d.valor,
+            descricao=d.descricao, data=d.data, tipo=d.tipo,
+        )
+        classificar_extrato.lembrar(db, prestador_id, d.descricao, credito=False, categoria=d.categoria.strip(), tipo=d.tipo)
     sem_nota = _sem_nota_dos_pagamentos(db, [r.pagamento_id for r in resultados if r.ok and r.pagamento_id])
     if sucesso > 0 or req.despesas:
         db.commit()
@@ -2164,6 +2176,18 @@ def api_confirmar_extrato(
         itens=[{"indice": r.indice, "ok": r.ok, "mensagem": r.mensagem, "pagamento_id": r.pagamento_id} for r in resultados],
         despesas_registradas=len(req.despesas), sem_nota=sem_nota,
     )
+
+
+@app.post("/api/vinculos/controle")
+def api_criar_fonte_de_receita(
+    req: FonteReceitaRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Tomador criado direto da revisão do extrato (03/10/2026): só o nome,
+    entra como fonte de receita só pra controle (sem nota)."""
+    vinculo = classificar_extrato.criar_fonte(db, db.get(Prestador, prestador_id), req.nome)
+    resposta = {"id": str(vinculo.id), "apelido": vinculo.apelido, "sem_nota": vinculo.sem_nota}
+    db.commit()
+    return resposta
 
 
 def _sem_nota_dos_pagamentos(db: Session, ids: list) -> list[dict]:

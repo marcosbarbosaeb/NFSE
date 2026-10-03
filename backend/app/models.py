@@ -570,6 +570,32 @@ class RotinaMensal(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class RegraExtrato(Base):
+    """Classificação lembrada de uma descrição do extrato (03/10/2026): depois
+    que a pessoa liga "Pix recebido ... EXI IMPORTACAO" à ElaUsa uma vez, as
+    próximas importações já vêm assim (ver app/services/classificar_extrato.py)."""
+
+    __tablename__ = "regra_extrato"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False
+    )
+    chave: Mapped[str] = mapped_column(String(160), nullable=False)
+    credito: Mapped[bool] = mapped_column(nullable=False)
+    prestador_tomador_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prestador_tomador.id", ondelete="CASCADE")
+    )
+    categoria: Mapped[str | None] = mapped_column(String(100))
+    tipo: Mapped[str] = mapped_column(String(10), nullable=False, default="despesa", server_default="despesa")
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("prestador_id", "chave", name="uq_regra_extrato_chave"),
+        CheckConstraint("tipo IN ('despesa', 'retirada')", name="ck_regra_extrato_tipo"),
+    )
+
+
 class RotinaMensalFeita(Base):
     __tablename__ = "rotina_mensal_feita"
 

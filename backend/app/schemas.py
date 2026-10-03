@@ -868,11 +868,21 @@ class TransacaoExtraidaResponse(BaseModel):
     descricao: str
     valor: float
     credito: bool
+    # Sugestões de classificação (03/10/2026, app/services/classificar_extrato.py).
+    vinculo_id: uuid.UUID | None = None
+    competencia: str | None = None
+    categoria: str | None = None
+    tipo_despesa: str = "despesa"
+    origem_sugestao: str | None = None  # lembrado | nome | valor
+    nota: dict | None = None  # nota em aberto que o valor paga
+    ja_lancado: bool = False
 
 
 class ExtratoExtraidoResponse(BaseModel):
     total_transacoes: int
     transacoes: list[TransacaoExtraidaResponse]
+    categorias: list[str] = []
+    categorias_retirada: list[str] = []
     formato: str = "pdf"
     # Linhas de texto que o arquivo tinha: 0 num PDF = imagem escaneada.
     linhas_lidas: int = 0
@@ -883,6 +893,8 @@ class ItemConfirmarExtratoRequest(BaseModel):
     competencia: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$", description="AAAA-MM, mês de referência")
     valor: float = Field(gt=0)
     data_recebimento: date | None = None
+    # Texto da linha do extrato: guarda a escolha pra próxima importação.
+    descricao: str | None = Field(default=None, max_length=500)
 
 
 class DespesaExtratoRequest(BaseModel):
@@ -890,6 +902,13 @@ class DespesaExtratoRequest(BaseModel):
     categoria: str = Field(min_length=1, max_length=100)
     competencia: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
     valor: float = Field(gt=0)
+    descricao: str | None = Field(default=None, max_length=500)
+    data: date | None = None
+    tipo: Literal["despesa", "retirada"] = "despesa"
+
+
+class FonteReceitaRequest(BaseModel):
+    nome: str = Field(min_length=2, max_length=60)
 
 
 class ConfirmarExtratoRequest(BaseModel):

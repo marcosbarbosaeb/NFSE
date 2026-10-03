@@ -79,6 +79,11 @@ _PALAVRAS_IGNORAR = (
     "limite", "rendimento acumulado", "saldo anterior", "saldo do dia", "saldo final",
     "saldo disponivel", "saldo disponível", "valor bloqueado",
 )
+# Cabeçalho/rodapé de página: nunca é continuação da transação de cima.
+_PALAVRAS_RODAPE = (
+    "pagina", "page ", "extrato", "ouvidoria", "sac ", "central de", "atendimento", "www.", "http", "agencia",
+    "periodo", "emitido em", "gerado em", "lancamentos", "descricao", "historico", "movimentacoes", "cliente",
+)
 _PALAVRAS_CREDITO = (
     "recebid", "recebimento", "credito", "crédito", "deposito", "depósito", "estorno",
     "rendimento", "resgate", "devolucao", "devolução", "entrada", "transf recebida",
@@ -179,6 +184,12 @@ def _eh_credito(sinal: str | None, sufixo: str | None, descricao: str) -> bool:
     if sinal == "+":
         return True
     texto = _sem_acento(descricao) + " "
+    # "Pix recebido ... PAGAMENTOS S.A." é entrada: a palavra do começo
+    # ("recebido"/"enviado") manda mais que o nome de quem pagou (03/10/2026).
+    if "recebid" in texto:
+        return True
+    if "enviad" in texto:
+        return False
     if any(_sem_acento(p) in texto for p in _PALAVRAS_DEBITO):
         return False
     if any(_sem_acento(p) in texto for p in _PALAVRAS_CREDITO):
@@ -209,6 +220,10 @@ def _linha_para_transacao(linha: str, numero: int, data: date | None) -> Transac
     descricao = re.sub(r"\bR\$\s*", " ", descricao)
     descricao = re.sub(r"\s+", " ", descricao).strip(" -–—:|")
     sinal = m.group("sinal") or m.group("sinal2")
+    if not re.search(r"[A-Za-zÀ-ÿ]", descricao):
+        # Só data e valor, sem texto nenhum: é o saldo da conta (anterior ou
+        # do dia) impresso sem a palavra "saldo", não uma transação.
+        return None
     return TransacaoExtraida(
         linha=numero,
         data=data,
@@ -224,6 +239,12 @@ def extrair_de_texto(linhas: list[str]) -> list[TransacaoExtraida]:
     ano_padrao = _inferir_ano("\n".join(linhas))
     transacoes: list[TransacaoExtraida] = []
     data_corrente: date | None = None
+    # Linhas de continuação: no Nubank (e em descrições compridas de outros
+    # bancos) o nome de quem pagou vem na linha de BAIXO, sem valor. Sem ela
+    # a pessoa não sabe de onde é o dinheiro (03/10/2026) — entra na
+    # descrição da transação de cima, no máximo duas linhas.
+    continuacoes = 0
+    pode_continuar = False
     for numero, linha_bruta in enumerate(linhas, start=1):
         linha = linha_bruta.strip()
         if not linha:
@@ -234,12 +255,25 @@ def extrair_de_texto(linhas: list[str]) -> list[TransacaoExtraida]:
             data_corrente = data
         texto = _sem_acento(resto)
         if any(_sem_acento(p) in texto for p in _PALAVRAS_IGNORAR):
+            pode_continuar = False
             continue
         if data is None and data_corrente is None:
             continue  # cabeçalho do documento, antes de qualquer data
         transacao = _linha_para_transacao(resto, numero, data or data_corrente)
         if transacao is not None:
             transacoes.append(transacao)
+            pode_continuar, continuacoes = True, 0
+            continue
+        if (
+            pode_continuar and data is None and continuacoes < 2 and len(linha) <= 120
+            and re.search(r"[A-Za-zÀ-ÿ]{3}", linha) and not _RE_VALOR.search(linha)
+            and not any(p in texto for p in _PALAVRAS_RODAPE)
+        ):
+            anterior = transacoes[-1]
+            anterior.descricao = (anterior.descricao + " " + " ".join(linha.split()))[:300]
+            continuacoes += 1
+        else:
+            pode_continuar = False
     return transacoes
 
 

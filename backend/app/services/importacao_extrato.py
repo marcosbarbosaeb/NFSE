@@ -17,6 +17,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
+from app.services.classificar_extrato import lembrar
 from app.services.pagamentos import registrar_pagamento
 from app.services.vinculos import buscar_vinculo
 
@@ -27,6 +28,7 @@ class ItemExtrato:
     competencia: str
     valor: float
     data_recebimento: date | None = None
+    descricao: str | None = None
 
 
 @dataclass
@@ -49,6 +51,8 @@ def confirmar_importacao_extrato(db: Session, itens: list[ItemExtrato]) -> list[
             pagamento = registrar_pagamento(
                 db, vinculo, competencia=item.competencia, valor=item.valor, data_recebimento=item.data_recebimento
             )
+            pagamento.origem = "extrato"
+            lembrar(db, vinculo.prestador_id, item.descricao, credito=True, vinculo_id=vinculo.id)
         except (ValueError, KeyError) as exc:
             savepoint.rollback()
             resultados.append(ItemConfirmado(indice=indice, ok=False, mensagem=str(exc)))
