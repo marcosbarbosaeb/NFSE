@@ -212,7 +212,7 @@ from app.services.envio_direto import (
 from app.services.demo import criar_conta_demo, eh_email_demo
 from app.services.limpeza import limpar_dados
 from app.services.ordem_awin import CNPJ_AWIN, OrdemAwinInvalidaError, ler_ordem_awin
-from app.services.relatorio_shopee import RelatorioShopeeInvalidoError, gerar_notas, ler_relatorio
+from app.services.relatorio_shopee import RelatorioShopeeInvalidoError, documentos_ja_gerados, gerar_notas, ler_relatorio
 from app.services.servicos_nacionais import buscar_servicos, listar_servicos, servico_por_codigo
 from app.services.google_oauth import (
     GoogleOAuthFalhaError,
@@ -2206,10 +2206,9 @@ def api_previa_shopee(
     except RelatorioShopeeInvalidoError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     ja = {
-        (e.competencia, e.tomador_documento)
-        for e in db.query(Emissao.competencia, Emissao.tomador_documento).filter(
-            Emissao.prestador_tomador_id == vinculo.id, Emissao.estado != "cancelada", Emissao.tomador_documento.isnot(None)
-        )
+        (mes, documento)
+        for mes in {v.competencia for v in relatorio.vendedores}
+        for documento in documentos_ja_gerados(db, vinculo, mes, relatorio.vendedores)
     }
     vendedores, por_mes = [], {}
     for v in relatorio.vendedores:
@@ -2220,14 +2219,21 @@ def api_previa_shopee(
             "cidade": (v.endereco or {}).get("cidade"), "uf": (v.endereco or {}).get("uf"),
             "estrangeiro": v.estrangeiro, "avisos": v.avisos, "ja_gerada": gerada,
         })
-        m = por_mes.setdefault(v.competencia, {"competencia": v.competencia, "vendedores": 0, "total": 0.0, "estrangeiros": 0, "ja_geradas": 0})
+        m = por_mes.setdefault(v.competencia, {
+            "competencia": v.competencia, "vendedores": 0, "total": 0.0, "estrangeiros": 0, "ja_geradas": 0,
+            "total_estrangeiros": 0.0, "total_ja_geradas": 0.0,
+        })
         m["vendedores"] += 1
         m["total"] += float(v.valor)
         m["estrangeiros"] += int(v.estrangeiro)
         m["ja_geradas"] += int(gerada)
+        # Pra pessoa conferir com o total que a Shopee mostra no painel.
+        m["total_estrangeiros"] += float(v.valor) if v.estrangeiro else 0.0
+        m["total_ja_geradas"] += float(v.valor) if gerada else 0.0
     competencias = sorted(por_mes.values(), key=lambda m: m["competencia"], reverse=True)
     for m in competencias:
-        m["total"] = round(m["total"], 2)
+        for campo in ("total", "total_estrangeiros", "total_ja_geradas"):
+            m[campo] = round(m[campo], 2)
     vendedores.sort(key=lambda v: (v["competencia"], -v["valor"]))
     return {
         "linhas_lidas": relatorio.linhas_lidas, "linhas_ignoradas": relatorio.linhas_ignoradas,

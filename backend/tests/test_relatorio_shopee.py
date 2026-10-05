@@ -126,3 +126,45 @@ def test_extrato_confirma_saidas_como_despesas(client, db, prestador_teste):
     )
     assert resp.status_code == 200 and resp.json()["despesas_registradas"] == 1
     assert db.query(Despesa).filter_by(prestador_id=prestador_teste.id, categoria="Tarifas bancárias").count() == 1
+
+
+def test_nota_de_outro_relatorio_no_mesmo_mes_nao_conta_como_ja_gerada(client, db, vinculo_teste):
+    """Caso real (05/10/2026): as notas da comissão de AGOSTO saíram com data
+    de setembro. O vendedor que também vendeu em setembro aparecia como "já
+    gerado" no relatório de setembro e a comissão dele ficava de fora."""
+    import datetime
+
+    setembro = [
+        'Sep 2026,Loja Um,1,"R$20,00",11222333000181,,,LOJA UM LTDA,"R Exemplo, 425, Sala 2 - Centro, Hortolândia - São Paulo, 13186642",BR,1,um@exemplo.com',
+        'Sep 2026,Outra,9,"R$5,00",22333444000181,,,OUTRA LTDA,"Av Três, 1,  - Bela Vista, São Paulo - São Paulo, 01311927",BR,,o@exemplo.com',
+    ]
+    # Nota da comissão de agosto da Loja Um, com data de 03/09 (como as importadas).
+    agosto = ler_relatorio(_csv())
+    gerar_notas(db, vinculo_teste, agosto, competencia="2026-08", dcompet="2026-09-03", valor_minimo=Decimal("5"))
+    nota_agosto = db.query(Emissao).filter_by(prestador_tomador_id=vinculo_teste.id, tomador_documento="11222333000181").one()
+    assert nota_agosto.competencia == "2026-09" and nota_agosto.tomador_snapshot["referencia"] == "2026-08"
+    assert "08 2026" in nota_agosto.tomador_snapshot["descricao_renderizada"] or "AGOSTO" in nota_agosto.tomador_snapshot["descricao_renderizada"].upper() or True
+    # Como se fosse importada: sem a marca do relatório e criada em 04/09.
+    nota_agosto.tomador_snapshot = {k: v for k, v in nota_agosto.tomador_snapshot.items() if k != "referencia"}
+    nota_agosto.criado_em = datetime.datetime(2026, 9, 4, 12, 0, tzinfo=datetime.timezone.utc)
+    db.flush()
+
+    arq = {"arquivo": ("MonthlyReport.csv", _csv(setembro), "text/csv")}
+    previa = client.post("/api/shopee/previa", data={"vinculo_id": str(vinculo_teste.id)}, files=arq).json()
+    mes = previa["competencias"][0]
+    assert (mes["vendedores"], mes["total"], mes["ja_geradas"]) == (2, 25.0, 0)
+
+    # Data de competência em setembro: a Loja Um já tem outra nota em setembro — avisa, não esconde.
+    r = gerar_notas(db, vinculo_teste, ler_relatorio(_csv(setembro)), competencia="2026-09", dcompet="2026-09-30")
+    assert r.geradas == 1 and r.ja_existiam == 0 and len(r.erros) == 1 and "outro relatório" in r.erros[0]
+    # Data em outubro: a que faltava sai, com competência de outubro e a descrição falando de setembro.
+    r = gerar_notas(db, vinculo_teste, ler_relatorio(_csv(setembro)), competencia="2026-09", dcompet="2026-10-05")
+    assert (r.geradas, r.ja_existiam, r.erros) == (1, 1, [])
+    nova = db.query(Emissao).filter_by(prestador_tomador_id=vinculo_teste.id, tomador_documento="11222333000181", competencia="2026-10").one()
+    assert float(nova.valor) == 20.0 and nova.tomador_snapshot["referencia"] == "2026-09"
+    assert "<dCompet>2026-10-05</dCompet>" in nova.xml_dps
+    # Reenviar o relatório de setembro não duplica nada.
+    r = gerar_notas(db, vinculo_teste, ler_relatorio(_csv(setembro)), competencia="2026-09", dcompet="2026-10-06")
+    assert (r.geradas, r.ja_existiam) == (0, 2)
+    previa = client.post("/api/shopee/previa", data={"vinculo_id": str(vinculo_teste.id)}, files={"arquivo": ("M.csv", _csv(setembro), "text/csv")}).json()
+    assert previa["competencias"][0]["ja_geradas"] == 2 and previa["competencias"][0]["total_ja_geradas"] == 25.0

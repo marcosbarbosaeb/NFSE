@@ -137,6 +137,7 @@ def criar_rascunho(
     tpAmb: str = "2",
     tomador_avulso: dict | None = None,
     dcompet: str | None = None,
+    referencia: str | None = None,
 ) -> Emissao:
     """rascunho — atribui nDPS, congela o snapshot do tomador+descrição, e
     checa a idempotência mensal ANTES de tentar gravar (o índice único
@@ -151,7 +152,10 @@ def criar_rascunho(
             f"(id={ja_existe.id}, estado={ja_existe.estado}). Cancele-a antes de criar outra."
         )
 
-    descricao = renderizar_descricao(vinculo.template_descricao, competencia, ordem=ordem)
+    # `referencia` (AAAA-MM): o mês a que o serviço se refere quando ele não é
+    # o da competência da nota — a comissão de setembro da Shopee sai numa
+    # nota de outubro, e a descrição tem que falar de setembro (05/10/2026).
+    descricao = renderizar_descricao(vinculo.template_descricao, referencia or competencia, ordem=ordem)
     snapshot = {
         "razao_social": vinculo.tomador.razao_social,
         "cnpj": vinculo.tomador.cnpj,
@@ -172,6 +176,7 @@ def criar_rascunho(
         # Data de competência escolhida no calendário (29/09/2026); sem ela,
         # a DPS usa o dia em que for montada.
         "dcompet": dcompet,
+        "referencia": referencia,
         "ordem": ordem,
         "aliq_sn": aliq_sn,
         "tpAmb": tpAmb,

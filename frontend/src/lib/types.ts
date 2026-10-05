@@ -67,7 +67,7 @@ export interface VendedorShopee {
 export interface PreviaShopee {
   linhas_lidas: number
   linhas_ignoradas: string[]
-  competencias: { competencia: string; vendedores: number; total: number; estrangeiros: number; ja_geradas: number }[]
+  competencias: { competencia: string; vendedores: number; total: number; estrangeiros: number; ja_geradas: number; total_estrangeiros?: number; total_ja_geradas?: number }[]
   vendedores: VendedorShopee[]
 }
 

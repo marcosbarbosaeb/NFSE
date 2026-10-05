@@ -258,6 +258,46 @@ def tomador_avulso(v: VendedorShopee) -> dict:
     }
 
 
+def documentos_ja_gerados(db, vinculo, mes_relatorio: str, vendedores: list) -> set[str]:
+    """Vendedores do relatório de `mes_relatorio` que JÁ têm a nota dessa
+    comissão. Não basta olhar a competência da nota: a nota da comissão de
+    agosto pode ter saído com data de setembro, e aí o vendedor que também
+    vendeu em setembro parecia "já gerado" (foi o que escondeu R$ 1.131 do
+    relatório de setembro/2026). Vale como já gerada:
+
+    - a nota que a Ana gerou a partir do relatório desse mês (fica marcado
+      na nota: `referencia`);
+    - nota sem essa marca (importada, ou de antes de 05/10/2026) que seja
+      da competência do relatório, do MESMO valor, e emitida depois que o
+      mês do relatório acabou — antes disso não tinha como ser a comissão
+      desse mês."""
+    import calendar
+    import datetime
+
+    from app.models import Emissao
+
+    ano, mes = int(mes_relatorio[:4]), int(mes_relatorio[5:7])
+    fim_do_mes = datetime.datetime(ano, mes, calendar.monthrange(ano, mes)[1], 23, 59, 59, tzinfo=datetime.timezone.utc)
+    valores = {v.documento: v.valor for v in vendedores if v.competencia == mes_relatorio}
+    ja: set[str] = set()
+    consulta = db.query(Emissao.tomador_documento, Emissao.competencia, Emissao.valor, Emissao.criado_em, Emissao.tomador_snapshot).filter(
+        Emissao.prestador_tomador_id == vinculo.id, Emissao.estado != "cancelada", Emissao.tomador_documento.in_(list(valores)),
+    )
+    for documento, competencia, valor, criado_em, snapshot in consulta:
+        referencia = (snapshot or {}).get("referencia")
+        if referencia:
+            if referencia == mes_relatorio:
+                ja.add(documento)
+            continue
+        if competencia != mes_relatorio or Decimal(str(valor)) != valores[documento]:
+            continue
+        if criado_em is not None and criado_em.tzinfo is None:
+            criado_em = criado_em.replace(tzinfo=datetime.timezone.utc)
+        if criado_em is None or criado_em > fim_do_mes:
+            ja.add(documento)
+    return ja
+
+
 @dataclass
 class ResultadoGeracao:
     geradas: int
@@ -279,32 +319,47 @@ def gerar_notas(
     aliq_sn: float | None = None,
     tpAmb: str = "2",
 ) -> ResultadoGeracao:
-    """Uma nota (rascunho -> montada) por vendedor da competência. Não dá
-    commit; cada vendedor roda no seu SAVEPOINT (um erro não derruba o
-    lote). Quem já tem nota ativa nessa competência é pulado — dá pra
-    reenviar o mesmo relatório sem duplicar nada."""
+    """Uma nota (rascunho -> montada) por vendedor do relatório do mês
+    `competencia`. Não dá commit; cada vendedor roda no seu SAVEPOINT (um
+    erro não derruba o lote). Quem já tem a nota dessa comissão é pulado —
+    dá pra reenviar o mesmo relatório sem duplicar nada.
+
+    A competência DA NOTA é o mês da data de competência escolhida
+    (`dcompet`), não o mês do relatório: a comissão de setembro costuma
+    sair numa nota de outubro. O mês do relatório fica marcado na nota
+    (`referencia`) e é ele que vai na descrição."""
     from app.fiscal.dps import DescricaoIncompletaError
     from app.services.motor_emissao import EmissaoJaExisteError, criar_rascunho, montar
 
+    competencia_da_nota = dcompet[:7] if dcompet else competencia
     geradas = ja_existiam = puladas = 0
     total = Decimal("0")
     erros: list[str] = []
+    ja = documentos_ja_gerados(db, vinculo, competencia, relatorio.vendedores)
     for v in relatorio.vendedores:
         if v.competencia != competencia:
             continue
         if v.valor < valor_minimo or (v.estrangeiro and not incluir_estrangeiros):
             puladas += 1
             continue
+        if v.documento in ja:
+            ja_existiam += 1
+            continue
         savepoint = db.begin_nested()
         try:
             emissao = criar_rascunho(
-                db, vinculo, competencia=competencia, valor=float(v.valor), aliq_sn=aliq_sn, tpAmb=tpAmb,
-                tomador_avulso=tomador_avulso(v), dcompet=dcompet,
+                db, vinculo, competencia=competencia_da_nota, valor=float(v.valor), aliq_sn=aliq_sn, tpAmb=tpAmb,
+                tomador_avulso=tomador_avulso(v), dcompet=dcompet, referencia=competencia,
             )
             montar(db, emissao)
         except EmissaoJaExisteError:
+            # Outra nota deste vendedor (de outro relatório) já ocupa o mês
+            # da data escolhida: não é "já gerada" — é pra pessoa saber.
             savepoint.rollback()
-            ja_existiam += 1
+            erros.append(
+                f"{v.razao_social}: já tem outra nota em {competencia_da_nota[5:]}/{competencia_da_nota[:4]} (de outro relatório). "
+                "Escolha uma data de competência em outro mês pra gerar a desta comissão."
+            )
         except (DescricaoIncompletaError, ValueError, KeyError) as exc:
             savepoint.rollback()
             erros.append(f"{v.razao_social}: {exc}")

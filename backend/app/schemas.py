@@ -1045,6 +1045,8 @@ class CompetenciaShopeeResponse(BaseModel):
     total: float
     estrangeiros: int
     ja_geradas: int
+    total_estrangeiros: float = 0
+    total_ja_geradas: float = 0
 
 
 class PreviaShopeeResponse(BaseModel):

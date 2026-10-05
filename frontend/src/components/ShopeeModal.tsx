@@ -83,6 +83,15 @@ export function ShopeeModal({
   const estrangeiros = doMes.filter((v) => v.estrangeiro).length
   const abaixoMinimo = doMes.filter((v) => v.valor < minimo && !v.ja_gerada).length
   const semEndereco = aGerar.filter((v) => !v.estrangeiro && !v.cidade).length
+  // Conferência com o painel da Shopee: o total do relatório é a comissão
+  // dos vendedores; somado à nota da própria Shopee dá a comissão do mês.
+  const soma = (lista: typeof doMes) => lista.reduce((s, v) => s + v.valor, 0)
+  const totalRelatorio = soma(doMes)
+  const deFora = [
+    { rotulo: "já geradas antes", lista: doMes.filter((v) => v.ja_gerada) },
+    { rotulo: "de fora do Brasil (não incluídos)", lista: doMes.filter((v) => !v.ja_gerada && v.estrangeiro && !incluirEstrangeiros) },
+    { rotulo: "abaixo do valor mínimo", lista: doMes.filter((v) => !v.ja_gerada && v.valor < minimo && (incluirEstrangeiros || !v.estrangeiro)) },
+  ].filter((g) => g.lista.length > 0)
 
   async function gerar() {
     if (!arquivo) return
@@ -199,8 +208,8 @@ export function ShopeeModal({
               mostrarCompetencia={false}
               hint={
                 competencia
-                  ? `Vai em cada nota. Na lista, elas continuam em ${formatCompetenciaLonga(competencia)} (mês do relatório).`
-                  : "Vai em cada nota."
+                  ? `É a competência de cada nota (é nesse mês que elas aparecem na lista). A descrição fala da comissão de ${formatCompetenciaLonga(competencia).toLowerCase()}.`
+                  : "É a competência de cada nota."
               }
             />
           </div>
@@ -222,8 +231,25 @@ export function ShopeeModal({
               <strong>
                 {aGerar.length} nota{aGerar.length === 1 ? "" : "s"} · {formatBRL(totalAGerar)}
               </strong>{" "}
-              em {competencia && formatCompetenciaLonga(competencia)}
+              da comissão de {competencia && formatCompetenciaLonga(competencia).toLowerCase()}
               {jaGeradas > 0 && ` (${jaGeradas} já geradas antes ficam como estão)`}
+            </p>
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+              O relatório tem {doMes.length} vendedores e soma <strong>{formatBRL(totalRelatorio)}</strong> — confira com o painel da
+              Shopee (comissão total do mês menos a nota da própria Shopee).
+              {deFora.length > 0 && (
+                <>
+                  {" "}
+                  Ficam de fora agora:{" "}
+                  {deFora.map((g, i) => (
+                    <span key={g.rotulo}>
+                      {i > 0 && "; "}
+                      {g.lista.length} {g.rotulo} ({formatBRL(soma(g.lista))})
+                    </span>
+                  ))}
+                  .
+                </>
+              )}
             </p>
             {semEndereco > 0 && (
               <p className="mt-1 text-xs text-warning-700">{semEndereco} sem endereço reconhecido — a nota sai sem o endereço do tomador.</p>
@@ -319,7 +345,7 @@ export function ShopeeModal({
               Fechar
             </Button>
             {onVerNotas && competencia && (
-              <Button type="button" variant="accent" onClick={() => onVerNotas(competencia)}>
+              <Button type="button" variant="accent" onClick={() => onVerNotas(/^\d{4}-\d{2}-\d{2}$/.test(dataCompetencia) ? dataCompetencia.slice(0, 7) : competencia)}>
                 Ver as notas na lista
               </Button>
             )}
