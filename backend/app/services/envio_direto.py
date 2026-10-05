@@ -254,7 +254,8 @@ def remetente_da_nota(nome_prestador: str | None) -> str:
 
 # Formas de envio padrão de um tomador (05/10/2026): pode ser mais de uma.
 # "download" = baixar o PDF sozinho quando a nota é autorizada.
-FORMAS_VALIDAS = ("email", "whatsapp", "portal", "download")
+# "drive" = guardar o PDF e o XML no Google Drive da própria pessoa.
+FORMAS_VALIDAS = ("email", "whatsapp", "portal", "download", "drive")
 MAXIMO_EXTRAS = 5
 
 

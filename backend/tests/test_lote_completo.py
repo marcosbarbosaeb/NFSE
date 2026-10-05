@@ -556,3 +556,72 @@ def test_cadastro_avisa_quando_o_email_de_confirmacao_nao_saiu(monkeypatch):
 
     monkeypatch.setattr(cadastro, "get_email_sender", lambda: SemCota())
     assert cadastro._enviar_email_confirmacao("x@y.com", "tok") is False
+
+
+def test_drive_como_forma_de_envio_guarda_a_nota_quando_autoriza(client, db, prestador_teste, vinculo_teste, pipeline, monkeypatch):
+    """05/10/2026: "nas formas de compartilhar a nota, poder escolher subir
+    elas pro próprio Drive" — vale pra qualquer nota, e falha do Drive nunca
+    atrapalha a nota."""
+    import app.services.drive as drive
+    from app.config import get_settings
+    from app.services.envio_direto import FORMAS_VALIDAS, formas_de_envio
+
+    assert "drive" in FORMAS_VALIDAS
+    s = get_settings()
+    monkeypatch.setattr(s, "google_oauth_client_id", "id-teste")
+    monkeypatch.setattr(s, "google_oauth_client_secret", "segredo-teste")
+    subidas = []
+
+    class ClienteFalso:
+        def __init__(self, db_, prestador_id):
+            pass
+
+        def pasta_do_mes(self, tomador, competencia):
+            return f"pasta-{tomador}-{competencia}"
+
+        def enviar(self, pasta, nome, dados, tipo):
+            subidas.append((pasta, nome))
+
+        def link_da_pasta(self, pasta):
+            return f"https://drive.google.com/drive/folders/{pasta}"
+
+    monkeypatch.setattr(drive, "ClienteDrive", ClienteFalso)
+    monkeypatch.setattr("app.services.pacote.obter_danfse", lambda db, e, pid: b"%PDF-falso")
+    prestador_teste.drive_token = b"cifrado"
+    vinculo_teste.envio_formas = ["drive"]
+    db.flush()
+    assert formas_de_envio(vinculo_teste) == ["drive"]
+
+    nota = _avulsa(db, vinculo_teste, "11222333000701", "x@x.com")
+    nota.tomador_documento = None  # nota comum do tomador
+    nota.estado = "confirmado"
+    db.flush()
+    link = drive.guardar_se_configurado(db, nota)
+    assert link == "https://drive.google.com/drive/folders/pasta-Fornecedor Teste-2026-09" and len(subidas) == 2
+    canais = {(e.canal, e.status) for e in db.query(Envio).filter_by(emissao_id=nota.id)}
+    # só o Drive marcado: guardar é a entrega deste tomador
+    assert canais == {("drive", "enviado"), ("direto_fornecedor", "enviado")}
+    # de novo não duplica; pelo botão da nota dá pra forçar
+    assert drive.guardar_nota(db, nota) == link and len(subidas) == 2
+    r = client.post(f"/api/dps/{nota.id}/drive?de_novo=true")
+    assert r.status_code == 200 and r.json()["link"] == link and len(subidas) == 4
+
+    # Drive fora do ar: a nota segue autorizada, sem erro
+    def quebrado(*a, **k):
+        raise drive.DriveFalhaError("fora do ar")
+
+    monkeypatch.setattr(ClienteFalso, "enviar", quebrado)
+    outra = _avulsa(db, vinculo_teste, "11222333000702", "y@x.com")
+    outra.competencia = "2026-08"
+    outra.tomador_documento = None
+    outra.estado = "confirmado"
+    db.flush()
+    assert drive.guardar_se_configurado(db, outra) is None and outra.estado == "confirmado"
+    assert db.query(Envio).filter_by(emissao_id=outra.id).count() == 0
+    assert client.post(f"/api/dps/{outra.id}/drive").status_code == 502
+
+    # a volta do Google só aceita tela nossa
+    from app.main import _voltar_do_drive
+
+    assert _voltar_do_drive("/app/tomadores/abc-123") == "/app/tomadores/abc-123"
+    assert _voltar_do_drive("https://malicioso.example/app") == "/app/nfse/lote" and _voltar_do_drive("//x.com") == "/app/nfse/lote"

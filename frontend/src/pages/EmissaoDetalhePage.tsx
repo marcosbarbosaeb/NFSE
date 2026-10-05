@@ -8,6 +8,7 @@ import {
   Copy,
   Download,
   FileDown,
+  FolderUp,
   Link as LinkIcon,
   MessageSquareText,
   PenLine,
@@ -26,7 +27,7 @@ import { FieldWrap } from "../components/ui/Field"
 import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { formatBRL } from "../lib/format"
-import type { CanalEnvio, ConferenciaNota, Emissao, Envio, NotaVisual, OpcoesEnvio, PontoConferencia, PreviaEmail, ProximaNota, VinculoResumo } from "../lib/types"
+import type { CanalEnvio, ConferenciaNota, Emissao, Envio, NotaVisual, OpcoesEnvio, PontoConferencia, PreviaEmail, ProximaNota, StatusDrive, VinculoResumo } from "../lib/types"
 
 // Marco 16, item 7 — motivos de cancelamento aceitos pela Sefin (mesmo
 // vocabulário de app/fiscal/eventos.MOTIVOS_CANCELAMENTO no backend).
@@ -43,6 +44,7 @@ const CANAIS: { value: CanalEnvio; label: string }[] = [
   { value: "email_geral", label: "E-mail geral (contador)" },
   { value: "whatsapp", label: "WhatsApp" },
   { value: "direto_fornecedor", label: "Marcada como enviada" },
+  { value: "drive", label: "Guardada no Google Drive" },
 ]
 
 function badgeStatusEnvio(status: string) {
@@ -70,6 +72,12 @@ export function EmissaoDetalhePage() {
   // (mesmo padrão que o resto do painel já usa pra evitar window.confirm:
   // ver Modal.tsx).
   const [modalSubmeter, setModalSubmeter] = useState(false)
+  // Google Drive (05/10/2026): qualquer nota autorizada pode ser guardada lá.
+  const [drive, setDrive] = useState<StatusDrive | null>(null)
+  const [guardando, setGuardando] = useState(false)
+  useEffect(() => {
+    api.get<StatusDrive>("/drive").then(setDrive).catch(() => setDrive(null))
+  }, [])
   const [modalCancelar, setModalCancelar] = useState(false)
   const [cmotivo, setCmotivo] = useState("1")
   const [xmotivo, setXmotivo] = useState("")
@@ -165,6 +173,28 @@ export function EmissaoDetalhePage() {
     // Só baixar é a entrega deste tomador: já fica marcada como enviada.
     if (formas.every((f) => f === "download")) {
       api.post(`/dps/${id}/marcar-enviada`, { forma: "outro" }).then(recarregarEnvios).catch(() => {})
+    }
+  }
+
+  const naPastaDoDrive = envios.find((e) => e.canal === "drive" && e.status === "enviado" && (e.destino ?? "").startsWith("https://drive.google.com/"))?.destino ?? null
+
+  async function guardarNoDrive() {
+    if (!id || !drive) return
+    setErroAcao(null)
+    setGuardando(true)
+    try {
+      if (!drive.conectado) {
+        // Abre o Google pra autorizar e volta pra esta nota.
+        const { url } = await api.post<{ url: string }>(`/drive/conectar?voltar=${encodeURIComponent(`/app/nfse/${id}`)}`, {})
+        window.location.href = url
+        return
+      }
+      await api.post<{ link: string }>(`/dps/${id}/drive${naPastaDoDrive ? "?de_novo=true" : ""}`, {})
+      recarregarEnvios()
+    } catch (err) {
+      setErroAcao(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão com o Google Drive.")
+    } finally {
+      setGuardando(false)
     }
   }
 
@@ -465,6 +495,21 @@ export function EmissaoDetalhePage() {
           <Button variant="outline" onClick={baixarXml} disabled={!nota.xml_disponivel}>
             <Download size={15} /> Baixar XML
           </Button>
+          {nota.estado === "confirmado" && drive?.disponivel && (
+            <Button variant="outline" onClick={guardarNoDrive} disabled={guardando}>
+              <FolderUp size={15} /> {guardando ? "Guardando..." : naPastaDoDrive ? "Guardar de novo no Drive" : drive.conectado ? "Guardar no Google Drive" : "Conectar o Google Drive"}
+            </Button>
+          )}
+          {naPastaDoDrive && (
+            <a
+              href={naPastaDoDrive}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-sm font-semibold text-primary-600 hover:underline dark:text-primary-300"
+            >
+              Abrir a pasta no Drive ↗
+            </a>
+          )}
           {dados?.origem === "importada" && !dados.avulsa && (
             <Button
               variant="outline"
@@ -544,7 +589,14 @@ export function EmissaoDetalhePage() {
               <li key={e.id} className="flex items-center justify-between py-2.5 text-sm">
                 <span className="min-w-0 break-words text-slate-700 dark:text-slate-300">
                   {CANAIS.find((c) => c.value === e.canal)?.label ?? e.canal}
-                  {e.destino && <span className="ml-1 text-xs text-slate-400">· {e.destino}</span>}
+                  {e.destino &&
+                    (e.canal === "drive" && e.destino.startsWith("https://drive.google.com/") ? (
+                      <a href={e.destino} target="_blank" rel="noreferrer" className="ml-1 text-xs font-medium text-primary-600 hover:underline dark:text-primary-300">
+                        · abrir a pasta ↗
+                      </a>
+                    ) : (
+                      <span className="ml-1 text-xs text-slate-400">· {e.destino}</span>
+                    ))}
                   {e.erro && <span className="block text-xs text-danger-600">{e.erro}</span>}
                 </span>
                 <div className="flex items-center gap-3">

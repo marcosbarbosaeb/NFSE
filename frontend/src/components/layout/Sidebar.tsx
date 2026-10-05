@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Building2, CalendarDays, Contact, FileText, Gift, Home, Layers, UserRound, Users, Wallet } from "lucide-react"
+import { ArrowLeftRight, Building2, CalendarDays, CircleHelp, Contact, FileText, Gift, Home, Layers, UserRound, Users, Wallet } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link, NavLink, useLocation } from "react-router-dom"
 import { api } from "../../lib/api"
@@ -126,6 +126,11 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
             <UserRound size={18} aria-hidden="true" />
             Minha conta
           </Link>
+          {/* Ajuda / FAQ (05/10/2026): perguntas frequentes e o guia completo. */}
+          <NavLink to="/app/ajuda" onClick={onFechar} className={({ isActive }) => `mt-1 ${classeItem(isActive)}`}>
+            <CircleHelp size={18} aria-hidden="true" />
+            Ajuda
+          </NavLink>
           <Link
             to="/app/conta?aba=indique"
             onClick={onFechar}

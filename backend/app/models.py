@@ -308,6 +308,12 @@ class Tomador(Base):
     sug_cod_trib_municipal: Mapped[str | None] = mapped_column(String(5))
     sug_cod_nbs: Mapped[str | None] = mapped_column(String(12))
     sug_meses_atras: Mapped[int | None] = mapped_column(SmallInteger)
+    # Como costuma ser enviado (05/10/2026) — formas e modelo do e-mail, sempre
+    # limpos de dado pessoal (app/services/sugestoes.py). Nunca destinatários.
+    sug_envio_formas: Mapped[list | None] = mapped_column(JSONB)
+    sug_email_assunto: Mapped[str | None] = mapped_column(String(300))
+    sug_email_mensagem: Mapped[str | None] = mapped_column(Text)
+    sug_email_anexos: Mapped[str | None] = mapped_column(String(10))
 
     # Empresa de fora do Brasil (migração b6e8a0c2d435): país (ISO, 2 letras)
     # e o número de identificação fiscal de lá. Só em tomador interno (desta
@@ -871,7 +877,7 @@ class Envio(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "canal IN ('download','email','whatsapp','direto_fornecedor','mensagem_pronta','email_geral')",
+            "canal IN ('download','email','whatsapp','direto_fornecedor','mensagem_pronta','email_geral','drive')",
             name="ck_envio_canal",
         ),
         CheckConstraint("status IN ('pendente','enviado','falha')", name="ck_envio_status"),

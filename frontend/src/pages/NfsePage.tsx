@@ -414,11 +414,11 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
           <p className="font-semibold text-slate-800 dark:text-slate-100">Nenhuma nota em lote por aqui.</p>
           <p className="mt-1">
             Esta tela é pra quem emite muitas notas de uma vez a partir de um relatório — como as comissões da Shopee, uma nota pra
-            cada vendedor. Pra usar, cadastre o tomador com “o valor chega por relatório em planilha” em{" "}
+            cada vendedor. Pra usar, cadastre a Shopee (pelo CNPJ dela) em{" "}
             <Link to="/app/tomadores" className="font-semibold text-primary-600 hover:underline">
               Tomadores
             </Link>
-            .
+            {" "}— eu reconheço e passo a pedir o relatório de comissões aqui.
           </p>
         </Card>
       )}

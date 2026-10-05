@@ -327,6 +327,19 @@ export function VinculoFormPage() {
       })
       // "Mês de referência" da descrição (mês anterior, dois meses antes...).
       if (!f.descricao_meses_atras && tomadorSelecionado.sug_meses_atras) novo.descricao_meses_atras = tomadorSelecionado.sug_meses_atras
+      // Como este tomador costuma receber a nota (formas e modelo do e-mail) —
+      // só enquanto a pessoa não mexeu no envio. Destinatário é sempre dela.
+      const t = tomadorSelecionado
+      const envioIntocado = f.envio_formas.length === 1 && f.envio_formas[0] === "email" && !f.email_modelo.assunto && !f.email_modelo.mensagem
+      if (envioIntocado) {
+        if (t.sug_envio_formas && t.sug_envio_formas.length > 0) novo.envio_formas = t.sug_envio_formas
+        novo.email_modelo = {
+          ...f.email_modelo,
+          assunto: t.sug_email_assunto ?? f.email_modelo.assunto,
+          mensagem: t.sug_email_mensagem ?? f.email_modelo.mensagem,
+          anexos: f.email_modelo.anexos || t.sug_email_anexos || "",
+        }
+      }
       return novo
     })
     // só quando troca de tomador

@@ -220,7 +220,8 @@ def test_notas_de_vendedores_viram_uma_linha_por_mes(client, db, prestador_teste
     assert [(i["tipo"], i["competencia"], i["quantidade"], i["valor"], i["status"]) for i in grupo["itens"]] == [
         ("lote", mes, 366, 4516.44, "em_aberto"), ("lote", mes_velho, 40, 400.0, "atrasada"),
     ]
-    assert grupo["resumo"]["notas"] == 406 and painel["resumo"]["notas"] == 407
+    # as notas de vendedores de um mês contam como UMA ("Shopee + vendedores")
+    assert grupo["resumo"]["notas"] == 2 and painel["resumo"]["notas"] == 3
     # o "a receber" de sempre continua sem as notas dos vendedores
     assert [n["emissao_id"] for n in client.get("/api/notas-a-receber").json()] == [str(comum.id)]
 
@@ -238,7 +239,7 @@ def test_notas_de_vendedores_viram_uma_linha_por_mes(client, db, prestador_teste
     atual, anterior = grupo["itens"]
     assert (atual["status"], atual["recebido"], atual["como"], atual["pago_em"]) == ("paga", 4516.44, "manual", hoje.isoformat())
     assert (anterior["status"], anterior["recebido"], anterior["diferenca"]) == ("paga_a_menor", 380.0, -20.0)
-    assert painel["recebimentos_sem_nota"] == [] and grupo["resumo"]["pagas"] == 406
+    assert painel["recebimentos_sem_nota"] == [] and grupo["resumo"]["pagas"] == 2
 
     # desfazer: apaga só aquele recebimento e o mês volta a ficar em aberto
     assert client.delete(f"/api/pagamentos/{pag.json()['id']}").json() == {"removidos": 1}

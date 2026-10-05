@@ -586,6 +586,10 @@ class TomadorResponse(BaseModel):
     sug_cod_trib_municipal: str | None = None
     sug_cod_nbs: str | None = None
     sug_meses_atras: int | None = None
+    sug_envio_formas: list[str] | None = None
+    sug_email_assunto: str | None = None
+    sug_email_mensagem: str | None = None
+    sug_email_anexos: str | None = None
     # 'interno' = só desta conta (sem CNPJ: parceria, pessoa física, exterior).
     status: str = "aprovado"
     # Empresa de fora do Brasil: país (ISO, 2 letras) e identificação fiscal

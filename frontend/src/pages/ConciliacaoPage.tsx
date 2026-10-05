@@ -35,12 +35,15 @@ function Fechamento({ mes, comNotas, onIr }: { mes: FechamentoDoMes; comNotas: b
     vazio: { rotulo: "Nada lançado", cor: "text-slate-500 dark:text-slate-400", fundo: "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/60", Icone: Minus },
   } as const
   const e = ESTADOS[mes.estado]
+  // As notas em lote (Shopee + vendedores) contam como uma só — senão centenas
+  // de notinhas escondem as poucas que a pessoa precisa acompanhar.
+  const emLote = mes.notas_em_lote ? ` · o lote de ${mes.notas_em_lote.toLocaleString("pt-BR")} vendedores conta como 1` : ""
   const notas =
-    mes.notas === 0
+    (mes.notas === 0
       ? "nenhuma nota"
       : mes.notas_pagas === mes.notas
         ? `${plural(mes.notas, "nota paga", "notas pagas")}${mes.diferencas > 0 ? ` · ${mes.diferencas} com diferença` : ""}`
-        : `${mes.notas_pagas} de ${plural(mes.notas, "nota paga", "notas pagas")}${mes.notas_atrasadas > 0 ? ` · ${plural(mes.notas_atrasadas, "atrasada", "atrasadas")}` : ""}`
+        : `${mes.notas_pagas} de ${plural(mes.notas, "nota paga", "notas pagas")}${mes.notas_atrasadas > 0 ? ` · ${plural(mes.notas_atrasadas, "atrasada", "atrasadas")}` : ""}`) + emLote
   const extrato =
     mes.extrato_linhas === 0
       ? "nenhum extrato importado"
@@ -203,7 +206,7 @@ export function ConciliacaoPage() {
               O mês fecha quando {semNotas ? "todas as linhas do extrato dele estão classificadas" : "as notas dele estão pagas e o extrato dele está todo classificado"}.
             </p>
           </div>
-          {/* o mês atual primeiro; no celular rola pro lado */}
+          {/* do mais antigo pro atual, da esquerda pra direita; no celular rola pro lado */}
           <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible">
             {resumo.fechamentos.map((mes) => (
               <Fechamento key={mes.competencia} mes={mes} comNotas={!semNotas} onIr={irPara} />

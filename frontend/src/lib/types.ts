@@ -141,6 +141,11 @@ export interface Tomador {
    * O código municipal não é sugerido: muda de cidade pra cidade. */
   sug_cod_nbs?: string | null
   sug_meses_atras?: number | null
+  /** Como este tomador costuma receber a nota e o modelo do e-mail (sem dado pessoal). */
+  sug_envio_formas?: FormaDeEnvio[] | null
+  sug_email_assunto?: string | null
+  sug_email_mensagem?: string | null
+  sug_email_anexos?: "pdf_xml" | "pdf" | "xml" | null
 }
 
 export interface TomadorCriarRequest {
@@ -538,7 +543,7 @@ export interface ImportacaoCsvResultado {
   linhas: ImportacaoLinha[]
 }
 
-export type CanalEnvio = "download" | "email" | "email_geral" | "whatsapp" | "direto_fornecedor" | "mensagem_pronta"
+export type CanalEnvio = "download" | "email" | "email_geral" | "whatsapp" | "direto_fornecedor" | "mensagem_pronta" | "drive"
 
 /** Como o tomador recebe a nota (configurado no tomador). null = e-mail. */
 export type FormaEnvio = "email" | "whatsapp" | "portal" | "nenhum"
@@ -1224,7 +1229,15 @@ export interface ConferenciaVinculo extends ConferenciaNota {
 export type ConferenciaTomadores = Record<string, { erros: number; avisos: number }>
 
 /** Formas de envio padrão de um tomador (pode ser mais de uma). */
-export type FormaDeEnvio = "email" | "whatsapp" | "portal" | "download"
+/** "drive": guardar o PDF e o XML no Google Drive da própria pessoa. */
+export type FormaDeEnvio = "email" | "whatsapp" | "portal" | "download" | "drive"
+
+/** GET /drive */
+export interface StatusDrive {
+  disponivel: boolean
+  conectado: boolean
+  email: string | null
+}
 
 /** Outro destinatário do tomador que recebe a nota num e-mail próprio. */
 export interface EmailExtra {
@@ -1419,6 +1432,8 @@ export interface FechamentoDoMes {
   diferencas: number
   extrato_linhas: number
   extrato_pendentes: number
+  /** Notas de vendedores dentro do grupo "em lote" do mês (que conta como 1 em `notas`). */
+  notas_em_lote?: number
 }
 
 export interface ResumoConciliacao {
@@ -1427,4 +1442,11 @@ export interface ResumoConciliacao {
   /** Soma das pendências das duas conciliações. */
   pendencias: number
   fechamentos: FechamentoDoMes[]
+}
+
+// --- Ajuda / FAQ (05/10/2026) ---
+/** GET /ajuda — `ia_url`: endereço da IA gratuita carregada com o guia da Ana
+ * (null = não configurada: a tela não mostra o botão "Perguntar pra IA"). */
+export interface AjudaInfo {
+  ia_url: string | null
 }

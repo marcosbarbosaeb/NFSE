@@ -15,6 +15,7 @@ redirect `<APP_BASE_URL>/api/drive/callback`.
 Como em google_oauth.py: esta sandbox não fala com a Google — os testes
 usam `requests` simulado; a validação de verdade é em produção.
 """
+import datetime
 import json
 import logging
 import uuid
@@ -187,3 +188,74 @@ class ClienteDrive:
 
     def link_da_pasta(self, pasta_id: str) -> str:
         return f"https://drive.google.com/drive/folders/{pasta_id}"
+
+
+# --- Uma nota no Drive (05/10/2026) ---
+# "A ideia é a pessoa, nas formas de compartilhar a nota, poder escolher subir
+# elas pro próprio Drive. Serve pra todo tipo de nota."
+
+def link_da_nota(db: Session, emissao) -> str | None:
+    """Link da pasta onde esta nota já foi guardada (None = ainda não foi)."""
+    from app.models import Envio
+
+    envio = (
+        db.query(Envio).filter_by(emissao_id=emissao.id, canal="drive", status="enviado")
+        .order_by(Envio.criado_em.desc()).first()
+    )
+    return envio.destino if envio is not None else None
+
+
+def guardar_nota(db: Session, emissao, *, de_novo: bool = False, cliente: "ClienteDrive | None" = None) -> str:
+    """Sobe o PDF e o XML da nota pra Agente Ana / <tomador> / AAAA-MM e
+    devolve o link da pasta. Já guardada: devolve o link sem subir de novo
+    (a menos de `de_novo`). Levanta Drive*Error se não der."""
+    from app.models import Envio
+    from app.services import pacote
+
+    if not de_novo:
+        link = link_da_nota(db, emissao)
+        if link:
+            return link
+    arquivos = pacote.arquivos_da_nota(db, emissao, "ambos")
+    if not arquivos:
+        raise DriveFalhaError("Esta nota ainda não tem arquivo pra guardar.")
+    cliente = cliente or ClienteDrive(db, emissao.prestador_id)
+    vinculo = emissao.vinculo
+    pasta = cliente.pasta_do_mes(vinculo.apelido if vinculo is not None else "Notas", emissao.competencia)
+    for nome, dados, tipo in arquivos:
+        cliente.enviar(pasta, nome, dados, tipo)
+    link = cliente.link_da_pasta(pasta)
+    db.add(Envio(
+        id=uuid.uuid4(), emissao_id=emissao.id, canal="drive", status="enviado", tentativas=1,
+        enviado_em=datetime.datetime.now(datetime.timezone.utc), destino=link[:200],
+    ))
+    db.flush()
+    return link
+
+
+def guardar_se_configurado(db: Session, emissao) -> str | None:
+    """Chamado quando a prefeitura autoriza a nota: se o tomador tem o
+    Google Drive entre as formas de envio (e o Drive está conectado), guarda
+    os arquivos. Nunca atrapalha a nota: qualquer falha só vai pro log."""
+    from app.services.envio_direto import formas_de_envio, marcar_enviada
+
+    if emissao.tomador_documento or emissao.vinculo is None:
+        return None  # notas de vendedores sobem pelo pacote do mês
+    formas = formas_de_envio(emissao.vinculo)
+    if "drive" not in formas:
+        return None
+    prestador = db.get(Prestador, emissao.prestador_id)
+    if prestador is None or not prestador.drive_token or not configurado():
+        return None
+    try:
+        with db.begin_nested():
+            link = guardar_nota(db, emissao)
+            # Só o Drive: guardar é a entrega deste tomador.
+            if formas == ["drive"]:
+                marcar_enviada(db, emissao, "Google Drive")
+        return link
+    except (DriveFalhaError, DriveNaoConectadoError, DriveNaoConfiguradoError) as exc:
+        logger.warning("Drive: não guardei a nota %s (%s)", emissao.id, exc)
+    except Exception:  # noqa: BLE001 — a nota já está autorizada; o Drive é acessório
+        logger.exception("Drive: erro inesperado ao guardar a nota %s", emissao.id)
+    return None

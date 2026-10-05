@@ -164,12 +164,12 @@ def _so_gerar(db, prestador, hoje):
     return [t for t in _tipos_atencao(db, prestador, hoje) if t.startswith("gerar")]
 
 
-def test_dia_de_gerar_so_entra_em_atencao_quando_o_dia_chega(db, prestador_teste):
+def test_dia_de_gerar_entra_em_atencao_na_vespera_no_dia_e_depois(db, prestador_teste):
     v = _vinculo(db, prestador_teste, "Aviso", dia=10)
 
     assert _so_gerar(db, prestador_teste, datetime.date(2026, 10, 8)) == []
-    # Véspera: ainda é agenda (aparece nos Próximos passos com "até 10/10").
-    assert _so_gerar(db, prestador_teste, datetime.date(2026, 10, 9)) == []
+    # Véspera: não é pendência, mas é um ponto de atenção que o Marcos pediu (05/10/2026).
+    assert _so_gerar(db, prestador_teste, datetime.date(2026, 10, 9)) == ["gerar_amanha"]
     assert _so_gerar(db, prestador_teste, datetime.date(2026, 10, 10)) == ["gerar_hoje"]
     assert _so_gerar(db, prestador_teste, datetime.date(2026, 10, 20)) == ["gerar_atrasada"]
     criar_rascunho(db, v, competencia="2026-10", valor=10)

@@ -437,6 +437,10 @@ def _confirmar_com_resposta(db: Session, emissao: Emissao, resposta, cliente: Cl
     emissao.erro_detalhe = None
     emissao.atualizado_em = datetime.now(timezone.utc)
     db.flush()
+    # Tomador com "guardar no Google Drive" entre as formas de envio.
+    from app.services import drive
+
+    drive.guardar_se_configurado(db, emissao)
     return emissao
 
 

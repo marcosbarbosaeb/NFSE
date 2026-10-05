@@ -139,7 +139,8 @@ export function NotaConciliadaLinha({
 
   const idsCandidatos = new Set(item.candidatos.map((c) => c.lancamento_id))
   const outras = [...lancamentos.values()].filter((l) => !idsCandidatos.has(l.id))
-  const titulo = lote ? `Vendedores de ${mesDaNota(item.competencia)}` : `Nota de ${mesDaNota(item.competencia)}`
+  // As notas de vendedores do mês contam como UMA: "Shopee + vendedores".
+  const titulo = lote ? `${apelido} + vendedores — ${mesDaNota(item.competencia)}` : `Nota de ${mesDaNota(item.competencia)}`
   const Icone = item.status === "atrasada" ? AlertTriangle : emAberto ? Clock : CheckCircle2
   const corIcone =
     item.status === "atrasada"

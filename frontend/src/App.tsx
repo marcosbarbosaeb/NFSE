@@ -16,6 +16,7 @@ import { LoginPage } from "./pages/LoginPage"
 
 // Telas do painel carregadas sob demanda (o site institucional e o login
 // não baixam o app inteiro).
+const AjudaPage = lazy(() => import("./pages/AjudaPage").then((m) => ({ default: m.AjudaPage })))
 const CalendarioPage = lazy(() => import("./pages/CalendarioPage").then((m) => ({ default: m.CalendarioPage })))
 const ConfiguracoesPage = lazy(() => import("./pages/ConfiguracoesPage").then((m) => ({ default: m.ConfiguracoesPage })))
 const ContaPage = lazy(() => import("./pages/ContaPage").then((m) => ({ default: m.ContaPage })))
@@ -80,6 +81,8 @@ export default function App() {
             <Route path="conta" element={<ContaPage />} />
             <Route path="empresa" element={<EmpresaPage />} />
             <Route path="configuracoes" element={<ConfiguracoesPage />} />
+            {/* Ajuda / FAQ (05/10/2026): vale pra qualquer módulo. */}
+            <Route path="ajuda" element={<AjudaPage />} />
             <Route path="indique" element={<Navigate to="/app/conta?aba=indique" replace />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

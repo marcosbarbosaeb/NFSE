@@ -21,6 +21,8 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
   (`lotes.iniciar_relogio`), nunca conta como falha. Vendedor sem e-mail também não é falha: vira aviso.
 - Lote de e-mail nunca reenvia nota já entregue por QUALQUER canal (`lotes.CANAIS_ENTREGA`) sem `reenviar=True`.
 - Google Drive: escopo `drive.file`, callback `/api/drive/callback`, token cifrado no prestador (`app/services/drive.py`).
+- Catálogo de tomadores (`tomador.sug_*`) é compartilhado entre contas: texto livre só entra depois de
+  `app/services/sugestoes.limpar_texto` (tira conta bancária, CNPJ, pedido, ID de afiliado, @). Nunca destinatários.
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.
 - Segredos (Stripe, Resend, Google) só nas variáveis do Railway — nunca no código nem em conversa.
 

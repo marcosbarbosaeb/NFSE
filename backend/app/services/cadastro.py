@@ -186,16 +186,17 @@ def confirmar_email(db: Session, token: str) -> Usuario:
     return usuario
 
 
-def reenviar_confirmacao(db: Session, email: str) -> None:
+def reenviar_confirmacao(db: Session, email: str) -> bool:
     """Sempre 'silencioso' do ponto de vista de quem chama (não revela se o
     e-mail existe ou já está confirmado) — quem decide o que a API devolve
     é app/main.py, esta função só faz o trabalho quando aplicável."""
     email_norm = email.strip().lower()
     usuario = db.query(Usuario).filter_by(email=email_norm, email_confirmado=False).one_or_none()
     if usuario is None:
-        return
+        return True
     token = _gerar_token()
     usuario.token_confirmacao = token
     usuario.token_confirmacao_expira_em = datetime.datetime.now(datetime.timezone.utc) + _VALIDADE_TOKEN
     db.flush()
-    _enviar_email_confirmacao(usuario.email, token)
+    # False = tentei e o serviço de e-mail não aceitou (limite de envios).
+    return _enviar_email_confirmacao(usuario.email, token)

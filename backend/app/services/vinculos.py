@@ -108,23 +108,42 @@ def registrar_sugestoes(db: Session, vinculo: PrestadorTomador, *, sobrescrever:
     tomador = db.get(Tomador, vinculo.tomador_id)
     if tomador is None or vinculo.sem_nota or tomador.status != "aprovado":
         return False
+    from app.services.envio_direto import formas_de_envio
+    from app.services.sugestoes import limpar_texto
+
+    # Nada pessoal vai pro catálogo: conta bancária, CNPJ, pedido, ID de
+    # afiliado saem; o nome da empresa vira {prestador} nos textos de e-mail.
+    prestador = db.get(Prestador, vinculo.prestador_id)
+    nomes = tuple(n for n in (getattr(prestador, "razao_social", None), getattr(prestador, "nome_fantasia", None)) if n)
+    tem_modelo_de_envio = vinculo.envio_formas is not None
     novos = {
         "sug_cod_trib_nacional": vinculo.cod_trib_nacional,
-        "sug_template_descricao": vinculo.template_descricao,
+        "sug_template_descricao": limpar_texto(vinculo.template_descricao, nomes),
         "sug_dia_emissao": vinculo.dia_limite_emissao,
         "sug_dias_recebimento": vinculo.dias_para_recebimento,
-        "sug_cod_trib_municipal": vinculo.cod_trib_municipal,
+        # (o código municipal muda de cidade pra cidade: não é sugerido)
         "sug_cod_nbs": vinculo.cod_nbs,
         "sug_meses_atras": vinculo.descricao_meses_atras or 0,
+        "sug_envio_formas": formas_de_envio(vinculo) if tem_modelo_de_envio else None,
+        "sug_email_assunto": limpar_texto(vinculo.email_assunto, nomes, "{prestador}"),
+        "sug_email_mensagem": limpar_texto(vinculo.email_mensagem, nomes, "{prestador}"),
+        "sug_email_anexos": vinculo.email_anexos,
     }
+    # Textos livres: na curadoria, o que não passa na limpeza APAGA a sugestão
+    # antiga (ela pode ter dado pessoal de antes desta regra).
+    textos_livres = ("sug_template_descricao", "sug_email_assunto", "sug_email_mensagem")
     mudou = False
     for campo, valor in novos.items():
-        if valor is None or valor == "":
+        vazio = valor is None or valor == ""
+        if vazio and not (sobrescrever and campo in textos_livres):
             continue
         if sobrescrever or getattr(tomador, campo) in (None, ""):
-            if getattr(tomador, campo) != valor:
-                setattr(tomador, campo, valor)
+            if getattr(tomador, campo) != (None if vazio else valor):
+                setattr(tomador, campo, None if vazio else valor)
                 mudou = True
+    if sobrescrever and tomador.sug_cod_trib_municipal is not None:
+        tomador.sug_cod_trib_municipal = None
+        mudou = True
     db.flush()
     return mudou
 

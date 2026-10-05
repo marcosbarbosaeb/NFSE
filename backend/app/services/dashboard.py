@@ -115,10 +115,9 @@ def _avisos_dia_de_gerar(
     no calendário (AjusteEvento) e some assim que a nota do mês é gerada.
     Depois do dia, continua avisando que ficou pra trás.
 
-    05/10/2026 ("o que entra em Precisa de sua atenção deve ser apenas
-    pendências"): a Visão geral chama com `incluir_vespera=False` — o aviso
-    da véspera é coisa marcada pra amanhã, fica nos Próximos passos/agenda.
-    E quem clicou em "ignorar este aviso" nos Próximos passos (atraso
+    05/10/2026: o aviso da véspera continua na Visão geral ("não é
+    pendência, mas é um ponto de atenção sim para a pessoa").
+    Quem clicou em "ignorar este aviso" nos Próximos passos (atraso
     consciente) também não é cobrado aqui."""
     hoje = hoje or hoje_br()
     competencia = f"{hoje.year:04d}-{hoje.month:02d}"
@@ -285,7 +284,7 @@ def resumo_mes(
     if faturado_mes_anterior:
         delta_faturamento_pct = float((faturado_no_mes - faturado_mes_anterior) / faturado_mes_anterior * 100)
 
-    atencao: list[dict] = _avisos_dia_de_gerar(db, vinculos, hoje, incluir_vespera=False)
+    atencao: list[dict] = _avisos_dia_de_gerar(db, vinculos, hoje)  # com a véspera: é um ponto de atenção pedido pelo Marcos
     cert = db.query(Certificado).filter_by(prestador_id=prestador_id).one_or_none()
     if cert is not None and cert.validade is not None:
         # Fica mesmo antes de vencer: renovar um A1 leva dias e, vencido,

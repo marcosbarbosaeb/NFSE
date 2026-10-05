@@ -127,6 +127,13 @@ class Settings(BaseSettings):
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
 
+    # Ajuda / FAQ (05/10/2026): endereço de uma IA gratuita de terceiros
+    # (NotebookLM, por exemplo) carregada com o guia da Ana
+    # (frontend/public/guia-agente-ana.md). Variável AJUDA_IA_URL; vazia =
+    # a tela de Ajuda não mostra o botão "Perguntar pra IA". Só vale se
+    # começar com https:// (ver app/ajuda.py).
+    ajuda_ia_url: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

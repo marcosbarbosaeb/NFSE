@@ -357,6 +357,13 @@ def _sem_nota(db: Session, base: _Base, desde: str | None) -> list[dict]:
     ]
 
 
+def _conta(item: dict) -> int:
+    """Quanto um item pesa nas contagens. As notas de vendedores de um mês
+    (Shopee) contam como UMA — "Shopee + vendedores" — e não como centenas
+    (05/10/2026: "aí a pessoa perde o controle")."""
+    return 1 if item["tipo"] == "lote" else item["quantidade"]
+
+
 def _somar(itens: list[dict], base: _Base) -> dict:
     """Totais de um conjunto de notas. O recebido do histórico (pagamento do
     mês inteiro) entra uma vez por tomador + mês."""
@@ -368,7 +375,7 @@ def _somar(itens: list[dict], base: _Base) -> dict:
     }
     pares_do_historico: set = set()
     for i in itens:
-        n = i["quantidade"]
+        n = _conta(i)
         t["notas"] += n
         t["faturado"] += i["valor"]
         if i["status"] in _ABERTOS:
@@ -560,9 +567,9 @@ def _fechamentos(db: Session, itens: list[dict], hoje: datetime.date, meses: int
     saida = []
     for competencia in competencias:
         do_mes = [i for i in itens if i["competencia"] == competencia]
-        notas = sum(i["quantidade"] for i in do_mes)
-        atrasadas = sum(i["quantidade"] for i in do_mes if i["status"] == "atrasada")
-        no_prazo = sum(i["quantidade"] for i in do_mes if i["status"] == "em_aberto")
+        notas = sum(_conta(i) for i in do_mes)
+        atrasadas = sum(_conta(i) for i in do_mes if i["status"] == "atrasada")
+        no_prazo = sum(_conta(i) for i in do_mes if i["status"] == "em_aberto")
         diferencas = sum(1 for i in do_mes if i["status"] in _COM_DIFERENCA and not i["conferida"])
         linhas = extrato.get(competencia, {"linhas": 0, "pendentes": 0})
         if atrasadas or diferencas or linhas["pendentes"]:
@@ -578,7 +585,11 @@ def _fechamentos(db: Session, itens: list[dict], hoje: datetime.date, meses: int
             "notas": notas, "notas_pagas": notas - atrasadas - no_prazo, "notas_atrasadas": atrasadas,
             "notas_no_prazo": no_prazo, "diferencas": diferencas,
             "extrato_linhas": linhas["linhas"], "extrato_pendentes": linhas["pendentes"],
+            # quantas notas de vendedores estão dentro do(s) grupo(s) "em lote" do mês
+            "notas_em_lote": sum(i["quantidade"] for i in do_mes if i["tipo"] == "lote"),
         })
+    # Do mais antigo pro atual: a tela lê da esquerda pra direita.
+    saida.reverse()
     return saida
 
 

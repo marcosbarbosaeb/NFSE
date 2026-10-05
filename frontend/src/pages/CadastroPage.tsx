@@ -40,6 +40,41 @@ export function CadastroPage() {
   const [enviado, setEnviado] = useState<string | null>(null)
   // O e-mail de confirmação saiu? (05/10/2026: o serviço de e-mail tem limite diário.)
   const [emailSaiu, setEmailSaiu] = useState(true)
+  // "Reenviar e-mail" na tela de "Quase lá" (05/10/2026), com uma pausa entre os cliques.
+  const [reenviando, setReenviando] = useState(false)
+  const [avisoReenvio, setAvisoReenvio] = useState<{ ok: boolean; texto: string } | null>(null)
+  const [espera, setEspera] = useState(0)
+  useEffect(() => {
+    if (espera <= 0) return
+    const t = setTimeout(() => setEspera((s) => s - 1), 1000)
+    return () => clearTimeout(t)
+  }, [espera])
+
+  async function reenviarEmail() {
+    if (!enviado) return
+    setReenviando(true)
+    setAvisoReenvio(null)
+    try {
+      const r = await api.post<{ mensagem: string; email_enviado?: boolean }>("/cadastro/reenviar-confirmacao", { email: enviado })
+      if (r.email_enviado === false) {
+        setAvisoReenvio({ ok: false, texto: "Não consegui mandar o e-mail agora — o serviço de e-mail está no limite. Tente de novo mais tarde." })
+      } else {
+        setEmailSaiu(true)
+        setAvisoReenvio({ ok: true, texto: "Reenviei o link. Confira a caixa de entrada e o spam." })
+      }
+      setEspera(60)
+    } catch (err) {
+      setAvisoReenvio({
+        ok: false,
+        texto:
+          err instanceof ApiError && err.status === 429
+            ? "Você já pediu o reenvio várias vezes. Espere um pouco e tente de novo."
+            : "Falha de conexão. Tente de novo.",
+      })
+    } finally {
+      setReenviando(false)
+    }
+  }
   const [erroGoogle, setErroGoogle] = useState<string | null>(null)
 
   // Marco 16 — autopreenchimento via CNPJ (pedido do Marcos: "ninguém sabe
@@ -183,9 +218,20 @@ export function CadastroPage() {
               ) : (
                 <p role="alert" className="rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
                   Sua conta foi criada, mas <strong>não consegui mandar agora o e-mail de confirmação</strong> pra{" "}
-                  <span className="font-medium">{enviado}</span>. Tente entrar daqui a pouco: na tela de login tem o botão pra reenviar o link.
+                  <span className="font-medium">{enviado}</span>. Use o botão abaixo pra tentar de novo.
                 </p>
               )}
+              <Button type="button" variant="outline" disabled={reenviando || espera > 0} onClick={reenviarEmail}>
+                {reenviando ? "Reenviando..." : espera > 0 ? `Reenviar de novo em ${espera}s` : emailSaiu ? "Não chegou? Reenviar e-mail" : "Reenviar e-mail"}
+              </Button>
+              {avisoReenvio && (
+                <p role="status" className={`text-sm ${avisoReenvio.ok ? "text-success-700 dark:text-success-300" : "text-warning-700 dark:text-warning-300"}`}>
+                  {avisoReenvio.texto}
+                </p>
+              )}
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Digitou o e-mail errado? Faça o cadastro de novo com o e-mail certo.
+              </p>
               <Link to="/entrar" className="mt-2 text-sm font-medium text-primary-600 hover:text-primary-700">
                 Voltar pro login
               </Link>

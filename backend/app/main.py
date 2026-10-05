@@ -602,9 +602,13 @@ def api_reenviar_confirmacao(req: ReenviarConfirmacaoRequest, db: Session = Depe
     """Resposta sempre igual, exista o e-mail ou não (ver docstring de
     reenviar_confirmacao) — não dá pista pra quem está tentando adivinhar
     contas cadastradas."""
-    reenviar_confirmacao(db, req.email)
+    saiu = reenviar_confirmacao(db, req.email)
     db.commit()
-    return {"mensagem": "Se esse e-mail tiver um cadastro pendente de confirmação, reenviamos o link."}
+    if not saiu:
+        # O serviço de e-mail recusou (limite de envios): melhor dizer a verdade
+        # do que deixar a pessoa esperando um e-mail que não vai chegar.
+        return {"mensagem": "Não consegui mandar o e-mail agora. Tente de novo mais tarde.", "email_enviado": False}
+    return {"mensagem": "Se esse e-mail tiver um cadastro pendente de confirmação, reenviamos o link.", "email_enviado": True}
 
 
 @app.post("/api/auth/logout")
@@ -1523,6 +1527,7 @@ def api_listar_tomadores(
                 "sug_cod_trib_nacional": None, "sug_template_descricao": None,
                 "sug_dia_emissao": None, "sug_dias_recebimento": None,
                 "sug_cod_trib_municipal": None, "sug_cod_nbs": None, "sug_meses_atras": None,
+                "sug_envio_formas": None, "sug_email_assunto": None, "sug_email_mensagem": None, "sug_email_anexos": None,
             })
             for t in tomadores
         ]
@@ -2215,13 +2220,36 @@ def api_drive_status(db: Session = Depends(db_sessao), prestador_id: uuid.UUID =
     return drive.status(db, prestador_id)
 
 
+@app.post("/api/dps/{emissao_id}/drive", responses={404: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
+def api_guardar_nota_no_drive(emissao_id: uuid.UUID, de_novo: bool = False, db: Session = Depends(db_sessao)):
+    """Guarda o PDF e o XML de UMA nota no Google Drive da pessoa (qualquer
+    nota; a pasta é Agente Ana / <tomador> / AAAA-MM). Devolve o link."""
+    emissao = _emissao_ou_404(db, emissao_id)
+    try:
+        resposta = {"link": drive.guardar_nota(db, emissao, de_novo=de_novo)}
+    except (drive.DriveNaoConectadoError, drive.DriveNaoConfiguradoError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except drive.DriveFalhaError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    db.commit()
+    return resposta
+
+
+def _voltar_do_drive(caminho: str | None) -> str:
+    """Pra onde voltar depois do Google: só tela nossa (/app/...)."""
+    if caminho and re.fullmatch(r"/app(/[A-Za-z0-9_\-/]*)?(\?[A-Za-z0-9_=&\-]*)?", caminho):
+        return caminho
+    return "/app/nfse/lote"
+
+
 @app.post("/api/drive/conectar", dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
-def api_drive_conectar(request: Request, prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+def api_drive_conectar(request: Request, voltar: str | None = None, prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     """Devolve a URL do Google pra pessoa autorizar. O `state` (anti-CSRF)
     e a empresa ficam na sessão e são conferidos no retorno."""
     state = gerar_state()
     request.session["drive_state"] = state
     request.session["drive_prestador"] = str(prestador_id)
+    request.session["drive_voltar"] = _voltar_do_drive(voltar)
     try:
         return {"url": drive.url_de_conexao(state)}
     except drive.DriveNaoConfiguradoError as exc:
@@ -2231,7 +2259,8 @@ def api_drive_conectar(request: Request, prestador_id: uuid.UUID = Depends(prest
 @app.get("/api/drive/callback")
 def api_drive_callback(request: Request, code: str | None = None, state: str | None = None, error: str | None = None, db: Session = Depends(get_db)):
     """Retorno do Google: guarda a autorização (cifrada) e volta pra tela."""
-    destino = "/app/nfse/lote?drive="
+    voltar = _voltar_do_drive(request.session.pop("drive_voltar", None))
+    destino = f"{voltar}{'&' if '?' in voltar else '?'}drive="
     esperado = request.session.pop("drive_state", None)
     prestador_bruto = request.session.pop("drive_prestador", None)
     if error or not code or not state or not esperado or state != esperado or not prestador_bruto or not request.session.get("usuario_id"):
@@ -3011,6 +3040,11 @@ app.include_router(_rotas_financeiro)
 from app.anotacoes import rotas as _rotas_anotacoes  # noqa: E402
 
 app.include_router(_rotas_anotacoes)
+
+# Ajuda / FAQ: também da empresa, sem módulo.
+from app.ajuda import rotas as _rotas_ajuda  # noqa: E402
+
+app.include_router(_rotas_ajuda)
 
 
 @app.get("/", include_in_schema=False)
