@@ -2,12 +2,14 @@ import { ArrowLeft, ArrowLeftRight, CheckCircle2, EyeOff, FileUp, Sparkles, Undo
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { ImportarExtratoModal } from "../components/financeiro/ImportarExtratoModal"
+import { linkGerarNota } from "../components/financeiro/RecebimentosSemNota"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
 import { CaixaBusca, type OpcaoBusca } from "../components/ui/CaixaBusca"
 import { Card } from "../components/ui/Card"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { competenciaAtual, formatBRL, formatCompetenciaAbrev, formatCompetenciaLonga } from "../lib/format"
+import { useModulos } from "../lib/modulos"
 import type { ContaAPagar, LancamentoPendente, PainelConciliacao, VinculoResumo } from "../lib/types"
 
 /** Conciliação do extrato (05/10/2026): o que veio do banco e ainda não foi
@@ -24,6 +26,9 @@ function dataBR(iso: string | null): string {
 const igual = (a: number, b: number) => Math.abs(a - b) < 0.005
 
 export function ConciliacaoPage() {
+  // Notas a receber (e "gerar nota") só existem com o módulo de notas —
+  // é o ponto de integração. Sem ele, a entrada só é classificada por cliente.
+  const { emissor } = useModulos()
   const [dados, setDados] = useState<PainelConciliacao | null>(null)
   const [vinculos, setVinculos] = useState<VinculoResumo[]>([])
   const [erro, setErro] = useState<string | null>(null)
@@ -146,10 +151,10 @@ export function ConciliacaoPage() {
         { vinculo_id: vinculoId, emissao_id: nota?.emissao_id ?? null, competencia: nota ? null : mes },
       )
       if (nota) return { texto: `Baixa dada na nota de ${formatCompetenciaLonga(nota.competencia).toLowerCase()} de ${r.apelido}.` }
-      return r.pode_gerar_nota
+      return r.pode_gerar_nota && emissor
         ? {
             texto: `Recebimento de ${r.apelido} lançado, sem nota.`,
-            link: `/app/nfse?gerar=${r.vinculo_id}&pagamento=${r.pagamento_id}`,
+            link: linkGerarNota({ vinculo_id: r.vinculo_id, pagamento_id: r.pagamento_id, valor: atual.valor }),
             rotuloLink: "Gerar a nota dele",
           }
         : { texto: `Recebimento de ${r.apelido} lançado.` }
@@ -259,11 +264,13 @@ export function ConciliacaoPage() {
           </Link>
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Conciliação</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            O que veio do extrato e ainda não foi classificado, lado a lado com o que está em aberto.
+            {emissor
+              ? "O que veio do extrato e ainda não foi classificado, lado a lado com o que está em aberto."
+              : "O que veio do extrato e ainda não foi classificado: escolha o cliente da entrada ou a conta/categoria da saída."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {automaticos > 0 && (
+          {automaticos > 0 && emissor && (
             <Button variant="outline" disabled={ocupado} onClick={conciliarIguais}>
               <Sparkles size={16} /> Conciliar {automaticos} de mesmo valor
             </Button>
@@ -367,7 +374,7 @@ export function ConciliacaoPage() {
                       </span>
                       <span className="mt-0.5 block break-words text-sm text-slate-700 dark:text-slate-300">{l.descricao}</span>
                       <span className="mt-1 flex flex-wrap gap-1">
-                        {l.credito && l.nota_exata && <Badge variant="success">tem nota do mesmo valor</Badge>}
+                        {l.credito && l.nota_exata && emissor && <Badge variant="success">tem nota do mesmo valor</Badge>}
                         {!l.credito && l.despesa_id && <Badge variant="success">tem conta a pagar que bate</Badge>}
                         {l.origem_sugestao === "lembrado" && <Badge variant="info">como da última vez</Badge>}
                       </span>
@@ -382,7 +389,7 @@ export function ConciliacaoPage() {
           <Card className="p-4 lg:sticky lg:top-20">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                Em aberto · {aba === "receitas" ? "notas a receber" : "contas a pagar"}
+                {aba === "receitas" ? (emissor ? "Em aberto · notas a receber" : "Classificar a entrada") : "Em aberto · contas a pagar"}
               </h2>
               <input
                 value={busca}
@@ -397,6 +404,7 @@ export function ConciliacaoPage() {
               <p className="py-6 text-center text-sm text-slate-400">Escolha um lançamento à esquerda.</p>
             ) : (
               <>
+                {(aba === "despesas" || emissor) && (<>
                 <ul className="-mx-1 flex max-h-[34vh] flex-col gap-0.5 overflow-y-auto px-1">
                   {aba === "receitas"
                     ? notas.map((n) =>
@@ -423,10 +431,15 @@ export function ConciliacaoPage() {
                 >
                   {aba === "receitas" ? "Dar baixa na nota escolhida" : "Marcar a conta escolhida como paga"}
                 </Button>
+                </>)}
 
-                <div className="mt-4 border-t border-slate-100 pt-3 dark:border-slate-700/60">
+                <div className={aba === "despesas" || emissor ? "mt-4 border-t border-slate-100 pt-3 dark:border-slate-700/60" : ""}>
                   <p className="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                    {aba === "receitas" ? "Não é de nenhuma nota? Lance como recebimento:" : "Não estava prevista? Lance como despesa:"}
+                    {aba === "receitas"
+                      ? emissor
+                        ? "Não é de nenhuma nota? Lance como recebimento:"
+                        : "De qual cliente é esse dinheiro?"
+                      : "Não estava prevista? Lance como despesa:"}
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
                     {aba === "receitas" ? (
@@ -435,9 +448,9 @@ export function ConciliacaoPage() {
                         opcoes={opcoesTomador}
                         onEscolher={setTomador}
                         onCriar={criarTomador}
-                        rotuloCriar="Novo tomador"
-                        placeholder="Tomador (digite pra buscar)"
-                        ariaLabel="Tomador"
+                        rotuloCriar="Novo cliente"
+                        placeholder="Cliente (digite pra buscar)"
+                        ariaLabel="Cliente"
                         className="min-w-[180px] flex-1"
                       />
                     ) : (
@@ -470,7 +483,7 @@ export function ConciliacaoPage() {
                       Lançar
                     </Button>
                   </div>
-                  {aba === "receitas" && (
+                  {aba === "receitas" && emissor && (
                     <p className="mt-1.5 text-xs text-slate-400 dark:text-slate-500">
                       Depois de lançar, dá pra gerar a nota desse recebimento (caso de quem paga antes da nota).
                     </p>

@@ -5,6 +5,8 @@ export interface Usuario {
   nome?: string | null
   /** Empresa ativa é conta de teste: notas só em homologação, e-mails só pra quem testa. */
   teste?: boolean
+  /** Produtos ligados na empresa ativa (emissor, financeiro). */
+  modulos?: ("emissor" | "financeiro")[]
 }
 
 export interface CadastroRequest {
@@ -21,6 +23,8 @@ export interface CadastroRequest {
   codigo_indicacao?: string | null
   /** /cadastro?teste=1 — conta de teste. */
   modo_teste?: boolean
+  /** Produto contratado: emissor (padrão), financeiro ou ambos. */
+  produto?: "emissor" | "financeiro" | "ambos"
 }
 
 export interface VinculoResumo {
@@ -92,7 +96,6 @@ export interface EmissaoResumoLinha {
   estado: string
   estado_label: string
   envio_status: string | null
-  pagamento_recebido: boolean
   tem_pdf?: boolean
   tem_email?: boolean
   homologacao?: boolean
@@ -377,7 +380,6 @@ export interface EmissaoListaLinha {
   estado: string
   estado_label: string
   criado_em: string
-  pagamento_recebido: boolean
   envio_status?: string | null
   tem_pdf?: boolean
   tem_email?: boolean
@@ -395,8 +397,8 @@ export interface GerarDpsRequest {
   tpAmb?: string
   /** AAAA-MM-DD — dia de competência escolhido; sem = hoje. */
   data_competencia?: string | null
-  /** Nota de um recebimento que chegou sem nota: o recebimento fica ligado a ela. */
-  pagamento_id?: string | null
+  /** Pedido que veio de outro módulo (ex.: "fin:pagamento:<id>") — o emissor só repassa. */
+  origem?: string | null
   /** Trocar a nota do mês que ainda não foi enviada por esta. */
   substituir?: boolean
 }
@@ -674,18 +676,13 @@ export interface DashboardResumo {
   total_vinculos: number
   emitidas: number
   aguardando: number
-  a_receber: number
-  pagamentos_pendentes: number
-  recebido_no_mes: number
-  recebido_mes_anterior: number
-  delta_recebimentos_pct: number | null
-  serie_recebimentos: PontoSerieMensal[]
+  /** Valor das notas do mês (recebimento é do módulo financeiro). */
+  faturado_no_mes: number
+  faturado_mes_anterior: number
+  delta_faturamento_pct: number | null
+  serie_faturamento: PontoSerieMensal[]
   emissoes: EmissaoResumoLinha[]
   atencao: AtencaoItem[]
-  a_receber_total?: number
-  notas_a_receber?: number
-  recebido_total?: number
-  notas_recebidas?: number
 }
 
 export interface PendenciaItem {

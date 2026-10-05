@@ -6,6 +6,7 @@ import { Field, FieldWrap } from "../components/ui/Field"
 import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { competenciaAtual, deslocarCompetencia, formatBRL, formatCompetenciaLonga, parseBRL } from "../lib/format"
+import { useModulos } from "../lib/modulos"
 import type { Calendario, CategoriaEventoManual, EventoCalendario, TipoEventoCalendario, VinculoResumo } from "../lib/types"
 
 const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
@@ -57,6 +58,8 @@ function inicioGradeDoMes(competencia: string): Date {
 }
 
 export function CalendarioPage() {
+  // Recebimentos no calendário só existem pra quem tem o módulo financeiro.
+  const { financeiro } = useModulos()
   const [competencia, setCompetencia] = useState(competenciaAtual())
   const [calendario, setCalendario] = useState<Calendario | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -125,7 +128,7 @@ export function CalendarioPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Calendário</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Prazos de emissão, previsões de recebimento e seus próprios eventos.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{financeiro ? "Prazos de emissão, previsões de recebimento e seus próprios eventos." : "Prazos de emissão e seus próprios eventos."}</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm">
@@ -154,8 +157,9 @@ export function CalendarioPage() {
       {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
 
       <div className="flex flex-wrap gap-4">
-        {(Object.entries(ESTILO_EVENTO) as [TipoEventoCalendario, (typeof ESTILO_EVENTO)[TipoEventoCalendario]][]).map(
-          ([tipo, estilo]) => (
+        {(Object.entries(ESTILO_EVENTO) as [TipoEventoCalendario, (typeof ESTILO_EVENTO)[TipoEventoCalendario]][])
+          .filter(([tipo]) => financeiro || !tipo.startsWith("recebimento"))
+          .map(([tipo, estilo]) => (
             <div key={tipo} className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
               <span className={`h-2 w-2 rounded-full ${estilo.dot}`} />
               {estilo.label}
@@ -269,6 +273,7 @@ function EventoModal({
   onClose: () => void
   onSalvo: () => void
 }) {
+  const { financeiro } = useModulos()
   const editando = typeof alvo !== "string"
   const [data, setData] = useState(editando ? alvo.data : alvo)
   const [categoria, setCategoria] = useState<CategoriaEventoManual>(editando ? (alvo.categoria ?? "lembrete") : "lembrete")
@@ -335,7 +340,9 @@ function EventoModal({
         {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
         <FieldWrap label="Tipo">
           <select value={categoria} onChange={(e) => setCategoria(e.target.value as CategoriaEventoManual)} className={CLASSE_SELECT}>
-            {(Object.keys(ESTILO_CATEGORIA) as CategoriaEventoManual[]).map((c) => (
+            {(Object.keys(ESTILO_CATEGORIA) as CategoriaEventoManual[])
+              .filter((c) => financeiro || c !== "recebimento_previsto" || categoria === c)
+              .map((c) => (
               <option key={c} value={c}>
                 {ESTILO_CATEGORIA[c].label}
               </option>

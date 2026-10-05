@@ -1,22 +1,25 @@
-import { Building2, CalendarDays, FileText, Gift, Home, UserRound, Users, Wallet } from "lucide-react"
+import { ArrowLeftRight, Building2, CalendarDays, FileText, Gift, Home, UserRound, Users, Wallet } from "lucide-react"
 import { Link, NavLink, useLocation } from "react-router-dom"
+import { useModulos } from "../../lib/modulos"
 import { BotaoSuporte } from "../SuporteModal"
 import { TrocaEmpresa } from "../TrocaEmpresa"
 import { AnaAvatar, Marca } from "../brand/Marca"
 
-// "Calendário" não faz parte das telas originais do emissor (mockup) — foi
-// pedido à parte pelo usuário (previsão de recebimento + prazo de emissão
-// por tomador), então entra como item novo na navegação.
-const ITENS = [
+// Emissor e financeiro são produtos separados (05/10/2026): o menu mostra
+// um grupo pra cada módulo que a empresa tem ligado.
+const NOTAS = [
   { to: "/app", label: "Visão geral", icon: Home, end: true },
   { to: "/app/nfse", label: "NFS-e", icon: FileText },
   { to: "/app/tomadores", label: "Tomadores", icon: Users },
   { to: "/app/calendario", label: "Calendário", icon: CalendarDays },
-  { to: "/app/financeiro", label: "Financeiro", icon: Wallet },
-  // "Configurações" virou "Empresa" (dados do CNPJ ativo) + "Minha conta"
-  // (no pé da barra e no menu do usuário) — 29/09/2026.
-  { to: "/app/empresa", label: "Empresa", icon: Building2 },
 ]
+const FINANCEIRO = [
+  { to: "/app/financeiro", label: "Painel", icon: Wallet, end: true },
+  { to: "/app/financeiro/conciliacao", label: "Conciliação", icon: ArrowLeftRight },
+]
+// "Configurações" virou "Empresa" (dados do CNPJ ativo) + "Minha conta"
+// (no pé da barra e no menu do usuário) — 29/09/2026.
+const GERAL = [{ to: "/app/empresa", label: "Empresa", icon: Building2 }]
 
 const classeItem = (ativo: boolean) =>
   `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 ${
@@ -29,6 +32,13 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
   const { pathname, search } = useLocation()
   const naConta = pathname.replace(/\/+$/, "") === "/app/conta"
   const naIndicacao = naConta && new URLSearchParams(search).get("aba") === "indique"
+  const modulos = useModulos()
+  const grupos = [
+    ...(modulos.emissor ? [{ titulo: "Notas", itens: NOTAS }] : []),
+    ...(modulos.financeiro ? [{ titulo: "Financeiro", itens: FINANCEIRO }] : []),
+    { titulo: "", itens: GERAL },
+  ]
+  const doisProdutos = modulos.emissor && modulos.financeiro
   return (
     <>
       {aberto && <div className="fixed inset-0 z-40 bg-slate-900/50 lg:hidden" onClick={onFechar} aria-hidden="true" />}
@@ -39,7 +49,7 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
     >
       <div>
         <div className="mb-5 flex items-center gap-2 px-2">
-          <Marca escuro subtitulo="Emissor de notas" />
+          <Marca escuro subtitulo={doisProdutos ? "Notas e financeiro" : modulos.financeiro ? "Financeiro" : "Emissor de notas"} />
         </div>
 
         <div className="mb-5">
@@ -47,17 +57,19 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
         </div>
 
         <nav className="flex flex-col gap-1" data-tour="menu">
-          {ITENS.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              onClick={onFechar}
-              className={({ isActive }) => classeItem(isActive)}
-            >
-              <Icon size={18} />
-              {label}
-            </NavLink>
+          {grupos.map((grupo) => (
+            <div key={grupo.titulo || "geral"} className="flex flex-col gap-1">
+              {doisProdutos && grupo.titulo && (
+                <p className="mt-3 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500 first:mt-0">{grupo.titulo}</p>
+              )}
+              {!grupo.titulo && <div className="my-2 border-t border-brand-800" />}
+              {grupo.itens.map(({ to, label, icon: Icon, end }: { to: string; label: string; icon: typeof Home; end?: boolean }) => (
+                <NavLink key={to} to={to} end={end} onClick={onFechar} className={({ isActive }) => classeItem(isActive)}>
+                  <Icon size={18} />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
       </div>
@@ -87,7 +99,9 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
           <p className="text-sm font-medium text-white">Deixa comigo.</p>
         </div>
         <p className="text-xs text-slate-400">
-          Cadastre cada fornecedor uma vez — todo mês eu preparo a nota e você só confere.
+          {modulos.emissor
+            ? "Cadastre cada tomador uma vez — todo mês eu preparo a nota e você só confere."
+            : "Importe o extrato do banco — eu separo o que entrou do que saiu e lembro como você classifica."}
         </p>
         <BotaoSuporte logado className="mt-3 inline-block text-left text-xs font-medium text-accent-300 hover:text-accent-200">
           Precisa de ajuda? Fale com o suporte

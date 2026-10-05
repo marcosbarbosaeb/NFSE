@@ -43,7 +43,7 @@ export function Topbar({ onAbrirMenu }: { onAbrirMenu?: () => void }) {
         <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
         <input
           type="text"
-          placeholder="Pesquisar tomadores, notas, documentos..."
+          placeholder="Pesquisar..."
           disabled
           className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 py-2 pl-9 pr-3 text-sm text-slate-500 dark:text-slate-400 placeholder:text-slate-400"
           title="Busca ainda não implementada"

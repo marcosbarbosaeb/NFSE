@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom"
 import { AppShell } from "./components/layout/AppShell"
 import { SoNoEmissor } from "./components/layout/SoNoEmissor"
 import { ProtectedRoute } from "./components/layout/ProtectedRoute"
+import { SoModulo } from "./components/layout/SoModulo"
 import { AuthProvider } from "./lib/auth"
 import { ehDominioNotas } from "./lib/dominios"
 import { ThemeProvider } from "./lib/theme"
@@ -57,15 +58,16 @@ export default function App() {
               </SoNoEmissor>
             }
           >
-            <Route index element={<DashboardPage />} />
-            <Route path="nfse" element={<NfsePage />} />
-            <Route path="nfse/:id" element={<EmissaoDetalhePage />} />
-            <Route path="tomadores" element={<TomadoresPage />} />
-            <Route path="tomadores/novo" element={<VinculoFormPage />} />
-            <Route path="tomadores/:id" element={<VinculoFormPage />} />
-            <Route path="calendario" element={<CalendarioPage />} />
-            <Route path="financeiro" element={<FinanceiroPage />} />
-            <Route path="financeiro/conciliacao" element={<ConciliacaoPage />} />
+            <Route index element={<SoModulo modulo="emissor"><DashboardPage /></SoModulo>} />
+            <Route path="nfse" element={<SoModulo modulo="emissor"><NfsePage /></SoModulo>} />
+            <Route path="nfse/:id" element={<SoModulo modulo="emissor"><EmissaoDetalhePage /></SoModulo>} />
+            <Route path="tomadores" element={<SoModulo modulo="emissor"><TomadoresPage /></SoModulo>} />
+            <Route path="tomadores/novo" element={<SoModulo modulo="emissor"><VinculoFormPage /></SoModulo>} />
+            <Route path="tomadores/:id" element={<SoModulo modulo="emissor"><VinculoFormPage /></SoModulo>} />
+            <Route path="calendario" element={<SoModulo modulo="emissor"><CalendarioPage /></SoModulo>} />
+            {/* Módulo financeiro — produto à parte (05/10/2026). */}
+            <Route path="financeiro" element={<SoModulo modulo="financeiro"><FinanceiroPage /></SoModulo>} />
+            <Route path="financeiro/conciliacao" element={<SoModulo modulo="financeiro"><ConciliacaoPage /></SoModulo>} />
             {/* Recebimentos e Despesas viraram uma aba só (28/09/2026). */}
             <Route path="recebimentos" element={<Navigate to="/app/financeiro" replace />} />
             <Route path="despesas" element={<Navigate to="/app/financeiro?aba=despesas" replace />} />

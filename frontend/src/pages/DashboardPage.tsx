@@ -10,13 +10,11 @@ import {
   TrendingDown,
   TrendingUp,
   UserPlus,
-  Wallet,
+
 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { type NotaParaAcoes, SeloAssinatura, SeloPrefeitura, SeloTomador } from "../components/AcoesNota"
-import { BaixaPagamento } from "../components/BaixaPagamento"
-import { ContasDoMesPainel } from "../components/financeiro/ContasDoMesPainel"
 import { Badge } from "../components/ui/Badge"
 import { Card } from "../components/ui/Card"
 import { MiniBarChart } from "../components/ui/MiniBarChart"
@@ -66,7 +64,6 @@ export function DashboardPage() {
   const [carregando, setCarregando] = useState(true)
 
   const [proximos, setProximos] = useState<Proximos | null>(null)
-  const [competenciaContas, setCompetenciaContas] = useState(competenciaAtual())
 
   // "Ignorar este aviso" — atraso consciente (ex.: nota que sai depois do pagamento).
   function ignorarPendencia(chave: string) {
@@ -152,7 +149,7 @@ export function DashboardPage() {
         <>
           {/* "Ligar a visão geral com as abas" (28/09/2026): cada número leva
               pra tela onde ele é resolvido. */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Link to="/app/tomadores" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
               <StatCard
                 icon={<FileText size={18} />}
@@ -180,22 +177,13 @@ export function DashboardPage() {
                 sublabel={`${pctAguardando}% do mês · gerar`}
               />
             </Link>
-            <Link to="/app/financeiro#a-receber" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
-              <StatCard
-                icon={<Wallet size={18} />}
-                iconClassName="bg-accent-50 text-accent-600"
-                label="Notas a receber"
-                value={formatBRL(resumo.a_receber_total ?? resumo.a_receber)}
-                sublabel={`${resumo.notas_a_receber ?? resumo.pagamentos_pendentes} nota(s) em aberto · todos os meses`}
-              />
-            </Link>
-            <Link to="/app/financeiro" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
+            <Link to="/app/nfse" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
               <StatCard
                 icon={<TrendingUp size={18} />}
-                iconClassName="bg-success-50 text-success-600"
-                label="Notas recebidas"
-                value={formatBRL(resumo.recebido_total ?? 0)}
-                sublabel={`${resumo.notas_recebidas ?? 0} nota(s) pagas · total`}
+                iconClassName="bg-accent-50 text-accent-600"
+                label="Faturado no mês"
+                value={formatBRL(resumo.faturado_no_mes)}
+                sublabel="valor das notas do mês"
               />
             </Link>
           </div>
@@ -229,7 +217,6 @@ export function DashboardPage() {
                         <th className="py-2 font-medium">Assinatura</th>
                         <th className="py-2 font-medium">Prefeitura</th>
                         <th className="py-2 font-medium">Fornecedor</th>
-                        <th className="py-2 font-medium">Pagamento</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -272,20 +259,6 @@ export function DashboardPage() {
                               </td>
                             </>
                           )}
-                          <td className="py-3">
-                            {linha.vendedores ? (
-                              <Badge variant="neutral">Na nota da Shopee</Badge>
-                            ) : (
-                              <BaixaPagamento
-                                emissaoId={linha.emissao_id}
-                                vinculoId={linha.vinculo_id}
-                                competencia={linha.competencia}
-                                valor={linha.valor}
-                                recebido={linha.pagamento_recebido}
-                                onMudou={() => setRecarga((n) => n + 1)}
-                              />
-                            )}
-                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -402,24 +375,24 @@ export function DashboardPage() {
 
             <Card className="p-5">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Recebimentos</h2>
-                <Link to="/app/financeiro" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
-                  Ver detalhes <ArrowRight size={14} />
+                <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Faturamento</h2>
+                <Link to="/app/nfse" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
+                  Ver notas <ArrowRight size={14} />
                 </Link>
               </div>
-              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{formatBRL(resumo.recebido_no_mes)}</p>
-              <p className="mb-4 text-xs text-slate-400 dark:text-slate-500">recebidos este mês</p>
-              {resumo.delta_recebimentos_pct !== null && (
+              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{formatBRL(resumo.faturado_no_mes)}</p>
+              <p className="mb-4 text-xs text-slate-400 dark:text-slate-500">em notas neste mês</p>
+              {resumo.delta_faturamento_pct !== null && (
                 <p
                   className={`mb-3 flex items-center gap-1 text-xs font-medium ${
-                    resumo.delta_recebimentos_pct >= 0 ? "text-success-600" : "text-danger-600"
+                    resumo.delta_faturamento_pct >= 0 ? "text-success-600" : "text-danger-600"
                   }`}
                 >
-                  {resumo.delta_recebimentos_pct >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                  {Math.abs(Math.round(resumo.delta_recebimentos_pct))}% vs. mês anterior
+                  {resumo.delta_faturamento_pct >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                  {Math.abs(Math.round(resumo.delta_faturamento_pct))}% vs. mês anterior
                 </p>
               )}
-              <MiniBarChart dados={resumo.serie_recebimentos} />
+              <MiniBarChart dados={resumo.serie_faturamento} />
             </Card>
 
             <Card className="p-5">
@@ -428,8 +401,6 @@ export function DashboardPage() {
                 {[
                   { to: "/app/nfse?nova=1", label: "Nova emissão", icon: FileText },
                   { to: "/app/tomadores/novo", label: "Adicionar tomador", icon: UserPlus },
-                  { to: "/app/financeiro?novo=recebimento", label: "Registrar recebimento", icon: Wallet },
-                  { to: "/app/financeiro?novo=despesa", label: "Registrar despesa", icon: TrendingDown },
                   { to: "/app/calendario", label: "Ver calendário", icon: CalendarDays },
                 ].map(({ to, label, icon: Icon }) => (
                   <Link key={to} to={to} className="flex items-center justify-between py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:text-primary-600">
@@ -444,9 +415,6 @@ export function DashboardPage() {
             </Card>
           </div>
 
-          {/* Contas e rotina do mês também aqui (05/10/2026): é o que a pessoa
-              tica no dia a dia. */}
-          <ContasDoMesPainel competencia={competenciaContas} onCompetencia={setCompetenciaContas} versao={0} onMudou={() => undefined} />
         </>
       )}
     </div>

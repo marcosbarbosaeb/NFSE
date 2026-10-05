@@ -16,7 +16,6 @@ import {
   X,
 } from "lucide-react"
 import { DownloadsNota, SeloAssinatura, SeloPrefeitura, SeloTomador } from "../components/AcoesNota"
-import { BaixaPagamento } from "../components/BaixaPagamento"
 import { CampoData } from "../components/CampoData"
 import { ImportarNacionalModal } from "../components/ImportarNacionalModal"
 import { ConfirmarLoteModal, LotePainel } from "../components/LotePainel"
@@ -46,7 +45,6 @@ import type {
   Prestador,
   VerificarDuplicata,
   VinculoResumo,
-  RecebimentoSemNota,
 } from "../lib/types"
 
 const ANO_ATUAL = new Date().getFullYear()
@@ -105,25 +103,16 @@ function badgeEstado(estado: string, label: string) {
   return <Badge variant={info?.variant ?? "neutral"}>{label}</Badge>
 }
 
-// Marco 16 (item 3, pedido do Marcos: "é importante a pessoa confrontar
-// notas emitidas com notas pagas") — mesmo badge do dashboard (só a
-// competência corrente), aqui aplicado à lista completa.
-function badgePagamento(recebido: boolean) {
-  return recebido ? <Badge variant="success">Recebida</Badge> : <Badge variant="warning">Pendente</Badge>
-}
-
 export function NfsePage() {
   const [ano, setAno] = useState<string>(String(ANO_ATUAL))
   const [vinculoFiltro, setVinculoFiltro] = useState("")
   // Notas dos vendedores da Shopee numa aba própria (01/10/2026): são
-  // centenas de notas pequenas e o pagamento delas vem junto com a nota da
-  // Shopee — não se misturam com as demais.
+  // centenas de notas pequenas — não se misturam com as demais.
   const [grupo, setGrupo] = useState<"notas" | "vendedores">(() =>
     new URLSearchParams(window.location.search).get("aba") === "vendedores" ? "vendedores" : "notas",
   )
   // Mês da competência (01..12) dentro do ano escolhido — filtro no cliente.
   const [mesFiltro, setMesFiltro] = useState("")
-  const [pagamentoFiltro, setPagamentoFiltro] = useState<"" | "recebido" | "pendente">("")
   const [busca, setBusca] = useState("")
   const [emissoes, setEmissoes] = useState<EmissaoListaLinha[] | null>(null)
   const [vinculos, setVinculos] = useState<VinculoResumo[]>([])
@@ -217,37 +206,28 @@ export function NfsePage() {
   const emissiveis = useMemo(() => vinculos.filter((v) => !v.sem_nota), [vinculos])
   const vinculoSelecionado = vinculos.find((v) => v.id === vinculoFiltro) ?? null
 
-  // Filtro de pagamento aplicado no cliente (não no servidor, embora
-  // /api/dps aceite ?pagamento=...): assim o resumo de confronto abaixo
-  // continua mostrando emitidas x pagas lado a lado, mesmo com um dos dois
-  // lados selecionado no filtro.
   const filtradas = useMemo(() => {
     if (!emissoes) return []
     const termo = busca.trim().toLowerCase()
     return emissoes.filter((e) => {
       if (competenciaFiltro && e.competencia !== competenciaFiltro) return false
-      if (pagamentoFiltro === "recebido" && !e.pagamento_recebido) return false
-      if (pagamentoFiltro === "pendente" && e.pagamento_recebido) return false
       if (!termo) return true
       return e.apelido.toLowerCase().includes(termo) || e.tomador_razao_social.toLowerCase().includes(termo)
     })
-  }, [emissoes, busca, pagamentoFiltro, competenciaFiltro])
+  }, [emissoes, busca, competenciaFiltro])
 
-  // Confronto emitidas x pagas (item 3 do Marco 16) — sempre sobre TODAS as
-  // emissões ativas do filtro de ano/fornecedor corrente, independente do
-  // filtro de pagamento selecionado (senão o resumo ficaria só de um lado).
+  // Resumo do filtro de ano/tomador/mês: quantas notas e quanto elas somam.
+  // (Nada de pagamento aqui — isso é do módulo financeiro, 05/10/2026.)
   const confronto = useMemo(() => {
     const ativas = (emissoes ?? []).filter(
       (e) => e.estado !== "cancelada" && e.estado !== "substituida" && (!competenciaFiltro || e.competencia === competenciaFiltro),
     )
-    const recebidas = ativas.filter((e) => e.pagamento_recebido)
-    const pendentes = ativas.filter((e) => !e.pagamento_recebido)
+    const emitidas = ativas.filter((e) => e.estado === "confirmado")
     return {
       totalEmitidas: ativas.length,
-      totalRecebidas: recebidas.length,
-      totalPendentes: pendentes.length,
-      valorRecebido: recebidas.reduce((soma, e) => soma + e.valor, 0),
-      valorPendente: pendentes.reduce((soma, e) => soma + e.valor, 0),
+      valorTotal: ativas.reduce((soma, e) => soma + e.valor, 0),
+      totalAutorizadas: emitidas.length,
+      totalAFazer: ativas.length - emitidas.length,
     }
   }, [emissoes, competenciaFiltro])
 
@@ -327,7 +307,7 @@ export function NfsePage() {
     const params = new URLSearchParams()
     // Mês inteiro selecionado (sem busca/pagamento escondendo nada): pede por
     // competência — URL curta e o .zip sai com o nome do mês.
-    if (competenciaFiltro && todasVisiveisSelecionadas && !busca.trim() && !pagamentoFiltro) {
+    if (competenciaFiltro && todasVisiveisSelecionadas && !busca.trim()) {
       params.set("competencia", competenciaFiltro)
       if (vinculoFiltro) params.set("vinculo_id", vinculoFiltro)
     } else if (selecionadasVisiveis.length > MAX_IDS_ZIP) {
@@ -395,43 +375,29 @@ export function NfsePage() {
         </div>
       </div>
 
-      {/* Marco 16 (item 3) — confronto notas emitidas x notas pagas, pedido
-          do Marcos. Sempre reflete ano/fornecedor selecionados, independente
-          do filtro de pagamento abaixo (senão o resumo ficaria só de um lado). */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           icon={<FileText size={18} />}
           iconClassName="bg-primary-50 text-primary-600"
-          label="Notas emitidas"
+          label={grupo === "vendedores" ? "Notas de vendedores" : "Notas"}
           value={confronto.totalEmitidas}
           sublabel={competenciaFiltro ? `em ${formatCompetenciaLonga(competenciaFiltro)}` : ano ? `em ${ano}` : "no período"}
         />
-        {grupo === "notas" && (<>
         <StatCard
           icon={<CheckCircle2 size={18} />}
           iconClassName="bg-success-50 text-success-600"
-          label="Pagas"
-          value={confronto.totalRecebidas}
-          sublabel={formatBRL(confronto.valorRecebido)}
+          label="Valor das notas"
+          value={formatBRL(confronto.valorTotal)}
+          sublabel={`${confronto.totalAutorizadas} autorizada(s) pela prefeitura`}
         />
         <StatCard
           icon={<Clock size={18} />}
           iconClassName="bg-warning-50 text-warning-600"
-          label="Emitidas sem pagamento"
-          value={confronto.totalPendentes}
-          sublabel={formatBRL(confronto.valorPendente)}
-          sublabelClassName="text-warning-600"
+          label="Ainda não autorizadas"
+          value={confronto.totalAFazer}
+          sublabel="falta assinar ou enviar à prefeitura"
+          sublabelClassName={confronto.totalAFazer > 0 ? "text-warning-600" : undefined}
         />
-        </>)}
-        {grupo === "vendedores" && (
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600 sm:col-span-2 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            <p className="font-medium text-slate-800 dark:text-slate-100">Pagamento indireto</p>
-            <p className="mt-1">
-              A Shopee paga a comissão inteira (dela + dos vendedores) junto com a nota da Shopee. Estas notas não têm cobrança própria —
-              o recebimento é controlado na nota da Shopee, na aba Notas.
-            </p>
-          </div>
-        )}
       </div>
 
       <Card className="p-5">
@@ -478,16 +444,6 @@ export function NfsePage() {
                 {v.apelido}
               </option>
             ))}
-          </select>
-          <select
-            value={pagamentoFiltro}
-            onChange={(e) => setPagamentoFiltro(e.target.value as "" | "recebido" | "pendente")}
-            aria-label="Pagamento"
-            className={SELECT_FILTRO}
-          >
-            <option value="">Pagamento: todos</option>
-            <option value="recebido">Só pagas</option>
-            <option value="pendente">Só pendentes</option>
           </select>
           <div className="relative ml-auto w-full max-w-xs">
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
@@ -625,7 +581,6 @@ export function NfsePage() {
                 <th className="py-2 font-medium">Assinatura</th>
                 <th className="py-2 font-medium">Prefeitura</th>
                 <th className="py-2 font-medium" title="Envio da nota ao fornecedor (tomador)">Fornecedor</th>
-                <th className="py-2 font-medium">Pagamento</th>
                 <th className="py-2 font-medium">Arquivos</th>
               </tr>
             </thead>
@@ -670,22 +625,6 @@ export function NfsePage() {
                     <SeloTomador nota={e} onMudou={recarregar} />
                   </td>
                   <td className="py-3">
-                    {e.avulsa ? (
-                      <span title="A Shopee paga junto com a nota dela"><Badge variant="neutral">Na nota da Shopee</Badge></span>
-                    ) : e.estado === "cancelada" || e.estado === "substituida" ? (
-                      badgePagamento(e.pagamento_recebido)
-                    ) : (
-                      <BaixaPagamento
-                        emissaoId={e.id}
-                        vinculoId={e.vinculo_id}
-                        competencia={e.competencia}
-                        valor={e.valor}
-                        recebido={e.pagamento_recebido}
-                        onMudou={recarregar}
-                      />
-                    )}
-                  </td>
-                  <td className="py-3">
                     <DownloadsNota nota={e} />
                   </td>
                 </tr>
@@ -711,7 +650,7 @@ export function NfsePage() {
           vinculoInicial={searchParams.get("gerar")}
           competenciaInicial={searchParams.get("competencia")}
           valorInicial={searchParams.get("valor")}
-          pagamentoId={searchParams.get("pagamento")}
+          origem={searchParams.get("origem") ?? (searchParams.get("pagamento") ? `fin:pagamento:${searchParams.get("pagamento")}` : null)}
           onClose={() => {
             setModalNova(false)
             if (searchParams.get("gerar") || searchParams.get("nova")) navigate("/app/nfse", { replace: true })
@@ -745,7 +684,6 @@ export function NfsePage() {
             trocarVinculo(shopee.id)
             trocarGrupo("vendedores")
             setBusca("")
-            setPagamentoFiltro("")
             setShopee(null)
             if (searchParams.get("gerar")) navigate("/app/nfse", { replace: true })
           }}
@@ -799,7 +737,7 @@ function NovaEmissaoModal({
   vinculoInicial,
   competenciaInicial,
   valorInicial,
-  pagamentoId,
+  origem,
   onClose,
   onEscolherShopee,
   onCriada,
@@ -811,8 +749,9 @@ function NovaEmissaoModal({
   competenciaInicial?: string | null
   /** Tomador que paga antes da nota: o aviso já traz o valor que caiu. */
   valorInicial?: string | null
-  /** Gerar a nota de um recebimento que chegou sem nota (fica no mês dele). */
-  pagamentoId?: string | null
+  /** Pedido que veio de outro módulo (ex.: o financeiro pedindo a nota de um
+   * recebimento). O emissor não interpreta: só devolve junto com a nota. */
+  origem?: string | null
   onClose: () => void
   onEscolherShopee: (vinculo: VinculoResumo) => void
   onCriada: (emissao: Emissao) => void
@@ -825,33 +764,11 @@ function NovaEmissaoModal({
   // dia daquele mês. A competência (AAAA-MM) sai da data escolhida.
   const [dataCompetencia, setDataCompetencia] = useState(() => dataPadraoDaCompetencia(competenciaInicial))
   const dataEfetiva = /^\d{4}-\d{2}-\d{2}$/.test(dataCompetencia) ? dataCompetencia : hojeLocal()
-  // Recebimento sem nota (ex.: Mercado Livre paga antes): a nota fica no mês
-  // do recebimento pra baterem; a data de competência da nota segue a escolhida.
-  const [recebimento, setRecebimento] = useState<RecebimentoSemNota | null>(null)
-  const doRecebimento = recebimento && recebimento.vinculo_id === vinculoId ? recebimento : null
-  // A nota sai no mês da data escolhida; o recebimento passa a ser dela.
   const competencia = dataEfetiva.slice(0, 7)
   const [valor, setValor] = useState(() => {
     const n = Number(valorInicial)
     return valorInicial && Number.isFinite(n) && n > 0 ? n.toFixed(2) : ""
   })
-  useEffect(() => {
-    if (!pagamentoId) return
-    let vivo = true
-    api
-      .get<RecebimentoSemNota[]>("/financeiro/recebimentos-sem-nota")
-      .then((lista) => {
-        const r = lista.find((x) => x.pagamento_id === pagamentoId)
-        if (!vivo || !r) return
-        setRecebimento(r)
-        setVinculoId(r.vinculo_id)
-        setValor(r.valor.toFixed(2))
-      })
-      .catch(() => undefined)
-    return () => {
-      vivo = false
-    }
-  }, [pagamentoId])
   const [ordem, setOrdem] = useState("")
   // Pré-preenchida com a alíquota de referência de Configurações, quando
   // existir — sempre editável, nunca aplicada sem a pessoa ver/confirmar
@@ -927,7 +844,7 @@ function NovaEmissaoModal({
         vinculo_id: vinculoId,
         competencia,
         data_competencia: dataEfetiva,
-        pagamento_id: doRecebimento?.pagamento_id ?? null,
+        origem: origem || null,
         substituir: substituir && !!duplicata?.pode_substituir,
         valor: Number(valor),
         ordem: ordem || null,
@@ -957,12 +874,11 @@ function NovaEmissaoModal({
 
   /** O recebimento paga a nota que já existe no mês (em vez de gerar outra). */
   async function usarNotaExistente() {
-    if (!doRecebimento || !duplicata?.emissao_id) return
+    if (!origem || !duplicata?.emissao_id) return
     setErro(null)
     setLigando(true)
     try {
-      await api.patch(`/pagamentos/${doRecebimento.pagamento_id}`, { emissao_id: duplicata.emissao_id })
-      onCriada(await api.get<Emissao>(`/dps/${duplicata.emissao_id}`))
+      onCriada(await api.post<Emissao>(`/dps/${duplicata.emissao_id}/origem`, { origem }))
     } catch (err) {
       setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
     } finally {
@@ -1032,10 +948,10 @@ function NovaEmissaoModal({
 
         {!ehRelatorio && (
           <>
-        {doRecebimento && (
+        {origem && (
           <p className="rounded-lg bg-primary-50 px-4 py-3 text-sm text-primary-800 dark:bg-primary-900/30 dark:text-primary-200">
-            Nota do recebimento de {formatBRL(doRecebimento.valor)}. O recebimento fica ligado a esta nota (ela já nasce paga); a
-            competência da nota é a data escolhida abaixo.
+            Nota pedida a partir de um recebimento: quando ela for gerada, o recebimento fica ligado a ela. A competência da nota é a
+            data escolhida abaixo.
           </p>
         )}
         <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
@@ -1072,7 +988,7 @@ function NovaEmissaoModal({
                   Abrir a nota que já existe
                 </Link>
               )}
-              {doRecebimento && duplicata.emissao_id && (
+              {origem && duplicata.emissao_id && (
                 <button type="button" disabled={ligando} onClick={usarNotaExistente} className="font-semibold underline disabled:opacity-50">
                   {ligando ? "Ligando..." : "Usar essa nota pra este recebimento"}
                 </button>

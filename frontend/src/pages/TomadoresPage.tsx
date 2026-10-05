@@ -8,6 +8,7 @@ import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { formatarDocumento } from "../lib/documento"
 import { competenciaAtual, formatBRL, formatCompetenciaLonga } from "../lib/format"
+import { useModulos } from "../lib/modulos"
 import type { Tomador, VinculoResumo } from "../lib/types"
 
 // Aba Tomadores — revista a pedido do Marcos (28/09/2026):
@@ -121,6 +122,9 @@ function CampoDia({ valor, onSalvar, desabilitado }: { valor: number | null; onS
 
 export function TomadoresPage() {
   const navigate = useNavigate()
+  // Clientes "só controle" (sem nota) são fontes de receita do financeiro:
+  // só aparecem aqui pra quem tem aquele módulo.
+  const { financeiro } = useModulos()
   const [aba, setAba] = useState<Aba>("meus")
   const [busca, setBusca] = useState("")
   const [competencia, setCompetencia] = useState(competenciaAtual())
@@ -135,7 +139,7 @@ export function TomadoresPage() {
     setCarregando(true)
     const carregar =
       aba === "meus"
-        ? api.get<VinculoResumo[]>(`/vinculos?todos=true&competencia=${competencia}`).then((v) => !cancelado && setVinculos(v))
+        ? api.get<VinculoResumo[]>(`/vinculos?todos=true&competencia=${competencia}`).then((v) => !cancelado && setVinculos(financeiro ? v : v.filter((x) => !x.sem_nota)))
         : api.get<Tomador[]>("/tomadores?apenas_meus=false").then((t) => !cancelado && setTomadores(t))
     carregar
       .catch((err) => !cancelado && setAviso({ tipo: "erro", texto: err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão." }))

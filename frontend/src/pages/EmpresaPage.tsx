@@ -4,6 +4,7 @@ import {
   Eraser,
   FileBadge,
   FlaskConical,
+  LayoutGrid,
   Mail,
   MailPlus,
   Percent,
@@ -27,6 +28,7 @@ import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import { formatarDocumento, mascararCep, soDigitos } from "../lib/documento"
+import { type Modulo, useModulos } from "../lib/modulos"
 import { excluirComConfirmacao, mensagemDeErro } from "../lib/excluir"
 import type { CertificadoStatus, EmitenteAtualizarRequest, Prestador } from "../lib/types"
 
@@ -58,6 +60,7 @@ export function EmpresaPage() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
 
+  const modulos = useModulos()
   useEffect(() => {
     api
       .get<Prestador>("/prestador")
@@ -93,6 +96,9 @@ export function EmpresaPage() {
   if (!prestador) return <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>
 
   const nome = prestador.nome_fantasia?.trim() || prestador.razao_social
+  // Abas do emissor (e-mails da nota, alíquotas, ambiente, certificado) só
+  // pra quem tem o módulo de notas.
+  const soEmissor = <T,>(aba: T): T[] => (modulos.emissor ? [aba] : [])
 
   return (
     <PaginaAbas
@@ -104,7 +110,7 @@ export function EmpresaPage() {
       }
       abas={[
         { id: "emitente", rotulo: "Emitente", icone: Building2, conteudo: () => <AbaEmitente prestador={prestador} onAtualizado={setPrestador} /> },
-        {
+        ...soEmissor({
           id: "emails",
           rotulo: "E-mails",
           icone: Mail,
@@ -114,10 +120,11 @@ export function EmpresaPage() {
               <EmailsGeraisCard prestador={prestador} onAtualizado={setPrestador} />
             </>
           ),
-        },
-        { id: "aliquotas", rotulo: "Alíquotas", icone: Percent, conteudo: () => <AliquotaCard prestador={prestador} onAtualizado={setPrestador} /> },
-        { id: "notas", rotulo: "Notas", icone: ReceiptText, conteudo: () => <AmbienteNotasCard prestador={prestador} onAtualizado={setPrestador} /> },
-        { id: "certificado", rotulo: "Certificado", icone: FileBadge, conteudo: () => <CertificadoCard /> },
+        }),
+        ...soEmissor({ id: "aliquotas", rotulo: "Alíquotas", icone: Percent, conteudo: () => <AliquotaCard prestador={prestador} onAtualizado={setPrestador} /> }),
+        ...soEmissor({ id: "notas", rotulo: "Notas", icone: ReceiptText, conteudo: () => <AmbienteNotasCard prestador={prestador} onAtualizado={setPrestador} /> }),
+        ...soEmissor({ id: "certificado", rotulo: "Certificado", icone: FileBadge, conteudo: () => <CertificadoCard /> }),
+        { id: "modulos", rotulo: "Módulos", icone: LayoutGrid, conteudo: () => <ModulosCard /> },
         { id: "dados", rotulo: "Limpar e excluir", icone: Trash2, perigo: true, conteudo: () => <AbaDados prestador={prestador} /> },
       ]}
     />
@@ -755,6 +762,82 @@ function AbaDados({ prestador }: { prestador: Prestador }) {
   )
 }
 
+// Emissor e financeiro são produtos separados (05/10/2026): aqui a empresa
+// liga o que usa. Desligar não apaga nada — os dados ficam guardados.
+const PRODUTOS: { id: Modulo; nome: string; texto: string }[] = [
+  {
+    id: "emissor",
+    nome: "Notas",
+    texto: "Emissão de NFS-e: tomadores, geração, assinatura, envio à prefeitura e ao tomador, calendário de emissão.",
+  },
+  {
+    id: "financeiro",
+    nome: "Financeiro",
+    texto: "Recebimentos e despesas, contas e rotina do mês, extrato bancário e conciliação.",
+  },
+]
+
+function ModulosCard() {
+  const { lista } = useModulos()
+  const { recarregarUsuario } = useAuth()
+  const [salvando, setSalvando] = useState<Modulo | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
+
+  async function alternar(id: Modulo) {
+    const novos = lista.includes(id) ? lista.filter((m) => m !== id) : [...lista, id]
+    if (novos.length === 0) {
+      setErro("Pelo menos um módulo precisa ficar ligado.")
+      return
+    }
+    setErro(null)
+    setSalvando(id)
+    try {
+      await api.put("/empresa/modulos", { modulos: novos })
+      await recarregarUsuario()
+    } catch (err) {
+      setErro(erroDe(err))
+    } finally {
+      setSalvando(null)
+    }
+  }
+
+  return (
+    <Card className="p-5">
+      <TituloSecao icone={LayoutGrid}>Módulos desta empresa</TituloSecao>
+      <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+        Cada módulo é um produto à parte, com o menu e as telas dele. Desligar um módulo só esconde: nada é apagado, e tudo volta
+        quando ele for ligado de novo.
+      </p>
+      {erro && <p className="mb-3 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
+      <div className="flex flex-col gap-2">
+        {PRODUTOS.map((p) => {
+          const ligado = lista.includes(p.id)
+          return (
+            <label key={p.id} className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-4 py-3 dark:border-slate-700">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={ligado}
+                disabled={salvando !== null}
+                onChange={() => alternar(p.id)}
+                className="mt-1"
+                aria-label={`Módulo ${p.nome}`}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  {p.nome}
+                  <Badge variant={ligado ? "success" : "neutral"}>{ligado ? "ligado" : "desligado"}</Badge>
+                </span>
+                <span className="mt-0.5 block text-sm text-slate-500 dark:text-slate-400">{p.texto}</span>
+              </span>
+            </label>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
 // "Coloque a opção de limpar dados dos tomadores, de NF-e, calendário,
 // recebimentos e despesas" (28/09/2026) — POST /api/dados/limpar.
 const CATEGORIAS_LIMPEZA = [
@@ -775,7 +858,12 @@ const ROTULOS_RESULTADO: Record<string, string> = {
   despesas: "despesas",
 }
 
+const CATEGORIAS_DO_MODULO: Record<string, Modulo> = { nfse: "emissor", recebimentos: "financeiro", despesas: "financeiro" }
+
 function LimparDadosCard() {
+  const modulos = useModulos()
+  // Só o que é dos módulos que a empresa tem ligados.
+  const categorias = CATEGORIAS_LIMPEZA.filter((c) => !CATEGORIAS_DO_MODULO[c.id] || modulos[CATEGORIAS_DO_MODULO[c.id]])
   const [selecionadas, setSelecionadas] = useState<string[]>([])
   const [confirmando, setConfirmando] = useState(false)
   const [texto, setTexto] = useState("")
@@ -810,7 +898,7 @@ function LimparDadosCard() {
         Apaga dados desta empresa por categoria — útil pra tirar dados de teste. Não tem como desfazer.
       </p>
       <div className="flex flex-col gap-2">
-        {CATEGORIAS_LIMPEZA.map((c) => (
+        {categorias.map((c) => (
           <label key={c.id} className="flex items-start gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
             <input type="checkbox" checked={selecionadas.includes(c.id)} onChange={() => alternar(c.id)} className="mt-0.5" />
             <span>

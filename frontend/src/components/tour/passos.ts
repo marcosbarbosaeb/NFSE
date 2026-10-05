@@ -115,7 +115,7 @@ const NFSE: PassoTour[] = [
 const CALENDARIO: PassoTour[] = [
   {
     titulo: "Seu mês num lugar só",
-    texto: "Aqui aparecem os dias de gerar cada nota, a previsão de quando cada pagamento cai e o que já entrou na conta.",
+    texto: "Aqui aparecem os dias de gerar cada nota e os lembretes que você criar.",
   },
   {
     titulo: "Lembretes e ajustes",
@@ -130,14 +130,14 @@ const FINANCEIRO: PassoTour[] = [
     texto: "O total recebido, as despesas e o saldo do ano escolhido.",
   },
   {
-    alvo: "financeiro-confronto",
-    titulo: "Mês a mês",
-    texto: "Recebimentos e despesas lado a lado, pra você ver em que mês sobrou mais (ou menos).",
-  },
-  {
     alvo: "financeiro-extrato",
     titulo: "Importar extrato",
-    texto: "Mande o extrato do banco (PDF, OFX ou CSV) e eu encontro os pagamentos dos seus tomadores pra você só confirmar.",
+    texto: "Mande o extrato do banco (PDF, OFX ou CSV). Classifique o que quiser na hora — o resto fica guardado na Conciliação.",
+  },
+  {
+    alvo: "financeiro-disposicao",
+    titulo: "Do seu jeito",
+    texto: "Cada card abre e fecha, e em “Editar disposição” você arrasta pra mudar a ordem. Fica salvo na sua conta.",
   },
 ]
 

@@ -40,12 +40,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function login(email: string, senha: string) {
     const dados = await api.post<Usuario>("/auth/login", { email, senha })
-    setUsuario(dados)
+    // /auth/me traz a empresa ativa completa (módulos ligados, conta de teste).
+    setUsuario(await api.get<Usuario>("/auth/me").catch(() => dados))
   }
 
   async function entrarComCodigo(email: string, codigo: string) {
     const dados = await api.post<Usuario>("/auth/codigo/entrar", { email, codigo })
-    setUsuario(dados)
+    setUsuario(await api.get<Usuario>("/auth/me").catch(() => dados))
   }
 
   async function recarregarUsuario() {
@@ -72,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // e já entra nela (ver backend/app/services/demo.py).
   async function entrarNaSimulacao() {
     const dados = await api.post<Usuario>("/demo")
-    setUsuario(dados)
+    setUsuario(await api.get<Usuario>("/auth/me").catch(() => dados))
   }
 
   async function logout() {

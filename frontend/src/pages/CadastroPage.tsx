@@ -18,6 +18,10 @@ export function CadastroPage() {
   const [codigoIndicacao] = useState(() => guardarCodigoIndicacao(searchParams))
   // /cadastro?teste=1 — conta de teste (notas só em homologação).
   const modoTeste = searchParams.get("teste") === "1"
+  // /cadastro?produto=financeiro (ou ambos) — qual produto a pessoa veio
+  // contratar; sem isso, o emissor de notas.
+  const produtoPedido = searchParams.get("produto")
+  const produto = produtoPedido === "financeiro" || produtoPedido === "ambos" ? produtoPedido : "emissor"
   // Marco 16, item 1 — volta de /api/auth/google/callback quando a conta
   // Google usada ainda não tem cadastro aqui (ver app/services/
   // google_oauth.py: não dá pra criar a conta só com o que a Google manda,
@@ -118,6 +122,7 @@ export function CadastroPage() {
         ...(enderecoAutopreenchido ?? {}),
         codigo_indicacao: modoTeste ? null : codigoIndicacao,
         modo_teste: modoTeste,
+        produto,
       }
       const resp = await api.post<{ mensagem: string; email: string }>("/cadastro", payload)
       esquecerCodigoIndicacao()

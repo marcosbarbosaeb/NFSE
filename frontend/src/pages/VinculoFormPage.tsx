@@ -8,6 +8,7 @@ import { CampoCidade } from "../components/ui/CampoCidade"
 import { CampoServico, formatarCodigoServico } from "../components/ui/CampoServico"
 import { Field, FieldWrap } from "../components/ui/Field"
 import { ApiError, api, formatarErro } from "../lib/api"
+import { useModulos } from "../lib/modulos"
 import { formatarDocumento } from "../lib/documento"
 import { competenciaAtual } from "../lib/format"
 import type { ConsultaCnpj, FormaEnvio, Prestador, Tomador, VinculoCriarRequest, VinculoDetalhe, VinculoResumo } from "../lib/types"
@@ -145,6 +146,8 @@ interface Sugestao {
 }
 
 export function VinculoFormPage() {
+  // "Só controle" e o prazo de pagamento são do módulo financeiro.
+  const { financeiro } = useModulos()
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -584,7 +587,7 @@ export function VinculoFormPage() {
             {form.sem_nota ? "Cadastro" : "Regras de emissão"}
           </h2>
 
-          <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700">
+          <label className={`mb-4 cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700 ${financeiro || form.sem_nota ? "flex" : "hidden"}`}>
             <input
               type="checkbox"
               role="switch"
@@ -804,17 +807,19 @@ export function VinculoFormPage() {
                   max={31}
                   value={form.dia_limite_emissao}
                   onChange={(e) => atualizarCampo("dia_limite_emissao", e.target.value)}
-                  hint="Dia do mês — depois dele, o pagamento pode cair pro mês seguinte."
+                  hint="Dia do mês em que você costuma gerar a nota deste tomador."
                 />
               )}
-              <Field
-                label="Dias até o pagamento cair"
-                type="number"
-                min={0}
-                value={form.dias_para_recebimento}
-                onChange={(e) => atualizarCampo("dias_para_recebimento", e.target.value)}
-                hint="Contados a partir da data de emissão da nota."
-              />
+              {financeiro && (
+                <Field
+                  label="Dias até o pagamento cair"
+                  type="number"
+                  min={0}
+                  value={form.dias_para_recebimento}
+                  onChange={(e) => atualizarCampo("dias_para_recebimento", e.target.value)}
+                  hint="Contados a partir da data de emissão da nota."
+                />
+              )}
             </div>
           </Card>
         )}

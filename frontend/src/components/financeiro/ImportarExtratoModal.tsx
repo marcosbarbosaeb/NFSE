@@ -302,11 +302,11 @@ export function ImportarExtratoModal({
                 opcoes={opcoesTomador}
                 onEscolher={(id) => escolherTomador(l, id)}
                 onCriar={(nome) => criarTomador(l, nome)}
-                rotuloCriar="Novo tomador"
-                placeholder="De qual tomador? (digite pra buscar)"
+                rotuloCriar="Novo cliente"
+                placeholder="De qual cliente? (digite pra buscar)"
                 disabled={!l.incluir}
                 alerta={l.incluir && !l.vinculoId}
-                ariaLabel="Tomador"
+                ariaLabel="Cliente"
                 className="min-w-[200px] flex-1"
               />
             ) : (
@@ -460,7 +460,7 @@ export function ImportarExtratoModal({
               <div className="flex max-h-[62vh] flex-col gap-4 overflow-y-auto pr-1">
                 {bloco(
                   "Receitas",
-                  "Escolha o tomador e a nota que o dinheiro paga. A baixa é por nota.",
+                  "Escolha de qual cliente é cada entrada (e a nota que ela paga, quando houver).",
                   receitas,
                   receitasMarcadas,
                   "bg-success-50 text-success-700 dark:bg-success-900/20 dark:text-success-300",

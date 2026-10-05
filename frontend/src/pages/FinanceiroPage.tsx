@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Link, useLocation, useSearchParams } from "react-router-dom"
 import { BaixaPagamento } from "../components/BaixaPagamento"
 import { PainelCards } from "../components/PainelCards"
-import { RecebimentosSemNotaCard } from "../components/financeiro/RecebimentosSemNota"
+import { RecebimentosSemNotaCard, linkGerarNota } from "../components/financeiro/RecebimentosSemNota"
 import { ContasDoMesPainel } from "../components/financeiro/ContasDoMesPainel"
 import { LancamentoModal } from "../components/financeiro/LancamentoModal"
 import { ResultadoAno } from "../components/financeiro/ResultadoAno"
@@ -13,6 +13,7 @@ import { Card } from "../components/ui/Card"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { NOMES_MESES, formatDiaMes, mensagemErro } from "../lib/financeiro"
 import { competenciaAtual, formatBRL, formatCompetenciaAbrev } from "../lib/format"
+import { useModulos } from "../lib/modulos"
 import type { Despesa, NotaAberta, Pagamento, ResumoFinanceiro, VinculoResumo } from "../lib/types"
 import { ImportarExtratoModal, RegistrarPagamentoModal } from "./RecebimentosPage"
 
@@ -100,6 +101,7 @@ export function FinanceiroPage() {
   }, [])
 
   const [recargaSemNota, setRecargaSemNota] = useState(0)
+  const modulos = useModulos()
   // Disposição dos cards (05/10/2026): abrir/fechar e arrastar.
   const [editando, setEditando] = useState(false)
   const [pendentesExtrato, setPendentesExtrato] = useState(0)
@@ -173,7 +175,7 @@ export function FinanceiroPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">O que entrou, o que saiu e o que sobrou — mês a mês.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="ghost" onClick={() => setEditando((e) => !e)} aria-pressed={editando}>
+          <Button variant="ghost" onClick={() => setEditando((e) => !e)} aria-pressed={editando} data-tour="financeiro-disposicao">
             <LayoutDashboard size={16} /> {editando ? "Concluir" : "Editar disposição"}
           </Button>
           <Link
@@ -265,6 +267,8 @@ export function FinanceiroPage() {
           },
           {
             id: "a_receber",
+            // Notas a receber: só existe com o módulo de notas (integração).
+            oculto: !modulos.emissor,
             titulo: "A receber",
             ancora: "a-receber",
             resumo: abertas ? formatBRL(abertas.reduce((s, n) => s + n.valor, 0)) : null,
@@ -318,7 +322,7 @@ export function FinanceiroPage() {
           {
             id: "sem_nota",
             titulo: "Recebimentos sem nota",
-            oculto: semNota === 0,
+            oculto: semNota === 0 || !modulos.emissor,
             resumo: semNota > 0 ? `${semNota}` : null,
             conteudo: <RecebimentosSemNotaCard recarga={recargaSemNota} semTitulo />,
           },
@@ -338,7 +342,7 @@ export function FinanceiroPage() {
             <table className="w-full text-left text-sm">
               <thead className="sticky top-0 bg-white dark:bg-slate-800">
                 <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-700/60 dark:text-slate-500">
-                  <th className="py-2 font-medium">Tomador</th>
+                  <th className="py-2 font-medium">Cliente</th>
                   <th className="py-2 font-medium">Caiu em</th>
                   <th className="py-2 text-right font-medium">Valor</th>
                 </tr>
@@ -348,13 +352,13 @@ export function FinanceiroPage() {
                   <tr key={p.id} className="border-b border-slate-50 last:border-0 dark:border-slate-700/40">
                     <td className="py-2.5">
                       <span className="font-medium text-slate-800 dark:text-slate-200">{p.apelido}</span>
-                      {p.emissao_id ? (
+                      {p.emissao_id && modulos.emissor ? (
                         <Link to={`/app/nfse/${p.emissao_id}`} className="block text-xs text-slate-400 hover:text-primary-600 hover:underline">
                           nota de {p.competencia}
                         </Link>
-                      ) : p.pode_gerar_nota ? (
+                      ) : p.pode_gerar_nota && modulos.emissor && p.vinculo_id ? (
                         <Link
-                          to={`/app/nfse?gerar=${p.vinculo_id}&pagamento=${p.id}`}
+                          to={linkGerarNota({ vinculo_id: p.vinculo_id, pagamento_id: p.id, valor: p.valor })}
                           className="block text-xs font-semibold text-primary-600 hover:underline dark:text-primary-300"
                         >
                           sem nota · gerar nota →
@@ -470,7 +474,7 @@ export function FinanceiroPage() {
             id: "confronto",
             titulo: "Recebimentos x despesas, mês a mês",
             conteudo: (
-      <Card className="p-5" data-tour="financeiro-confronto">
+      <Card className="p-5">
         <p className="mb-3 text-xs text-slate-400 dark:text-slate-500">Recebimentos pelo mês em que o dinheiro caiu; despesas pelo mês de competência.</p>
         {carregando ? (
           <p className="py-6 text-center text-sm text-slate-400">Carregando...</p>

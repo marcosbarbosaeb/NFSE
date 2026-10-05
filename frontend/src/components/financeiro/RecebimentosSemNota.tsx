@@ -2,25 +2,32 @@ import { EyeOff, FilePlus2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { api } from "../../lib/api"
+import { useModulos } from "../../lib/modulos"
 import { formatBRL, formatCompetenciaLonga } from "../../lib/format"
 import type { RecebimentoSemNota } from "../../lib/types"
 import { Card } from "../ui/Card"
 
-/** Link pra gerar a nota de um recebimento que chegou sem nota. */
-export function linkGerarNota(r: { vinculo_id: string; pagamento_id: string }) {
-  return `/app/nfse?gerar=${r.vinculo_id}&pagamento=${r.pagamento_id}`
+/** Link pra pedir ao emissor a nota de um recebimento que chegou sem nota.
+ * É o ponto de integração entre os dois módulos: o financeiro manda o
+ * tomador, o valor e uma "origem" que o emissor devolve quando a nota nasce
+ * (aí o recebimento fica ligado a ela). */
+export function linkGerarNota(r: { vinculo_id: string; pagamento_id: string; valor?: number }) {
+  const valor = r.valor != null ? `&valor=${r.valor}` : ""
+  return `/app/nfse?gerar=${r.vinculo_id}${valor}&origem=fin:pagamento:${r.pagamento_id}`
 }
 
 /** Lista curta (dentro de um modal, depois de registrar/importar). */
 export function ListaSemNota({ itens }: { itens: RecebimentoSemNota[] }) {
-  if (itens.length === 0) return null
+  // Sem o módulo de notas não há o que gerar: o aviso nem aparece.
+  const { emissor } = useModulos()
+  if (itens.length === 0 || !emissor) return null
   return (
     <div className="rounded-lg border border-accent-200 bg-accent-50 p-3 dark:border-accent-800 dark:bg-accent-900/20">
       <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
         {itens.length === 1 ? "Este recebimento chegou sem nota" : `${itens.length} recebimentos chegaram sem nota`}
       </p>
       <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
-        Não tem nota desse tomador no mês. Se ele paga antes (como Mercado Livre e Amazon), gere a nota desse valor.
+        Esse dinheiro não está ligado a nenhuma nota. Se o cliente paga antes (como Mercado Livre e Amazon), gere a nota desse valor.
       </p>
       <ul className="flex flex-col gap-1.5">
         {itens.map((r) => (

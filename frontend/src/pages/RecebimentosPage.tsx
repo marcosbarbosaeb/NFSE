@@ -222,7 +222,7 @@ export function RegistrarPagamentoModal({
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
 
-        <FieldWrap label="Fornecedor">
+        <FieldWrap label="Cliente">
           <select
             required
             value={vinculoId}
