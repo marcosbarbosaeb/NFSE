@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, FileSpreadsheet, Globe2 } from "lucide-rea
 import { type FormEvent, useEffect, useMemo, useState } from "react"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { formatBRL, formatCompetenciaLonga, parseBRL } from "../lib/format"
-import type { GeracaoShopee, PreviaShopee, VinculoResumo } from "../lib/types"
+import type { GeracaoShopee, Lote, PassoLote, PreviaShopee, VinculoResumo } from "../lib/types"
 import { hojeLocal } from "../lib/datas"
 import { CampoData } from "./CampoData"
 import { Button } from "./ui/Button"
@@ -21,13 +21,39 @@ function formatarDocumento(doc: string, tipo: string): string {
   return doc
 }
 
+// "Depois de gerar, a Ana também..." (05/10/2026): a sequência inteira roda
+// em segundo plano; a escolha fica lembrada neste navegador.
+interface Depois {
+  assinar: boolean
+  prefeitura: boolean
+  email: boolean
+}
+const CHAVE_DEPOIS = "ana:shopee:depois"
+function lerDepois(): Depois {
+  try {
+    const d = JSON.parse(localStorage.getItem(CHAVE_DEPOIS) ?? "null")
+    if (d && typeof d.assinar === "boolean") {
+      const prefeitura = d.assinar && d.prefeitura === true
+      return { assinar: d.assinar, prefeitura, email: prefeitura && d.email === true }
+    }
+  } catch {
+    // sem storage ou valor estragado: padrão
+  }
+  return { assinar: true, prefeitura: true, email: true }
+}
+
 export function ShopeeModal({
   vinculo,
   aliquotaReferencia,
+  ambienteTeste = false,
   onClose,
   onGeradas,
   onVerNotas,
+  onLote,
 }: {
+  ambienteTeste?: boolean
+  /** A sequência em segundo plano começou — a tela mostra o andamento. */
+  onLote?: (lote: Lote) => void
   vinculo: VinculoResumo
   aliquotaReferencia: number | null
   onClose: () => void
@@ -55,6 +81,20 @@ export function ShopeeModal({
   const [erro, setErro] = useState<string | null>(null)
   const [resultado, setResultado] = useState<GeracaoShopee | null>(null)
   const [verTodos, setVerTodos] = useState(false)
+  const [depois, setDepois] = useState<Depois>(lerDepois)
+  function mudarDepois(passo: keyof Depois, ligado: boolean) {
+    // Cada passo depende do anterior.
+    const novo: Depois = ligado
+      ? { assinar: true, prefeitura: passo !== "assinar" ? true : depois.prefeitura, email: passo === "email" ? true : depois.email }
+      : { assinar: passo === "assinar" ? false : depois.assinar, prefeitura: passo === "email" ? depois.prefeitura : false, email: false }
+    setDepois(novo)
+    try {
+      localStorage.setItem(CHAVE_DEPOIS, JSON.stringify(novo))
+    } catch {
+      // sem storage: vale só nesta vez
+    }
+  }
+  const passos: PassoLote[] = [depois.assinar && "assinar", depois.prefeitura && "submeter", depois.email && "email"].filter(Boolean) as PassoLote[]
 
   async function lerArquivo(e: FormEvent) {
     e.preventDefault()
@@ -106,9 +146,11 @@ export function ShopeeModal({
       form.append("incluir_estrangeiros", String(incluirEstrangeiros))
       if (aliqSn != null) form.append("aliq_sn", String(aliqSn))
       form.append("data_competencia", /^\d{4}-\d{2}-\d{2}$/.test(dataCompetencia) ? dataCompetencia : hojeLocal())
+      if (passos.length > 0) form.append("depois", passos.join(","))
       const resp = await api.postForm<GeracaoShopee>("/shopee/gerar", form)
       setResultado(resp)
-      if (resp.geradas > 0) onGeradas()
+      if (resp.geradas > 0 || resp.lote) onGeradas()
+      if (resp.lote) onLote?.(resp.lote)
     } catch (err) {
       setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão.")
     } finally {
@@ -308,12 +350,39 @@ export function ShopeeModal({
             </details>
           )}
 
+          <fieldset className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-700">
+            <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Depois de gerar, a Ana também</legend>
+            <div className="flex flex-col gap-2 text-sm text-slate-700 dark:text-slate-200">
+              {(
+                [
+                  ["assinar", "Assina todas com o certificado"],
+                  ["prefeitura", ambienteTeste ? "Envia à prefeitura (ambiente de teste)" : "Envia à prefeitura"],
+                  ["email", "Manda cada nota pro e-mail do vendedor (o que veio no relatório)"],
+                ] as const
+              ).map(([passo, rotulo]) => (
+                <label key={passo} className="flex cursor-pointer items-start gap-2">
+                  <input type="checkbox" className="mt-0.5" checked={depois[passo]} disabled={carregando} onChange={(e) => mudarDepois(passo, e.target.checked)} />
+                  {rotulo}
+                </label>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              {passos.length > 0
+                ? "Isso roda em segundo plano: depois do seu OK você pode fechar a página. Quando acabar, eu deixo um relatório aqui em Notas em lote e mando por e-mail. Se a prefeitura recusar uma nota por causa do CEP, eu procuro o CEP certo pelo endereço e mando de novo."
+                : "Sem nada marcado, as notas ficam só geradas, esperando você assinar."}
+            </p>
+          </fieldset>
+
           <div className="flex justify-end gap-3">
             <Button type="button" variant="outline" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="button" variant="accent" disabled={carregando || aGerar.length === 0} onClick={gerar}>
-              {carregando ? "Gerando..." : `Gerar ${aGerar.length} nota${aGerar.length === 1 ? "" : "s"}`}
+            <Button type="button" variant="accent" disabled={carregando || (aGerar.length === 0 && (jaGeradas === 0 || passos.length === 0))} onClick={gerar}>
+              {carregando
+                ? "Gerando..."
+                : aGerar.length === 0
+                  ? "Continuar as que já foram geradas"
+                  : `Gerar ${aGerar.length} nota${aGerar.length === 1 ? "" : "s"}${passos.length === 3 ? " e fazer tudo" : passos.length > 0 ? " e continuar" : ""}`}
             </Button>
           </div>
         </div>
@@ -336,10 +405,22 @@ export function ShopeeModal({
               ))}
             </ul>
           )}
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            As notas estão na lista da aba NFS-e, prontas pra revisar e assinar. Na lista, marque todas pra assinar e enviar à
-            prefeitura de uma vez — depois é só usar “Enviar todas por e-mail”.
-          </p>
+          {resultado.lote ? (
+            <div className="rounded-xl border border-primary-100 bg-primary-50/60 px-4 py-3 text-sm text-slate-700 dark:border-primary-900/40 dark:bg-primary-900/20 dark:text-slate-200">
+              <p className="font-semibold text-primary-800 dark:text-primary-200">
+                Já comecei a sequência em {resultado.lote.total} nota{resultado.lote.total === 1 ? "" : "s"}.
+              </p>
+              <p className="mt-1">
+                Estou {passos.includes("email") ? "assinando, enviando à prefeitura e mandando pros vendedores" : passos.includes("submeter") ? "assinando e enviando à prefeitura" : "assinando"}, uma por vez.{" "}
+                <strong>Pode fechar esta página</strong> — eu continuo sozinha. Quando acabar, o relatório fica em Notas em lote e vai pro seu
+                e-mail.
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              {resultado.aviso_lote ?? "As notas estão em Notas em lote, prontas pra revisar. Lá, marque todas e use “Fazer tudo o que falta”."}
+            </p>
+          )}
           <div className="flex flex-wrap justify-end gap-3">
             <Button type="button" variant={onVerNotas ? "outline" : "accent"} onClick={onClose}>
               Fechar

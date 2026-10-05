@@ -9,7 +9,7 @@ import { ApiError, api, formatarErro } from "../lib/api"
 import { formatarDocumento } from "../lib/documento"
 import { competenciaAtual, formatBRL, formatCompetenciaLonga } from "../lib/format"
 import { useModulos } from "../lib/modulos"
-import type { Tomador, VinculoResumo } from "../lib/types"
+import type { ConferenciaTomadores, Tomador, VinculoResumo } from "../lib/types"
 
 // Aba Tomadores — revista a pedido do Marcos (28/09/2026):
 // 1) coluna "Dia" editável (o dia do mês de gerar a nota — vira o evento
@@ -133,6 +133,22 @@ export function TomadoresPage() {
   const [carregando, setCarregando] = useState(true)
   const [aviso, setAviso] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null)
   const [excluindo, setExcluindo] = useState<VinculoResumo | null>(null)
+  // Conferência (05/10/2026): quantos pontos a Ana achou no cadastro de cada
+  // tomador ativo — uma chamada só pra lista toda.
+  const [conferencia, setConferencia] = useState<ConferenciaTomadores>({})
+  useEffect(() => {
+    if (aba !== "meus") return
+    let cancelado = false
+    api
+      .get<ConferenciaTomadores>("/conferencia/tomadores")
+      .then((c) => !cancelado && setConferencia(c))
+      .catch(() => {
+        // é só um selo a mais: sem ele a lista continua funcionando
+      })
+    return () => {
+      cancelado = true
+    }
+  }, [aba])
 
   useEffect(() => {
     let cancelado = false
@@ -335,6 +351,23 @@ export function TomadoresPage() {
                               <Badge>Sem nota</Badge>
                             </span>
                           ))}
+                        {!inativo && (conferencia[v.id]?.erros ?? 0) > 0 ? (
+                          <Link
+                            to={`/app/tomadores/${v.id}`}
+                            className="ml-2 align-middle"
+                            title="Achei dados errados no cadastro deste tomador: a nota sairia errada. Clique pra ver e corrigir."
+                          >
+                            <Badge variant="danger">{conferencia[v.id].erros} a corrigir</Badge>
+                          </Link>
+                        ) : !inativo && (conferencia[v.id]?.avisos ?? 0) > 0 ? (
+                          <Link
+                            to={`/app/tomadores/${v.id}`}
+                            className="ml-2 align-middle"
+                            title="Achei algo diferente no cadastro deste tomador. Clique pra conferir."
+                          >
+                            <Badge variant="warning">{conferencia[v.id].avisos} a conferir</Badge>
+                          </Link>
+                        ) : null}
                         <p className="text-xs text-slate-400 dark:text-slate-500">
                           {v.tomador_razao_social}
                           {v.tomador_cnpj && ` · ${formatarDocumento(v.tomador_cnpj)}`}

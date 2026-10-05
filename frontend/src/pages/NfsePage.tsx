@@ -18,8 +18,9 @@ import {
 } from "lucide-react"
 import { DownloadsNota, SeloAssinatura, SeloPrefeitura, SeloTomador } from "../components/AcoesNota"
 import { CampoData } from "../components/CampoData"
+import { Conferencia } from "../components/Conferencia"
 import { ImportarNacionalModal } from "../components/ImportarNacionalModal"
-import { ConfirmarLoteModal, LotePainel } from "../components/LotePainel"
+import { ConfirmarLoteModal, LotePainel, RelatorioLoteModal } from "../components/LotePainel"
 import { ShopeeModal } from "../components/ShopeeModal"
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
@@ -32,10 +33,11 @@ import { Modal } from "../components/ui/Modal"
 import { StatCard } from "../components/ui/StatCard"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { dataPadraoDaCompetencia, hojeLocal } from "../lib/datas"
-import { LOTE_RODANDO } from "../lib/lotes"
+import { LOTE_RODANDO, NOME_ACAO } from "../lib/lotes"
 import { formatBRL, formatCompetenciaLonga } from "../lib/format"
 import type {
   AcaoLote,
+  ConferenciaNota,
   CriarLoteBody,
   EmissaoListaLinha,
   Lote,
@@ -44,6 +46,7 @@ import type {
   GerarDpsRequest,
   ImportacaoCsvResultado,
   OrdemAwin,
+  PontoConferencia,
   PreviaEmail,
   Prestador,
   VerificarDuplicata,
@@ -141,12 +144,23 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
   const [erroLote, setErroLote] = useState<string | null>(null)
   const [baixandoZip, setBaixandoZip] = useState(false)
   const checkTodas = useRef<HTMLInputElement>(null)
+  // Processamentos recentes e o relatório de cada um (05/10/2026).
+  const [lotesRecentes, setLotesRecentes] = useState<Lote[]>([])
+  const [relatorio, setRelatorio] = useState<Lote | null>(null)
+  function carregarLotes() {
+    api.get<Lote[]>("/lotes").then(setLotesRecentes).catch(() => {})
+  }
 
   // Um lote que ainda roda (ou parou no meio) aparece ao abrir a página.
   useEffect(() => {
     api
       .get<Lote[]>("/lotes")
       .then((recentes) => {
+        setLotesRecentes(recentes)
+        // Link do e-mail de aviso: /app/nfse/lote?relatorio=<id>
+        const pedido = searchParams.get("relatorio")
+        const doLink = pedido ? recentes.find((l) => l.id === pedido) : null
+        if (doLink) setRelatorio(doLink)
         const ultimo = recentes[0]
         if (!ultimo || lotesFechados().includes(ultimo.id)) return
         const recente = !ultimo.criado_em || Date.now() - new Date(ultimo.criado_em).getTime() < 24 * 3600 * 1000
@@ -288,8 +302,14 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
       permitirReenviar: acao === "email" || acao === "email_geral",
       aviso:
         acao === "email_geral"
-          ? "Vai pros e-mails gerais configurados em Empresa › E-mails (contador, você mesmo...)."
-          : undefined,
+          ? "É uma cópia pros e-mails que você cadastrou em Empresa › E-mails (contador, você mesmo...). Não conta como entrega ao tomador."
+          : acao === "email"
+            ? emLote
+              ? "Cada nota vai pro e-mail do vendedor dela — o que veio no relatório."
+              : "Cada nota vai pro e-mail cadastrado no tomador dela (só de quem recebe por e-mail)."
+            : acao === "completo"
+              ? "Em cada nota eu faço só o que falta: assinar, enviar à prefeitura e mandar por e-mail. Roda em segundo plano — pode fechar a página; no fim tem um relatório."
+              : undefined,
     })
   }
 
@@ -419,6 +439,47 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
         />
       </div>
 
+      {emLote && lotesRecentes.length > 0 && (
+        <Card className="p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Últimos processamentos</h2>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">O que rodou em segundo plano e o relatório de cada um.</p>
+          <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-700/60">
+            {lotesRecentes.slice(0, 5).map((l) => {
+              const rodando = LOTE_RODANDO(l)
+              return (
+                <li key={l.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5 text-sm">
+                  <span className="min-w-0 flex-1">
+                    <span className="font-medium text-slate-800 dark:text-slate-100">{NOME_ACAO[l.acao]}</span>
+                    <span className="block text-xs text-slate-500 dark:text-slate-400">
+                      {l.criado_em && new Date(l.criado_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      {" · "}
+                      {l.total} nota{l.total === 1 ? "" : "s"}
+                      {(l.linhas_relatorio ?? []).length > 0 && !rodando && ` · ${(l.linhas_relatorio ?? []).slice(0, 2).join(", ")}`}
+                    </span>
+                  </span>
+                  {rodando ? (
+                    <Badge variant="info">
+                      Rodando — {l.feitos + l.falhas} de {l.total}
+                    </Badge>
+                  ) : l.status === "concluido" && l.falhas === 0 ? (
+                    <Badge variant="success">Tudo certo</Badge>
+                  ) : l.status === "concluido" ? (
+                    <Badge variant="warning">
+                      {l.falhas} com pendência
+                    </Badge>
+                  ) : (
+                    <Badge variant="neutral">{l.status === "cancelado" ? "Cancelado" : "Interrompido"}</Badge>
+                  )}
+                  <button type="button" onClick={() => setRelatorio(l)} className="text-sm font-semibold text-primary-600 hover:underline dark:text-primary-300">
+                    Ver relatório
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </Card>
+      )}
+
       <Card className="p-5">
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <select value={ano} onChange={(e) => trocarAno(e.target.value)} aria-label="Ano" className={SELECT_FILTRO}>
@@ -469,7 +530,7 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
           <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-primary-100 bg-primary-50/60 px-4 py-3 dark:border-primary-900/40 dark:bg-primary-900/20">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
-                Envios ao fornecedor · {vinculoSelecionado.apelido}, {formatCompetenciaLonga(competenciaFiltro)}
+                {emLote ? "Envios aos vendedores" : "Envios ao tomador"} · {vinculoSelecionado.apelido}, {formatCompetenciaLonga(competenciaFiltro)}
               </p>
               <p className="mt-0.5 flex flex-wrap gap-x-2 text-sm text-slate-600 dark:text-slate-300">
                 <span>
@@ -521,17 +582,41 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
             <span className="mr-1 text-sm font-semibold text-primary-800 dark:text-primary-200" aria-live="polite">
               {selecionadasVisiveis.length} selecionada{selecionadasVisiveis.length === 1 ? "" : "s"}
             </span>
+            <Button
+              type="button"
+              variant="accent"
+              className="px-3 py-1.5"
+              disabled={loteRodando}
+              title="Em cada nota: assina, envia à prefeitura e manda por e-mail — só o que ainda falta. Roda em segundo plano."
+              onClick={() => acaoNaSelecao("completo")}
+            >
+              <CheckCircle2 size={15} /> Fazer tudo o que falta
+            </Button>
             <Button type="button" variant="outline" className="bg-white px-3 py-1.5 dark:bg-slate-800" disabled={loteRodando} onClick={() => acaoNaSelecao("assinar")}>
               <PenLine size={15} /> Assinar
             </Button>
             <Button type="button" variant="outline" className="bg-white px-3 py-1.5 dark:bg-slate-800" disabled={loteRodando} onClick={() => acaoNaSelecao("submeter")}>
               <Landmark size={15} /> Enviar à prefeitura
             </Button>
-            <Button type="button" variant="outline" className="bg-white px-3 py-1.5 dark:bg-slate-800" disabled={loteRodando} onClick={() => acaoNaSelecao("email")}>
-              <Mail size={15} /> Enviar ao fornecedor por e-mail
+            <Button
+              type="button"
+              variant="outline"
+              className="bg-white px-3 py-1.5 dark:bg-slate-800"
+              disabled={loteRodando}
+              title={emLote ? "Cada nota vai pro e-mail do vendedor dela — o que veio no relatório" : "Cada nota vai pro e-mail cadastrado no tomador dela"}
+              onClick={() => acaoNaSelecao("email")}
+            >
+              <Mail size={15} /> {emLote ? "Enviar aos vendedores (e-mail do relatório)" : "Enviar ao tomador por e-mail"}
             </Button>
-            <Button type="button" variant="outline" className="bg-white px-3 py-1.5 dark:bg-slate-800" disabled={loteRodando} onClick={() => acaoNaSelecao("email_geral")}>
-              <Send size={15} /> Enviar aos e-mails gerais
+            <Button
+              type="button"
+              variant="outline"
+              className="bg-white px-3 py-1.5 dark:bg-slate-800"
+              disabled={loteRodando}
+              title="Uma cópia pros e-mails de Empresa › E-mails (contador, você mesmo). Não conta como entrega ao tomador."
+              onClick={() => acaoNaSelecao("email_geral")}
+            >
+              <Send size={15} /> Mandar cópia pro contador
             </Button>
             <Button type="button" variant="outline" className="bg-white px-3 py-1.5 dark:bg-slate-800" disabled={baixandoZip} onClick={baixarZip}>
               <FileArchive size={15} /> {baixandoZip ? "Gerando .zip..." : "Baixar XMLs (.zip)"}
@@ -579,7 +664,7 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
                 <th className="py-2 font-medium">Valor</th>
                 <th className="py-2 font-medium">Assinatura</th>
                 <th className="py-2 font-medium">Prefeitura</th>
-                <th className="py-2 font-medium" title="Envio da nota ao fornecedor (tomador)">Fornecedor</th>
+                <th className="py-2 font-medium" title={emLote ? "Envio da nota ao vendedor" : "Envio da nota ao tomador"}>{emLote ? "Vendedor" : "Tomador"}</th>
                 <th className="py-2 font-medium">Arquivos</th>
               </tr>
             </thead>
@@ -669,6 +754,11 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
         <ShopeeModal
           vinculo={shopee}
           aliquotaReferencia={aliquotaReferencia}
+          ambienteTeste={ambienteTeste}
+          onLote={(novo) => {
+            setLote(novo)
+            carregarLotes()
+          }}
           onClose={() => {
             setShopee(null)
             if (searchParams.get("gerar")) navigate("/app/nfse", { replace: true })
@@ -695,6 +785,7 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
           onCriado={(novo) => {
             setConfirmacao(null)
             setLote(novo)
+            carregarLotes()
             if (confirmacao.body.emissao_ids) setSelecionadas(new Set())
           }}
         />
@@ -703,10 +794,25 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
         <LotePainel
           lote={lote}
           onMudou={setLote}
-          onTerminou={recarregar}
+          onTerminou={() => {
+            recarregar()
+            carregarLotes()
+            // O processo completo terminou: o relatório abre sozinho.
+            if (lote.acao === "completo") api.get<Lote>(`/lotes/${lote.id}`).then(setRelatorio).catch(() => {})
+          }}
           onFechar={() => {
             marcarLoteFechado(lote.id)
             setLote(null)
+          }}
+        />
+      )}
+      {relatorio && (
+        <RelatorioLoteModal
+          lote={relatorio}
+          onClose={() => setRelatorio(null)}
+          onRefazer={(novo) => {
+            setLote(novo)
+            carregarLotes()
           }}
         />
       )}
@@ -843,6 +949,51 @@ function NovaEmissaoModal({
     }
   }, [vinculoId, competencia])
 
+  // Conferência (05/10/2026): assim que tem valor digitado, a Ana confere o
+  // tomador, a empresa e a nota (POST /dps/conferir). "Erro" trava o Gerar
+  // (o backend também recusa); "aviso" pede um "conferi, pode gerar".
+  // `null` = nada a mostrar (sem valor ainda, ou a conferência falhou).
+  const [pontosConferencia, setPontosConferencia] = useState<PontoConferencia[] | null>(null)
+  const [conferindo, setConferindo] = useState(false)
+  const [confirmouAvisos, setConfirmouAvisos] = useState(false)
+  const valorDigitado = Number(valor) > 0
+  // Trocou o tomador: o que foi conferido era do outro.
+  useEffect(() => setPontosConferencia(null), [vinculoId])
+  useEffect(() => {
+    if (!vinculoId || ehRelatorio || !valorDigitado) {
+      setPontosConferencia(null)
+      setConferindo(false)
+      return
+    }
+    let cancelado = false
+    setConferindo(true)
+    const tempo = setTimeout(() => {
+      api
+        .post<ConferenciaNota>("/dps/conferir", {
+          vinculo_id: vinculoId,
+          valor: Number(valor),
+          data_competencia: dataEfetiva,
+          ordem: ordem || null,
+          aliq_sn: aliqSn,
+        })
+        .then((resp) => !cancelado && setPontosConferencia(resp.pontos))
+        // Se a conferência falhar, não trava: POST /dps confere de novo.
+        .catch(() => !cancelado && setPontosConferencia(null))
+        .finally(() => !cancelado && setConferindo(false))
+    }, 500)
+    return () => {
+      cancelado = true
+      clearTimeout(tempo)
+    }
+  }, [vinculoId, ehRelatorio, valorDigitado, valor, dataEfetiva, ordem, aliqSn])
+  const errosConferencia = (pontosConferencia ?? []).filter((p) => p.nivel === "erro")
+  const avisosConferencia = (pontosConferencia ?? []).filter((p) => p.nivel === "aviso")
+  // Mudou o que há pra conferir: a confirmação anterior não vale mais.
+  const chaveAvisos = avisosConferencia.map((p) => `${p.codigo}:${p.mensagem}`).join("|")
+  useEffect(() => setConfirmouAvisos(false), [chaveAvisos, vinculoId])
+  const bloqueadoPorConferencia =
+    valorDigitado && !ehRelatorio && (conferindo || errosConferencia.length > 0 || (avisosConferencia.length > 0 && !confirmouAvisos))
+
   // "Processo completo" (05/10/2026): ao gerar, a Ana já assina, envia à
   // prefeitura e manda pro tomador — o que estiver marcado. A escolha fica
   // guardada neste navegador pra próxima nota.
@@ -919,19 +1070,36 @@ function NovaEmissaoModal({
       // Tomador: do jeito que ficou gravado pra ele (e-mail, WhatsApp, portal...).
       try {
         const previa = await api.get<PreviaEmail>(`/dps/${criada.id}/email-previa`)
-        const canal = previa.canal_preferido ?? "email"
-        if (canal === "nenhum") return onCriada(criada)
-        if (canal !== "email" || previa.destinos.length === 0) {
-          // WhatsApp e portal têm um passo manual (abrir a conversa, subir no
-          // sistema dele): a página da nota já abre nesse envio.
-          return onCriada(criada, { abrir: true })
+        // Todas as formas marcadas no tomador (05/10/2026: pode ser mais de
+        // uma — e-mail + baixar o PDF...). Cadastro antigo: só a principal.
+        const formas: string[] = previa.formas ?? (previa.canal_preferido === "nenhum" ? [] : [previa.canal_preferido ?? "email"])
+        if (formas.length === 0) return onCriada(criada)
+        if (formas.includes("download")) {
+          const a = document.createElement("a")
+          a.href = `/api/dps/${criada.id}/pdf`
+          a.download = ""
+          document.body.appendChild(a)
+          a.click()
+          a.remove()
+          feito("PDF baixado")
+          // Só baixar é a entrega deste tomador: já fica como enviada.
+          if (formas.length === 1) await api.post(`/dps/${criada.id}/marcar-enviada`, { forma: "outro" }).catch(() => {})
         }
-        const envio = await api.post<Envio>(`/dps/${criada.id}/enviar-email`, {})
-        if (envio.status === "falha") {
-          setErro("Nota autorizada, mas o e-mail pro tomador falhou. Tente de novo na página da nota.")
-          return setNotaParada(criada)
+        if (formas.includes("email")) {
+          if (previa.destinos.length === 0) {
+            setErro("Nota autorizada, mas este tomador não tem e-mail cadastrado. Envie pela página da nota.")
+            return setNotaParada(criada)
+          }
+          const envio = await api.post<Envio>(`/dps/${criada.id}/enviar-email`, {})
+          if (envio.status === "falha") {
+            setErro("Nota autorizada, mas o e-mail pro tomador falhou. Tente de novo na página da nota.")
+            return setNotaParada(criada)
+          }
+          feito((previa.extras ?? []).length > 0 ? "Enviada por e-mail ao tomador e aos outros destinatários" : "Enviada por e-mail ao tomador")
         }
-        feito("Enviada por e-mail ao tomador")
+        // WhatsApp e portal têm um passo manual (abrir a conversa, subir no
+        // sistema dele): a página da nota já abre nesse envio.
+        if (formas.includes("whatsapp") || formas.includes("portal")) return onCriada(criada, { abrir: true })
         onCriada(criada)
       } catch (err) {
         setErro(`Nota autorizada, mas não deu pra enviar ao tomador: ${motivo(err)}.`)
@@ -1093,7 +1261,7 @@ function NovaEmissaoModal({
                 [
                   ["assinar", "Assina com o certificado"],
                   ["prefeitura", ambienteTeste ? "Envia à prefeitura (ambiente de teste)" : "Envia à prefeitura"],
-                  ["tomador", "Envia ao tomador, do jeito que ficou gravado pra ele (e-mail, WhatsApp, portal...)"],
+                  ["tomador", "Entrega ao tomador, do jeito marcado no cadastro dele (e-mail, baixar o PDF, WhatsApp, portal...)"],
                 ] as const
               ).map(([passo, rotulo]) => (
                 <label key={passo} className="flex cursor-pointer items-start gap-2">
@@ -1122,7 +1290,23 @@ function NovaEmissaoModal({
           </ul>
         )}
 
-        {ambienteTeste && !ehRelatorio && (
+        {!ehRelatorio && !notaParada && !enviando && andamento.length === 0 && (pontosConferencia !== null || conferindo) && (
+          <div className="flex flex-col gap-3">
+            {/* Enquanto confere de novo, o que já estava na tela continua (sem piscar a cada tecla). */}
+            <Conferencia pontos={pontosConferencia} vinculoId={vinculoId} />
+            {errosConferencia.length > 0 && (
+              <p className="text-xs text-slate-500 dark:text-slate-400">Corrija o que está em vermelho pra eu poder gerar a nota.</p>
+            )}
+            {errosConferencia.length === 0 && avisosConferencia.length > 0 && (
+              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-warning-300 px-3 py-2.5 text-sm font-medium text-slate-800 dark:border-warning-900 dark:text-slate-100">
+                <input type="checkbox" className="mt-0.5" checked={confirmouAvisos} onChange={(e) => setConfirmouAvisos(e.target.checked)} />
+                Conferi e está certo, pode gerar
+              </label>
+            )}
+          </div>
+        )}
+
+        {ambienteTeste && !ehRelatorio && !avisosConferencia.some((p) => p.codigo === "ambiente_teste") && (
           <p className="rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
             Sua conta está gerando notas de <strong>teste</strong> (homologação). Pra emitir de verdade, desligue em
             Empresa › Notas.
@@ -1139,7 +1323,7 @@ function NovaEmissaoModal({
             </Button>
           ) : (
             !ehRelatorio && (
-              <Button type="submit" variant="accent" disabled={enviando || !vinculoId || bloqueadoPorDuplicata}>
+              <Button type="submit" variant="accent" disabled={enviando || !vinculoId || bloqueadoPorDuplicata || bloqueadoPorConferencia}>
                 {enviando
                   ? "Trabalhando..."
                   : aoGerar.tomador

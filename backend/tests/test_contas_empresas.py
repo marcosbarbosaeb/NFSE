@@ -154,7 +154,11 @@ def test_conta_de_teste(db, monkeypatch):
     app.dependency_overrides[prestador_atual_id] = lambda: teste.prestador_id
     try:
         client = TestClient(app)
-        t = Tomador(id=uuid.uuid4(), cnpj="11222333000181", razao_social="T", cod_municipio="3550308")
+        t = Tomador(
+            # endereço inteiro: a conferência não deixa gerar nota com ele pela metade
+            id=uuid.uuid4(), cnpj="11222333000181", razao_social="T", cod_municipio="3550308",
+            cep="01311000", logradouro="Av Teste", numero="100", bairro="Centro",
+        )
         db.add(t)
         db.flush()
         v = PrestadorTomador(

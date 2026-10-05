@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react"
-import { type FocusEvent, type FormEvent, useState } from "react"
+import { type FocusEvent, type FormEvent, useEffect, useState } from "react"
 import { Link, Navigate, useSearchParams } from "react-router-dom"
 import { esquecerCodigoIndicacao, guardarCodigoIndicacao } from "../lib/indicacao"
 import { Button } from "../components/ui/Button"
@@ -8,7 +8,7 @@ import { Field } from "../components/ui/Field"
 import { GoogleIcon } from "../components/ui/GoogleIcon"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useAuth } from "../lib/auth"
-import type { CadastroRequest, ConsultaCnpj } from "../lib/types"
+import type { CadastroRequest, Compatibilidade, ConsultaCnpj } from "../lib/types"
 import { AnaAvatar } from "../components/brand/Marca"
 import { urlLanding } from "../lib/dominios"
 
@@ -56,6 +56,24 @@ export function CadastroPage() {
     complemento: string | null
     bairro: string | null
   } | null>(null)
+
+  // "A Ana funciona na minha cidade?" (05/10/2026): a emissão depende de a
+  // prefeitura usar o Emissor Nacional da NFS-e — conferido pela lista da
+  // Receita assim que a cidade é conhecida (pelo CNPJ ou escolhida à mão).
+  const [compat, setCompat] = useState<Compatibilidade | null>(null)
+  useEffect(() => {
+    setCompat(null)
+    if (!/^\d{7}$/.test(codMunicipio)) return
+    let vivo = true
+    api
+      .get<Compatibilidade>(`/compatibilidade?cod_municipio=${codMunicipio}`)
+      .then((c) => vivo && setCompat(c))
+      .catch(() => undefined)
+    return () => {
+      vivo = false
+    }
+  }, [codMunicipio])
+  const querNotas = produto !== "financeiro"
 
   if (usuario) return <Navigate to="/app" replace />
 
@@ -203,8 +221,9 @@ export function CadastroPage() {
                   value={cnpj}
                   onChange={(e) => setCnpj(e.target.value)}
                   onBlur={onCnpjBlur}
+                  inputMode="numeric"
                   placeholder="14 dígitos"
-                  hint="Digite o CNPJ e a gente tenta preencher o resto sozinho."
+                  hint="Digite o CNPJ: eu preencho o resto e já confiro se a Ana emite nota na sua cidade."
                 />
                 {consultandoCnpj && (
                   <p className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
@@ -232,6 +251,27 @@ export function CadastroPage() {
                 onChange={setCodMunicipio}
                 hint={enderecoAutopreenchido ? "Preenchida automaticamente a partir do CNPJ — confira se está certa." : undefined}
               />
+
+              {compat && querNotas && compat.emissor === "sim" && (
+                <p className="flex items-start gap-2 rounded-lg bg-success-50 px-3 py-2 text-sm text-success-700 dark:bg-success-900/30 dark:text-success-300" role="status">
+                  <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> <span>{compat.mensagem}</span>
+                </p>
+              )}
+              {compat && querNotas && compat.emissor === "nao" && (
+                <div className="rounded-lg bg-warning-50 px-3 py-2.5 text-sm text-warning-700 dark:bg-warning-900/30 dark:text-warning-300" role="status">
+                  <p className="flex items-start gap-2">
+                    <AlertTriangle size={16} className="mt-0.5 shrink-0" /> <span>{compat.mensagem}</span>
+                  </p>
+                  <p className="mt-1.5 pl-6 text-xs">
+                    Você pode{" "}
+                    <Link to="/cadastro?produto=financeiro" className="font-semibold underline">
+                      criar a conta só com o Financeiro
+                    </Link>{" "}
+                    — ou criar assim mesmo, se a prefeitura já liberou o Emissor Nacional pra sua empresa (a lista da Receita é de{" "}
+                    {compat.lista_atualizada_em?.split("-").reverse().join("/") ?? "alguns dias atrás"}).
+                  </p>
+                </div>
+              )}
 
               <Field label="E-mail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
               <div className="grid grid-cols-2 gap-3">

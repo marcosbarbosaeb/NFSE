@@ -1,9 +1,12 @@
-import { Check, ExternalLink, Loader2, Mail, MessageCircle, MinusCircle, Sparkles, Wand2 } from "lucide-react"
+import { Check, Loader2, Sparkles, Wand2 } from "lucide-react"
 import { type FormEvent, useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
-import { EditorModeloEmail, type ValorModeloEmail } from "../components/EditorModeloEmail"
+import { Conferencia } from "../components/Conferencia"
+import type { ValorModeloEmail } from "../components/EditorModeloEmail"
 import { CampoCodigoUsado, type CodigoUsado } from "../components/tomador/CampoCodigoUsado"
+import { DadosTomador } from "../components/tomador/DadosTomador"
 import { DescricaoNota, previaDescricao } from "../components/tomador/DescricaoNota"
+import { EnvioTomador } from "../components/tomador/EnvioTomador"
 import { type DadosNotaAntiga, NotaAntiga, ResumoNotaAntiga } from "../components/tomador/NotaAntiga"
 import { CaixaBusca } from "../components/ui/CaixaBusca"
 import { Button } from "../components/ui/Button"
@@ -14,7 +17,7 @@ import { Field, FieldWrap } from "../components/ui/Field"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useModulos } from "../lib/modulos"
 import { formatarDocumento } from "../lib/documento"
-import type { ConsultaCnpj, FormaEnvio, Prestador, Tomador, VinculoCriarRequest, VinculoDetalhe, VinculoResumo } from "../lib/types"
+import type { ConferenciaVinculo, ConsultaCnpj, EmailExtra, FormaDeEnvio, PontoConferencia, Prestador, Tomador, VinculoCriarRequest, VinculoDetalhe, VinculoResumo } from "../lib/types"
 
 // Pedido do Marcos (28/09/2026):
 // - "usar tomador existente": todos os dados com prévia de sugestão de
@@ -58,8 +61,11 @@ interface FormState {
   email_contato: string
   whatsapp_contato: string
   email_modelo: ValorModeloEmail
-  /** Como recebe a nota — null = e-mail (padrão). */
-  envio_canal: FormaEnvio | null
+  /** Formas de envio padrão (pode ser mais de uma; vazia = não precisa enviar). */
+  envio_formas: FormaDeEnvio[]
+  email_extras: EmailExtra[]
+  /** Mês que aparece na descrição: 0 = o da nota, 1 = o anterior... */
+  descricao_meses_atras: number
   portal_url: string
   cod_nbs: string
   incluir_intermediario: boolean
@@ -82,27 +88,13 @@ const ESTADO_INICIAL: FormState = {
   email_contato: "",
   whatsapp_contato: "",
   email_modelo: { assunto: "", mensagem: "", anexos: "", copia: "", para: "" },
-  envio_canal: null,
+  envio_formas: ["email"],
+  email_extras: [],
+  descricao_meses_atras: 0,
   portal_url: "",
   cod_nbs: "",
   incluir_intermediario: false,
   sem_nota: false,
-}
-
-// 29/09/2026: "cada tomador pede a nota de um jeito" — portal próprio,
-// e-mail, WhatsApp, ou nem precisa.
-const FORMAS_ENVIO: { valor: FormaEnvio; titulo: string; icone: typeof Mail }[] = [
-  { valor: "email", titulo: "E-mail", icone: Mail },
-  { valor: "whatsapp", titulo: "WhatsApp", icone: MessageCircle },
-  { valor: "portal", titulo: "Portal do tomador", icone: ExternalLink },
-  { valor: "nenhum", titulo: "Não precisa enviar", icone: MinusCircle },
-]
-
-const DICA_FORMA: Record<FormaEnvio, string> = {
-  email: "A Ana manda a nota por e-mail com PDF/XML em anexo (dá pra ajustar o e-mail abaixo).",
-  whatsapp: "O envio abre o WhatsApp com a mensagem e o link da nota — é só apertar enviar.",
-  portal: "Você baixa o PDF/XML e sobe no sistema do tomador; depois marca a nota como enviada.",
-  nenhum: "A nota não aparece como pendente de envio. Dá pra mandar pro contador mesmo assim.",
 }
 
 /** NBS: 9 dígitos, exibido como 1.1406.20.00. */
@@ -148,7 +140,6 @@ export function VinculoFormPage() {
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [prestadorModelo, setPrestadorModelo] = useState<Prestador | null>(null)
-  const [emailAberto, setEmailAberto] = useState(false)
   // Cadastro assistido: o que veio de uma nota antiga (enviada agora ou a
   // última nota deste tomador) e os códigos já usados nas notas da empresa.
   const [notaAntiga, setNotaAntiga] = useState<DadosNotaAntiga | null>(null)
@@ -157,6 +148,24 @@ export function VinculoFormPage() {
   useEffect(() => {
     api.get<Prestador>("/prestador").then(setPrestadorModelo).catch(() => {})
   }, [])
+
+  // Conferência (05/10/2026): o que a Ana achou de errado ou estranho no
+  // cadastro SALVO deste tomador. `undefined` = não deu pra conferir (some).
+  const [pontosConferencia, setPontosConferencia] = useState<PontoConferencia[] | null | undefined>(null)
+  // Muda quando os dados do tomador são salvos: a conferência é refeita.
+  const [conferenciaVersao, setConferenciaVersao] = useState(0)
+  useEffect(() => {
+    if (!editando || !id) return
+    let cancelado = false
+    setPontosConferencia(null)
+    api
+      .get<ConferenciaVinculo>(`/vinculos/${id}/conferencia`)
+      .then((c) => !cancelado && setPontosConferencia(c.pontos))
+      .catch(() => !cancelado && setPontosConferencia(undefined))
+    return () => {
+      cancelado = true
+    }
+  }, [editando, id, conferenciaVersao])
 
   // Modo edição: carrega o vínculo existente.
   useEffect(() => {
@@ -176,7 +185,8 @@ export function VinculoFormPage() {
           ativo: v.ativo,
           dia_limite_emissao: v.dia_limite_emissao?.toString() ?? "",
           dias_para_recebimento: v.dias_para_recebimento?.toString() ?? "",
-          email_contato: v.email_contato ?? "",
+          // Um campo só de e-mail (05/10/2026): o "Para" configurado ou o contato.
+          email_contato: v.email_para || v.email_contato || "",
           whatsapp_contato: v.whatsapp_contato ?? "",
           email_modelo: {
             assunto: v.email_assunto ?? "",
@@ -185,15 +195,15 @@ export function VinculoFormPage() {
             copia: v.email_copia ?? "",
             para: v.email_para ?? "",
           },
-          envio_canal: v.envio_canal ?? null,
+          envio_formas: v.envio_formas ?? (v.envio_canal === "nenhum" ? [] : [(v.envio_canal as FormaDeEnvio | null) ?? "email"]),
+          email_extras: v.email_extras ?? [],
+          descricao_meses_atras: v.descricao_meses_atras ?? 0,
           portal_url: v.portal_url ?? "",
           cod_nbs: mascaraNbs(v.cod_nbs ?? ""),
           incluir_intermediario: Boolean(v.incluir_intermediario),
           sem_nota: Boolean(v.sem_nota),
         })
         setTomadorSelecionado(v.tomador)
-        // Abre a seção do e-mail se o tomador já tem algo personalizado.
-        setEmailAberto(Boolean(v.email_assunto || v.email_mensagem || v.email_anexos || v.email_copia || v.email_para))
       })
       .catch((err) => setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha ao carregar."))
       .finally(() => setCarregando(false))
@@ -412,6 +422,14 @@ export function VinculoFormPage() {
       setErro("Falta a cidade onde o serviço é prestado (em “Mais opções”).")
       return
     }
+    const emails = form.email_contato.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean)
+    if (!form.sem_nota && form.envio_formas.includes("email")) {
+      const ruim = [...emails, ...form.email_extras.map((x) => x.email.trim()).filter(Boolean)].find((x) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x))
+      if (ruim) {
+        setErro(`“${ruim}” não parece um e-mail. Confira em “Envio da nota”.`)
+        return
+      }
+    }
     setEnviando(true)
     try {
       // "Só controle": os campos de emissão ficam escondidos, mas a API ainda
@@ -430,14 +448,23 @@ export function VinculoFormPage() {
         requer_revisao: form.requer_revisao,
         dia_limite_emissao: form.dia_limite_emissao ? Number(form.dia_limite_emissao) : null,
         dias_para_recebimento: form.dias_para_recebimento ? Number(form.dias_para_recebimento) : null,
-        email_contato: form.email_contato.trim() || null,
+        // Um campo só: o primeiro endereço fica como contato; a lista toda, como "Para".
+        email_contato: emails[0]?.slice(0, 200) ?? null,
         whatsapp_contato: form.whatsapp_contato.trim() || null,
         email_assunto: form.email_modelo.assunto.trim() || null,
         email_mensagem: form.email_modelo.mensagem.trim() || null,
         email_anexos: form.email_modelo.anexos || null,
         email_copia: (form.email_modelo.copia ?? "").trim() || null,
-        email_para: (form.email_modelo.para ?? "").trim() || null,
-        envio_canal: form.envio_canal,
+        email_para: emails.length > 1 ? emails.join(", ").slice(0, 400) : null,
+        envio_formas: form.envio_formas,
+        email_extras: form.email_extras.filter((x) => x.email.trim()).map((x) => ({
+          email: x.email.trim(),
+          rotulo: x.rotulo?.trim() || null,
+          assunto: x.assunto?.trim() || null,
+          mensagem: x.mensagem?.trim() || null,
+          anexos: x.anexos || null,
+        })),
+        descricao_meses_atras: form.descricao_meses_atras,
         portal_url: form.portal_url.trim() || null,
         cod_nbs: nbs || null,
         incluir_intermediario: form.incluir_intermediario,
@@ -489,15 +516,30 @@ export function VinculoFormPage() {
       <form onSubmit={onSubmit} className="flex flex-col gap-6">
         {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
 
-        {editando ? (
-          tomadorSelecionado && (
-            <Card className="p-5">
-              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Tomador</h2>
-              <p className="font-medium text-slate-800 dark:text-slate-200">{tomadorSelecionado.razao_social}</p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                {tomadorSelecionado.cnpj ? formatarDocumento(tomadorSelecionado.cnpj) : "Sem CNPJ (só controle)"}
+        {editando && pontosConferencia !== undefined && !(form.sem_nota && (pontosConferencia ?? []).length === 0) && (
+          <Card className="p-5">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Conferência</h2>
+            <Conferencia pontos={pontosConferencia} vinculoId={id} semAtalhoDoTomador />
+            {pontosConferencia && pontosConferencia.length > 0 && (
+              <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">
+                Conferi o que está salvo. Depois de corrigir e salvar, eu confiro de novo.
+                {pontosConferencia.some((p) => p.nivel === "erro") && " Enquanto houver ponto em vermelho, eu não gero nota pra este tomador."}
               </p>
-            </Card>
+            )}
+          </Card>
+        )}
+
+        {editando ? (
+          tomadorSelecionado && id && (
+            <DadosTomador
+              vinculoId={id}
+              tomador={tomadorSelecionado}
+              abrirEditando={searchParams.get("editar") === "endereco"}
+              onSalvo={(t) => {
+                setTomadorSelecionado(t)
+                setConferenciaVersao((n) => n + 1)
+              }}
+            />
           )
         ) : (
           <>
@@ -752,7 +794,12 @@ export function VinculoFormPage() {
                     ))}
                 </div>
               )}
-              <DescricaoNota modelo={form.template_descricao} onChange={(m) => atualizarCampo("template_descricao", m)} />
+              <DescricaoNota
+                modelo={form.template_descricao}
+                onChange={(m) => atualizarCampo("template_descricao", m)}
+                mesesAtras={form.descricao_meses_atras}
+                onMesesAtras={(n) => atualizarCampo("descricao_meses_atras", n)}
+              />
             </div>
 
             <details className="mt-5 rounded-xl border border-slate-200 dark:border-slate-700">
@@ -851,96 +898,32 @@ export function VinculoFormPage() {
           <Card className="p-6">
             <h2 className="mb-1 text-base font-semibold text-slate-800 dark:text-slate-200">Envio da nota</h2>
             <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-              Como a nota chega a este tomador. Em cada nota dá pra mudar na hora — e o último jeito usado fica lembrado.
+              O jeito padrão de entregar a nota a este tomador. No “processo completo” eu sigo o que estiver marcado aqui; em cada nota
+              ainda dá pra mudar na hora.
             </p>
 
-            <fieldset className="mb-5">
-              <legend className="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-300">Como este tomador recebe a nota</legend>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {FORMAS_ENVIO.map((f) => {
-                  const Icone = f.icone
-                  return (
-                    <label key={f.valor} className="relative cursor-pointer">
-                      <input
-                        type="radio"
-                        name="envio_canal"
-                        value={f.valor}
-                        checked={(form.envio_canal ?? "email") === f.valor}
-                        onChange={() => atualizarCampo("envio_canal", f.valor)}
-                        className="peer sr-only"
-                      />
-                      <span className="flex h-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-primary-300 peer-checked:border-primary-500 peer-checked:bg-primary-50 peer-checked:text-primary-800 peer-focus-visible:ring-2 peer-focus-visible:ring-primary-300 dark:border-slate-600 dark:text-slate-300 dark:peer-checked:bg-primary-900/30 dark:peer-checked:text-primary-200">
-                        <Icone size={15} className="shrink-0" aria-hidden />
-                        {f.titulo}
-                      </span>
-                    </label>
-                  )
-                })}
-              </div>
-              <p className="mt-1.5 text-xs text-slate-400 dark:text-slate-500">{DICA_FORMA[form.envio_canal ?? "email"]}</p>
-              {form.envio_canal === "portal" && (
-                <div className="mt-3">
-                  <Field
-                    label="Link do portal"
-                    inputMode="url"
-                    autoComplete="url"
-                    value={form.portal_url}
-                    onChange={(e) => atualizarCampo("portal_url", e.target.value)}
-                    placeholder="https://fornecedores.empresa.com.br"
-                    maxLength={400}
-                    hint="Aparece como “Abrir portal” na hora de enviar cada nota."
-                  />
-                </div>
-              )}
-            </fieldset>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field
-                label="E-mail do tomador"
-                type="email"
-                value={form.email_contato}
-                onChange={(e) => atualizarCampo("email_contato", e.target.value)}
-                placeholder="financeiro@empresa.com"
-              />
-              <Field
-                label="WhatsApp do tomador"
-                type="tel"
-                value={form.whatsapp_contato}
-                onChange={(e) => atualizarCampo("whatsapp_contato", e.target.value)}
-                placeholder="(92) 99999-0000"
-              />
-            </div>
-
-            <details
-              className="group mt-5 rounded-xl border border-slate-200 dark:border-slate-700"
-              open={emailAberto}
-              onToggle={(e) => setEmailAberto(e.currentTarget.open)}
-            >
-              <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                E-mail da nota pra este tomador
-                <span className="ml-2 text-xs font-normal text-slate-400">destinatário, cópia, assunto, texto e anexos</span>
-              </summary>
-              <div className="border-t border-slate-200 p-4 dark:border-slate-700">
-                <EditorModeloEmail
-                  valor={form.email_modelo}
-                  onChange={(v) => setForm((f) => ({ ...f, email_modelo: v }))}
-                  herdado={{
-                    assunto: prestadorModelo?.email_assunto_padrao,
-                    mensagem: prestadorModelo?.email_mensagem_padrao,
-                    anexos: prestadorModelo?.email_anexos_padrao ?? null,
-                    rotulo: "o modelo padrão de Empresa › E-mails",
-                  }}
-                  mostrarCopia
-                  dicaCopia={
-                    prestadorModelo?.email_copia_padrao
-                      ? `Além destes, vai cópia pra ${prestadorModelo.email_copia_padrao} (Empresa › E-mails).`
-                      : undefined
-                  }
-                  mostrarPara
-                  paraPadrao={form.email_contato.trim() || null}
-                />
-              </div>
-            </details>
+            <EnvioTomador
+              prestador={prestadorModelo}
+              valor={{
+                formas: form.envio_formas,
+                email: form.email_contato,
+                whatsapp: form.whatsapp_contato,
+                portal_url: form.portal_url,
+                modelo: form.email_modelo,
+                extras: form.email_extras,
+              }}
+              onChange={(v) =>
+                setForm((f) => ({
+                  ...f,
+                  envio_formas: v.formas,
+                  email_contato: v.email,
+                  whatsapp_contato: v.whatsapp,
+                  portal_url: v.portal_url,
+                  email_modelo: v.modelo,
+                  email_extras: v.extras,
+                }))
+              }
+            />
           </Card>
         )}
 

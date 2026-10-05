@@ -29,7 +29,7 @@ import { Modal } from "./ui/Modal"
 
 type Fase = "carregando" | "intro" | "buscando" | "revisao" | "importando" | "resultado"
 
-interface Regra {
+export interface Regra {
   acao: AcaoImportacao
   vinculo_id: string | null
 }
@@ -42,7 +42,7 @@ interface Erro {
 const SELECT =
   "w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
 
-function padrao(g: GrupoImportacao): Regra {
+export function padrao(g: GrupoImportacao): Regra {
   if ((g.sugestao === "vinculo" || g.sugestao === "avulsa") && g.vinculo_id) return { acao: g.sugestao, vinculo_id: g.vinculo_id }
   return { acao: "novo", vinculo_id: null }
 }
@@ -57,7 +57,7 @@ function regraDoSelect(valor: string): Regra {
   return { acao, vinculo_id: id || null }
 }
 
-function documentoLegivel(g: GrupoImportacao): string {
+export function documentoLegivel(g: GrupoImportacao): string {
   if (g.documento === "sem-documento") return "Sem documento"
   if (g.tipo === "NIF") return `NIF ${g.documento} (exterior)`
   return formatarDocumento(g.documento)
@@ -67,14 +67,14 @@ function competenciaCurta(c: string): string {
   return `${formatCompetenciaAbrev(c).toLowerCase()}/${c.slice(0, 4)}`
 }
 
-function faixaCompetencias(lista: string[]): string {
+export function faixaCompetencias(lista: string[]): string {
   const validas = lista.filter((c) => /^\d{4}-\d{2}$/.test(c)).sort()
   if (validas.length === 0) return "—"
   const [primeira, ultima] = [validas[0], validas[validas.length - 1]]
   return primeira === ultima ? competenciaCurta(primeira) : `${competenciaCurta(primeira)} – ${competenciaCurta(ultima)}`
 }
 
-function mensagemDe(err: unknown): Erro {
+export function mensagemDe(err: unknown): Erro {
   if (err instanceof ApiError) {
     const mensagem = formatarErro(err.detail)
     return { mensagem, certificado: (err.status === 409 || err.status === 502) && /certificado/i.test(mensagem) }

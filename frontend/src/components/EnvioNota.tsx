@@ -45,6 +45,8 @@ function urlPortal(u: string): string {
 
 function abaInicial(previa: PreviaEmail, nota: NotaParaAcoes): Aba {
   if (nota.avulsa || previa.avulsa) return "email"
+  // Só "baixar o PDF" marcado: a pessoa entrega do jeito dela e marca como enviada.
+  if (previa.formas && previa.formas.length > 0 && previa.formas.every((f) => f === "download")) return "portal"
   const canal = previa.canal_preferido ?? nota.envio_forma ?? "email"
   if (canal === "whatsapp" || canal === "portal") return canal
   // "Não precisa enviar": o que costuma sobrar é mandar pro contador.
@@ -84,6 +86,8 @@ export function EnvioNota({
   const [geralAssunto, setGeralAssunto] = useState("")
   const [geralTexto, setGeralTexto] = useState("")
 
+  // Outros destinatários do tomador (contador...) — cada um recebe o e-mail dele.
+  const [extrasMarcados, setExtrasMarcados] = useState<string[]>([])
   const [lembrar, setLembrar] = useState(true)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<{ aba: Aba; texto: string } | null>(null)
@@ -115,6 +119,7 @@ export function EnvioNota({
         setGeralPara((p.geral_destinos ?? []).join(", "))
         setGeralAssunto(p.geral_assunto ?? "")
         setGeralTexto(p.geral_texto ?? "")
+        setExtrasMarcados((p.extras ?? []).map((x) => x.email))
       })
       .catch((err) => vivo && setErroPrevia(msgErro(err)))
     return () => {
@@ -151,11 +156,12 @@ export function EnvioNota({
           copia: lista(copia),
           assunto: assunto.trim() || null,
           texto: texto.trim() || null,
+          extras: extrasMarcados,
           salvar_padrao: lembrar && !avulsa,
         }
         const envio = await api.post<Envio>(`/dps/${nota.id}/enviar-email`, body)
         if (envio.status === "falha") throw new ApiError(400, `O e-mail não saiu: ${envio.erro ?? "erro no provedor"}. Tente de novo.`)
-        return "E-mail enviado."
+        return extrasMarcados.length > 0 ? `E-mail enviado — e também pra ${extrasMarcados.length === 1 ? extrasMarcados[0] : `${extrasMarcados.length} outras pessoas`}.` : "E-mail enviado."
       },
       true,
     )
@@ -347,6 +353,36 @@ export function EnvioNota({
           <p className="text-xs text-slate-500 dark:text-slate-400">
             <span className="text-slate-400">Anexos:</span> {previa.arquivos.join(", ") || "—"}
           </p>
+          {(previa.extras ?? []).length > 0 && (
+            <fieldset className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
+              <legend className="px-1 text-xs font-medium text-slate-500 dark:text-slate-400">Também recebem (cada um num e-mail separado)</legend>
+              <div className="flex flex-col gap-1.5">
+                {(previa.extras ?? []).map((x) => (
+                  <label key={x.email} className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={extrasMarcados.includes(x.email)}
+                      onChange={(e) => setExtrasMarcados((a) => (e.target.checked ? [...a, x.email] : a.filter((y) => y !== x.email)))}
+                    />
+                    <span className="min-w-0 break-words">
+                      {x.rotulo ? <strong className="font-medium">{x.rotulo}</strong> : null}
+                      {x.rotulo ? " — " : ""}
+                      {x.email}
+                      <span className={dica}>{x.proprio ? `Com o e-mail próprio: “${x.assunto}”` : "Com o mesmo e-mail do tomador."}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <span className={dica}>
+                Pra mudar quem recebe ou o texto de cada um, abra a{" "}
+                <Link to={nota.vinculo_id ? `/app/tomadores/${nota.vinculo_id}` : "/app/tomadores"} className="font-medium text-primary-600 hover:underline">
+                  ficha do tomador
+                </Link>
+                .
+              </span>
+            </fieldset>
+          )}
           {motivoEmail && (
             <p className="rounded-lg bg-warning-50 px-2.5 py-1.5 text-xs text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">{motivoEmail}</p>
           )}

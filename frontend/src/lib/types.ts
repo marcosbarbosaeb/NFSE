@@ -77,6 +77,9 @@ export interface GeracaoShopee {
   puladas: number
   total: number
   erros: string[]
+  /** "Gerar e fazer tudo": o lote em segundo plano que continua a sequência. */
+  lote?: Lote | null
+  aviso_lote?: string | null
 }
 
 export interface ServicoNacional {
@@ -171,6 +174,9 @@ export interface VinculoDetalhe {
   cod_nbs?: string | null
   incluir_intermediario?: boolean
   envio_canal?: FormaEnvio | null
+  envio_formas?: FormaDeEnvio[] | null
+  email_extras?: EmailExtra[] | null
+  descricao_meses_atras?: number
   portal_url?: string | null
   sem_nota?: boolean
 }
@@ -198,6 +204,9 @@ export interface VinculoCriarRequest {
   cod_nbs?: string | null
   incluir_intermediario?: boolean
   envio_canal?: FormaEnvio | null
+  envio_formas?: FormaDeEnvio[] | null
+  email_extras?: EmailExtra[] | null
+  descricao_meses_atras?: number
   portal_url?: string | null
   sem_nota?: boolean
 }
@@ -260,6 +269,9 @@ export interface Assinatura {
   ativa: boolean
   trial_termina_em: string | null
   tem_assinatura_stripe: boolean
+  plano?: "emissor" | "financeiro" | "ambos" | null
+  planos?: PlanoAssinatura[]
+  modulos_pelo_plano?: boolean
 }
 
 export interface CheckoutSessao {
@@ -749,6 +761,10 @@ export interface PreviaEmail {
   whatsapp?: string | null
   whatsapp_texto?: string
   canal_preferido?: FormaEnvio
+  /** Todas as formas de envio padrão do tomador. */
+  formas?: FormaDeEnvio[]
+  /** Outros destinatários (contador...) com e-mail próprio. */
+  extras?: { email: string; rotulo: string | null; assunto: string; texto: string; proprio: boolean }[]
   portal_url?: string | null
   avulsa?: boolean
   geral_destinos?: string[]
@@ -761,6 +777,8 @@ export interface EnviarEmailBody {
   copia?: string[] | null
   assunto?: string | null
   texto?: string | null
+  /** Quais dos outros destinatários também recebem (sem o campo = todos). */
+  extras?: string[]
   salvar_padrao?: boolean
 }
 
@@ -779,7 +797,9 @@ export interface EnviarGeralBody {
 // --- Ações em lote (29/09/2026) ---
 // POST /lotes/previa → PreviaLote; POST /lotes → Lote; GET /lotes/{id};
 // POST /lotes/{id}/cancelar | /retomar | /refazer-falhas; GET /lotes (recentes)
-export type AcaoLote = "email" | "email_geral" | "assinar" | "submeter"
+export type AcaoLote = "email" | "email_geral" | "assinar" | "submeter" | "completo"
+/** Passos do lote "completo": assinar -> prefeitura -> e-mail ao tomador. */
+export type PassoLote = "assinar" | "submeter" | "email"
 export type StatusLote = "fila" | "executando" | "concluido" | "cancelado" | "interrompido"
 
 export interface CriarLoteBody {
@@ -788,6 +808,7 @@ export interface CriarLoteBody {
   vinculo_id?: string
   competencia?: string
   reenviar?: boolean
+  passos?: PassoLote[]
 }
 
 export interface Lote {
@@ -800,6 +821,10 @@ export interface Lote {
   erros: { emissao_id: string; nome: string; erro: string }[]
   criado_em: string | null
   concluido_em: string | null
+  /** Lote "completo": os passos pedidos e o relatório do que aconteceu. */
+  passos?: PassoLote[]
+  relatorio?: Record<string, number>
+  linhas_relatorio?: string[]
 }
 
 export interface PreviaLote {
@@ -1060,4 +1085,133 @@ export interface ResultadoNacional {
   importadas: number
   vinculos_criados: number
   puladas: { chave: string; motivo: string }[]
+}
+
+// GET /financeiro/mes-a-mes?ano=AAAA — o detalhe por trás de cada total do
+// "Mês a mês" (05/10/2026). A soma das linhas de um mês = total do resumo.
+export type SecaoMesAMes = "faturado" | "recebido" | "despesas" | "retiradas"
+
+export interface LinhaMesAMes {
+  /** Só nas linhas de cliente (recebido/faturado). */
+  id?: string
+  nome: string
+  valores: number[] // 12 meses
+  total: number
+  /** Só nas categorias (despesas/retiradas): as coisas dentro dela. */
+  itens?: LinhaMesAMes[]
+}
+
+export interface DetalheMesAMes {
+  ano: string
+  meses: string[] // "01".."12"
+  faturado: LinhaMesAMes[]
+  recebido: LinhaMesAMes[]
+  despesas: LinhaMesAMes[]
+  retiradas: LinhaMesAMes[]
+}
+
+// --- Importar emissor (05/10/2026): certificado -> empresa nova -> importação ---
+// POST /certificado/ler (multipart: pfx, senha) → CertificadoLido (nada é guardado)
+// POST /empresas/importar (multipart: pfx, senha + campos de EmpresaCriarRequest) → EmpresaImportada
+// POST /importar/nacional {mapeamento, ajustar_modelos: true} → ResultadoImportarEmissor
+export interface CertificadoLido {
+  /** Nome de quem é o certificado (razão social, num e-CNPJ). */
+  titular: string | null
+  /** CNPJ (14 números) quando deu pra tirar do certificado. */
+  cnpj: string | null
+  /** Certificado de pessoa (e-CPF), não da empresa. */
+  pessoa_fisica: boolean
+  valido_de: string
+  valido_ate: string
+  vencido: boolean
+  /** Esse CNPJ já é uma das empresas deste login. */
+  ja_cadastrada: boolean
+}
+
+export interface EmpresaImportada {
+  empresa: Empresa
+  certificado: CertificadoStatus
+}
+
+/** Tomador criado pela importação. `pendencia`: o que falta pra gerar a próxima nota. */
+export interface TomadorImportado {
+  id: string
+  apelido: string
+  documento: string | null
+  notas: number
+  ativo: boolean
+  /** Sem CNPJ: entra só pra controle. */
+  sem_nota: boolean
+  /** O mês/ano da descrição virou campo automático. */
+  modelo_ajustado: boolean
+  pendencia: string | null
+}
+
+export interface ResultadoImportarEmissor extends ResultadoNacional {
+  tomadores?: TomadorImportado[]
+}
+
+// Conferência (05/10/2026, ver backend app/services/conferencia.py): o que a
+// Ana achou de errado ("erro": a nota sairia errada) ou estranho ("aviso":
+// a pessoa confirma) no cadastro do tomador, na empresa ou na nota.
+export interface PontoConferencia {
+  nivel: "erro" | "aviso"
+  codigo: string
+  campo: string | null
+  mensagem: string
+  como_corrigir: string | null
+  onde: "tomador" | "empresa" | "nota"
+}
+
+// GET /dps/{id}/conferencia e POST /dps/conferir
+export interface ConferenciaNota {
+  pontos: PontoConferencia[]
+}
+
+// GET /vinculos/{id}/conferencia
+export interface ConferenciaVinculo extends ConferenciaNota {
+  erros: number
+  avisos: number
+}
+
+// GET /conferencia/tomadores — por id do vínculo (só os ativos).
+export type ConferenciaTomadores = Record<string, { erros: number; avisos: number }>
+
+/** Formas de envio padrão de um tomador (pode ser mais de uma). */
+export type FormaDeEnvio = "email" | "whatsapp" | "portal" | "download"
+
+/** Outro destinatário do tomador que recebe a nota num e-mail próprio. */
+export interface EmailExtra {
+  email: string
+  rotulo?: string | null
+  assunto?: string | null
+  mensagem?: string | null
+  anexos?: "pdf_xml" | "pdf" | "xml" | null
+}
+
+export interface ProximaNota {
+  proxima: { id: string; nome: string; competencia: string; valor: number; passo: string } | null
+  restantes: number
+}
+
+export interface Compatibilidade {
+  emissor: "sim" | "nao" | "indefinido"
+  cidade: string | null
+  cod_municipio: string | null
+  mensagem: string
+  avisos: string[]
+  lista_atualizada_em: string | null
+  razao_social?: string | null
+}
+
+export interface PlanoAssinatura {
+  id: "emissor" | "financeiro" | "ambos"
+  nome: string
+  descricao: string
+  modulos: string[]
+  disponivel: boolean
+  atual: boolean
+  valor?: number
+  moeda?: string
+  intervalo?: string
 }

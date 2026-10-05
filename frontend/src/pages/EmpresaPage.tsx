@@ -16,7 +16,9 @@ import {
 } from "lucide-react"
 import { type FormEvent, type ReactNode, type SelectHTMLAttributes, useEffect, useState } from "react"
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom"
+import { CHAMADA_NACIONAL, useEmpresaVazia } from "../components/ComecarPeloNacional"
 import { EditorModeloEmail, type ValorModeloEmail } from "../components/EditorModeloEmail"
+import { ImportarEmissorModal } from "../components/ImportarEmissorModal"
 import { PaginaAbas, TituloSecao } from "../components/PaginaAbas"
 import { avisarEmpresaAtualizada } from "../components/TrocaEmpresa"
 import { Badge } from "../components/ui/Badge"
@@ -663,6 +665,28 @@ function AmbienteNotasCard({ prestador, onAtualizado }: { prestador: Prestador; 
 /** Trazer as notas já emitidas no Emissor Nacional (saiu do topo da tela
  * NFS-e em 05/10/2026: usa-se uma vez, ao começar, e de vez em quando). */
 function ImportarNacionalCard() {
+  // Empresa ainda sem tomador nem nota: a importação é o jeito fácil de
+  // começar (com o certificado, num passo a passo curto).
+  const vazia = useEmpresaVazia()
+  const [comecando, setComecando] = useState(false)
+  if (vazia) {
+    return (
+      <Card className="border-primary-200 bg-primary-50/60 p-6 dark:border-primary-800 dark:bg-primary-900/20">
+        <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-primary-700 dark:text-primary-300">
+          <DownloadCloud size={16} /> Importar do Emissor Nacional
+        </h2>
+        <p className="text-base font-semibold text-slate-900 dark:text-slate-100">{CHAMADA_NACIONAL}</p>
+        <p className="mb-4 mt-1 text-sm text-slate-600 dark:text-slate-300">
+          É o jeito mais fácil de começar: você escolhe o certificado digital (A1) da empresa e eu cadastro os tomadores com as notas que
+          ela já emitiu. É só leitura — nada é enviado a ninguém.
+        </p>
+        <Button type="button" variant="accent" onClick={() => setComecando(true)}>
+          <DownloadCloud size={16} /> Trazer do Emissor Nacional
+        </Button>
+        {comecando && <ImportarEmissorModal modo="atual" onFechar={() => setComecando(false)} />}
+      </Card>
+    )
+  }
   return (
     <Card className="p-6">
       <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
@@ -810,6 +834,14 @@ function ModulosCard() {
   const { recarregarUsuario } = useAuth()
   const [salvando, setSalvando] = useState<Modulo | null>(null)
   const [erro, setErro] = useState<string | null>(null)
+  // Com plano pago, quem define os módulos é o plano (Conta › Assinatura).
+  const [peloPlano, setPeloPlano] = useState(false)
+  useEffect(() => {
+    api
+      .get<{ modulos_pelo_plano?: boolean }>("/assinatura")
+      .then((a) => setPeloPlano(Boolean(a.modulos_pelo_plano)))
+      .catch(() => undefined)
+  }, [])
 
   async function alternar(id: Modulo) {
     const novos = lista.includes(id) ? lista.filter((m) => m !== id) : [...lista, id]
@@ -837,6 +869,15 @@ function ModulosCard() {
         quando ele for ligado de novo.
       </p>
       {erro && <p className="mb-3 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
+      {peloPlano && (
+        <p className="mb-3 rounded-lg bg-primary-50 px-4 py-3 text-sm text-primary-800 dark:bg-primary-900/30 dark:text-primary-200">
+          Os módulos desta empresa vêm do plano que você assina. Pra ligar ou desligar um módulo,{" "}
+          <Link to="/app/conta?aba=assinatura" className="font-semibold underline">
+            mude o plano em Conta › Assinatura
+          </Link>
+          .
+        </p>
+      )}
       <div className="flex flex-col gap-2">
         {PRODUTOS.map((p) => {
           const ligado = lista.includes(p.id)
@@ -846,7 +887,7 @@ function ModulosCard() {
                 type="checkbox"
                 role="switch"
                 checked={ligado}
-                disabled={salvando !== null}
+                disabled={salvando !== null || peloPlano}
                 onChange={() => alternar(p.id)}
                 className="mt-1"
                 aria-label={`Módulo ${p.nome}`}

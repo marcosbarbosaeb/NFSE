@@ -99,6 +99,14 @@ class Settings(BaseSettings):
     # "subscription"). Placeholder óbvio de propósito — se aparecer na
     # Stripe de verdade é sinal de que esqueceram de configurar via env var.
     stripe_price_id_mensal: str = "price_placeholder_trocar_quando_criar_a_conta_stripe"
+    # Um preço (Price ID mensal) por plano (05/10/2026): só Notas, só
+    # Financeiro, ou os dois. Variáveis STRIPE_PRICE_ID_EMISSOR,
+    # STRIPE_PRICE_ID_FINANCEIRO e STRIPE_PRICE_ID_AMBOS. Plano sem preço
+    # configurado não aparece pra assinar; sem nenhum, vale o preço único
+    # acima (que libera os dois módulos).
+    stripe_price_id_emissor: str = ""
+    stripe_price_id_financeiro: str = ""
+    stripe_price_id_ambos: str = ""
     # Duração do período de teste grátis pra quem se cadastra pelo /cadastro
     # público (contas administrativas, criadas via scripts/criar_usuario.py,
     # não passam por trial — ver app/services/billing.py).

@@ -86,6 +86,7 @@ from app.schemas import (
     EventoManualCriarRequest,
     GerarDpsRequest,
     ModulosRequest,
+    PlanoRequest,
     OrigemNotaRequest,
     PreferenciasRequest,
     GeracaoShopeeResponse,
@@ -101,6 +102,8 @@ from app.schemas import (
     BuscarNacionalRequest,
     ImportarNacionalRequest,
     ImportarNacionalResponse,
+    CertificadoLidoResponse,
+    EmpresaImportadaResponse,
     PreviaNacionalResponse,
     MarcarEnviadaRequest,
     SolicitarCodigoRequest,
@@ -163,9 +166,11 @@ from app.services.cnpj_lookup import (
     consultar_cnpj,
 )
 from app.services.certificados import (
+    CertificadoIlegivelError,
     CertificadoNaoEncontradoError,
     carregar_certificado,
     certificado_vencido,
+    ler_certificado,
     salvar_certificado,
 )
 from app.services.calendario import (
@@ -196,7 +201,10 @@ from app.services.indicacao import resumo as resumo_indicacao
 from app.services.email import EmailEnvioError, get_email_sender
 from app.services.dashboard import proximos as proximos_do_painel
 from app.services.envio_direto import (
+    FORMAS_VALIDAS,
     EmailIndisponivelError,
+    canal_principal,
+    limpar_extras,
     LinkInvalidoError,
     base_url,
     enviar_email,
@@ -234,10 +242,14 @@ from app.services.motor_emissao import (
     montar as montar_emissao,
     motivo_da_recusa,
     recusa_corrigivel,
+    corrigir_e_reenviar as corrigir_e_reenviar_emissao,
     remontar as remontar_emissao,
     submeter as submeter_emissao,
 )
-from app.services import assistente_tomador
+from app.services import assistente_tomador, billing
+from app.services import cep as servico_cep
+from app.services import conferencia
+from pydantic import BaseModel, Field
 from app.services.nota_visual import montar_nota_visual
 from app.services.tomadores import CnpjJaCadastradoError, buscar_tomador, criar_tomador, listar_catalogo
 from app.services.cadastro import (
@@ -264,6 +276,20 @@ from app.tempo import hoje as hoje_br
 
 logger = logging.getLogger("agenteana.api")
 app = FastAPI(title="Painel NFS-e — Raiana (Marco 5/6/9/10)")
+
+
+
+@app.on_event("startup")
+def _retomar_lotes_interrompidos() -> None:
+    """Lote em segundo plano que um reinício (deploy) cortou no meio volta
+    a rodar sozinho — a pessoa pode ter fechado a página (05/10/2026)."""
+    try:
+        retomados = lotes.retomar_pendentes()
+        if retomados:
+            logger.info("Retomando %s lote(s) interrompido(s) pelo reinício", retomados)
+    except Exception:  # noqa: BLE001 — subir o servidor nunca depende disto
+        logger.exception("Falha ao retomar lotes")
+
 
 # Rotas do EMISSOR só respondem pra empresa que tem o módulo (05/10/2026).
 _SO_EMISSOR = Depends(exige_modulo("emissor"))
@@ -499,6 +525,27 @@ def api_consultar_cnpj(cnpj: str):
     )
 
 
+@app.get("/api/compatibilidade", dependencies=[Depends(limite("compat", 60, 600))])
+def api_compatibilidade(cnpj: str | None = None, cod_municipio: str | None = None):
+    """A Ana emite nota na cidade desta empresa? Rota pública (é usada no
+    cadastro, antes de existir conta). Pelo CNPJ (acha a cidade na Receita)
+    ou direto pela cidade. Ver app/services/compatibilidade.py."""
+    from app.services import compatibilidade
+
+    situacao = razao = None
+    if cnpj and not cod_municipio:
+        try:
+            dados = consultar_cnpj(cnpj)
+            cod_municipio, situacao, razao = dados.cod_municipio_sugerido, dados.situacao_cadastral, dados.razao_social
+        except CnpjInvalidoError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except CnpjNaoEncontradoError as exc:
+            raise HTTPException(status_code=404, detail="Não encontrei esse CNPJ na Receita. Confira os números.") from exc
+        except ConsultaCnpjIndisponivelError:
+            cod_municipio = None
+    return {**compatibilidade.verificar(cod_municipio, situacao), "razao_social": razao}
+
+
 @app.post("/api/cadastro", response_model=CadastroResponse, responses={409: {"model": ErroResponse}}, dependencies=[Depends(limite("cadastro", 10, 3600))])
 def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
     """Marco 15 — cadastro público self-service (rota pública, sem sessão).
@@ -588,6 +635,9 @@ def api_definir_modulos(req: ModulosRequest, db: Session = Depends(db_sessao), p
     for ligado de novo. (Enquanto não há cobrança por módulo, quem liga é a
     própria pessoa.)"""
     prestador = db.get(Prestador, prestador_id)
+    assinatura = db.query(Assinatura).filter_by(prestador_id=prestador_id).one_or_none()
+    if billing.modulos_presos_ao_plano(assinatura):
+        raise HTTPException(status_code=409, detail="Os módulos desta empresa vêm do plano assinado. Pra mudar, troque o plano em Conta › Assinatura.")
     prestador.modulos = [m for m in MODULOS if m in req.modulos]
     resposta = {"modulos": list(prestador.modulos)}
     db.commit()
@@ -711,17 +761,123 @@ def api_empresas(request: Request, db: Session = Depends(get_db)):
 def api_adicionar_empresa(req: EmpresaCriarRequest, request: Request, db: Session = Depends(get_db)):
     """Mais um CNPJ no mesmo login — já entra ativo."""
     u = _usuario_logado(request, db)
+    prestador = _criar_empresa(db, request, u, req)
+    db.commit()
+    request.session["prestador_id"] = str(prestador.id)
+    return {"id": prestador.id, "razao_social": prestador.razao_social, "nome_fantasia": prestador.nome_fantasia, "cnpj": prestador.cpf_cnpj, "ativa": True}
+
+
+def _criar_empresa(db: Session, request: Request, u: Usuario, req: EmpresaCriarRequest, *, com_emissor: bool = False) -> Prestador:
+    """Cria a empresa nova deste login (sem commit). Ao voltar, o contexto
+    de RLS já é o da empresa criada. CNPJ repetido = 409 com a mensagem de
+    sempre. `com_emissor`: garante o módulo de notas ligado (quem importa do
+    Emissor Nacional vai emitir nota)."""
     # A empresa nova começa com os mesmos módulos da que está aberta.
     ativa = contas.empresa_ativa(db, request, u)
     definir_prestador_atual(db, ativa)
     herdados = modulos_da_empresa(db, ativa)
+    if com_emissor and "emissor" not in herdados:
+        herdados = [m for m in MODULOS if m == "emissor" or m in herdados]
     try:
-        prestador = contas.adicionar_empresa(db, u, modulos=herdados, **req.model_dump())
+        return contas.adicionar_empresa(db, u, modulos=herdados, **req.model_dump())
     except contas.ContaError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def _abrir_certificado(pfx_bytes: bytes, senha: str) -> dict:
+    """Lê o certificado sem guardar. 422 com mensagem clara se a senha não
+    confere — a senha nunca vai pro log nem volta na resposta."""
+    try:
+        return ler_certificado(pfx_bytes, senha)
+    except CertificadoIlegivelError as exc:
+        logger.warning("Certificado não abriu na leitura (senha errada ou arquivo inválido)")
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _data_br(d: datetime.date) -> str:
+    return d.strftime("%d/%m/%Y")
+
+
+def _cnpj_legivel(cnpj: str) -> str:
+    return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}" if len(cnpj) == 14 else cnpj
+
+
+@app.post(
+    "/api/certificado/ler", response_model=CertificadoLidoResponse, responses={422: {"model": ErroResponse}},
+    dependencies=[Depends(exigir_conta_real), Depends(limite("certificado-ler", 30, 600))],
+)
+def api_ler_certificado(request: Request, pfx: UploadFile = File(...), senha: str = Form(...), db: Session = Depends(get_db)):
+    """"Importar emissor", passo 1: abre o certificado A1 com a senha que a
+    pessoa digitou e conta de quem ele é (nome, CNPJ, validade). NADA é
+    guardado aqui — o certificado só é salvo quando a pessoa confirma a
+    empresa (POST /api/empresas/importar)."""
+    u = _usuario_logado(request, db)
+    dados = _abrir_certificado(_ler_upload(pfx, 2), senha)
+    ja_cadastrada = bool(dados["cnpj"]) and any(e["cnpj"] == dados["cnpj"] for e in contas.listar_empresas(db, u))
+    return {**dados, "ja_cadastrada": ja_cadastrada}
+
+
+@app.post(
+    "/api/empresas/importar", response_model=EmpresaImportadaResponse,
+    responses={409: {"model": ErroResponse}, 422: {"model": ErroResponse}},
+    dependencies=[Depends(exigir_conta_real), Depends(limite("empresa-importar", 20, 600))],
+)
+def api_importar_empresa(
+    request: Request, pfx: UploadFile = File(...), senha: str = Form(...),
+    cpf_cnpj: str = Form(...), razao_social: str = Form(...), cod_municipio: str = Form(...),
+    nome_fantasia: str | None = Form(None), cep: str | None = Form(None), logradouro: str | None = Form(None),
+    numero: str | None = Form(None), complemento: str | None = Form(None), bairro: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    """"Importar emissor", passo 2: cria a empresa (mesma regra de POST
+    /api/empresas), deixa ela ativa e guarda o certificado dela — tudo
+    junto: ou ficam os dois, ou nenhum. Depois a tela chama a importação de
+    sempre (/api/importar/nacional/buscar e /api/importar/nacional), que já
+    roda na empresa nova."""
+    u = _usuario_logado(request, db)
+    limpo = lambda v, n: (v or "").strip()[:n] or None  # noqa: E731
+    try:
+        req = EmpresaCriarRequest(
+            cpf_cnpj=re.sub(r"\D", "", cpf_cnpj), razao_social=razao_social.strip(), cod_municipio=cod_municipio.strip(),
+            nome_fantasia=limpo(nome_fantasia, 200), cep=re.sub(r"\D", "", cep or "")[:8] or None, logradouro=limpo(logradouro, 200),
+            numero=limpo(numero, 20), complemento=limpo(complemento, 100), bairro=limpo(bairro, 100),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Confira os dados da empresa: CNPJ com 14 números, razão social e cidade.") from exc
+
+    pfx_bytes = _ler_upload(pfx, 2)
+    lido = _abrir_certificado(pfx_bytes, senha)
+    if lido["vencido"]:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Este certificado venceu em {_data_br(lido['valido_ate'])}. Com ele não dá pra ler suas notas no Emissor Nacional — use um certificado válido.",
+        )
+    # Mesma raiz (8 primeiros números) vale: matriz e filial usam o mesmo e-CNPJ.
+    if lido["cnpj"] and lido["cnpj"][:8] != req.cpf_cnpj[:8]:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Este certificado é do CNPJ {_cnpj_legivel(lido['cnpj'])}, diferente do CNPJ da empresa. Use o certificado da própria empresa.",
+        )
+
+    prestador = _criar_empresa(db, request, u, req, com_emissor=True)
+    try:
+        with db.begin_nested():
+            registro = salvar_certificado(db, prestador.id, pfx_bytes, senha, get_settings().cert_master_key)
+    except Exception as exc:  # noqa: BLE001 — sem certificado guardado, a empresa também não fica
+        logger.warning("Importar emissor: falha ao guardar o certificado (%s)", type(exc).__name__)
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Não consegui guardar o certificado agora. Nada foi criado — tente de novo em instantes.") from exc
+    resposta = {
+        "empresa": {
+            "id": prestador.id, "razao_social": prestador.razao_social, "nome_fantasia": prestador.nome_fantasia,
+            "cnpj": prestador.cpf_cnpj, "ativa": True,
+        },
+        "certificado": CertificadoStatus(carregado=True, validade=registro.validade, vencido=certificado_vencido(registro)),
+    }
+    u.prestador_id = prestador.id  # abre nela da próxima vez
     db.commit()
     request.session["prestador_id"] = str(prestador.id)
-    return {"id": prestador.id, "razao_social": prestador.razao_social, "nome_fantasia": prestador.nome_fantasia, "cnpj": prestador.cpf_cnpj, "ativa": True}
+    return resposta
 
 
 @app.post("/api/empresas/{prestador_id}/ativar", response_model=EmpresaResponse)
@@ -870,12 +1026,16 @@ def api_ver_assinatura(prestador_id: uuid.UUID = Depends(prestador_atual_id), db
         ativa=assinatura_esta_ativa(assinatura),
         trial_termina_em=assinatura.trial_termina_em if assinatura else None,
         tem_assinatura_stripe=bool(assinatura and assinatura.stripe_subscription_id),
+        plano=assinatura.plano if assinatura else None,
+        planos=billing.listar_planos(assinatura.plano if assinatura else None),
+        modulos_pelo_plano=billing.modulos_presos_ao_plano(assinatura),
     )
 
 
 @app.post("/api/assinatura/checkout", response_model=CheckoutSessaoResponse, responses={400: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
 def api_criar_checkout(
-    request: Request, prestador_id: uuid.UUID = Depends(prestador_atual_id), db: Session = Depends(get_db)
+    request: Request, req: PlanoRequest | None = None,
+    prestador_id: uuid.UUID = Depends(prestador_atual_id), db: Session = Depends(get_db),
 ):
     definir_prestador_atual(db, prestador_id)
     usuario_id = request.session.get("usuario_id")
@@ -883,11 +1043,28 @@ def api_criar_checkout(
         raise HTTPException(status_code=401, detail="Não autenticado.")
     usuario = db.get(Usuario, uuid.UUID(usuario_id))
     try:
-        url = criar_sessao_checkout(db, prestador_id, usuario.email)
-    except BillingNaoConfiguradoError as exc:
+        url = criar_sessao_checkout(db, prestador_id, usuario.email, plano=req.plano if req else None)
+    except (BillingNaoConfiguradoError, billing.PlanoInvalidoError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     db.commit()
     return CheckoutSessaoResponse(url=url)
+
+
+@app.post("/api/assinatura/plano", responses={400: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
+def api_trocar_plano(req: PlanoRequest, prestador_id: uuid.UUID = Depends(prestador_atual_id), db: Session = Depends(get_db)):
+    """Muda o plano de quem já assina (Conta › Assinatura): troca o preço na
+    Stripe e os módulos da empresa passam a ser os do plano novo."""
+    definir_prestador_atual(db, prestador_id)
+    try:
+        assinatura = billing.trocar_plano(db, prestador_id, req.plano)
+    except (BillingNaoConfiguradoError, AssinaturaNaoEncontradaError, billing.PlanoInvalidoError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — erro da Stripe vira mensagem, não 500
+        logger.exception("Falha ao trocar o plano na Stripe")
+        raise HTTPException(status_code=400, detail="Não consegui mudar o plano agora. Tente de novo em instantes.") from exc
+    resposta = {"plano": assinatura.plano, "modulos": billing.PLANOS[assinatura.plano]["modulos"]}
+    db.commit()
+    return resposta
 
 
 @app.post("/api/assinatura/portal", response_model=CheckoutSessaoResponse, responses={400: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
@@ -1122,10 +1299,99 @@ def api_criar_vinculo(
     vinculo.cod_nbs = _validar_nbs(req.cod_nbs)
     vinculo.incluir_intermediario = bool(req.incluir_intermediario)
     vinculo.envio_canal = req.envio_canal
+    if req.envio_formas is not None:
+        vinculo.envio_formas = _validar_formas(req.envio_formas)
+        vinculo.envio_canal = canal_principal(vinculo.envio_formas)
+    if req.email_extras is not None:
+        vinculo.email_extras = limpar_extras([e.model_dump() for e in req.email_extras]) or None
+    vinculo.descricao_meses_atras = req.descricao_meses_atras or 0
     vinculo.portal_url = (req.portal_url or "").strip() or None
     vinculo.sem_nota = bool(req.sem_nota)
     db.commit()
     return vinculo
+
+
+class _DadosTomadorRequest(BaseModel):
+    """Dados do tomador que a pessoa pode acertar (05/10/2026: "o CEP deu
+    errado e ao entrar em tomador não aparece pra editar"). O CNPJ não
+    muda — é ele que identifica o tomador."""
+    razao_social: str = Field(min_length=2, max_length=200)
+    cod_municipio: str = Field(pattern=r"^\d{7}$")
+    cep: str | None = Field(default=None, max_length=10)
+    logradouro: str | None = Field(default=None, max_length=200)
+    numero: str | None = Field(default=None, max_length=20)
+    complemento: str | None = Field(default=None, max_length=100)
+    bairro: str | None = Field(default=None, max_length=100)
+
+
+@app.get("/api/cep/{cep}", dependencies=[_SO_EMISSOR])
+def api_consultar_cep(cep: str, db: Session = Depends(db_sessao)):
+    """Rua, bairro e cidade de um CEP (ViaCEP) — pra preencher o endereço."""
+    try:
+        dados = servico_cep.consultar_cep(cep)
+    except LookupError as exc:
+        raise HTTPException(status_code=503, detail="Não deu pra consultar o CEP agora. Preencha à mão.") from exc
+    if dados is None:
+        raise HTTPException(status_code=404, detail="Esse CEP não existe. Confira os números.")
+    municipio = municipio_por_codigo(dados["ibge"])
+    return {**dados, "cod_municipio": dados["ibge"] if municipio else None}
+
+
+@app.post("/api/cep/buscar", dependencies=[_SO_EMISSOR])
+def api_buscar_cep(req: _DadosTomadorRequest, db: Session = Depends(db_sessao)):
+    """O CEP certo a partir do endereço (cidade + rua + bairro)."""
+    endereco = {"cMun": req.cod_municipio, "CEP": re.sub(r"\D", "", req.cep or ""), "xLgr": req.logradouro, "nro": req.numero, "xBairro": req.bairro}
+    municipio = municipio_por_codigo(req.cod_municipio)
+    if municipio is None or not (req.logradouro or "").strip():
+        raise HTTPException(status_code=422, detail="Informe a cidade e a rua pra eu procurar o CEP.")
+    try:
+        candidatos = [c for c in servico_cep.buscar_por_endereco(municipio["uf"], municipio["nome"], req.logradouro) if c["ibge"] == req.cod_municipio]
+    except LookupError as exc:
+        raise HTTPException(status_code=503, detail="Não deu pra procurar o CEP agora. Tente de novo daqui a pouco.") from exc
+    return {"candidatos": candidatos[:20], "endereco": endereco}
+
+
+@app.patch("/api/vinculos/{vinculo_id}/tomador", response_model=VinculoDetalheResponse, responses={404: {"model": ErroResponse}, 422: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
+def api_atualizar_dados_do_tomador(vinculo_id: uuid.UUID, req: _DadosTomadorRequest, db: Session = Depends(db_sessao)):
+    """Acerta nome e endereço do tomador. O CEP é conferido com a cidade
+    (ViaCEP) antes de gravar — é o erro que mais faz a prefeitura recusar
+    nota; se o serviço de CEP estiver fora do ar, grava assim mesmo."""
+    vinculo = buscar_vinculo(db, vinculo_id)
+    if vinculo is None or vinculo.tomador is None:
+        raise HTTPException(status_code=404, detail="Tomador não encontrado (ou não pertence à empresa ativa)")
+    if municipio_por_codigo(req.cod_municipio) is None:
+        raise HTTPException(status_code=422, detail="Não reconheci a cidade. Escolha pela busca.")
+    cep = re.sub(r"\D", "", req.cep or "") or None
+    if cep is not None:
+        if len(cep) != 8:
+            raise HTTPException(status_code=422, detail="O CEP precisa ter 8 números.")
+        try:
+            do_cep = servico_cep.consultar_cep(cep)
+        except LookupError:
+            do_cep = {"ibge": req.cod_municipio}  # serviço fora do ar: não trava
+        if do_cep is None:
+            raise HTTPException(status_code=422, detail=f"O CEP {cep[:5]}-{cep[5:]} não existe. Confira os números ou use “Buscar o CEP pelo endereço”.")
+        if do_cep["ibge"] != req.cod_municipio:
+            raise HTTPException(status_code=422, detail=(
+                f"O CEP {cep[:5]}-{cep[5:]} é de {do_cep.get('cidade')}/{do_cep.get('uf')}, não da cidade escolhida. "
+                "Acerte a cidade ou o CEP — a prefeitura recusa a nota quando os dois não batem."
+            ))
+    tomador = vinculo.tomador
+    tomador.razao_social = req.razao_social.strip()
+    tomador.cod_municipio, tomador.cep = req.cod_municipio, cep
+    for campo in ("logradouro", "numero", "complemento", "bairro"):
+        setattr(tomador, campo, (getattr(req, campo) or "").strip() or None)
+    db.flush()
+    resposta = VinculoDetalheResponse.model_validate(vinculo)  # antes do commit (RLS vale só na transação)
+    db.commit()
+    return resposta
+
+
+def _validar_formas(formas: list[str]) -> list[str]:
+    desconhecidas = [f for f in formas if f not in FORMAS_VALIDAS]
+    if desconhecidas:
+        raise HTTPException(status_code=422, detail=f"Forma de envio desconhecida: {desconhecidas[0]}.")
+    return [f for f in FORMAS_VALIDAS if f in formas]
 
 
 @app.patch("/api/vinculos/{vinculo_id}", response_model=VinculoDetalheResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
@@ -1148,6 +1414,17 @@ def api_atualizar_vinculo(vinculo_id: uuid.UUID, req: VinculoAtualizarRequest, d
         campos.pop("sem_nota", None)
     if "portal_url" in campos:
         campos["portal_url"] = (campos["portal_url"] or "").strip() or None
+    if campos.get("envio_formas") is not None:
+        campos["envio_formas"] = _validar_formas(campos["envio_formas"])
+        campos["envio_canal"] = canal_principal(campos["envio_formas"])
+    elif "envio_canal" in campos:
+        campos["envio_formas"] = None  # tela antiga: vale só a forma única
+    else:
+        campos.pop("envio_formas", None)
+    if "email_extras" in campos:
+        campos["email_extras"] = limpar_extras(campos["email_extras"]) or None
+    if campos.get("descricao_meses_atras") is None:
+        campos.pop("descricao_meses_atras", None)
     if campos.get("cod_trib_nacional") is not None and campos["cod_trib_nacional"] != vinculo.cod_trib_nacional:
         campos["cod_trib_nacional"] = _validar_codigo_servico(campos["cod_trib_nacional"])
     try:
@@ -1412,6 +1689,55 @@ def _para_resposta(emissao: Emissao) -> EmissaoResponse:
     )
 
 
+# --- Conferência (05/10/2026, ver app/services/conferencia.py) ---
+# "Controles para que o cadastro dos tomadores e a NF não saiam erradas":
+# rotas só de leitura (nada é gravado, não tem commit).
+
+
+class ConferirNotaRequest(BaseModel):
+    vinculo_id: uuid.UUID
+    valor: float | None = None
+    data_competencia: datetime.date | None = None
+    ordem: str | None = Field(default=None, max_length=60)
+    aliq_sn: float | None = None
+
+
+@app.get("/api/vinculos/{vinculo_id}/conferencia", dependencies=[_SO_EMISSOR], responses={404: {"model": ErroResponse}})
+def api_conferir_vinculo(vinculo_id: uuid.UUID, db: Session = Depends(db_sessao)):
+    """O que a Ana achou de errado (ou estranho) no cadastro deste tomador."""
+    vinculo = buscar_vinculo(db, vinculo_id)
+    if vinculo is None or vinculo.excluido_em is not None:
+        raise HTTPException(status_code=404, detail="Tomador não encontrado.")
+    pontos = conferencia.conferir_vinculo(db, vinculo)
+    return {"pontos": pontos, **conferencia.resumo(pontos)}
+
+
+@app.get("/api/conferencia/tomadores", dependencies=[_SO_EMISSOR])
+def api_conferir_tomadores(db: Session = Depends(db_sessao)):
+    """Quantos pontos cada tomador ativo tem — o selo da aba Tomadores."""
+    pontos = conferencia.conferir_vinculos(db, listar_vinculos_ativos(db))
+    return {str(vinculo_id): conferencia.resumo(lista) for vinculo_id, lista in pontos.items()}
+
+
+@app.post("/api/dps/conferir", dependencies=[_SO_EMISSOR], responses={404: {"model": ErroResponse}})
+def api_conferir_nota(req: ConferirNotaRequest, db: Session = Depends(db_sessao)):
+    """Confere a nota ANTES de gerar (a tela chama enquanto a pessoa digita)."""
+    vinculo = buscar_vinculo(db, req.vinculo_id)
+    if vinculo is None or vinculo.excluido_em is not None:
+        raise HTTPException(status_code=404, detail="Tomador não encontrado.")
+    return {"pontos": conferencia.conferir_nota(db, vinculo, req.valor, req.data_competencia, req.ordem, req.aliq_sn)}
+
+
+@app.get("/api/dps/{emissao_id}/conferencia", dependencies=[_SO_EMISSOR], responses={404: {"model": ErroResponse}})
+def api_conferir_emissao(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
+    """Confere uma nota já gerada que ainda não foi autorizada. Depois de
+    autorizada não há mais o que conferir: devolve vazio."""
+    emissao = _emissao_ou_404(db, emissao_id)
+    if emissao.estado not in conferencia.ESTADOS_CONFERIVEIS:
+        return {"pontos": []}
+    return {"pontos": conferencia.conferir_emissao(db, emissao)}
+
+
 @app.get("/api/dps/verificar-duplicata", response_model=VerificarDuplicataResponse, dependencies=[_SO_EMISSOR])
 def api_verificar_duplicata(vinculo_id: uuid.UUID, competencia: str, db: Session = Depends(db_sessao)):
     """Marco 16 — a tela de 'Nova emissão' chama isso assim que
@@ -1462,6 +1788,11 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
     competencia = req.competencia
     if req.data_competencia is not None:
         competencia = f"{req.data_competencia.year:04d}-{req.data_competencia.month:02d}"
+    # Conferência (05/10/2026): com algum "erro" a nota sairia errada ou seria
+    # recusada — não gera. Os "avisos" a tela mostra e a pessoa confirma.
+    pontos_conferencia = conferencia.conferir_nota(db, vinculo, req.valor, req.data_competencia, req.ordem, req.aliq_sn, competencia=competencia)
+    if any(p["nivel"] == "erro" for p in pontos_conferencia):
+        raise HTTPException(status_code=422, detail=conferencia.frase_de_recusa(pontos_conferencia))
     # De onde veio o pedido da nota, quando veio de outro módulo (texto
     # opaco pro emissor — ex.: "fin:pagamento:<id>", ver app/eventos.py).
     origem = req.origem or (f"fin:pagamento:{req.pagamento_id}" if req.pagamento_id else None)
@@ -1589,6 +1920,7 @@ def _ids_do_lote(db: Session, req: CriarLoteRequest) -> list[uuid.UUID]:
         return lotes.selecionar(
             db, req.acao, emissao_ids=req.emissao_ids, vinculo_id=req.vinculo_id,
             competencia=req.competencia, reenviar=req.reenviar,
+            passos=lotes.normalizar_passos(req.passos),
         )
     except lotes.LoteInvalidoError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1608,13 +1940,15 @@ def api_criar_lote(
     ids = _ids_do_lote(db, req)
     if not ids:
         raise HTTPException(status_code=422, detail="Nenhuma nota selecionada está pronta pra essa ação.")
+    base = base_url(str(request.base_url))
     try:
-        lote = lotes.criar_lote(db, prestador_id, req.acao, ids)
+        lote = lotes.criar_lote(db, prestador_id, req.acao, ids, passos=req.passos, base_url=base)
     except lotes.LoteInvalidoError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    resposta = lotes.resumo(lote)
     db.commit()
-    lotes.iniciar(lote.id, prestador_id, base_url(str(request.base_url)))
-    return lotes.resumo(lote)
+    lotes.iniciar(lote.id, prestador_id, base)
+    return resposta
 
 
 @app.get("/api/lotes", response_model=list[LoteResponse], dependencies=[_SO_EMISSOR])
@@ -1671,14 +2005,17 @@ def api_refazer_falhas(
     """Novo lote só com as notas que falharam."""
     lote = _lote_ou_404(db, lote_id)
     ids = [uuid.UUID(e["emissao_id"]) for e in lote.erros]
-    ids = lotes.selecionar(db, lote.acao, emissao_ids=ids, reenviar=False)
+    passos = tuple((lote.opcoes or {}).get("passos") or lotes.PASSOS)
+    ids = lotes.selecionar(db, lote.acao, emissao_ids=ids, reenviar=False, passos=passos)
+    base = base_url(str(request.base_url))
     try:
-        novo = lotes.criar_lote(db, prestador_id, lote.acao, ids)
+        novo = lotes.criar_lote(db, prestador_id, lote.acao, ids, passos=passos, base_url=base)
     except lotes.LoteInvalidoError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    resposta = lotes.resumo(novo)
     db.commit()
-    lotes.iniciar(novo.id, prestador_id, base_url(str(request.base_url)))
-    return lotes.resumo(novo)
+    lotes.iniciar(novo.id, prestador_id, base)
+    return resposta
 
 
 @app.get("/api/envios/resumo", response_model=ResumoEnviosResponse, dependencies=[_SO_EMISSOR])
@@ -1872,10 +2209,8 @@ def api_corrigir_e_reenviar(emissao_id: uuid.UUID, db: Session = Depends(db_sess
     except CertificadoNaoEncontradoError as exc:
         raise HTTPException(status_code=409, detail="Nenhum certificado carregado — envie o .pfx antes de reenviar.") from exc
     try:
-        remontar_emissao(db, emissao)
-        assinar_emissao(db, emissao, private_key, cert)
         tpAmb = (emissao.tomador_snapshot or {}).get("tpAmb", "2")
-        emissao = submeter_emissao(db, emissao, ClienteSefin(private_key, cert, tpAmb))
+        emissao = corrigir_e_reenviar_emissao(db, emissao, private_key, cert, ClienteSefin(private_key, cert, tpAmb))
     except TransicaoInvalidaError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     resposta = _para_resposta(emissao)  # antes do commit (RLS vale só na transação)
@@ -2020,7 +2355,7 @@ def api_enviar_email(
             db, emissao, prestador_id, base_url(str(request.base_url)),
             para=req.para if req else None, copia=req.copia if req else None,
             assunto=req.assunto if req else None, texto=req.texto if req else None,
-            salvar_padrao=bool(req and req.salvar_padrao),
+            salvar_padrao=bool(req and req.salvar_padrao), extras=req.extras if req else None,
         )
     except EmailIndisponivelError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -2251,6 +2586,8 @@ def api_gerar_shopee(
     aliq_sn: float | None = Form(None),
     tpAmb: str | None = Form(None),
     data_competencia: str | None = Form(None),
+    depois: str | None = Form(None),
+    request: Request = None,
     db: Session = Depends(db_sessao),
 ):
     """Gera uma nota por vendedor do mês escolhido — os vendedores NÃO viram
@@ -2276,11 +2613,34 @@ def api_gerar_shopee(
         db, vinculo, relatorio, competencia=competencia, dcompet=dcompet, valor_minimo=Decimal(str(valor_minimo)),
         incluir_estrangeiros=incluir_estrangeiros, aliq_sn=aliq_sn, tpAmb=tpAmb,
     )
-    db.commit()
-    return {
+    # "Gerar e fazer tudo" (05/10/2026): com `depois` (assinar,submeter,email)
+    # a sequência segue em segundo plano pras notas de vendedor daquele mês
+    # que ainda têm passo pendente — as geradas agora e as que já existiam.
+    lote, aviso_lote, base = None, None, base_url(str(request.base_url)) if request else ""
+    passos = lotes.normalizar_passos([p.strip() for p in depois.split(",")]) if depois and depois.strip() else None
+    if passos:
+        if _sessao_demo(request, db):
+            aviso_lote = "No ambiente de simulação as notas ficam só geradas — nada é assinado nem enviado."
+        else:
+            db.flush()
+            ids = lotes.selecionar(
+                db, "completo", vinculo_id=vinculo.id, competencia=dcompet[:7] if dcompet else competencia,
+                passos=passos, so_avulsas=True,
+            )
+            try:
+                lote = lotes.criar_lote(db, vinculo.prestador_id, "completo", ids, passos=passos, base_url=base) if ids else None
+            except lotes.LoteInvalidoError as exc:
+                aviso_lote = f"As notas foram geradas, mas não comecei a sequência: {exc}"
+    resposta = {
         "geradas": resultado.geradas, "ja_existiam": resultado.ja_existiam, "puladas": resultado.puladas,
         "total": float(resultado.total), "erros": resultado.erros,
+        "lote": lotes.resumo(lote) if lote is not None else None, "aviso_lote": aviso_lote,
     }
+    prestador_id = vinculo.prestador_id
+    db.commit()
+    if lote is not None:
+        lotes.iniciar(lote.id, prestador_id, base)
+    return resposta
 
 
 @app.post("/api/dados/limpar", response_model=LimparDadosResponse, responses={422: {"model": ErroResponse}})
@@ -2350,7 +2710,10 @@ def api_importar_nacional(
     req: ImportarNacionalRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
 ):
     try:
-        resultado = importar_adn.importar(db, db.get(Prestador, prestador_id), [r.model_dump(mode="json") for r in req.mapeamento])
+        resultado = importar_adn.importar(
+            db, db.get(Prestador, prestador_id), [r.model_dump(mode="json") for r in req.mapeamento],
+            ajustar_modelos=req.ajustar_modelos,
+        )
     except importar_adn.ImportacaoAdnError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     db.commit()
@@ -2394,6 +2757,14 @@ def api_ignorar_pendencia(
         db.delete(ajuste)
     db.commit()
     return {"ok": True}
+
+
+@app.get("/api/dps/{emissao_id}/proxima", dependencies=[_SO_EMISSOR])
+def api_proxima_nota(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
+    """A próxima nota com passo pendente — o botão do fim da página da nota."""
+    from app.services.dashboard import proxima_nota
+
+    return proxima_nota(db, _emissao_ou_404(db, emissao_id))
 
 
 @app.get("/api/painel/proximos", response_model=ProximosResponse, dependencies=[_SO_EMISSOR])

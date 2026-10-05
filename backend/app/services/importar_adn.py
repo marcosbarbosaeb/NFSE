@@ -357,8 +357,14 @@ def _parecido(a: str | None, b: str | None) -> float:
     return difflib.SequenceMatcher(None, (a or "").lower(), (b or "").lower()).ratio()
 
 
-def importar(db: Session, prestador: Prestador, mapeamento: list[dict]) -> dict:
-    """`mapeamento`: [{documento, acao: vinculo|avulsa|novo|ignorar, vinculo_id?}]."""
+def importar(db: Session, prestador: Prestador, mapeamento: list[dict], *, ajustar_modelos: bool = False) -> dict:
+    """`mapeamento`: [{documento, acao: vinculo|avulsa|novo|ignorar, vinculo_id?}].
+
+    `ajustar_modelos` ("Importar emissor", 05/10/2026): os tomadores novos
+    já saem prontos pra próxima nota — códigos e descrição da nota mais
+    recente, com o mês/ano trocado por campo automático (o mesmo que o
+    cadastro assistido faz). O resultado traz `tomadores`: os que foram
+    criados agora e o que ainda falta em cada um."""
     b = _buscas.get(prestador.id)
     if b is None or not b.notas:
         raise ImportacaoAdnError("Busque as notas no Emissor Nacional antes de importar (a prévia expirou).")
@@ -371,6 +377,7 @@ def importar(db: Session, prestador: Prestador, mapeamento: list[dict]) -> dict:
     numeros = {(s, n) for s, n in db.query(Emissao.serie, Emissao.n_dps).filter(Emissao.n_dps.isnot(None))}
     por_doc = _vinculos_por_documento(db)
     novos: dict[str, PrestadorTomador] = {}
+    notas_por_vinculo: dict[uuid.UUID, int] = {}
     importadas, puladas, vinculos_criados = 0, [], 0
     agora = datetime.datetime.now(datetime.timezone.utc)
 
@@ -452,6 +459,7 @@ def importar(db: Session, prestador: Prestador, mapeamento: list[dict]) -> dict:
             ))
         numeros.add((nota["serie"], nota["n_dps"]))
         existentes.add(nota["chave"])
+        notas_por_vinculo[destino.id] = notas_por_vinculo.get(destino.id, 0) + 1
         importadas += 1
 
     # Tomador novo que não recebe nota há mais de um mês entra como inativo
@@ -463,10 +471,57 @@ def importar(db: Session, prestador: Prestador, mapeamento: list[dict]) -> dict:
             meses = [c for (c,) in db.query(Emissao.competencia).filter(Emissao.prestador_tomador_id == v.id)]
             if referencia and (not meses or _meses_entre(max(meses), referencia) > 1):
                 v.ativo = False
+    ajustados = _ajustar_modelos(b, novos) if ajustar_modelos else set()
     if b.terminou:
         prestador.adn_ultimo_nsu = max(b.nsu, prestador.adn_ultimo_nsu or 0)
     db.flush()
-    return {"importadas": importadas, "vinculos_criados": vinculos_criados, "puladas": puladas[:200]}
+    return {
+        "importadas": importadas, "vinculos_criados": vinculos_criados, "puladas": puladas[:200],
+        "tomadores": [_resumo_do_novo(doc, v, notas_por_vinculo.get(v.id, 0), doc in ajustados) for doc, v in novos.items()][:500],
+    }
+
+
+def _ajustar_modelos(b: _Busca, novos: dict[str, PrestadorTomador]) -> set[str]:
+    """Configura cada tomador novo (com CNPJ) pela nota mais recente dele:
+    códigos do serviço e descrição com o que muda todo mês trocado por campo
+    automático. Devolve os documentos em que a descrição foi trocada."""
+    from app.services.assistente_tomador import sugerir_modelo  # import tardio: ele importa este módulo
+
+    ajustados: set[str] = set()
+    for doc, vinculo in novos.items():
+        if vinculo.sem_nota:
+            continue
+        notas = [n for n in b.notas.values() if (n["toma"]["documento"] or "sem-documento") == doc]
+        validas = [n for n in notas if n["chave"] not in b.canceladas] or notas
+        if not validas:
+            continue
+        ultima = max(validas, key=lambda n: (n["dcompet"] or "", n["dh_emi"] or "", n["n_dps"]))
+        if ultima["cTribNac"]:
+            vinculo.cod_trib_nacional = ultima["cTribNac"][:6]
+            vinculo.cod_trib_municipal = _corta(ultima["cTribMun"], 5)
+            vinculo.cod_nbs = _corta(ultima["cNBS"], 12)
+        if ultima["cLocPrestacao"]:
+            vinculo.cod_local_prestacao = ultima["cLocPrestacao"][:7]
+        if ultima["descricao"]:
+            sugestao = sugerir_modelo(ultima["descricao"])
+            if sugestao["modelo"]:
+                vinculo.template_descricao = sugestao["modelo"]
+                if sugestao["partes"]:
+                    ajustados.add(doc)
+    return ajustados
+
+
+def _resumo_do_novo(doc: str, vinculo: PrestadorTomador, notas: int, modelo_ajustado: bool) -> dict:
+    """Um tomador criado pela importação, em palavras de tela. `pendencia`:
+    o que ainda falta pra gerar a próxima nota dele (None = pronto)."""
+    pendencia = None
+    if not vinculo.sem_nota and (vinculo.cod_trib_nacional or "000000") == "000000":
+        pendencia = "Falta escolher o código do serviço."
+    return {
+        "id": vinculo.id, "apelido": vinculo.apelido, "documento": None if doc == "sem-documento" else doc,
+        "notas": notas, "ativo": bool(vinculo.ativo), "sem_nota": bool(vinculo.sem_nota),
+        "modelo_ajustado": modelo_ajustado, "pendencia": pendencia,
+    }
 
 
 def _data_hora(texto: str | None) -> datetime.datetime | None:

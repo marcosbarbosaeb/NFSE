@@ -60,6 +60,7 @@ from app.fiscal.cliente_sefin import ClienteSefin
 from app.fiscal.dps import assinar_dps, montar_dps_xml, montar_id_dps, renderizar_descricao
 from app.fiscal.eventos import assinar_evento, montar_evento_cancelamento
 from app.models import Emissao, PrestadorTomador
+from app.services.cep import RECUSAS_DE_CEP, corrigir_endereco
 
 NS = "http://www.sped.fazenda.gov.br/nfse"
 
@@ -126,6 +127,13 @@ def buscar_emissao_ativa(
     return query.first()
 
 
+def mes_anterior(competencia: str, meses: int) -> str:
+    """'2026-01' menos 2 meses -> '2025-11'."""
+    ano, mes = int(competencia[:4]), int(competencia[5:7])
+    total = ano * 12 + (mes - 1) - meses
+    return f"{total // 12:04d}-{total % 12 + 1:02d}"
+
+
 def criar_rascunho(
     db: Session,
     vinculo: PrestadorTomador,
@@ -155,6 +163,10 @@ def criar_rascunho(
     # `referencia` (AAAA-MM): o mês a que o serviço se refere quando ele não é
     # o da competência da nota — a comissão de setembro da Shopee sai numa
     # nota de outubro, e a descrição tem que falar de setembro (05/10/2026).
+    if referencia is None and (vinculo.descricao_meses_atras or 0) > 0:
+        # Tomador cuja nota fala de um mês anterior ao dela (a comissão de
+        # setembro faturada em outubro): configurado no cadastro.
+        referencia = mes_anterior(competencia, vinculo.descricao_meses_atras)
     descricao = renderizar_descricao(vinculo.template_descricao, referencia or competencia, ordem=ordem)
     snapshot = {
         "razao_social": vinculo.tomador.razao_social,
@@ -263,8 +275,77 @@ def remontar(db: Session, emissao: Emissao) -> Emissao:
 
 
 def recusa_corrigivel(erro_detalhe: str | None) -> bool:
-    """A recusa some só de remontar a nota (hora nova)?"""
-    return bool(erro_detalhe) and any(codigo in erro_detalhe for codigo in _RECUSAS_DE_HORA)
+    """A Ana consegue consertar sozinha? Hora à frente do relógio (remonta
+    com a hora de agora) ou CEP que não bate com a cidade (procura o certo)."""
+    return bool(erro_detalhe) and any(codigo in erro_detalhe for codigo in (*_RECUSAS_DE_HORA, *RECUSAS_DE_CEP))
+
+
+def recusa_de_cep(erro_detalhe: str | None) -> bool:
+    return bool(erro_detalhe) and any(codigo in erro_detalhe for codigo in RECUSAS_DE_CEP)
+
+
+def corrigir_cep(db: Session, emissao: Emissao) -> str | None:
+    """Conserta o endereço do tomador NA NOTA (o snapshot) com o CEP achado
+    pelo endereço — ver app/services/cep.py. Devolve o que mudou, em texto,
+    ou None se não havia o que consertar. Não reenvia: quem chama remonta."""
+    snap = dict(emissao.tomador_snapshot or {})
+    antes = dict(snap.get("endereco") or {})
+    correcao = corrigir_endereco(antes)
+    if correcao is None:
+        return None
+    snap["endereco"] = correcao.endereco or {c: None for c in ("cMun", "CEP", "xLgr", "nro", "xCpl", "xBairro")}
+    snap["endereco_corrigido"] = {"antes": antes, "explicacao": correcao.explicacao}
+    emissao.tomador_snapshot = snap
+    db.flush()
+    return correcao.explicacao
+
+
+def _endereco_do_cadastro_mudou(db: Session, emissao: Emissao) -> bool:
+    """A pessoa corrigiu o endereço no cadastro do tomador depois da recusa:
+    a nota passa a usar o endereço novo (e não precisa adivinhar o CEP)."""
+    if emissao.tomador_documento or emissao.vinculo is None or emissao.vinculo.tomador is None:
+        return False
+    t = emissao.vinculo.tomador
+    do_cadastro = {"cMun": t.cod_municipio, "CEP": t.cep, "xLgr": t.logradouro, "nro": t.numero, "xCpl": t.complemento, "xBairro": t.bairro}
+    snap = dict(emissao.tomador_snapshot or {})
+    atual = snap.get("endereco") or {}
+    if all((atual.get(c) or None) == (v or None) for c, v in do_cadastro.items()):
+        return False
+    snap["endereco"] = do_cadastro
+    snap["razao_social"] = t.razao_social
+    emissao.tomador_snapshot = snap
+    db.flush()
+    return True
+
+
+def _levar_cep_pro_cadastro(db: Session, emissao: Emissao) -> None:
+    """A nota passou com o endereço consertado: o cadastro do tomador fica
+    igual, pras próximas não baterem na mesma recusa. Só pra tomador
+    cadastrado (vendedor de relatório não tem cadastro) e só se o cadastro
+    ainda está como estava quando a nota foi gerada."""
+    snap = emissao.tomador_snapshot or {}
+    correcao = snap.get("endereco_corrigido")
+    if not correcao or emissao.tomador_documento or emissao.vinculo is None:
+        return
+    tomador, antes, agora = emissao.vinculo.tomador, correcao.get("antes") or {}, snap.get("endereco") or {}
+    if tomador is None or not agora.get("cMun") or tomador.cep != antes.get("CEP") or tomador.cod_municipio != antes.get("cMun"):
+        return
+    tomador.cep, tomador.cod_municipio = agora.get("CEP"), agora.get("cMun")
+    db.flush()
+
+
+def corrigir_e_reenviar(db: Session, emissao: Emissao, private_key, cert, cliente: ClienteSefin) -> Emissao:
+    """Nota recusada por algo que a Ana conserta sozinha: acerta (hora ou
+    CEP), remonta com o mesmo número, assina e envia de novo."""
+    if recusa_de_cep(emissao.erro_detalhe) and not _endereco_do_cadastro_mudou(db, emissao):
+        if corrigir_cep(db, emissao) is None:
+            return emissao  # nada a consertar (ou o serviço de CEP não respondeu): fica como está
+    remontar(db, emissao)
+    assinar(db, emissao, private_key, cert)
+    emissao = submeter(db, emissao, cliente)
+    if emissao.estado == "confirmado":
+        _levar_cep_pro_cadastro(db, emissao)
+    return emissao
 
 
 def _montar_xml(db: Session, emissao: Emissao) -> Emissao:
@@ -277,11 +358,17 @@ def _montar_xml(db: Session, emissao: Emissao) -> Emissao:
         "regEspTrib": prestador.regime_especial_trib,
     }
     tipo_doc = snap.get("tipo_documento", "CNPJ")
+    endereco = snap.get("endereco") or {}
+    if not all(endereco.get(c) for c in ("cMun", "CEP", "xLgr", "nro", "xBairro")):
+        # Endereço pela metade (tomador importado sem rua/CEP, CEP que não
+        # deu pra consertar): a nota sai sem o endereço do tomador — ele é
+        # opcional na NFS-e — em vez de ir com campo vazio e ser recusada.
+        endereco = {}
     toma = {
         tipo_doc: snap["cnpj"], "xNome": snap["razao_social"],
-        "cMun": snap["endereco"]["cMun"], "CEP": snap["endereco"]["CEP"],
-        "xLgr": snap["endereco"]["xLgr"], "nro": snap["endereco"]["nro"],
-        "xCpl": snap["endereco"].get("xCpl"), "xBairro": snap["endereco"]["xBairro"],
+        "cMun": endereco.get("cMun"), "CEP": endereco.get("CEP"),
+        "xLgr": endereco.get("xLgr"), "nro": endereco.get("nro"),
+        "xCpl": endereco.get("xCpl"), "xBairro": endereco.get("xBairro"),
     }
     if tipo_doc == "NIF" and snap.get("pais") and str(snap["pais"]).upper() != "BR":
         toma["cPais"] = snap["pais"]
@@ -340,6 +427,7 @@ def _confirmar_com_resposta(db: Session, emissao: Emissao, resposta, cliente: Cl
 
 
 _DICAS_DE_RECUSA = {
+    "E0240": "Clique em “Corrigir e reenviar”: a Ana procura o CEP certo pelo endereço e manda de novo.",
     "E0008": "A hora da nota ficou à frente do relógio da Receita. Clique em “Corrigir e reenviar”: a Ana acerta a hora e manda de novo.",
 }
 # Recusas que se resolvem remontando a nota com a hora de agora.

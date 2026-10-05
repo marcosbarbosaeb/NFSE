@@ -1,10 +1,11 @@
-import { AlertTriangle, Building2, Check, CheckCircle2, ChevronsUpDown, Loader2, Plus } from "lucide-react"
+import { AlertTriangle, ArrowLeft, Building2, Check, CheckCircle2, ChevronsUpDown, DownloadCloud, Loader2, PencilLine, Plus } from "lucide-react"
 import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import { formatarDocumento, mascararCep, mascararCnpj, soDigitos } from "../lib/documento"
 import type { ConsultaCnpj, Empresa, EmpresaCriarRequest } from "../lib/types"
+import { ImportarEmissorModal } from "./ImportarEmissorModal"
 import { Button } from "./ui/Button"
 import { CampoCidade } from "./ui/CampoCidade"
 import { Field } from "./ui/Field"
@@ -168,7 +169,70 @@ export function TrocaEmpresa() {
   )
 }
 
+// Dois caminhos pra pôr mais uma empresa no login (05/10/2026): importar do
+// Emissor Nacional com o certificado (a Ana traz cadastro, tomadores e notas)
+// ou preencher do zero, como sempre foi.
 function AdicionarEmpresaModal({ onFechar }: { onFechar: () => void }) {
+  const [caminho, setCaminho] = useState<"importar" | "zero" | null>(null)
+
+  if (caminho === "importar") return <ImportarEmissorModal modo="nova" onFechar={onFechar} onVoltar={() => setCaminho(null)} />
+  if (caminho === "zero") return <CadastrarDoZeroModal onFechar={onFechar} onVoltar={() => setCaminho(null)} />
+
+  const OPCAO =
+    "flex w-full items-start gap-3 rounded-xl border px-4 py-3.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+  return (
+    <Modal titulo="Adicionar empresa" onClose={onFechar} largura="max-w-xl">
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Outro CNPJ no mesmo login. Cada empresa tem seus tomadores, notas e certificado. Como você quer começar?
+        </p>
+
+        <button
+          type="button"
+          onClick={() => setCaminho("importar")}
+          className={`${OPCAO} border-primary-300 bg-primary-50/60 hover:bg-primary-50 dark:border-primary-700 dark:bg-primary-900/20 dark:hover:bg-primary-900/30`}
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-white">
+            <DownloadCloud size={18} aria-hidden="true" />
+          </span>
+          <span className="min-w-0">
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Importar do Emissor Nacional
+              <span className="rounded-full bg-accent-500 px-2 py-0.5 text-[11px] font-semibold text-white">recomendado</span>
+            </span>
+            <span className="mt-0.5 block text-sm text-slate-600 dark:text-slate-300">
+              Você escolhe o certificado digital (A1) da empresa e eu trago o cadastro, os tomadores e as notas que ela já emitiu.
+            </span>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setCaminho("zero")}
+          className={`${OPCAO} border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/40`}
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+            <PencilLine size={18} aria-hidden="true" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">Cadastrar do zero</span>
+            <span className="mt-0.5 block text-sm text-slate-600 dark:text-slate-300">
+              Você digita o CNPJ e confere os dados. Tomadores, certificado e notas ficam para depois.
+            </span>
+          </span>
+        </button>
+
+        <div className="flex justify-end">
+          <Button type="button" variant="ghost" onClick={onFechar}>
+            Cancelar
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function CadastrarDoZeroModal({ onFechar, onVoltar }: { onFechar: () => void; onVoltar: () => void }) {
   const [cnpj, setCnpj] = useState("")
   const [razaoSocial, setRazaoSocial] = useState("")
   const [nomeFantasia, setNomeFantasia] = useState("")
@@ -256,7 +320,7 @@ function AdicionarEmpresaModal({ onFechar }: { onFechar: () => void }) {
   }
 
   return (
-    <Modal titulo="Adicionar empresa" onClose={onFechar} largura="max-w-xl">
+    <Modal titulo="Cadastrar empresa do zero" onClose={onFechar} largura="max-w-xl">
       <form onSubmit={enviar} className="flex flex-col gap-4">
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Outro CNPJ no mesmo login. Cada empresa tem seus tomadores, notas e certificado — você troca entre elas no topo da
@@ -324,13 +388,18 @@ function AdicionarEmpresaModal({ onFechar }: { onFechar: () => void }) {
           </p>
         )}
 
-        <div className="flex flex-wrap justify-end gap-3">
-          <Button type="button" variant="outline" onClick={onFechar}>
-            Cancelar
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button type="button" variant="ghost" onClick={onVoltar} disabled={enviando}>
+            <ArrowLeft size={15} /> Voltar
           </Button>
-          <Button type="submit" variant="accent" disabled={enviando}>
-            {enviando ? "Adicionando..." : "Adicionar e abrir"}
-          </Button>
+          <div className="flex flex-wrap gap-3">
+            <Button type="button" variant="outline" onClick={onFechar}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="accent" disabled={enviando}>
+              {enviando ? "Adicionando..." : "Adicionar e abrir"}
+            </Button>
+          </div>
         </div>
       </form>
     </Modal>

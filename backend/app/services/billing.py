@@ -52,6 +52,124 @@ _STRIPE_STATUS_PARA_NOSSO = {
 }
 
 
+# Planos (05/10/2026): cada um libera um conjunto de módulos da empresa.
+PLANOS = {
+    "emissor": {"nome": "Notas", "modulos": ["emissor"], "descricao": "Emissão de NFS-e, tomadores, envio das notas e calendário."},
+    "financeiro": {"nome": "Financeiro", "modulos": ["financeiro"], "descricao": "Recebimentos, contas do mês, conciliação do extrato e resultado."},
+    "ambos": {"nome": "Notas + Financeiro", "modulos": ["emissor", "financeiro"], "descricao": "Tudo junto: a nota emitida já vira conta a receber."},
+}
+_precos_cache: dict[str, tuple[float, dict]] = {}
+
+
+class PlanoInvalidoError(Exception):
+    pass
+
+
+def preco_do_plano(plano: str) -> str | None:
+    """Price ID da Stripe configurado pro plano (None = não está à venda).
+    Sem nenhum plano configurado, o preço único antigo vale como "ambos"."""
+    s = get_settings()
+    proprio = {"emissor": s.stripe_price_id_emissor, "financeiro": s.stripe_price_id_financeiro, "ambos": s.stripe_price_id_ambos}.get(plano)
+    if proprio:
+        return proprio
+    unico = s.stripe_price_id_mensal
+    if plano == "ambos" and unico and not unico.startswith("price_placeholder"):
+        return unico
+    return None
+
+
+def plano_do_preco(price_id: str | None) -> str | None:
+    if not price_id:
+        return None
+    for plano in PLANOS:
+        if preco_do_plano(plano) == price_id:
+            return plano
+    return None
+
+
+def _valor_do_preco(price_id: str) -> dict:
+    """Valor e moeda direto da Stripe (nada de preço escrito no código),
+    guardado em memória por 1 hora. Falha -> {} (a tela mostra sem valor)."""
+    import time
+
+    em_cache = _precos_cache.get(price_id)
+    if em_cache and time.time() - em_cache[0] < 3600:
+        return em_cache[1]
+    try:
+        preco = stripe.Price.retrieve(price_id, api_key=get_settings().stripe_secret_key)
+        dados = {
+            "valor": (preco["unit_amount"] or 0) / 100, "moeda": str(preco["currency"]).upper(),
+            "intervalo": ((preco.get("recurring") or {}).get("interval")) or "month",
+        }
+    except Exception:  # noqa: BLE001 — preço indisponível não derruba a tela
+        logger.warning("Não consegui ler o preço %s na Stripe", price_id)
+        dados = {}
+    _precos_cache[price_id] = (time.time(), dados)
+    return dados
+
+
+def listar_planos(plano_atual: str | None = None) -> list[dict]:
+    lista = []
+    for chave, info in PLANOS.items():
+        price_id = preco_do_plano(chave)
+        disponivel = bool(price_id) and bool(get_settings().stripe_secret_key)
+        lista.append({
+            "id": chave, "nome": info["nome"], "descricao": info["descricao"], "modulos": info["modulos"],
+            "disponivel": disponivel, "atual": chave == plano_atual,
+            **({k: v for k, v in _valor_do_preco(price_id).items()} if disponivel else {}),
+        })
+    return lista
+
+
+def aplicar_plano(db: Session, assinatura: Assinatura, plano: str | None) -> None:
+    """O plano pago define os módulos da empresa (os dados de um módulo
+    desligado ficam guardados e voltam se ele for contratado de novo)."""
+    if plano not in PLANOS:
+        return
+    assinatura.plano = plano
+    prestador = db.get(Prestador, assinatura.prestador_id)
+    if prestador is not None:
+        prestador.modulos = list(PLANOS[plano]["modulos"])
+    db.flush()
+
+
+def modulos_presos_ao_plano(assinatura: Assinatura | None) -> bool:
+    """Com assinatura paga em vigor, quem liga/desliga módulo é o plano
+    (em teste grátis ou cortesia a pessoa escolhe à vontade)."""
+    return bool(assinatura and assinatura.plano and assinatura.stripe_subscription_id and assinatura.status in ("ativa", "inadimplente"))
+
+
+def trocar_plano(db: Session, prestador_id: uuid.UUID, plano: str) -> Assinatura:
+    """Muda o plano de uma assinatura já paga: troca o preço do item na
+    Stripe (com acerto proporcional na próxima fatura) e já ajusta os
+    módulos — o webhook confirma depois."""
+    _exigir_stripe_configurado_para(plano)
+    assinatura = db.query(Assinatura).filter_by(prestador_id=prestador_id).one_or_none()
+    if assinatura is None or not assinatura.stripe_subscription_id:
+        raise AssinaturaNaoEncontradaError("Nenhuma assinatura paga ainda — assine o plano primeiro.")
+    chave = get_settings().stripe_secret_key
+    atual = stripe.Subscription.retrieve(assinatura.stripe_subscription_id, api_key=chave)
+    item = atual["items"]["data"][0]
+    stripe.Subscription.modify(
+        assinatura.stripe_subscription_id,
+        items=[{"id": item["id"], "price": preco_do_plano(plano)}],
+        proration_behavior="create_prorations",
+        metadata={"prestador_id": str(prestador_id), "plano": plano},
+        api_key=chave,
+    )
+    aplicar_plano(db, assinatura, plano)
+    return assinatura
+
+
+def _exigir_stripe_configurado_para(plano: str) -> None:
+    if plano not in PLANOS:
+        raise PlanoInvalidoError("Plano desconhecido.")
+    if not get_settings().stripe_secret_key or not preco_do_plano(plano):
+        raise BillingNaoConfiguradoError(
+            f"O plano {PLANOS[plano]['nome']} ainda não está à venda (falta configurar o preço dele). Fale com o suporte."
+        )
+
+
 class BillingNaoConfiguradoError(Exception):
     """`stripe_secret_key`/`stripe_price_id_mensal` ainda não foram
     configurados (ver docstring do módulo) — a rota que chamou isto deve
@@ -145,13 +263,19 @@ def _obter_ou_criar_customer(assinatura: Assinatura, prestador: Prestador, email
     return customer["id"]
 
 
-def criar_sessao_checkout(db: Session, prestador_id: uuid.UUID, email: str) -> str:
+def criar_sessao_checkout(db: Session, prestador_id: uuid.UUID, email: str, plano: str | None = None) -> str:
     """Cria (ou reaproveita) o Customer da Stripe e devolve a URL de uma
     Checkout Session em modo assinatura. Levanta `BillingNaoConfiguradoError`
     enquanto não houver conta Stripe de verdade (ver docstring do
-    módulo)."""
-    _exigir_stripe_configurado()
+    módulo). `plano`: emissor | financeiro | ambos (sem ele, o preço único
+    antigo, que libera os dois módulos)."""
+    if plano is None:
+        _exigir_stripe_configurado()
+    else:
+        _exigir_stripe_configurado_para(plano)
     settings = get_settings()
+    price_id = preco_do_plano(plano) if plano else settings.stripe_price_id_mensal
+    marcas = {"prestador_id": str(prestador_id), **({"plano": plano} if plano else {})}
     prestador = db.get(Prestador, prestador_id)
     if prestador is None:
         raise AssinaturaNaoEncontradaError("Prestador não encontrado.")
@@ -185,11 +309,11 @@ def criar_sessao_checkout(db: Session, prestador_id: uuid.UUID, email: str) -> s
         **extras,
         mode="subscription",
         customer=customer_id,
-        line_items=[{"price": settings.stripe_price_id_mensal, "quantity": 1}],
+        line_items=[{"price": price_id, "quantity": 1}],
         success_url=f"{base}/app/conta?aba=assinatura&assinatura=sucesso",
         cancel_url=f"{base}/app/conta?aba=assinatura&assinatura=cancelado",
-        metadata={"prestador_id": str(prestador_id)},
-        subscription_data={"metadata": {"prestador_id": str(prestador_id)}},
+        metadata=marcas,
+        subscription_data={"metadata": marcas},
         api_key=settings.stripe_secret_key,
     )
     return sessao["url"]
@@ -270,6 +394,15 @@ def processar_webhook(db: Session, payload: bytes, assinatura_header: str) -> st
         logger.warning("Evento %s pra prestador_id %s sem Assinatura correspondente.", tipo, prestador_id)
         return tipo
 
+    # Plano: o preço do item da assinatura é a fonte de verdade (cobre a
+    # troca feita no portal da Stripe); no checkout, o plano escolhido vem
+    # no metadata. Só aplica os módulos com a assinatura em vigor.
+    plano = None
+    if tipo != "checkout.session.completed":
+        itens = ((obj.get("items") or {}).get("data")) or []
+        plano = plano_do_preco(((itens[0].get("price") or {}).get("id")) if itens else None)
+    plano = plano or (obj.get("metadata") or {}).get("plano")
+
     if tipo == "checkout.session.completed":
         assinatura.stripe_subscription_id = obj.get("subscription")
         # Boleto/Pix: a sessão "completa" antes do dinheiro cair — só vira
@@ -283,6 +416,8 @@ def processar_webhook(db: Session, payload: bytes, assinatura_header: str) -> st
             assinatura.status = novo_status
     elif tipo == "customer.subscription.deleted":
         assinatura.status = "cancelada"
+    if plano in PLANOS and assinatura.status == "ativa" and tipo != "customer.subscription.deleted":
+        aplicar_plano(db, assinatura, plano)
 
     db.flush()
     # Programa de indicação: o status deste prestador conta pro desconto de

@@ -242,9 +242,12 @@ def adicionar_empresa(
         cep=cep, logradouro=logradouro, numero=numero, complemento=complemento, bairro=bairro,
         modulos=list(modulos) if modulos else ["emissor"],
     )
-    db.add(prestador)
     try:
+        # O `add` fica DENTRO do savepoint: se o CNPJ já existe, só a empresa
+        # recusada é desfeita (antes, o flush automático do begin_nested
+        # derrubava a transação inteira do pedido).
         with db.begin_nested():
+            db.add(prestador)
             db.flush()
     except IntegrityError as exc:
         raise ContaError("Esse CNPJ já está cadastrado na Agente Ana.") from exc

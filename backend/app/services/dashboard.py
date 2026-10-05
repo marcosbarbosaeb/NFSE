@@ -401,6 +401,45 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
     return {"pendencias": agrupadas[:10], "total_pendencias": len(agrupadas), "agenda": agenda}
 
 
+def proxima_nota(db: Session, atual: Emissao) -> dict:
+    """Depois de terminar uma nota, qual é a próxima que ainda tem passo
+    pendente (05/10/2026: "um botão ali embaixo pra pessoa já ir pro
+    próximo passo, pra não ter que voltar na tela inicial"). Fica no mesmo
+    grupo da nota aberta: as de vendedores (lote) ou as dos tomadores."""
+    ja_enviada = (
+        db.query(Envio.id).filter(
+            Envio.emissao_id == Emissao.id, Envio.status == "enviado", Envio.canal.in_(("email", "whatsapp", "direto_fornecedor"))
+        ).exists()
+    )
+    grupo = Emissao.tomador_documento.isnot(None) if atual.tomador_documento else Emissao.tomador_documento.is_(None)
+    candidatas = (
+        db.query(Emissao)
+        .filter(
+            grupo, Emissao.id != atual.id,
+            # Nota importada do Emissor Nacional já foi entregue por fora: não entra na fila.
+            (Emissao.estado.in_(("montado", "assinado", "erro")))
+            | ((Emissao.estado == "confirmado") & ~ja_enviada & (Emissao.origem != "importada")),
+        )
+        .order_by(Emissao.criado_em, Emissao.n_dps)
+        .limit(300)
+        .all()
+    )
+    passos = {"montado": "Assinar", "assinado": "Enviar à prefeitura", "erro": "Ver a recusa", "confirmado": "Enviar ao tomador"}
+    fila = [
+        e for e in candidatas
+        if e.estado != "confirmado" or e.tomador_documento or (e.vinculo and e.vinculo.envio_canal != "nenhum")
+    ]
+    if not fila:
+        return {"proxima": None, "restantes": 0}
+    e = fila[0]
+    snap = e.tomador_snapshot or {}
+    nome = (snap.get("razao_social") or "vendedor") if e.tomador_documento else (snap.get("apelido") or snap.get("razao_social") or "")
+    return {
+        "proxima": {"id": e.id, "nome": nome, "competencia": e.competencia, "valor": float(e.valor), "passo": passos[e.estado]},
+        "restantes": len(fila),
+    }
+
+
 def _mes_anterior(competencia: str) -> str:
     ano, mes = int(competencia[:4]), int(competencia[5:7])
     return f"{ano - 1:04d}-12" if mes == 1 else f"{ano:04d}-{mes - 1:02d}"

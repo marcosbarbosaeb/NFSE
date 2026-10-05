@@ -112,8 +112,14 @@ def test_dados_oficiais_ganham_do_digitado(client, db, monkeypatch):
 def test_descricao_com_codigo_desconhecido_nao_derruba(client, vinculo_teste):
     r = client.patch(f"/api/vinculos/{vinculo_teste.id}", json={"template_descricao": "Comissão {cliente} { solto {mes}/{ano}"})
     assert r.status_code == 200
+    # Não derruba (era 500) — e, desde a conferência (05/10/2026), também não
+    # gera: a nota sairia com "{cliente}" escrito. Recusa com frase de gente.
     r = client.post("/api/dps", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-05", "valor": 10})
-    assert r.status_code == 200, r.text
+    assert r.status_code == 422, r.text
+    assert "{cliente}" in r.json()["detail"]
+    from app.fiscal.dps import renderizar_descricao
+
+    assert renderizar_descricao("Comissão {cliente} { solto {mes}/{ano}", "2026-05") == "Comissão {cliente} { solto 05/2026"
     assert client.post("/api/dps", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-13", "valor": 10}).status_code == 422
     assert client.get("/api/painel/resumo-mes?competencia=abcd-ef").status_code == 422
     assert client.get("/api/calendario?inicio=0001-01-01&fim=2026-01-01").status_code == 422

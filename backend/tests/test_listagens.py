@@ -67,8 +67,10 @@ def test_listar_dps_filtra_por_vinculo_e_estado(client, vinculo_teste, db, prest
     from app.models import PrestadorTomador, Tomador
 
     tomador2 = Tomador(
-        id=uuid.uuid4(), cnpj="22333444000199", razao_social="OUTRO TOMADOR LTDA",
-        cod_municipio="3550308",
+        # CNPJ com dígito verificador certo e endereço inteiro: a conferência
+        # (app/services/conferencia.py) não deixa gerar nota sem isso.
+        id=uuid.uuid4(), cnpj="22333444000181", razao_social="OUTRO TOMADOR LTDA",
+        cod_municipio="3550308", cep="01311000", logradouro="Av Teste", numero="200", bairro="Centro",
     )
     db.add(tomador2)
     db.flush()

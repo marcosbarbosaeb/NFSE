@@ -4,7 +4,7 @@ import { Link, useLocation, useSearchParams } from "react-router-dom"
 import { BaixaPagamento } from "../components/BaixaPagamento"
 import { PainelCards } from "../components/PainelCards"
 import { RecebimentosSemNotaCard, linkGerarNota } from "../components/financeiro/RecebimentosSemNota"
-import { AnotacaoCard, useAnotacoes } from "../components/financeiro/Anotacoes"
+import { AnotacaoCard, EscolherFormatoAnotacao, useAnotacoes } from "../components/financeiro/Anotacoes"
 import { ContasDoMesPainel } from "../components/financeiro/ContasDoMesPainel"
 import { LancamentoModal } from "../components/financeiro/LancamentoModal"
 import { ResultadoAno } from "../components/financeiro/ResultadoAno"
@@ -107,6 +107,8 @@ export function FinanceiroPage() {
   const [editando, setEditando] = useState(false)
   const { anotacoes, erro: erroAnotacao, criar: criarAnotacao, atualizar: atualizarAnotacao, apagar: apagarAnotacao } = useAnotacoes(true)
   const [anotacaoNova, setAnotacaoNova] = useState<string | null>(null)
+  // "Nova anotação" pergunta o formato (texto, lista ou tabela) antes de criar.
+  const [escolhendoFormatoAnotacao, setEscolhendoFormatoAnotacao] = useState(false)
   const [pendentesExtrato, setPendentesExtrato] = useState(0)
   const [semNota, setSemNota] = useState(0)
 
@@ -184,13 +186,7 @@ export function FinanceiroPage() {
           <Button
             variant="ghost"
             title="Crie uma anotação pra deixar registrado o que quiser (ex.: controle de recarga de telefone)"
-            onClick={async () => {
-              const nova = await criarAnotacao("Nova anotação")
-              if (!nova) return
-              setAnotacaoNova(nova.id)
-              // Espera o card existir na tela e leva a pessoa até ele.
-              window.setTimeout(() => document.getElementById(`nota-${nova.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 150)
-            }}
+            onClick={() => setEscolhendoFormatoAnotacao(true)}
           >
             <StickyNote size={16} /> Nova anotação
           </Button>
@@ -574,6 +570,20 @@ export function FinanceiroPage() {
           },
         ]}
       />
+
+      {escolhendoFormatoAnotacao && (
+        <EscolherFormatoAnotacao
+          onClose={() => setEscolhendoFormatoAnotacao(false)}
+          onEscolher={async (formato) => {
+            setEscolhendoFormatoAnotacao(false)
+            const nova = await criarAnotacao("Nova anotação", formato)
+            if (!nova) return
+            setAnotacaoNova(nova.id)
+            // Espera o card existir na tela e leva a pessoa até ele.
+            window.setTimeout(() => document.getElementById(`nota-${nova.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 150)
+          }}
+        />
+      )}
 
       {modal === "recebimento" && (
         <RegistrarPagamentoModal

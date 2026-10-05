@@ -305,6 +305,19 @@ export function LotePainel({
         </span>
       </p>
 
+      {rodando && lote.acao === "completo" && (
+        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          Pode fechar esta página: eu continuo sozinha e te mando o relatório por e-mail quando acabar. Ele também fica aqui em Notas em
+          lote.
+        </p>
+      )}
+      {!rodando && (lote.linhas_relatorio ?? []).length > 0 && (
+        <ul className="mt-2 list-disc pl-5 text-xs text-slate-600 dark:text-slate-300">
+          {(lote.linhas_relatorio ?? []).map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+      )}
       {lote.status === "interrompido" && (
         <p className="mt-2 text-xs text-warning-700 dark:text-warning-300">
           O servidor reiniciou no meio. Retome pra continuar de onde parou.
@@ -363,5 +376,135 @@ export function LotePainel({
         </div>
       )}
     </section>
+  )
+}
+
+const PASSO_ROTULO: Record<string, string> = { assinar: "assinar", submeter: "enviar à prefeitura", email: "mandar por e-mail" }
+
+function quando(iso: string | null): string {
+  if (!iso) return ""
+  const d = new Date(iso)
+  return `${d.toLocaleDateString("pt-BR")} às ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+}
+
+const STATUS_LOTE: Record<Lote["status"], string> = {
+  fila: "Na fila",
+  executando: "Em andamento",
+  concluido: "Concluído",
+  cancelado: "Cancelado",
+  interrompido: "Interrompido",
+}
+
+/** Relatório de status de um lote (05/10/2026): "quando acabar geramos um
+ * relatório pra ela ver o que aconteceu" — o que foi feito em cada passo e,
+ * nota por nota, o que ficou pra trás e por quê. */
+export function RelatorioLoteModal({ lote, onClose, onRefazer }: { lote: Lote; onClose: () => void; onRefazer?: (novo: Lote) => void }) {
+  const [agindo, setAgindo] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const rodando = LOTE_RODANDO(lote)
+
+  async function refazer() {
+    setAgindo(true)
+    setErro(null)
+    try {
+      onRefazer?.(await api.post<Lote>(`/lotes/${lote.id}/refazer-falhas`))
+      onClose()
+    } catch (err) {
+      setErro(mensagemErro(err))
+    } finally {
+      setAgindo(false)
+    }
+  }
+
+  function baixarCsv() {
+    const linhas = [["Nota", "O que aconteceu"], ...lote.erros.map((e) => [e.nome || "Nota", e.erro])]
+    const csv = linhas.map((l) => l.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\r\n")
+    const url = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }))
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "relatorio-notas-em-lote.csv"
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 2000)
+  }
+
+  return (
+    <Modal titulo={`Relatório — ${NOME_ACAO[lote.acao]}`} onClose={onClose} largura="max-w-2xl">
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          {STATUS_LOTE[lote.status]}
+          {lote.criado_em && ` · começou em ${quando(lote.criado_em)}`}
+          {lote.concluido_em && ` · terminou em ${quando(lote.concluido_em)}`}
+          {(lote.passos ?? []).length > 0 && ` · passos: ${(lote.passos ?? []).map((p) => PASSO_ROTULO[p] ?? p).join(", ")}`}
+        </p>
+        <div className="grid grid-cols-3 gap-3 text-center">
+          <div className="rounded-xl bg-slate-50 px-3 py-3 dark:bg-slate-900/40">
+            <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{lote.total}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">notas no lote</p>
+          </div>
+          <div className="rounded-xl bg-success-50 px-3 py-3 dark:bg-success-900/30">
+            <p className="text-2xl font-semibold text-success-700 dark:text-success-300">{lote.feitos}</p>
+            <p className="text-xs text-success-700 dark:text-success-300">deram certo</p>
+          </div>
+          <div className={`rounded-xl px-3 py-3 ${lote.falhas > 0 ? "bg-danger-50 dark:bg-danger-900/30" : "bg-slate-50 dark:bg-slate-900/40"}`}>
+            <p className={`text-2xl font-semibold ${lote.falhas > 0 ? "text-danger-700 dark:text-danger-300" : "text-slate-900 dark:text-slate-100"}`}>{lote.falhas}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">precisam de atenção</p>
+          </div>
+        </div>
+        {rodando && (
+          <p className="rounded-lg bg-primary-50 px-3 py-2 text-sm text-primary-800 dark:bg-primary-900/30 dark:text-primary-200">
+            Ainda está rodando ({lote.feitos + lote.falhas} de {lote.total}). Pode fechar a página — o relatório completo fica aqui.
+          </p>
+        )}
+        {(lote.linhas_relatorio ?? []).length > 0 && (
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">O que foi feito</p>
+            <ul className="list-disc pl-5 text-sm text-slate-700 dark:text-slate-200">
+              {(lote.linhas_relatorio ?? []).map((l) => (
+                <li key={l}>{l}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {lote.erros.length > 0 ? (
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Notas que precisam de atenção</p>
+            <ul className="max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-100 text-sm dark:divide-slate-700/60 dark:border-slate-700/60">
+              {lote.erros.map((e, i) => (
+                <li key={`${e.emissao_id}-${i}`} className="px-3 py-2">
+                  <Link to={`/app/nfse/${e.emissao_id}`} className="font-medium text-primary-700 hover:underline dark:text-primary-300">
+                    {e.nome || "Nota"}
+                  </Link>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400">{e.erro}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          !rodando && <p className="rounded-lg bg-success-50 px-3 py-2 text-sm text-success-700 dark:bg-success-900/30 dark:text-success-300">Nenhuma nota ficou pra trás.</p>
+        )}
+        {erro && (
+          <p role="alert" className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">
+            {erro}
+          </p>
+        )}
+        <div className="flex flex-wrap justify-end gap-2">
+          {lote.erros.length > 0 && (
+            <Button type="button" variant="outline" onClick={baixarCsv}>
+              Baixar a lista (.csv)
+            </Button>
+          )}
+          {onRefazer && lote.status === "concluido" && lote.falhas > 0 && (
+            <Button type="button" variant="outline" disabled={agindo} onClick={refazer}>
+              {agindo ? "Iniciando..." : `Tentar de novo as ${lote.falhas} que falharam`}
+            </Button>
+          )}
+          <Button type="button" variant="accent" onClick={onClose}>
+            Fechar
+          </Button>
+        </div>
+      </div>
+    </Modal>
   )
 }

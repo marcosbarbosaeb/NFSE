@@ -240,7 +240,22 @@ export function SeloPrefeitura({ nota, onMudou }: { nota: NotaParaAcoes; onMudou
                   </span>
                 )}
                 {nota.erro_corrigivel ? (
-                  "Eu acerto a hora da nota, assino de novo e envio à prefeitura. O número e os dados da nota não mudam."
+                  /E0240/.test(motivo ?? "") ? (
+                    <>
+                      Eu uso o endereço que está no cadastro do tomador — ou, se ele não mudou, procuro o CEP certo pelo endereço —, assino
+                      de novo e envio à prefeitura. O número da nota não muda.
+                      {nota.vinculo_id && !nota.avulsa && (
+                        <>
+                          {" "}
+                          <Link to={`/app/tomadores/${nota.vinculo_id}?editar=endereco`} className="font-semibold text-primary-600 underline">
+                            Corrigir o endereço antes
+                          </Link>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    "Eu acerto a hora da nota, assino de novo e envio à prefeitura. O número e os dados da nota não mudam."
+                  )
                 ) : (
                   <>
                     {erro ? "Enviar de novo à prefeitura" : "Enviar esta nota à prefeitura"}

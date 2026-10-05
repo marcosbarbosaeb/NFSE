@@ -619,10 +619,23 @@ class VinculoDetalheResponse(BaseModel):
     cod_nbs: str | None = None
     incluir_intermediario: bool = False
     envio_canal: str | None = None
+    envio_formas: list[str] | None = None
+    email_extras: list[dict] | None = None
+    descricao_meses_atras: int = 0
     portal_url: str | None = None
     sem_nota: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class EmailExtra(BaseModel):
+    """Outro destinatário do tomador (contador, financeiro...) que recebe a
+    nota num e-mail próprio. Assunto/mensagem em branco = o do tomador."""
+    email: str = Field(min_length=3, max_length=200)
+    rotulo: str | None = Field(default=None, max_length=60)
+    assunto: str | None = Field(default=None, max_length=300)
+    mensagem: str | None = Field(default=None, max_length=5000)
+    anexos: str | None = Field(default=None, pattern=r"^(pdf_xml|pdf|xml)$")
 
 
 class VinculoCriarRequest(BaseModel):
@@ -653,6 +666,11 @@ class VinculoCriarRequest(BaseModel):
     cod_nbs: str | None = Field(default=None, max_length=14, pattern=r"^[\d.\s]*$")
     incluir_intermediario: bool | None = None
     envio_canal: str | None = Field(default=None, pattern=r"^(email|whatsapp|portal|nenhum)$")
+    # Formas de envio padrão — pode ser mais de uma (email, whatsapp, portal,
+    # download). Lista vazia = não precisa enviar.
+    envio_formas: list[str] | None = Field(default=None, max_length=4)
+    email_extras: list[EmailExtra] | None = Field(default=None, max_length=5)
+    descricao_meses_atras: int | None = Field(default=None, ge=0, le=12)
     portal_url: str | None = Field(default=None, max_length=400)
     sem_nota: bool | None = None
 
@@ -688,6 +706,11 @@ class VinculoAtualizarRequest(BaseModel):
     cod_nbs: str | None = Field(default=None, max_length=14, pattern=r"^[\d.\s]*$")
     incluir_intermediario: bool | None = None
     envio_canal: str | None = Field(default=None, pattern=r"^(email|whatsapp|portal|nenhum)$")
+    # Formas de envio padrão — pode ser mais de uma (email, whatsapp, portal,
+    # download). Lista vazia = não precisa enviar.
+    envio_formas: list[str] | None = Field(default=None, max_length=4)
+    email_extras: list[EmailExtra] | None = Field(default=None, max_length=5)
+    descricao_meses_atras: int | None = Field(default=None, ge=0, le=12)
     portal_url: str | None = Field(default=None, max_length=400)
     sem_nota: bool | None = None
 
@@ -772,6 +795,10 @@ class PreviaEmailResponse(BaseModel):
     whatsapp: str | None = None
     whatsapp_texto: str = ""
     canal_preferido: str = "email"
+    # Todas as formas de envio padrão do tomador (email, whatsapp, portal,
+    # download) e os outros destinatários com e-mail próprio.
+    formas: list[str] = []
+    extras: list[dict] = []
     portal_url: str | None = None
     avulsa: bool = False
     geral_destinos: list[str] = []
@@ -888,6 +915,15 @@ class AssinaturaResponse(BaseModel):
     ativa: bool
     trial_termina_em: datetime | None = None
     tem_assinatura_stripe: bool
+    # Planos por módulo (05/10/2026): o contratado, os que dá pra assinar e
+    # se os módulos da empresa estão presos ao plano.
+    plano: str | None = None
+    planos: list[dict] = []
+    modulos_pelo_plano: bool = False
+
+
+class PlanoRequest(BaseModel):
+    plano: Literal["emissor", "financeiro", "ambos"]
 
 
 class CheckoutSessaoResponse(BaseModel):
@@ -1081,6 +1117,9 @@ class GeracaoShopeeResponse(BaseModel):
     puladas: int
     total: float
     erros: list[str]
+    # "Gerar e fazer tudo": o lote em segundo plano que continua a sequência.
+    lote: "LoteResponse | None" = None
+    aviso_lote: str | None = None
 
 
 WhatsappLinkResponse.model_rebuild()
@@ -1133,6 +1172,8 @@ class EnviarEmailRequest(BaseModel):
     assunto: str | None = Field(default=None, max_length=300)
     texto: str | None = Field(default=None, max_length=5000)
     salvar_padrao: bool = False
+    # Quais dos outros destinatários do tomador também recebem (None = todos).
+    extras: list[str] | None = Field(default=None, max_length=5)
 
 
 class WhatsappRequest(BaseModel):
@@ -1145,7 +1186,9 @@ class WhatsappRequest(BaseModel):
 class CriarLoteRequest(BaseModel):
     """Ação em lote (29/09/2026). Ou uma lista de notas (seleção na tela),
     ou um filtro (ex.: todas as notas da Shopee de um mês)."""
-    acao: str = Field(pattern=r"^(email|email_geral|assinar|submeter)$")
+    acao: str = Field(pattern=r"^(email|email_geral|assinar|submeter|completo)$")
+    # Só no lote "completo": até onde ir (assinar -> submeter -> email).
+    passos: list[str] | None = Field(default=None, max_length=3)
     emissao_ids: list[uuid.UUID] | None = Field(default=None, max_length=3000)
     vinculo_id: uuid.UUID | None = None
     competencia: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -1168,6 +1211,10 @@ class LoteResponse(BaseModel):
     erros: list[ErroLoteItem]
     criado_em: datetime | None = None
     concluido_em: datetime | None = None
+    # Lote "completo": passos pedidos e o relatório do que aconteceu.
+    passos: list[str] = []
+    relatorio: dict[str, int] = {}
+    linhas_relatorio: list[str] = []
 
 
 class PreviaLoteResponse(BaseModel):
@@ -1321,12 +1368,49 @@ class RegraImportacao(BaseModel):
 
 class ImportarNacionalRequest(BaseModel):
     mapeamento: list[RegraImportacao] = Field(max_length=5000)
+    # "Importar emissor": tomadores novos já saem com a descrição da última
+    # nota e o mês/ano como campo automático.
+    ajustar_modelos: bool = False
+
+
+class TomadorImportadoResponse(BaseModel):
+    """Tomador criado pela importação. `sem_nota`: sem CNPJ, só controle.
+    `pendencia`: o que falta pra gerar a próxima nota (None = pronto)."""
+    id: uuid.UUID
+    apelido: str
+    documento: str | None = None
+    notas: int = 0
+    ativo: bool = True
+    sem_nota: bool = False
+    modelo_ajustado: bool = False
+    pendencia: str | None = None
 
 
 class ImportarNacionalResponse(BaseModel):
     importadas: int
     vinculos_criados: int
     puladas: list[dict]
+    tomadores: list[TomadorImportadoResponse] = []
+
+
+# --- Importar emissor (05/10/2026): certificado -> empresa nova -> importação ---
+
+
+class CertificadoLidoResponse(BaseModel):
+    """O que deu pra ler do certificado A1 (nada é guardado nesta etapa)."""
+    titular: str | None = None
+    cnpj: str | None = None
+    pessoa_fisica: bool = False
+    valido_de: date
+    valido_ate: date
+    vencido: bool = False
+    # Esse CNPJ já é uma das empresas deste login.
+    ja_cadastrada: bool = False
+
+
+class EmpresaImportadaResponse(BaseModel):
+    empresa: EmpresaResponse
+    certificado: CertificadoStatus
 
 
 
@@ -1457,3 +1541,6 @@ class ConciliarRequest(BaseModel):
     mês (AAAA-MM)."""
     itens: list[ConciliarItem] = Field(default=[], max_length=2000)
     ate: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+GeracaoShopeeResponse.model_rebuild()

@@ -238,6 +238,65 @@ def remetente_da_nota(nome_prestador: str | None) -> str:
     return f'"{nome} via Agente Ana" <{endereco}>'
 
 
+# Formas de envio padrão de um tomador (05/10/2026): pode ser mais de uma.
+# "download" = baixar o PDF sozinho quando a nota é autorizada.
+FORMAS_VALIDAS = ("email", "whatsapp", "portal", "download")
+MAXIMO_EXTRAS = 5
+
+
+def formas_de_envio(vinculo: PrestadorTomador | None) -> list[str]:
+    """Como este tomador recebe a nota. Lista vazia = não precisa enviar.
+    Cadastro antigo (sem `envio_formas`) vale o que está em `envio_canal`."""
+    if vinculo is None:
+        return ["email"]
+    if vinculo.envio_formas is not None:
+        return [f for f in FORMAS_VALIDAS if f in vinculo.envio_formas]
+    if vinculo.envio_canal == "nenhum":
+        return []
+    return [vinculo.envio_canal or "email"]
+
+
+def canal_principal(formas: list[str]) -> str:
+    """A forma que as telas antigas (selo da lista, painel) enxergam."""
+    for forma in ("email", "whatsapp", "portal"):
+        if forma in formas:
+            return forma
+    # Só "baixar o PDF": a pessoa sobe o arquivo onde o tomador pede.
+    return "portal" if formas else "nenhum"
+
+
+def limpar_extras(extras) -> list[dict]:
+    """Outros destinatários (contador, financeiro...) com e-mail próprio —
+    só entradas com endereço válido, sem repetir, no máximo MAXIMO_EXTRAS."""
+    limpos: list[dict] = []
+    for extra in extras or []:
+        if not isinstance(extra, dict):
+            continue
+        emails = lista_emails(extra.get("email"))
+        if not emails or any(e["email"] == ", ".join(emails) for e in limpos):
+            continue
+        anexos = extra.get("anexos")
+        limpos.append({
+            "email": ", ".join(emails)[:200],
+            "rotulo": (str(extra.get("rotulo") or "").strip()[:60]) or None,
+            "assunto": (str(extra.get("assunto") or "").strip()[:300]) or None,
+            "mensagem": (str(extra.get("mensagem") or "").strip()[:5000]) or None,
+            "anexos": anexos if anexos in mensagens.ANEXOS_VALIDOS else None,
+        })
+    return limpos[:MAXIMO_EXTRAS]
+
+
+def _lembrar_forma(vinculo: PrestadorTomador, forma: str) -> None:
+    """A forma usada agora passa a fazer parte do padrão do tomador."""
+    if vinculo.envio_formas is None:
+        vinculo.envio_canal = forma
+        return
+    formas = formas_de_envio(vinculo)
+    if forma not in formas:
+        vinculo.envio_formas = [f for f in FORMAS_VALIDAS if f in (*formas, forma)]
+    vinculo.envio_canal = canal_principal(formas_de_envio(vinculo))
+
+
 LIMITE_EMAILS_DIA = 150
 # Canais que contam como "enviada ao fornecedor" (os e-mails gerais, pro
 # contador, não contam).
@@ -296,12 +355,16 @@ def previa_email(db: Session, emissao: Emissao, base: str) -> dict:
     destino = ", ".join(destinos) or None
     dados = _dados(db, emissao, base)
     whatsapp = None if emissao.tomador_documento else (vinculo.whatsapp_contato if vinculo else None)
+    formas = ["email"] if emissao.tomador_documento else formas_de_envio(vinculo)
     return {
+        "formas": formas,
+        "extras": [] if emissao.tomador_documento else _previa_extras(db, emissao, vinculo, base),
         "whatsapp": whatsapp,
         "whatsapp_texto": mensagens.whatsapp_de_modelo(vinculo.whatsapp_mensagem if vinculo else None, dados),
         "canal_preferido": (
             "email" if emissao.tomador_documento
-            else (vinculo.envio_canal if vinculo else None) or ("email" if destinos or not whatsapp else "whatsapp")
+            else canal_principal(formas) if vinculo is not None and (vinculo.envio_formas is not None or vinculo.envio_canal)
+            else ("email" if destinos or not whatsapp else "whatsapp")
         ),
         "portal_url": vinculo.portal_url if vinculo and not emissao.tomador_documento else None,
         "avulsa": bool(emissao.tomador_documento),
@@ -321,8 +384,11 @@ def enviar_email(
     db: Session, emissao: Emissao, prestador_id: uuid.UUID, base: str,
     para: list[str] | None = None, copia: list[str] | None = None,
     assunto: str | None = None, texto: str | None = None, salvar_padrao: bool = False,
+    extras: list[str] | None = None,
 ) -> Envio:
-    """Manda de verdade (Resend). Falha do provedor vira envio com status
+    """Manda de verdade (Resend). `extras`: quais dos outros destinatários
+    do tomador (contador...) também recebem o e-mail próprio deles — None =
+    todos os cadastrados, [] = nenhum. Falha do provedor vira envio com status
     'falha' + motivo (não exceção) — a tela mostra e a pessoa tenta de novo.
     Assunto, texto, cópias e anexos vêm do modelo configurado (tomador >
     padrão do prestador > texto de sempre)."""
@@ -416,7 +482,68 @@ def enviar_email(
         envio.status = "enviado"
         envio.enviado_em = datetime.datetime.now(datetime.timezone.utc)
     db.flush()
+    if envio.status == "enviado" and not emissao.tomador_documento:
+        _enviar_extras(db, emissao, vinculo, prestador, base, extras, teste)
     return envio
+
+
+def _modelo_extra(db: Session, emissao: Emissao, extra: dict, base: str) -> dict:
+    """Assunto, texto e anexos do e-mail de UM destinatário extra: o que foi
+    escrito pra ele; em branco, o mesmo e-mail que vai pro tomador."""
+    padrao = modelo_email(db, emissao, base)
+    dados = _dados(db, emissao, base)
+    assunto = mensagens.renderizar_modelo(extra["assunto"], dados) if extra.get("assunto") else padrao["assunto"]
+    if extra.get("mensagem"):
+        texto = mensagens.renderizar_modelo(extra["mensagem"], dados)
+        html = mensagens.email_html_de_texto(texto, dados)
+    else:
+        texto, html = padrao["texto"], padrao["html"]
+    return {
+        "assunto": re.sub(r"[\r\n]+", " ", assunto).strip()[:300], "texto": texto, "html": html,
+        "anexos": extra.get("anexos") or padrao["anexos"],
+    }
+
+
+def _previa_extras(db: Session, emissao: Emissao, vinculo: PrestadorTomador | None, base: str) -> list[dict]:
+    lista = []
+    for extra in limpar_extras(vinculo.email_extras if vinculo else None):
+        modelo = _modelo_extra(db, emissao, extra, base)
+        lista.append({
+            "email": extra["email"], "rotulo": extra["rotulo"], "assunto": modelo["assunto"], "texto": modelo["texto"],
+            "proprio": bool(extra.get("assunto") or extra.get("mensagem")),
+        })
+    return lista
+
+
+def _enviar_extras(db, emissao, vinculo, prestador, base, escolhidos: list[str] | None, teste: str | None) -> list[Envio]:
+    """Um e-mail separado pra cada destinatário extra, com o texto dele.
+    Fica no histórico como "e-mail geral" (não conta como entrega ao
+    tomador); falha de um não desfaz o envio principal."""
+    enviados: list[Envio] = []
+    quais = None if escolhidos is None else {e.strip().lower() for e in escolhidos}
+    for extra in limpar_extras(vinculo.email_extras if vinculo else None):
+        if quais is not None and extra["email"].lower() not in quais:
+            continue
+        modelo = _modelo_extra(db, emissao, extra, base)
+        destinos = [teste] if teste else lista_emails(extra["email"])
+        rotulo = f"{extra['rotulo']}: " if extra.get("rotulo") else ""
+        envio = _novo_envio(db, emissao, "email_geral", f"{rotulo}{', '.join(destinos)}"[:200])
+        try:
+            anexos = _anexos_da_nota(db, emissao, emissao.prestador_id, modelo["anexos"])
+            get_email_sender().enviar(
+                destinatario=destinos, assunto=(f"[TESTE] {modelo['assunto']}" if teste else modelo["assunto"])[:300],
+                corpo_texto=modelo["texto"], corpo_html=modelo["html"],
+                remetente=remetente_da_nota(prestador.razao_social if prestador else None),
+                responder_para=prestador.email if prestador and prestador.email else None, anexos=anexos,
+            )
+        except (EmailEnvioError, EmailIndisponivelError) as exc:
+            envio.status, envio.erro = "falha", str(exc)
+        else:
+            envio.status, envio.enviado_em = "enviado", datetime.datetime.now(datetime.timezone.utc)
+        enviados.append(envio)
+        time.sleep(0.4)  # o Resend aceita poucas requisições por segundo
+    db.flush()
+    return enviados
 
 
 def _lembrar_email(db, vinculo, emissao, destinos, copias, modelo, dados) -> None:
@@ -431,7 +558,7 @@ def _lembrar_email(db, vinculo, emissao, destinos, copias, modelo, dados) -> Non
     vinculo.email_assunto = None if modelo["assunto"] == padrao_assunto else mensagens.templatizar(modelo["assunto"], dados)
     if modelo["texto"].strip() != mensagens.email_texto(dados).strip():
         vinculo.email_mensagem = mensagens.templatizar(modelo["texto"], dados)
-    vinculo.envio_canal = "email"
+    _lembrar_forma(vinculo, "email")
     db.flush()
 
 
@@ -458,7 +585,7 @@ def link_whatsapp(
             vinculo.whatsapp_contato = (telefone or "").strip()[:20] or None
         if mensagem != mensagens.whatsapp_de_modelo(None, dados):
             vinculo.whatsapp_mensagem = mensagens.templatizar(mensagem, dados)
-        vinculo.envio_canal = "whatsapp"
+        _lembrar_forma(vinculo, "whatsapp")
     db.flush()
     return url, envio
 

@@ -372,6 +372,17 @@ class PrestadorTomador(Base):
     envio_canal: Mapped[str | None] = mapped_column(String(10))
     whatsapp_mensagem: Mapped[str | None] = mapped_column(Text)
     portal_url: Mapped[str | None] = mapped_column(String(400))
+    # Formas de envio padrão (05/10/2026: "posso configurar o envio por
+    # e-mail e o download do PDF automático ao finalizar") — lista com
+    # email | whatsapp | portal | download; vazia = não precisa enviar; nulo
+    # = o que está em envio_canal (que segue guardando a forma principal).
+    envio_formas: Mapped[list | None] = mapped_column(JSONB)
+    # Outros destinatários (contador, financeiro...) — cada um recebe um
+    # e-mail próprio: [{"email", "rotulo", "assunto", "mensagem", "anexos"}].
+    email_extras: Mapped[list | None] = mapped_column(JSONB)
+    # O mês que aparece na descrição quando não é o da própria nota
+    # (05/10/2026): 1 = mês anterior, 2 = dois meses antes...
+    descricao_meses_atras: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
     # "Excluir tomador": vínculo com notas não pode sumir do banco (a nota
     # aponta pra ele), então é marcado aqui e sai de todas as listas.
     excluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -591,6 +602,11 @@ class Anotacao(Base):
     )
     titulo: Mapped[str] = mapped_column(String(80), nullable=False)
     texto: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    # Formato da nota (05/10/2026): "texto" (livre, usa `texto`), "lista"
+    # (`dados` = {"itens": [{"texto", "feito"}]}) ou "tabela" (`dados` =
+    # {"colunas": [{"nome", "tipo"}], "linhas": [[...]]}).
+    formato: Mapped[str] = mapped_column(String(10), nullable=False, default="texto", server_default="texto")
+    dados: Mapped[dict | None] = mapped_column(JSONB)
     ordem: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=_agora_utc)
@@ -774,6 +790,9 @@ class Assinatura(Base):
 
     stripe_customer_id: Mapped[str | None] = mapped_column(String(100), unique=True)
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(100), unique=True)
+    # Plano contratado (05/10/2026): "emissor" | "financeiro" | "ambos" — é
+    # ele que define os módulos da empresa quando há assinatura paga.
+    plano: Mapped[str | None] = mapped_column(String(12))
     # Programa de indicação: % de desconto aplicado hoje no Stripe.
     desconto_indicacao_pct: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
 
@@ -911,8 +930,25 @@ class LoteAcao(Base):
     falhas: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
     emissao_ids: Mapped[list] = mapped_column(JSONB, nullable=False)
     erros: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    # Lote "completo": {"passos": ["assinar", "submeter", "email"]} e o que
+    # aconteceu em cada passo (o relatório que a pessoa vê quando volta).
+    opcoes: Mapped[dict | None] = mapped_column(JSONB)
+    relatorio: Mapped[dict | None] = mapped_column(JSONB)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=_agora_utc)
     concluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (Index("ix_lote_acao_prestador", "prestador_id", "criado_em"),)
+
+
+class LoteFila(Base):
+    """Lotes que ainda estão rodando. SEM RLS: é lida quando o servidor
+    sobe (sem empresa ativa) pra retomar o que um reinício interrompeu —
+    ver app/services/lotes.retomar_pendentes. Só guarda os ids."""
+
+    __tablename__ = "lote_fila"
+
+    lote_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("lote_acao.id", ondelete="CASCADE"), primary_key=True)
+    prestador_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False)
+    base_url: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

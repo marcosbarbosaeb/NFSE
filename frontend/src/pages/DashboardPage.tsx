@@ -17,6 +17,7 @@ import {
 import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { type NotaParaAcoes, SeloAssinatura, SeloPrefeitura, SeloTomador } from "../components/AcoesNota"
+import { ComecarPeloNacional } from "../components/ComecarPeloNacional"
 import { ContasDoMesPainel } from "../components/financeiro/ContasDoMesPainel"
 import { PainelCards, type SecaoCard } from "../components/PainelCards"
 import { Badge } from "../components/ui/Badge"
@@ -636,6 +637,9 @@ export function DashboardPage() {
           sua conta.
         </p>
       )}
+
+      {/* Empresa ainda sem tomador nem nota: começa trazendo do Emissor Nacional. */}
+      {modulos.emissor && <ComecarPeloNacional />}
 
       <PainelCards tela="visao_geral" secoes={secoes} editando={editando} permitirOcultar />
     </div>

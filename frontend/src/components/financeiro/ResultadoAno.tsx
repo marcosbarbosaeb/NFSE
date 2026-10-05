@@ -1,12 +1,16 @@
-import type { ReactNode } from "react"
+import { ChevronDown, ChevronRight, Search, X } from "lucide-react"
+import { Fragment, useState, type ReactNode } from "react"
 import { formatBRL } from "../../lib/format"
 import { MESES_ABREV, NOMES_MESES, formatPct, formatValor } from "../../lib/financeiro"
-import type { ResumoFinanceiro } from "../../lib/types"
+import type { ResumoFinanceiro, SecaoMesAMes } from "../../lib/types"
 import { Card } from "../ui/Card"
+import { AvisoDetalhe, LinhasDetalhe, linhasVisiveis, palavrasDaBusca, useDetalheMesAMes, type LinhaVisivel } from "./MesAMesDetalhe"
 
 // "Resultado do ano" (28/09/2026) — a parte de cima da planilha "Controle CP"
 // dentro da Ana: lucro, margem, retiradas e o saldo que ainda dá pra
 // distribuir, mês a mês (GET /financeiro/resumo?ano=).
+// 05/10/2026: as linhas de dinheiro abrem no detalhe (quem pagou, com o que
+// gastou) e têm busca — ver MesAMesDetalhe.tsx.
 
 function Kpi({ label, valor, detalhe, negativo, destaque }: { label: string; valor: ReactNode; detalhe?: ReactNode; negativo?: boolean; destaque?: boolean }) {
   return (
@@ -31,6 +35,15 @@ interface LinhaTabela {
   forte?: boolean
   vermelhoSeNegativo?: boolean
   dica?: string
+  /** Linha que abre no detalhe (por cliente ou por categoria → gasto). */
+  secao?: SecaoMesAMes
+}
+
+const SECAO_VAZIA: Record<SecaoMesAMes, string> = {
+  faturado: "Nenhuma nota confirmada",
+  recebido: "Nenhum recebimento",
+  despesas: "Nenhuma despesa",
+  retiradas: "Nenhuma retirada",
 }
 
 function soma(valores: number[]): number {
@@ -57,6 +70,20 @@ export function ResultadoAno({
   onSelecionarMes: (mes: string) => void
 }) {
   const i = mes ? Number(mes) - 1 : -1
+  // Detalhe do mês a mês: linhas abertas, busca e a linha marcada.
+  const [abertas, setAbertas] = useState<Set<string>>(() => new Set())
+  const [busca, setBusca] = useState("")
+  const [destaque, setDestaque] = useState<string | null>(null)
+  const palavras = palavrasDaBusca(busca)
+  const buscando = palavras.length > 0
+  // Só busca o detalhe no servidor quando a pessoa abre uma linha ou pesquisa.
+  const detalhe = useDetalheMesAMes(resumo, ano, buscando || abertas.size > 0)
+  const alternar = (chave: string) =>
+    setAbertas((atual) => {
+      const novo = new Set(atual)
+      if (!novo.delete(chave)) novo.add(chave)
+      return novo
+    })
 
   if (!resumo) {
     return (
@@ -82,19 +109,20 @@ export function ResultadoAno({
 
   const linhas: LinhaTabela[] = [
     ...(comNotas
-      ? [{ rotulo: "Faturado (notas)", valores: resumo.faturado, total: t.faturado, dica: "Notas confirmadas, pelo mês de competência." }]
+      ? [{ rotulo: "Faturado (notas)", valores: resumo.faturado, total: t.faturado, dica: "Notas confirmadas, pelo mês de competência.", secao: "faturado" as const }]
       : []),
     {
       rotulo: "Recebido",
       valores: resumo.recebido,
       total: t.recebido,
       dica: comNotas ? "Pagamentos registrados, pelo mês da nota." : "Recebimentos registrados, pelo mês de referência.",
+      secao: "recebido",
     },
-    { rotulo: "Despesas", valores: resumo.despesas, total: t.despesas, dica: "Sem as retiradas (distribuição de lucros)." },
+    { rotulo: "Despesas", valores: resumo.despesas, total: t.despesas, dica: "Sem as retiradas (distribuição de lucros).", secao: "despesas" },
     { rotulo: "dos quais impostos", valores: resumo.impostos, total: t.impostos, sub: true, dica: "Simples, INSS, DAS e afins." },
     { rotulo: "Lucro", valores: resumo.lucro, total: t.lucro, forte: true, vermelhoSeNegativo: true, dica: "Recebido − despesas." },
     { rotulo: "Margem", valores: resumo.margem, total: t.margem, pct: true, vermelhoSeNegativo: true, dica: "Lucro ÷ recebido." },
-    { rotulo: "Retiradas", valores: resumo.retiradas, total: t.retiradas, dica: "Distribuição de lucros (todas as contas)." },
+    { rotulo: "Retiradas", valores: resumo.retiradas, total: t.retiradas, dica: "Distribuição de lucros (todas as contas).", secao: "retiradas" },
     {
       rotulo: "Saldo a distribuir",
       valores: resumo.saldo_a_distribuir,
@@ -107,6 +135,16 @@ export function ResultadoAno({
 
   // Meses sem nenhum movimento ficam com "—" (deixa a tabela respirar).
   const mesVazio = resumo.meses.map((_, m) => !(comNotas && resumo.faturado[m]) && !resumo.recebido[m] && !resumo.despesas[m] && !resumo.retiradas[m])
+
+  // Detalhe de cada linha que abre. Com busca, abre sozinho o que bate.
+  const detalhes = new Map<SecaoMesAMes, LinhaVisivel[]>()
+  if (detalhe.dados) {
+    for (const l of linhas) {
+      if (l.secao && (buscando || abertas.has(l.secao))) detalhes.set(l.secao, linhasVisiveis(l.secao, detalhe.dados[l.secao], palavras, abertas))
+    }
+  }
+  const achados = [...detalhes.values()].reduce((n, d) => n + d.length, 0)
+  const colunas = resumo.meses.length + 2
 
   // "Para onde vai o dinheiro": as maiores categorias; o resto vira "Outras".
   const MAX_CATEGORIAS = 7
@@ -158,10 +196,61 @@ export function ResultadoAno({
       </p>
 
       <Card className="p-5">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Mês a mês</h3>
-          <p className="text-xs text-slate-400 dark:text-slate-500">Valores em R$ · clique no mês pra filtrar a tela</p>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Mês a mês</h3>
+            <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
+              Valores em R$ · clique no mês pra filtrar a tela · clique na seta pra ver o detalhe
+            </p>
+          </div>
+          <div className="relative w-full sm:w-64">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
+            <input
+              type="text"
+              inputMode="search"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape" && busca) {
+                  e.stopPropagation()
+                  setBusca("")
+                }
+              }}
+              placeholder="Buscar cliente ou gasto…"
+              aria-label="Buscar cliente ou gasto no mês a mês"
+              className="w-full rounded-lg border border-slate-300 bg-white py-1.5 pl-8 pr-8 text-sm text-slate-900 placeholder:text-slate-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+            />
+            {busca && (
+              <button
+                type="button"
+                onClick={() => setBusca("")}
+                aria-label="Limpar a busca"
+                title="Limpar a busca"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            )}
+          </div>
         </div>
+        {buscando && (
+          <p className="mb-2 text-xs text-slate-500 dark:text-slate-400" role="status">
+            {detalhe.erro ? (
+              <>
+                {detalhe.erro}{" "}
+                <button type="button" onClick={detalhe.tentarDeNovo} className="font-medium text-primary-700 underline dark:text-primary-300">
+                  Tentar de novo
+                </button>
+              </>
+            ) : !detalhe.dados ? (
+              "Buscando…"
+            ) : achados === 0 ? (
+              `Nada encontrado com “${busca.trim()}” em ${ano}. Confira o nome ou troque o ano.`
+            ) : (
+              `${achados} ${achados === 1 ? "linha encontrada" : "linhas encontradas"} com “${busca.trim()}” — os valores estão embaixo de cada total.`
+            )}
+          </p>
+        )}
         <div className="-mx-5 overflow-x-auto px-5">
           <table className="w-full min-w-[980px] border-separate border-spacing-0 text-right text-xs tabular-nums">
             <caption className="sr-only">Resultado mês a mês de {ano}</caption>
@@ -207,16 +296,35 @@ export function ResultadoAno({
                       : "text-slate-700 dark:text-slate-200"
                 const texto = (v: number | null) => (v === null ? "—" : l.pct ? formatPct(v) : formatValor(v))
                 const bordaTopo = l.forte ? "border-t border-slate-200 dark:border-slate-600" : ""
+                const secao = l.secao
+                const visiveis = secao ? detalhes.get(secao) : undefined
+                // Com busca, a linha abre sozinha quando tem algo que bate.
+                const aberta = !!secao && (buscando ? !!visiveis?.length : abertas.has(secao))
+                const Seta = aberta ? ChevronDown : ChevronRight
                 return (
-                  <tr key={l.rotulo}>
+                  <Fragment key={l.rotulo}>
+                  <tr>
                     <th
                       scope="row"
                       title={l.dica}
                       className={`sticky left-0 z-10 whitespace-nowrap bg-white py-2 pr-3 text-left dark:bg-slate-800 ${bordaTopo} ${
-                        l.sub ? "pl-3 font-normal italic text-slate-400 dark:text-slate-500" : l.forte ? "font-semibold text-slate-800 dark:text-slate-100" : "font-medium text-slate-600 dark:text-slate-300"
-                      }`}
+                        l.sub ? "pl-8 font-normal italic text-slate-400 dark:text-slate-500" : l.forte ? "font-semibold text-slate-800 dark:text-slate-100" : "font-medium text-slate-600 dark:text-slate-300"
+                      } ${secao || l.sub ? "" : "pl-5"}`}
                     >
-                      {l.rotulo}
+                      {secao ? (
+                        <button
+                          type="button"
+                          onClick={() => alternar(secao)}
+                          aria-expanded={aberta}
+                          title={aberta ? "Fechar o detalhe" : secao === "despesas" || secao === "retiradas" ? "Ver por categoria" : "Ver por cliente"}
+                          className="-my-1 flex items-center gap-1 rounded py-1 pr-1 text-left font-medium hover:text-primary-700 dark:hover:text-primary-300"
+                        >
+                          <Seta className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" aria-hidden />
+                          {l.rotulo}
+                        </button>
+                      ) : (
+                        l.rotulo
+                      )}
                     </th>
                     {l.valores.map((v, idx) => {
                       const vazio = mesVazio[idx] && !l.rotulo.startsWith("Saldo")
@@ -233,6 +341,27 @@ export function ResultadoAno({
                     })}
                     <td className={`border-l border-slate-100 py-2 pl-3 font-semibold dark:border-slate-700/60 ${bordaTopo} ${cor(l.total)}`}>{texto(l.total)}</td>
                   </tr>
+                  {secao && visiveis && visiveis.length > 0 && (
+                    <LinhasDetalhe linhas={visiveis} mesAtivo={i} destaque={destaque} onDestacar={setDestaque} onAlternar={alternar} />
+                  )}
+                  {/* Aberta no clique (sem busca): avisa enquanto carrega, se falhou ou se não tem nada. */}
+                  {secao && !buscando && abertas.has(secao) && !visiveis?.length && (
+                    <AvisoDetalhe colunas={colunas}>
+                      {detalhe.erro ? (
+                        <>
+                          {detalhe.erro}{" "}
+                          <button type="button" onClick={detalhe.tentarDeNovo} className="font-medium text-primary-700 underline dark:text-primary-300">
+                            Tentar de novo
+                          </button>
+                        </>
+                      ) : !detalhe.dados ? (
+                        "Carregando…"
+                      ) : (
+                        `${SECAO_VAZIA[secao]} em ${ano}.`
+                      )}
+                    </AvisoDetalhe>
+                  )}
+                  </Fragment>
                 )
               })}
             </tbody>

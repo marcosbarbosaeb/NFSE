@@ -17,6 +17,7 @@ import {
 import { type FormEvent, useEffect, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import type { NotaParaAcoes } from "../components/AcoesNota"
+import { Conferencia } from "../components/Conferencia"
 import { EnvioNota } from "../components/EnvioNota"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
@@ -25,7 +26,7 @@ import { FieldWrap } from "../components/ui/Field"
 import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { formatBRL } from "../lib/format"
-import type { CanalEnvio, Emissao, Envio, NotaVisual, OpcoesEnvio, VinculoResumo } from "../lib/types"
+import type { CanalEnvio, ConferenciaNota, Emissao, Envio, NotaVisual, OpcoesEnvio, PontoConferencia, PreviaEmail, ProximaNota, VinculoResumo } from "../lib/types"
 
 // Marco 16, item 7 — motivos de cancelamento aceitos pela Sefin (mesmo
 // vocabulário de app/fiscal/eventos.MOTIVOS_CANCELAMENTO no backend).
@@ -127,9 +128,44 @@ export function EmissaoDetalhePage() {
     api.get<OpcoesEnvio>(`/dps/${id}/envio-opcoes`).then(setOpcoes).catch(() => setOpcoes(null))
   }, [id])
 
+  // "Próximo passo" (05/10/2026): o que falta nesta nota e, quando ela
+  // termina, qual é a próxima com passo pendente — sem voltar pra lista.
+  const [proxima, setProxima] = useState<ProximaNota | null>(null)
+  const [formas, setFormas] = useState<string[] | null>(null)
+  function carregarProxima() {
+    if (!id) return
+    api.get<ProximaNota>(`/dps/${id}/proxima`).then(setProxima).catch(() => setProxima(null))
+  }
+  useEffect(() => {
+    if (!id) return
+    setProxima(null)
+    setFormas(null)
+    carregarProxima()
+    api
+      .get<PreviaEmail>(`/dps/${id}/email-previa`)
+      .then((p) => setFormas(p.formas ?? [p.canal_preferido === "nenhum" ? "" : (p.canal_preferido ?? "email")].filter(Boolean)))
+      .catch(() => setFormas(null))
+  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   function recarregarEnvios() {
     if (!id) return
     api.get<Envio[]>(`/dps/${id}/envios`).then(setEnvios).catch(() => {})
+    carregarProxima()
+  }
+
+  /** Tomador com "baixar o PDF ao finalizar": baixa assim que a nota é autorizada. */
+  function baixarPdfSeConfigurado(estado: string) {
+    if (!id || estado !== "confirmado" || !formas?.includes("download")) return
+    const a = document.createElement("a")
+    a.href = `/api/dps/${id}/pdf`
+    a.download = ""
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    // Só baixar é a entrega deste tomador: já fica marcada como enviada.
+    if (formas.every((f) => f === "download")) {
+      api.post(`/dps/${id}/marcar-enviada`, { forma: "outro" }).then(recarregarEnvios).catch(() => {})
+    }
   }
 
   async function copiarLink() {
@@ -153,6 +189,24 @@ export function EmissaoDetalhePage() {
 
   useEffect(carregar, [id])
 
+  // Conferência (05/10/2026): enquanto a nota não foi autorizada, a Ana
+  // confere os dados guardados nela. `undefined` = não se aplica / falhou.
+  const estadoDaNota = nota?.estado
+  const conferivel = !!estadoDaNota && ["rascunho", "montado", "assinado", "erro"].includes(estadoDaNota)
+  const [pontosConferencia, setPontosConferencia] = useState<PontoConferencia[] | null | undefined>(undefined)
+  useEffect(() => {
+    if (!id || !conferivel) return setPontosConferencia(undefined)
+    let cancelado = false
+    setPontosConferencia(null)
+    api
+      .get<ConferenciaNota>(`/dps/${id}/conferencia`)
+      .then((c) => !cancelado && setPontosConferencia(c.pontos))
+      .catch(() => !cancelado && setPontosConferencia(undefined))
+    return () => {
+      cancelado = true
+    }
+  }, [id, conferivel, estadoDaNota])
+
   async function assinar() {
     if (!id) return
     setErro(null)
@@ -172,9 +226,12 @@ export function EmissaoDetalhePage() {
     setErroAcao(null)
     setProcessando(true)
     try {
-      await api.post(`/dps/${id}/submeter`)
+      const r = await api.post<Emissao>(`/dps/${id}/submeter`)
+      setDados(r)
       setModalSubmeter(false)
+      baixarPdfSeConfigurado(r.estado)
       carregar()
+      carregarProxima()
     } catch (err) {
       setErroAcao(err instanceof ApiError ? formatarErro(err.detail) : "Falha ao submeter.")
     } finally {
@@ -188,8 +245,11 @@ export function EmissaoDetalhePage() {
     setErroAcao(null)
     setProcessando(true)
     try {
-      setDados(await api.post<Emissao>(`/dps/${id}/corrigir-reenviar`, {}))
+      const r = await api.post<Emissao>(`/dps/${id}/corrigir-reenviar`, {})
+      setDados(r)
+      baixarPdfSeConfigurado(r.estado)
       carregar()
+      carregarProxima()
     } catch (err) {
       setErroAcao(err instanceof ApiError ? formatarErro(err.detail) : "Falha ao reenviar.")
     } finally {
@@ -301,6 +361,15 @@ export function EmissaoDetalhePage() {
           <span className="min-w-0 flex-1">
             <strong>{nota.erro_detalhe}</strong>
             {!dados?.erro_corrigivel && " Corrija o que for preciso (no cadastro do tomador ou gerando a nota de novo) e envie outra vez."}
+            {dados?.erro_corrigivel && /E0240/.test(nota.erro_detalhe) && opcoes?.vinculo_id && !dados.avulsa && (
+              <span className="mt-1 block font-normal">
+                Se você souber o endereço certo,{" "}
+                <Link to={`/app/tomadores/${opcoes.vinculo_id}?editar=endereco`} className="font-semibold underline">
+                  corrija no cadastro do tomador
+                </Link>{" "}
+                antes — a nota vai com o endereço novo.
+              </span>
+            )}
             {erroAcao && <span className="mt-1 block">{erroAcao}</span>}
           </span>
           {dados?.erro_corrigivel && (
@@ -354,6 +423,18 @@ export function EmissaoDetalhePage() {
 
         {nota.chave_acesso && <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">Chave de acesso: {nota.chave_acesso}</p>}
       </Card>
+
+      {conferivel && pontosConferencia !== undefined && (
+        <Card className="p-5">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Conferência</h2>
+          <Conferencia pontos={pontosConferencia} vinculoId={dados?.avulsa ? null : (dados?.vinculo_id ?? opcoes?.vinculo_id ?? null)} />
+          {pontosConferencia?.some((p) => p.nivel === "erro") && (
+            <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">
+              Com ponto em vermelho, a prefeitura tende a recusar a nota. Corrija antes de enviar.
+            </p>
+          )}
+        </Card>
+      )}
 
       <Card className="p-5">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Ações</h2>
@@ -433,7 +514,7 @@ export function EmissaoDetalhePage() {
         )}
       </Card>
 
-      <Card className="p-5">
+      <Card className="scroll-mt-6 p-5" id="envio-da-nota">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Envio desta nota</h2>
@@ -497,11 +578,63 @@ export function EmissaoDetalhePage() {
         )}
       </Card>
 
-      <div>
-        <Button variant="ghost" onClick={() => navigate("/app/nfse")}>
-          ← Voltar
-        </Button>
-      </div>
+      {(() => {
+        // Nota importada do Emissor Nacional já foi entregue por fora: não cobra envio.
+        const precisaEnviar =
+          nota.estado === "confirmado" && !entregue && dados?.origem !== "importada" && (dados?.avulsa || (formas ?? ["email"]).length > 0)
+        const passo: { titulo: string; texto: string; botao?: string; acao?: () => void } | null =
+          nota.estado === "montado"
+            ? { titulo: "Assinar a nota", texto: "Confira os dados acima. Estando certo, assine com o certificado.", botao: processando ? "Assinando..." : "Assinar", acao: assinar }
+            : nota.estado === "assinado"
+              ? { titulo: "Enviar à prefeitura", texto: "A nota está assinada. Falta a prefeitura autorizar.", botao: "Enviar à prefeitura", acao: () => setModalSubmeter(true) }
+              : nota.estado === "erro"
+                ? dados?.erro_corrigivel
+                  ? { titulo: "Corrigir e reenviar", texto: "Eu conserto o que a prefeitura recusou e mando de novo.", botao: processando ? "Reenviando..." : "Corrigir e reenviar", acao: corrigirEReenviar }
+                  : { titulo: "Resolver a recusa", texto: "Corrija o que a prefeitura apontou e tente de novo.", botao: "Tentar de novo", acao: () => setModalSubmeter(true) }
+                : precisaEnviar
+                  ? {
+                      titulo: "Enviar ao tomador",
+                      texto: "A prefeitura autorizou. Falta a nota chegar ao tomador.",
+                      botao: "Ir pro envio",
+                      acao: () => document.getElementById("envio-da-nota")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                    }
+                  : null
+        const terminou = passo === null && ["confirmado", "cancelada", "substituida"].includes(nota.estado)
+        return (
+          <div className="sticky bottom-3 z-10 flex flex-wrap items-center gap-3 rounded-2xl border border-primary-200 bg-white/95 px-4 py-3 shadow-lg shadow-slate-900/10 backdrop-blur dark:border-primary-900/60 dark:bg-slate-800/95" data-tour="nota-proximo-passo">
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-600 dark:text-primary-300">
+                {passo ? "Próximo passo" : terminou ? "Tudo certo com esta nota" : "Esta nota"}
+              </p>
+              <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                {passo ? passo.titulo : proxima?.proxima ? `Próxima: ${proxima.proxima.nome} — ${proxima.proxima.passo.toLowerCase()}` : "Não há outra nota esperando por você."}
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {passo
+                  ? passo.texto
+                  : proxima?.proxima
+                    ? `${formatBRL(proxima.proxima.valor)} · ${proxima.proxima.competencia}${proxima.restantes > 1 ? ` · mais ${proxima.restantes - 1} na fila` : ""}`
+                    : ""}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="ghost" onClick={() => navigate(dados?.avulsa ? "/app/nfse/lote" : "/app/nfse")}>
+                ← Lista
+              </Button>
+              {passo?.botao && (
+                <Button variant="accent" disabled={processando} onClick={passo.acao}>
+                  {passo.botao}
+                </Button>
+              )}
+              {proxima?.proxima && (
+                <Button variant={passo ? "outline" : "accent"} onClick={() => navigate(`/app/nfse/${proxima.proxima!.id}`)}>
+                  {passo ? "Pular pra próxima nota →" : "Ir pra próxima nota →"}
+                </Button>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {modalSubmeter && (
         <Modal
