@@ -29,8 +29,11 @@ export function LoginPage() {
     return codigo ? (ERRO_GOOGLE[codigo] ?? null) : null
   })
   const [enviando, setEnviando] = useState(false)
-  const [emailNaoConfirmado, setEmailNaoConfirmado] = useState(false)
+  // Também quando a volta do Google diz que falta confirmar (?erro=confirme-email).
+  const [emailNaoConfirmado, setEmailNaoConfirmado] = useState(searchParams.get("erro") === "confirme-email")
   const [reenviado, setReenviado] = useState(false)
+  const [avisoReenvio, setAvisoReenvio] = useState<string | null>(null)
+  const [reenviando, setReenviando] = useState(false)
   const [erroGoogle, setErroGoogle] = useState<string | null>(null)
 
   if (usuario) return <Navigate to="/app" replace />
@@ -73,8 +76,25 @@ export function LoginPage() {
   }
 
   async function onReenviarConfirmacao() {
-    await api.post("/cadastro/reenviar-confirmacao", { email }).catch(() => {})
-    setReenviado(true)
+    setAvisoReenvio(null)
+    if (!email.trim()) {
+      setAvisoReenvio("Escreva o seu e-mail no campo acima e clique de novo.")
+      return
+    }
+    setReenviando(true)
+    try {
+      const r = await api.post<{ email_enviado?: boolean }>("/cadastro/reenviar-confirmacao", { email: email.trim() })
+      if (r.email_enviado === false) setAvisoReenvio("Não consegui mandar o e-mail agora — o serviço de e-mail está no limite. Tente de novo mais tarde.")
+      else setReenviado(true)
+    } catch (err) {
+      setAvisoReenvio(
+        err instanceof ApiError && err.status === 429
+          ? "Você já pediu o reenvio várias vezes. Espere um pouco e tente de novo."
+          : "Falha de conexão. Tente de novo.",
+      )
+    } finally {
+      setReenviando(false)
+    }
   }
 
   return (
@@ -93,12 +113,14 @@ export function LoginPage() {
             <button
               type="button"
               onClick={onReenviarConfirmacao}
-              className="mb-4 block text-sm font-medium text-primary-600 hover:text-primary-700"
+              disabled={reenviando}
+              className="mb-3 w-full rounded-lg border border-primary-300 bg-white px-4 py-2 text-sm font-semibold text-primary-700 hover:bg-primary-50 disabled:opacity-60 dark:border-primary-700 dark:bg-slate-800 dark:text-primary-300"
             >
-              Reenviar e-mail de confirmação
+              {reenviando ? "Reenviando..." : "Reenviar e-mail de confirmação"}
             </button>
           )}
-          {reenviado && <p className="mb-4 text-sm text-success-700">Reenviamos o link — confira sua caixa de entrada.</p>}
+          {avisoReenvio && <p role="status" className="mb-3 text-sm text-warning-700 dark:text-warning-300">{avisoReenvio}</p>}
+          {reenviado && <p className="mb-4 text-sm text-success-700 dark:text-success-300">Reenviei o link — confira a caixa de entrada e o spam.</p>}
           <Button type="submit" disabled={enviando} className="w-full">
             {enviando ? "Entrando..." : "Entrar"}
           </Button>
