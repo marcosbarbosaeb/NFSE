@@ -435,3 +435,45 @@ def test_rotas_novas_fecham_sem_o_modulo_financeiro(client, db, prestador_teste)
     prestador_teste.modulos = ["emissor", "financeiro"]
     db.flush()
     assert client.get("/api/conciliacao/notas?desde=2026-13").status_code == 422
+
+
+def test_deposito_do_marketplace_paga_a_nota_dele_e_as_dos_vendedores(client, db, prestador_teste, vinculo_teste):
+    """06/10/2026: a Shopee deposita tudo na nota dela. O que "sobra" nessa
+    nota é o pagamento das notas de vendedores do mês — a conta tem que
+    fechar com as duas juntas, sem "paga a maior"."""
+    shopee = _outro_vinculo(db, prestador_teste, "Shopee", "22333444000181", "MARKETPLACE DE TESTE LTDA", prazo=20)
+    hoje = hoje_br()
+    dia = hoje - datetime.timedelta(days=5)
+    mes = f"{dia.year:04d}-{dia.month:02d}"
+    for n in range(40):
+        _nota(db, shopee, mes, "10.00", dia, documento=f"{30000000000 + n}")
+    dela = _nota(db, shopee, mes, 3000, dia)
+
+    def shopee_do_painel():
+        painel = client.get("/api/conciliacao/notas").json()
+        grupo = next(g for g in painel["tomadores"] if g["apelido"] == "Shopee")
+        nota = next(i for i in grupo["itens"] if i["tipo"] == "nota")
+        lote = next(i for i in grupo["itens"] if i["tipo"] == "lote")
+        return painel, nota, lote
+
+    # depósito = nota dela + vendedores (com 15 centavos de arredondamento)
+    pag = client.post("/api/pagamentos", json={"vinculo_id": str(shopee.id), "competencia": mes, "emissao_id": str(dela.id), "valor": 3399.85, "data_recebimento": hoje.isoformat()})
+    assert pag.status_code == 200, pag.text
+    painel, nota, lote = shopee_do_painel()
+    assert (nota["status"], nota["diferenca"], nota["recebido"]) == ("paga", 0.0, 3399.85)
+    assert nota["cobre_lote"] == {"quantidade": 40, "valor": 400.0}
+    assert (lote["status"], lote["como"], lote["valor_incerto"]) == ("paga", "junto", False)
+    assert painel["resumo"]["diferenca"] == 0 and painel["estado"]["diferencas"] == 0
+    # a conta fecha: faturado - recebido não passa da folga
+    assert abs(painel["resumo"]["faturado"] - painel["resumo"]["recebido"]) < 1
+
+    # depósito bem maior que as duas juntas: aí sim sobra, e é só o que sobra de verdade
+    client.delete(f"/api/pagamentos/{pag.json()['id']}")
+    client.post("/api/pagamentos", json={"vinculo_id": str(shopee.id), "competencia": mes, "emissao_id": str(dela.id), "valor": 3900, "data_recebimento": hoje.isoformat()})
+    painel, nota, lote = shopee_do_painel()
+    assert (nota["status"], nota["diferenca"]) == ("paga_a_maior", 500.0)
+    assert painel["resumo"]["diferenca"] == 500.0
+    # marcada como resolvida: sai da diferença do período
+    client.post("/api/painel/pendencias/ignorar", json={"chave": f"diferenca:{dela.id}", "ignorar": True})
+    painel, nota, lote = shopee_do_painel()
+    assert nota["conferida"] is True and painel["resumo"]["diferenca"] == 0 and painel["estado"]["diferencas"] == 0

@@ -1338,6 +1338,8 @@ export interface NotaConciliada {
   /** O tomador não tem "dias para recebimento": vale o prazo geral. */
   sem_prazo: boolean
   valor_incerto: boolean
+  /** O depósito desta nota pagou também as notas de vendedores do mês (Shopee). */
+  cobre_lote?: { quantidade: number; valor: number } | null
   /** Histórico: quanto entrou do tomador no mês inteiro. */
   recebido_mes: number | null
   /** Diferença que a pessoa já disse que está certa. */

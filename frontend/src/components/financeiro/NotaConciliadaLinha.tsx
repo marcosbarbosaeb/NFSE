@@ -66,7 +66,13 @@ export function estadoDaNota(item: NotaConciliada): { variante: "success" | "war
     if (item.como === "sem_valor")
       return { variante: "success", rotulo: "Paga", detalhe: "considerada recebida, sem valor lançado — não dá pra conferir o valor" }
     if (item.como === "junto")
-      return { variante: "success", rotulo: "Paga", detalhe: "paga junto com a outra nota desse cliente no mesmo mês — sem valor separado" }
+      return { variante: "success", rotulo: "Paga", detalhe: "paga no mesmo depósito da outra nota desse cliente neste mês" }
+    if (item.cobre_lote)
+      return {
+        variante: "success",
+        rotulo: "Paga",
+        detalhe: `recebido ${formatBRL(item.recebido ?? 0)} ${quando} — pagou esta nota e as ${item.cobre_lote.quantidade.toLocaleString("pt-BR")} notas de vendedores (${formatBRL(item.cobre_lote.valor)})`.replace("  ", " "),
+      }
     return { variante: "success", rotulo: "Paga", detalhe: [quando, COMO[item.como ?? ""] ?? ""].filter(Boolean).join(" · ") }
   }
   if (item.status === "paga_a_menor" || item.status === "paga_a_maior") {

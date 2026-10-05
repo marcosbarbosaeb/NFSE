@@ -481,7 +481,9 @@ def api_callback_google_oauth(
         return RedirectResponse(f"{base}/cadastro?{params}")
 
     if not usuario.email_confirmado:
-        return RedirectResponse(f"{base}/entrar?erro=confirme-email")
+        # Leva o e-mail da conta Google escolhida: o botão "Reenviar" da tela usa
+        # ele (o navegador costuma preencher o campo com OUTRO e-mail salvo).
+        return RedirectResponse(f"{base}/entrar?{urlencode({'erro': 'confirme-email', 'email': info.email})}")
 
     if usuario.google_sub is None:
         usuario.google_sub = info.sub

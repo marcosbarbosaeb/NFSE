@@ -184,6 +184,8 @@ def _item(tipo: str, chave: str, vinculo_id, competencia: str, valor: Decimal, e
         "pago_em": None, "vencimento": None, "dias_atraso": 0, "sem_prazo": False,
         "valor_incerto": False, "recebido_mes": None, "conferida": False, "antiga": False,
         "pagamentos": [], "sugestao": None, "candidatos": [],
+        # nota do marketplace cujo depósito pagou também as notas de vendedores do mês
+        "cobre_lote": None,
     }
 
 
@@ -230,8 +232,35 @@ def _julgar_lote(lote: dict, base: _Base, hoje: datetime.date, pares_com_nota_pa
 def _julgar_tudo(base: _Base, hoje: datetime.date) -> list[dict]:
     itens = [_julgar_nota(n, base, hoje) for n in base.notas]
     pares_com_nota_paga = {(i["vinculo_id"], i["competencia"]) for i in itens if i["status"] not in _ABERTOS and i["pagamentos"]}
-    itens += [_julgar_lote(g, base, hoje, pares_com_nota_paga) for g in base.lotes]
-    return itens
+    lotes = [_julgar_lote(g, base, hoje, pares_com_nota_paga) for g in base.lotes]
+    for lote in lotes:
+        if lote["como"] == "junto":
+            _dividir_deposito_com_o_lote(lote, itens)
+    return itens + lotes
+
+
+def _dividir_deposito_com_o_lote(lote: dict, notas: list[dict]) -> None:
+    """A Shopee deposita tudo de uma vez na nota dela: o que "sobra" nessa
+    nota é o pagamento das notas de vendedores do mesmo mês. Então a conta
+    é feita com as duas juntas (06/10/2026: "essa conta deveria fechar") —
+    recebido x (nota + vendedores). Fechou: as duas ficam pagas, sem
+    diferença. Não fechou: a diferença que aparece é só a que sobra de verdade."""
+    par = (lote["vinculo_id"], lote["competencia"])
+    candidatas = [
+        n for n in notas
+        if (n["vinculo_id"], n["competencia"]) == par and n["status"] == "paga_a_maior" and n["recebido"]
+    ]
+    if not candidatas:
+        return
+    nota = max(candidatas, key=lambda n: n["diferenca"])
+    diferenca = nota["recebido"] - nota["valor"] - lote["valor"]
+    tolerancia = TOLERANCIA + _tolerancia_do_lote(lote["quantidade"])
+    nota["cobre_lote"] = {"quantidade": lote["quantidade"], "valor": _f(lote["valor"])}
+    lote["valor_incerto"] = False
+    if abs(diferenca) <= tolerancia:
+        nota.update(status="paga", diferenca=Decimal(0))
+    else:
+        nota.update(status="paga_a_menor" if diferenca < 0 else "paga_a_maior", diferenca=diferenca)
 
 
 def _pendente(item: dict) -> bool:
@@ -393,9 +422,10 @@ def _somar(itens: list[dict], base: _Base) -> dict:
         if i["valor_incerto"]:
             t["notas_sem_valor"] += n
         if i["status"] in _COM_DIFERENCA:
-            t["diferenca"] += i["diferenca"]
             t["notas_com_diferenca"] += n
+            # Marcada como resolvida: não entra mais na diferença do período.
             if not i["conferida"]:
+                t["diferenca"] += i["diferenca"]
                 t["diferencas_a_conferir"] += 1
     for par in pares_do_historico:
         if par not in base.do_lote:

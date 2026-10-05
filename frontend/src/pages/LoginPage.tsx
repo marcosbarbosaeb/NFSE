@@ -12,7 +12,7 @@ import { urlLanding } from "../lib/dominios"
 // (ver app/main.py: nunca JSON, sempre um redirect com ?erro=... nessa volta).
 const ERRO_GOOGLE: Record<string, string> = {
   google: "Não conseguimos entrar com sua conta Google agora. Tente de novo ou entre com e-mail e senha.",
-  "confirme-email": "Essa conta ainda não confirmou o e-mail — confira sua caixa de entrada antes de entrar com o Google.",
+  "confirme-email": "Essa conta ainda não confirmou o e-mail — confira a caixa de entrada (e o spam) ou peça o link de novo no botão abaixo.",
 }
 
 const classeInput =
@@ -22,7 +22,8 @@ export function LoginPage() {
   const { usuario, login, loginComGoogle } = useAuth()
   const [modo, setModo] = useState<"senha" | "codigo">("senha")
   const [searchParams] = useSearchParams()
-  const [email, setEmail] = useState("")
+  // Na volta do Google com conta sem confirmar, o e-mail vem na URL: é pra ele que o link é reenviado.
+  const [email, setEmail] = useState(() => searchParams.get("email") ?? "")
   const [senha, setSenha] = useState("")
   const [erro, setErro] = useState<string | null>(() => {
     const codigo = searchParams.get("erro")
@@ -102,7 +103,7 @@ export function LoginPage() {
         <form onSubmit={onSubmit}>
           <label className="mb-4 block">
             <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">E-mail</span>
-            <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={classeInput} />
+            <input type="email" required autoComplete="email" value={email} onChange={(e) => { setEmail(e.target.value); setReenviado(false) }} className={classeInput} />
           </label>
           <label className="mb-4 block">
             <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Senha</span>
@@ -120,7 +121,11 @@ export function LoginPage() {
             </button>
           )}
           {avisoReenvio && <p role="status" className="mb-3 text-sm text-warning-700 dark:text-warning-300">{avisoReenvio}</p>}
-          {reenviado && <p className="mb-4 text-sm text-success-700 dark:text-success-300">Reenviei o link — confira a caixa de entrada e o spam.</p>}
+          {reenviado && (
+            <p className="mb-4 text-sm text-success-700 dark:text-success-300">
+              Reenviei o link pra <strong>{email.trim()}</strong> — confira a caixa de entrada e o spam. Se a conta foi criada com outro e-mail, troque no campo acima e peça de novo.
+            </p>
+          )}
           <Button type="submit" disabled={enviando} className="w-full">
             {enviando ? "Entrando..." : "Entrar"}
           </Button>
