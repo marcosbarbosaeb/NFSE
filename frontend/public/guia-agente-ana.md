@@ -63,15 +63,21 @@ Existe um ambiente de simulação pra conhecer o sistema sem cadastro. Nele nada
 
 Você pode entrar de três jeitos: com e-mail e senha, com "Continuar com Google" ou com "Entrar com código por e-mail". Nesse último, a Ana manda um código de 6 dígitos pro seu e-mail, válido por 10 minutos, e você entra sem precisar de senha.
 
-### O jeito mais fácil de começar: trazer do Emissor Nacional
+### Primeiros passos de uma conta nova
 
-Se a empresa já emitia notas pelo Emissor Nacional, a Ana consegue trazer os tomadores e as notas antigas. Enquanto a empresa ainda não tem nenhum tomador, a Visão geral mostra o cartão "Já emite pelo Emissor Nacional? Eu trago seus tomadores e notas", com o botão "Trazer do Emissor Nacional".
+Enquanto falta alguma coisa pra emitir, a Visão geral mostra o cartão "Primeiros passos pra emitir sua nota", com três passos, nesta ordem:
 
-Você escolhe o certificado digital (A1) da empresa e a Ana cadastra os tomadores com as notas que ela já emitiu. É só leitura: nada é enviado à prefeitura nem aos tomadores. Antes de gravar, a Ana mostra o que encontrou e você pode desmarcar quem não quer trazer. Cada tomador já vem com o serviço e a descrição da última nota — vale passar o olho antes de gerar a primeira nota por aqui. As notas importadas entram como já entregues ao tomador.
+1. **Certificado digital A1**: clique em "Enviar o certificado". Sem certificado válido a emissão fica travada: os botões "Nova emissão" e "Enviar relatório da Shopee" ficam desligados e a tela mostra o aviso com o caminho pra Empresa › Certificado.
+2. **Dados da empresa**: o cartão diz o que falta (endereço, regime tributário, alíquota do Simples) e "Completar os dados" leva pra tela certa em "Empresa".
+3. **Seus tomadores**: "Escolher tomadores" abre o cadastro. Os tomadores mais comuns já vêm pré-cadastrados, com o serviço e a descrição prontos.
 
-Se preferir começar do zero, use "Prefiro cadastrar um tomador".
+O cartão some sozinho quando os três passos estão feitos.
 
-Depois, pra importar notas de novo, vá em "Empresa", aba "Notas", e clique em "Importar notas". A importação precisa do certificado A1 carregado.
+### Trazer notas antigas do Emissor Nacional
+
+Se a empresa já emitia notas pelo Emissor Nacional, a Ana consegue trazer as notas antigas. Isso fica em "Empresa", aba "Notas" (não aparece na Visão geral), e precisa do certificado A1 carregado. O melhor é cadastrar os seus tomadores primeiro e importar depois.
+
+É só leitura: nada é enviado à prefeitura nem aos tomadores. Antes de gravar, a Ana mostra o que encontrou e **você escolhe de quais tomadores trazer**. Já vêm marcados só os tomadores que você tem e os pré-cadastrados; os outros ficam de fora ("Não importar") até você marcar. Isso evita, por exemplo, trazer de uma vez centenas de vendedores da Shopee como se fossem tomadores seus. As notas importadas entram como já entregues ao tomador.
 
 ### Certificado digital A1
 

@@ -677,8 +677,8 @@ function ImportarNacionalCard() {
         </h2>
         <p className="text-base font-semibold text-slate-900 dark:text-slate-100">{CHAMADA_NACIONAL}</p>
         <p className="mb-4 mt-1 text-sm text-slate-600 dark:text-slate-300">
-          É o jeito mais fácil de começar: você escolhe o certificado digital (A1) da empresa e eu cadastro os tomadores com as notas que
-          ela já emitiu. É só leitura — nada é enviado a ninguém.
+          Com o certificado digital (A1) da empresa eu leio as notas que ela já emitiu e <strong>você escolhe de quais tomadores trazer</strong>{" "}
+          — já vêm marcados só os pré-cadastrados. É só leitura: nada é enviado a ninguém.
         </p>
         <Button type="button" variant="accent" onClick={() => setComecando(true)}>
           <DownloadCloud size={16} /> Trazer do Emissor Nacional

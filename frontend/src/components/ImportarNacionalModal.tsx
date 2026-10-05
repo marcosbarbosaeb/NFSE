@@ -42,9 +42,13 @@ interface Erro {
 const SELECT =
   "w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
 
+/** O que eu sugiro pra cada tomador encontrado. Quem a pessoa ainda não tem
+ * só vem marcado se for dos pré-cadastrados (06/10/2026: "ela tem que
+ * escolher o que vai importar" — senão entram centenas de vendedores da
+ * Shopee de uma vez). O resto fica em "Não importar" até ela escolher. */
 export function padrao(g: GrupoImportacao): Regra {
   if ((g.sugestao === "vinculo" || g.sugestao === "avulsa") && g.vinculo_id) return { acao: g.sugestao, vinculo_id: g.vinculo_id }
-  return { acao: "novo", vinculo_id: null }
+  return { acao: g.pre_cadastrado ? "novo" : "ignorar", vinculo_id: null }
 }
 
 function valorSelect(r: Regra): string {
@@ -394,6 +398,10 @@ export function ImportarNacionalModal({ onClose, onConcluido }: { onClose: () =>
             </div>
           ) : (
             <>
+              <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900/40 dark:text-slate-300">
+                <strong>Você escolhe o que importar.</strong> Já deixei marcados os tomadores que você tem e os pré-cadastrados. Os outros
+                estão em “Não importar” — mude só os que você quer trazer.
+              </p>
               {/* Filtros */}
               <div className="flex flex-wrap items-center gap-3">
                 <div className="relative min-w-0 flex-1 basis-56">

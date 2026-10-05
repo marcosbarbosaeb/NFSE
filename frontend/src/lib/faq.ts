@@ -96,7 +96,7 @@ export const FAQ: PerguntaFaq[] = [
     tema: "primeiros-passos",
     pergunta: "Já emito pelo Emissor Nacional. Dá pra trazer minhas notas e meus tomadores?",
     resposta:
-      "Dá, e é o jeito mais fácil de começar. Em Empresa, aba “Notas”, use “Importar do Emissor Nacional”. Com o certificado da empresa eu leio as notas que ela já emitiu e cadastro os tomadores, já com o serviço e a descrição da última nota. É só leitura: nada é enviado à prefeitura nem aos tomadores, e antes de gravar eu mostro o que encontrei.",
+      "Dá. Primeiro cadastre os seus tomadores (os mais comuns já vêm pré-cadastrados). Depois, em Empresa, aba “Notas”, use “Importar do Emissor Nacional”: com o certificado da empresa eu leio as notas que ela já emitiu e você escolhe de quais tomadores trazer — já vêm marcados só os que você tem e os pré-cadastrados; o resto fica em “Não importar” até você escolher. É só leitura: nada é enviado à prefeitura nem aos tomadores.",
     link: "/app/empresa?aba=notas",
     modulo: "emissor",
   },

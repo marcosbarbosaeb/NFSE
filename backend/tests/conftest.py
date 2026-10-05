@@ -126,4 +126,8 @@ def _sem_rede_e_sem_limites(monkeypatch):
     limitador = getattr(main_mod, "limitador", None)
     if limitador is not None:
         limitador.limpar()
+    # A empresa de teste não tem certificado: a trava "sem certificado não
+    # gera nota" fica desligada, e tests/test_prontidao.py a liga de volta.
+    main_mod.app.dependency_overrides[main_mod.exigir_certificado] = lambda: None
     yield
+    main_mod.app.dependency_overrides.pop(main_mod.exigir_certificado, None)

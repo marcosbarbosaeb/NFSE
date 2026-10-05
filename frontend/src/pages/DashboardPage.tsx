@@ -17,7 +17,7 @@ import {
 import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { type NotaParaAcoes, SeloAssinatura, SeloPrefeitura, SeloTomador } from "../components/AcoesNota"
-import { ComecarPeloNacional } from "../components/ComecarPeloNacional"
+import { PrimeirosPassos } from "../components/PrimeirosPassos"
 import { AnotacaoCard, EscolherFormatoAnotacao, anotacaoApareceEm, useAnotacoes } from "../components/financeiro/Anotacoes"
 import { ContasDoMesPainel } from "../components/financeiro/ContasDoMesPainel"
 import { GraficoEntrouSaiu, GraficoFaturamentoMes, GraficoTomadores } from "../components/graficos/Paineis"
@@ -601,7 +601,8 @@ export function DashboardPage() {
       {erroAnotacao && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erroAnotacao}</p>}
 
       {/* Empresa ainda sem tomador nem nota: começa trazendo do Emissor Nacional. */}
-      {modulos.emissor && <ComecarPeloNacional />}
+      {/* Conta nova: certificado, dados da empresa e tomadores — nessa ordem. */}
+      {modulos.emissor && <PrimeirosPassos />}
 
       <PainelCards tela="visao_geral" secoes={secoes} editando={editando} permitirOcultar onConcluir={() => setEditando(false)} />
 

@@ -311,7 +311,16 @@ def previa(db: Session, prestador: Prestador, b: _Busca | None = None) -> dict:
             g["intermediario"] = (nota["interm"] or {}).get("xNome") or interm
             if interm in por_doc and g["sugestao"] == "novo":
                 g["sugestao"], g["vinculo_id"] = "avulsa", por_doc[interm][0].id
+    # Pré-cadastrados (06/10/2026): só eles já vêm marcados pra importar — o
+    # resto a pessoa escolhe, pra não trazer centenas de vendedores sem querer.
+    conhecidos = {
+        c for (c,) in db.query(Tomador.cnpj).filter(
+            Tomador.cnpj.in_([d for d in grupos if d.isdigit() and len(d) == 14] or ["-"]), Tomador.status == "aprovado",
+            Tomador.sug_cod_trib_nacional.isnot(None),  # já tem modelo de nota: é dos pré-cadastrados
+        )
+    }
     for g in grupos.values():
+        g["pre_cadastrado"] = g["documento"] in conhecidos
         if g["documento"] in por_doc:
             g["sugestao"], g["vinculo_id"] = "vinculo", por_doc[g["documento"]][0].id
         g["competencias"] = sorted(g["competencias"])

@@ -1419,6 +1419,8 @@ class GrupoImportacaoResponse(BaseModel):
     descricao_exemplo: str | None = None
     intermediario: str | None = None
     sugestao: str
+    # Tomador dos pré-cadastrados: o único tipo que já vem marcado pra importar.
+    pre_cadastrado: bool = False
     vinculo_id: uuid.UUID | None = None
 
 

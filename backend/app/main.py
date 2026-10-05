@@ -1724,6 +1724,24 @@ def api_atualizar_lembrete_aliquota(
     return prestador
 
 
+def exigir_certificado(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)) -> None:
+    """Sem certificado A1 válido não se gera nota (06/10/2026): a pessoa é
+    mandada pra Empresa › Certificado em vez de montar nota que não sai."""
+    from app.services import prontidao
+
+    motivo = prontidao.motivo_que_trava(db, prestador_id)
+    if motivo:
+        raise HTTPException(status_code=409, detail=motivo)
+
+
+@app.get("/api/empresa/prontidao", dependencies=[_SO_EMISSOR])
+def api_prontidao(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """O que falta pra empresa emitir: certificado, dados do emitente e tomadores."""
+    from app.services import prontidao
+
+    return prontidao.prontidao(db, prestador_id)
+
+
 @app.get("/api/certificado/status", response_model=CertificadoStatus, dependencies=[_SO_EMISSOR])
 def api_status_certificado(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     registro = db.query(Certificado).filter_by(prestador_id=prestador_id).one_or_none()
@@ -1852,7 +1870,7 @@ def _tp_amb_da_nota(db: Session, prestador_id: uuid.UUID, pedido: str | None) ->
     return pedido or _tp_amb_da_conta(db, prestador_id)
 
 
-@app.post("/api/dps", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
+@app.post("/api/dps", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_certificado)])
 def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
     """Cria e monta (rascunho -> montado) — persiste de verdade, com nDPS
     atribuído automaticamente. Essa é a 'caixa de revisão' antes de assinar."""
@@ -1955,7 +1973,7 @@ def api_listar_dps(
     return listar_emissoes(db, ano=ano, vinculo_id=vinculo_id, estado=estado, grupo=grupo)
 
 
-@app.post("/api/dps/importar-csv", response_model=ImportacaoCsvResponse, responses={400: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
+@app.post("/api/dps/importar-csv", response_model=ImportacaoCsvResponse, responses={400: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_certificado)])
 def api_importar_csv(arquivo: UploadFile = File(...), db: Session = Depends(db_sessao)):
     """Marco 7 — gera várias emissões de uma vez a partir de um CSV
     (colunas: apelido, competencia, valor[, ordem][, aliq_sn]). Cada linha
@@ -2777,7 +2795,7 @@ def api_previa_shopee(
     }
 
 
-@app.post("/api/shopee/gerar", response_model=GeracaoShopeeResponse, responses={400: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
+@app.post("/api/shopee/gerar", response_model=GeracaoShopeeResponse, responses={400: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_certificado)])
 def api_gerar_shopee(
     vinculo_id: uuid.UUID = Form(...),
     competencia: str = Form(...),

@@ -1115,6 +1115,19 @@ export interface GrupoImportacao {
   intermediario: string | null
   sugestao: Exclude<AcaoImportacao, "ignorar">
   vinculo_id: string | null
+  /** Tomador dos pré-cadastrados: o único tipo que já vem marcado pra importar. */
+  pre_cadastrado?: boolean
+}
+
+/** GET /empresa/prontidao — o que falta pra empresa emitir. */
+export interface Prontidao {
+  aplica: boolean
+  pode_emitir: boolean
+  motivo: string | null
+  certificado: "ok" | "falta" | "vencido"
+  dados_faltando: { campo: string; rotulo: string; link: string }[]
+  tomadores: number
+  pronta: boolean
 }
 
 export interface PreviaNacional {

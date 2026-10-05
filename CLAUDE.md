@@ -23,6 +23,9 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
 - Google Drive: escopo `drive.file`, callback `/api/drive/callback`, token cifrado no prestador (`app/services/drive.py`).
 - Catálogo de tomadores (`tomador.sug_*`) é compartilhado entre contas: texto livre só entra depois de
   `app/services/sugestoes.limpar_texto` (tira conta bancária, CNPJ, pedido, ID de afiliado, @). Nunca destinatários.
+- Sem certificado A1 válido não se gera nota: dependência `exigir_certificado` nas rotas de geração
+  (`app/services/prontidao.py`). O conftest desliga a trava; `tests/test_prontidao.py` liga de volta.
+- Importar do Emissor Nacional é opt-in: só tomador que a pessoa já tem ou pré-cadastrado vem marcado.
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.
 - Segredos (Stripe, Resend, Google) só nas variáveis do Railway — nunca no código nem em conversa.
 

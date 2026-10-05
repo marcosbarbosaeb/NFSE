@@ -21,6 +21,7 @@ import { CampoData } from "../components/CampoData"
 import { Conferencia } from "../components/Conferencia"
 import { ImportarNacionalModal } from "../components/ImportarNacionalModal"
 import { LoteAndamento } from "../components/LoteAndamento"
+import { TravaDeEmissao, useProntidao } from "../components/PrimeirosPassos"
 import { ConfirmarLoteModal, LotePainel, RelatorioLoteModal } from "../components/LotePainel"
 import { ShopeeModal } from "../components/ShopeeModal"
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react"
@@ -131,6 +132,10 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
   const [erro, setErro] = useState<string | null>(null)
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  // Sem certificado A1 válido a emissão fica travada (06/10/2026): a tela
+  // manda pra Empresa › Certificado em vez de deixar montar nota que não sai.
+  const prontidao = useProntidao()
+  const travada = prontidao != null && prontidao.aplica && !prontidao.pode_emitir
   // Vindo do botão "Gerar" da aba Tomadores: ?gerar=<vínculo>&competencia=AAAA-MM
   const [modalNova, setModalNova] = useState(Boolean(searchParams.get("gerar") || searchParams.get("nova")))
   const [modalCsv, setModalCsv] = useState(false)
@@ -390,7 +395,13 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
         <div className="flex flex-wrap gap-2">
           {emLote ? (
             vinculoRelatorio && (
-              <Button variant="accent" onClick={() => setShopee(vinculoRelatorio)} data-tour="nfse-csv">
+              <Button
+                variant="accent"
+                onClick={() => setShopee(vinculoRelatorio)}
+                data-tour="nfse-csv"
+                disabled={travada}
+                title={travada ? "Envie o certificado digital antes (Empresa › Certificado)" : undefined}
+              >
                 <FileUp size={16} /> Enviar relatório da Shopee
               </Button>
             )
@@ -400,7 +411,8 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
                 variant="accent"
                 onClick={() => (emissiveis.length > 0 ? setModalNova(true) : navigate("/app/tomadores/novo"))}
                 data-tour="nfse-nova"
-                title={emissiveis.length > 0 ? undefined : "Cadastre um tomador primeiro"}
+                disabled={travada}
+                title={travada ? "Envie o certificado digital antes (Empresa › Certificado)" : emissiveis.length > 0 ? undefined : "Cadastre um tomador primeiro"}
               >
                 <Plus size={16} /> Nova emissão
               </Button>
@@ -408,6 +420,8 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
           )}
         </div>
       </div>
+
+      <TravaDeEmissao prontidao={prontidao} />
 
       {emLote && !vinculoRelatorio && emissoes !== null && emissoes.length === 0 && (
         <Card className="p-6 text-sm text-slate-600 dark:text-slate-300">
@@ -790,7 +804,7 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
         )}
       </Card>
 
-      {modalNova && emissiveis.length > 0 && (
+      {modalNova && emissiveis.length > 0 && !travada && (
         <NovaEmissaoModal
           vinculos={emissiveis}
           aliquotaReferencia={aliquotaReferencia}
@@ -814,7 +828,7 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
           }}
         />
       )}
-      {shopee && (
+      {shopee && !travada && (
         <ShopeeModal
           vinculo={shopee}
           aliquotaReferencia={aliquotaReferencia}

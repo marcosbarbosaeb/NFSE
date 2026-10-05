@@ -325,7 +325,8 @@ export function ImportarEmissorModal({ modo, onFechar, onVoltar }: { modo: Modo;
       return
     }
     setLeitura("feito")
-    setFora({})
+    // Só os que a pessoa já tem e os pré-cadastrados vêm marcados; o resto ela escolhe.
+    setFora(Object.fromEntries((ultima?.grupos ?? []).filter((g) => padrao(g).acao === "ignorar").map((g) => [g.documento, true])))
     setFase(ultima && ultima.grupos.length > 0 ? "revisar" : "resumo")
   }
 
@@ -341,6 +342,8 @@ export function ImportarEmissorModal({ modo, onFechar, onVoltar }: { modo: Modo;
     const mapeamento: RegraImportacao[] = grupos.map((g) => {
       if (fora[g.documento]) return { documento: g.documento, acao: "ignorar", vinculo_id: null }
       const r = padrao(g)
+      // marcado à mão um tomador que eu não conhecia: entra como tomador novo
+      if (r.acao === "ignorar") return { documento: g.documento, acao: "novo", vinculo_id: null }
       return { documento: g.documento, acao: r.acao, vinculo_id: r.acao === "novo" ? null : r.vinculo_id }
     })
     try {
@@ -694,7 +697,8 @@ export function ImportarEmissorModal({ modo, onFechar, onVoltar }: { modo: Modo;
               Encontrei {plural(previa.total_notas, "nota", "notas")} de {plural(grupos.length, "tomador", "tomadores")}.
             </p>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Cada um vira um tomador no seu cadastro, já com o serviço e a descrição da última nota. Desmarque quem você não quer trazer.
+              <strong>Você escolhe quem trazer.</strong> Deixei marcados só os tomadores pré-cadastrados e os que você já tem; marque os
+              outros que quiser. Cada marcado vira um tomador no seu cadastro, já com o serviço e a descrição da última nota.
               {semCnpj.length > 0 && " Quem não tem CNPJ entra só para controle."}
             </p>
           </div>
@@ -706,8 +710,11 @@ export function ImportarEmissorModal({ modo, onFechar, onVoltar }: { modo: Modo;
             </p>
           )}
 
-          {semCnpj.length > 0 && (
-            <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {escolhidos.length} de {grupos.length} marcados
+            </span>
+            {semCnpj.length > 0 && (
               <Button
                 type="button"
                 variant="outline"
@@ -716,11 +723,19 @@ export function ImportarEmissorModal({ modo, onFechar, onVoltar }: { modo: Modo;
               >
                 Desmarcar os {semCnpj.length} sem CNPJ
               </Button>
-              <Button type="button" variant="ghost" className="px-2.5 py-1 text-xs" onClick={() => setFora({})}>
-                Marcar todos
-              </Button>
-            </div>
-          )}
+            )}
+            <Button type="button" variant="ghost" className="px-2.5 py-1 text-xs" onClick={() => setFora({})}>
+              Marcar todos
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="px-2.5 py-1 text-xs"
+              onClick={() => setFora(Object.fromEntries(grupos.map((g) => [g.documento, true])))}
+            >
+              Desmarcar todos
+            </Button>
+          </div>
 
           <ul className="-mx-5 max-h-[46vh] divide-y divide-slate-100 overflow-y-auto border-y border-slate-100 dark:divide-slate-700/60 dark:border-slate-700/60">
             {grupos.map((g) => (
