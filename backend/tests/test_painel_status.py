@@ -7,10 +7,10 @@ import uuid
 
 import pytest
 
-from app.services.despesas import registrar_despesa
+from app.financeiro.despesas import registrar_despesa
 from app.services.motor_emissao import criar_rascunho, montar
-from app.services.pagamentos import registrar_pagamento
-from app.services.painel_status import (
+from app.financeiro.pagamentos import registrar_pagamento
+from app.financeiro.painel_status import (
     painel_status_completo,
     status_despesas,
     status_notas_geradas,
@@ -208,35 +208,23 @@ def test_resumo_mes_emissao_cancelada_conta_como_aguardando(db, prestador_teste,
     assert resumo["emitidas"] == 0
 
 
-def test_resumo_mes_a_receber_soma_so_emissoes_sem_pagamento(db, prestador_teste, vinculo_teste):
+def test_resumo_mes_faturado_e_delta_vs_anterior(db, prestador_teste, vinculo_teste):
+    """A Visão geral do emissor fala de faturamento (valor das notas), não
+    de recebimento — isso é do módulo financeiro (05/10/2026)."""
     from app.services.dashboard import resumo_mes
 
+    montar(db, criar_rascunho(db, vinculo_teste, competencia="2026-07", valor=100.0))
     montar(db, criar_rascunho(db, vinculo_teste, competencia="2026-08", valor=150.0))
-    resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
-    assert resumo["a_receber"] == 150.0
-    assert resumo["pagamentos_pendentes"] == 1
-    assert resumo["emissoes"][0]["pagamento_recebido"] is False
-
-    registrar_pagamento(db, vinculo_teste, competencia="2026-08", valor=150.0)
-    resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
-    assert resumo["a_receber"] == 0.0
-    assert resumo["pagamentos_pendentes"] == 0
-    assert resumo["emissoes"][0]["pagamento_recebido"] is True
-
-
-def test_resumo_mes_recebido_no_mes_e_delta_vs_anterior(db, prestador_teste, vinculo_teste):
-    from app.services.dashboard import resumo_mes
-
-    registrar_pagamento(db, vinculo_teste, competencia="2026-07", valor=100.0)
-    registrar_pagamento(db, vinculo_teste, competencia="2026-08", valor=150.0)
+    registrar_pagamento(db, vinculo_teste, competencia="2026-08", valor=150.0)  # não muda nada aqui
 
     resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
-    assert resumo["recebido_no_mes"] == 150.0
-    assert resumo["recebido_mes_anterior"] == 100.0
-    assert resumo["delta_recebimentos_pct"] == pytest.approx(50.0)
-    assert len(resumo["serie_recebimentos"]) == 6
-    assert resumo["serie_recebimentos"][-1] == {"competencia": "2026-08", "valor": 150.0}
-    assert resumo["serie_recebimentos"][-2] == {"competencia": "2026-07", "valor": 100.0}
+    assert resumo["faturado_no_mes"] == 150.0
+    assert resumo["faturado_mes_anterior"] == 100.0
+    assert resumo["delta_faturamento_pct"] == pytest.approx(50.0)
+    assert len(resumo["serie_faturamento"]) == 6
+    assert resumo["serie_faturamento"][-1] == {"competencia": "2026-08", "valor": 150.0}
+    assert "a_receber" not in resumo and "pagamento_recebido" not in resumo["emissoes"][0]
+
 
 
 def test_resumo_mes_sem_competencia_usa_mes_corrente(db, prestador_teste):

@@ -84,6 +84,8 @@ def prestador_teste(db):
         cpf_cnpj="00000000000191",
         razao_social="PRESTADOR DE TESTE (nunca deveria sobreviver a um teste)",
         cod_municipio="3106200",
+        # os dois produtos ligados (os testes de "só um módulo" trocam isto)
+        modulos=["emissor", "financeiro"],
     )
     db.add(prestador)
     db.flush()

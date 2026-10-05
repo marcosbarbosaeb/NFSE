@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from app.database import get_db
 from app.main import app, prestador_atual_id
 from app.models import Emissao, PagamentoRecebido
-from app.services import a_receber
+from app.financeiro import a_receber
 
 
 @pytest.fixture
@@ -52,14 +52,14 @@ def test_recebimento_paga_so_a_nota_dele(client, db, vinculo_teste):
     assert _abertas(db) == {maior.id: 14000.0}
     assert a_receber.totais(db)["a_receber_total"] == 14000.0
 
-    lista = {x["id"]: x["pagamento_recebido"] for x in client.get("/api/dps?ano=2026").json()}
-    assert lista[str(menor.id)] is True and lista[str(maior.id)] is False
+    # o emissor não sabe de pagamento (módulos separados): a lista de notas e
+    # a Visão geral não trazem nada disso
+    assert all("pagamento_recebido" not in x for x in client.get("/api/dps?ano=2026").json())
     painel = client.get("/api/painel/resumo-mes?competencia=2026-09")
     assert painel.status_code == 200, painel.text
-    linhas = {l["emissao_id"]: l for l in painel.json()["emissoes"]}
-    assert linhas[str(menor.id)]["pagamento_recebido"] is True and linhas[str(maior.id)]["pagamento_recebido"] is False
-    proximos = client.get("/api/painel/proximos").json()["pendencias"]
-    assert [p["valor"] for p in proximos if p["tipo"] == "receber"] == [14000.0]
+    assert "a_receber" not in painel.json() and all("pagamento_recebido" not in l for l in painel.json()["emissoes"])
+    pendencias = client.get("/api/financeiro/pendencias").json()
+    assert [p["valor"] for p in pendencias if p["tipo"] == "receber"] == [14000.0]
 
     # dizendo a nota
     r = client.post("/api/pagamentos", json={

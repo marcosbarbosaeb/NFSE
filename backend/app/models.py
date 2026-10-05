@@ -116,6 +116,9 @@ class Prestador(Base):
     # as notas saem só em homologação (sem valor fiscal) e os e-mails vão só
     # pra quem testa. Pode repetir o CNPJ de uma conta real.
     modo_teste: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
+    # Produtos que a empresa usa (05/10/2026): "emissor", "financeiro" —
+    # vendidos separadamente (ver app/deps.py).
+    modulos: Mapped[list] = mapped_column(JSONB, nullable=False, default=lambda: ["emissor"], server_default='["emissor"]')
     # Importação do Emissor Nacional: último NSU lido na distribuição do ADN.
     adn_ultimo_nsu: Mapped[int | None] = mapped_column(BigInteger)
     nome_fantasia: Mapped[str | None] = mapped_column(String(200))

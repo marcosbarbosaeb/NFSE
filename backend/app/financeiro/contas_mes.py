@@ -20,7 +20,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import Despesa, DespesaRecorrente, Emissao, PagamentoRecebido, RotinaMensal, RotinaMensalFeita
-from app.services import a_receber
+from app.financeiro import a_receber
 
 MESES = [f"{m:02d}" for m in range(1, 13)]
 # Categorias que contam como imposto no resumo (o resto é custo).

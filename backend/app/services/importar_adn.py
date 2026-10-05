@@ -36,6 +36,7 @@ from lxml import etree
 from sqlalchemy.orm import Session
 
 from app.fiscal.cliente_sefin import ADN_BASES, ClienteSefin
+from app.services.vinculos import apelido_livre as _apelido_livre, criar_tomador_interno  # noqa: F401
 from app.models import Emissao, Envio, Prestador, PrestadorTomador, Tomador
 
 PAGINAS_POR_CHAMADA = 15
@@ -322,27 +323,6 @@ def previa(db: Session, prestador: Prestador, b: _Busca | None = None) -> dict:
 # --- gravação ---------------------------------------------------------------
 
 
-def _apelido_livre(db: Session, prestador_id: uuid.UUID, nome: str) -> str:
-    base = re.sub(r"\s+", " ", nome).strip()[:60] or "Tomador"
-    usados = {a.lower() for (a,) in db.query(PrestadorTomador.apelido).filter(PrestadorTomador.prestador_id == prestador_id)}
-    apelido, n = base, 2
-    while apelido.lower() in usados:
-        apelido, n = f"{base[:55]} ({n})", n + 1
-    return apelido
-
-
-def criar_tomador_interno(db: Session, nome: str, cod_municipio: str) -> Tomador:
-    """Tomador só desta conta (fonte de receita sem CNPJ, pessoa física,
-    estrangeiro): não entra no catálogo compartilhado."""
-    t = Tomador(
-        id=uuid.uuid4(), cnpj="X" + uuid.uuid4().hex[:13].upper(), razao_social=nome[:200] or "Receita",
-        cod_municipio=cod_municipio, status="interno",
-    )
-    db.add(t)
-    db.flush()
-    return t
-
-
 def _novo_vinculo(db: Session, prestador: Prestador, nota: dict) -> PrestadorTomador:
     toma = nota["toma"]
     if toma["tipo"] == "CNPJ" and toma["documento"]:
@@ -514,13 +494,13 @@ def remover_importadas(db: Session, antes: str) -> dict:
     if ids:
         db.query(Envio).filter(Envio.emissao_id.in_(ids)).delete(synchronize_session=False)
         db.query(Emissao).filter(Emissao.id.in_(ids)).delete(synchronize_session=False)
-    from app.models import PagamentoRecebido
+    from app import eventos
 
     vinculos = 0
     for v in db.query(PrestadorTomador).filter(PrestadorTomador.ativo.is_(False), PrestadorTomador.excluido_em.is_(None)):
         tem_nota = db.query(Emissao.id).filter(Emissao.prestador_tomador_id == v.id).first()
-        tem_pagamento = db.query(PagamentoRecebido.id).filter(PagamentoRecebido.prestador_tomador_id == v.id).first()
-        if not tem_nota and not tem_pagamento:
+        # Outro módulo (o financeiro) pode ter dados desse tomador.
+        if not tem_nota and not eventos.perguntar("tomador_em_uso", db, vinculo_id=v.id):
             db.delete(v)
             vinculos += 1
     db.flush()

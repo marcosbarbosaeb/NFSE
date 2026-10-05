@@ -12,8 +12,8 @@ from decimal import Decimal
 import pytest
 from reportlab.pdfgen import canvas
 
-from app.services.extrato_pdf import PdfInvalidoError, extrair_transacoes
-from app.services.importacao_extrato import ItemExtrato, confirmar_importacao_extrato
+from app.financeiro.extrato_pdf import PdfInvalidoError, extrair_transacoes
+from app.financeiro.importacao_extrato import ItemExtrato, confirmar_importacao_extrato
 
 
 def _gerar_pdf(linhas: list[str]) -> bytes:
@@ -147,7 +147,7 @@ def test_endpoint_confirmar_extrato(client, db, vinculo_teste):
     assert corpo["sucesso"] == 1
     assert corpo["erro"] == 0
 
-    from app.services.listagens import listar_pagamentos
+    from app.financeiro.listas import listar_pagamentos
 
     pagamentos = listar_pagamentos(db, ano="2026")
     assert len(pagamentos) == 1
@@ -170,7 +170,7 @@ def test_endpoint_confirmar_extrato_item_invalido_da_erro_parcial(client):
 
 # --- Revisão de 28/09/2026: leiautes reais de bancos + OFX/CSV ---------------
 
-from app.services.extrato_pdf import extrair_de_texto, extrair_extrato  # noqa: E402
+from app.financeiro.extrato_pdf import extrair_de_texto, extrair_extrato  # noqa: E402
 
 
 def _resumo(transacoes):

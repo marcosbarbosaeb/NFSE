@@ -7,6 +7,7 @@ Toda função aqui presume que `definir_prestador_atual` já foi chamado na
 sessão — a RLS cuida de só devolver/gravar vínculos do prestador certo.
 """
 import datetime
+import re
 import uuid
 
 from sqlalchemy.orm import Session, joinedload
@@ -175,3 +176,28 @@ def atualizar_vinculo(db: Session, vinculo: PrestadorTomador, **campos) -> Prest
     if campos.keys() & {"cod_trib_nacional", "template_descricao", "dia_limite_emissao", "dias_para_recebimento"}:
         registrar_sugestoes(db, vinculo)
     return vinculo
+
+
+# --- Cadastro comum de clientes (05/10/2026): usado pelo emissor (notas
+# importadas) e pelo financeiro (fontes de receita sem nota) ---
+
+
+def apelido_livre(db: Session, prestador_id: uuid.UUID, nome: str) -> str:
+    base = re.sub(r"\s+", " ", nome).strip()[:60] or "Tomador"
+    usados = {a.lower() for (a,) in db.query(PrestadorTomador.apelido).filter(PrestadorTomador.prestador_id == prestador_id)}
+    apelido, n = base, 2
+    while apelido.lower() in usados:
+        apelido, n = f"{base[:55]} ({n})", n + 1
+    return apelido
+
+
+def criar_tomador_interno(db: Session, nome: str, cod_municipio: str) -> Tomador:
+    """Tomador só desta conta (fonte de receita sem CNPJ, pessoa física,
+    estrangeiro): não entra no catálogo compartilhado."""
+    t = Tomador(
+        id=uuid.uuid4(), cnpj="X" + uuid.uuid4().hex[:13].upper(), razao_social=nome[:200] or "Receita",
+        cod_municipio=cod_municipio, status="interno",
+    )
+    db.add(t)
+    db.flush()
+    return t

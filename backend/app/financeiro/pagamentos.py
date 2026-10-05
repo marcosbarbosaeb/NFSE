@@ -28,7 +28,7 @@ def registrar_pagamento(
     aquela nota (e fica no mês dela). Sem ele, a nota é escolhida pelo valor
     entre as do tomador naquele mês; se o tomador não tem nota no mês, o
     recebimento fica sem nota (dinheiro que caiu antes da nota)."""
-    from app.services import a_receber
+    from app.financeiro import a_receber
 
     if emissao_id is not None:
         emissao = db.get(Emissao, emissao_id)

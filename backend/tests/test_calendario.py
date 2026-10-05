@@ -20,7 +20,7 @@ from app.services.calendario import (
     excluir_evento_manual,
 )
 from app.services.motor_emissao import criar_rascunho, montar
-from app.services.pagamentos import registrar_pagamento
+from app.financeiro.pagamentos import registrar_pagamento
 from app.services.vinculos import atualizar_vinculo
 
 

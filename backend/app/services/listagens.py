@@ -11,14 +11,11 @@ Mesma disciplina de RLS das demais consultas: toda query aqui presume que
 — os filtros de prestador vêm de graça da RLS, nunca de um WHERE explícito
 nestas tabelas.
 """
-import datetime
 import uuid
 
-from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Despesa, Emissao, Envio, PagamentoRecebido, PrestadorTomador
-from app.services.a_receber import Baixas
+from app.models import Emissao, Envio, PrestadorTomador
 from app.services.dashboard import ESTADO_NFSE_LABEL
 
 
@@ -28,15 +25,11 @@ def listar_emissoes(
     ano: str | None = None,
     vinculo_id: uuid.UUID | None = None,
     estado: str | None = None,
-    pagamento: str | None = None,
     grupo: str | None = None,
 ) -> list[dict]:
-    """`pagamento`: None = sem filtro; "recebido" só as com algum
-    PagamentoRecebido pro mesmo vínculo+competência; "pendente" as sem
-    nenhum — item 3 do Marco 16 (Marcos: "é importante a pessoa confrontar
-    notas emitidas com notas pagas"). Aplica-se independente do estado da
-    emissão (mesmo uma cancelada mostra o cruzamento como está, sem
-    esconder inconsistência)."""
+    """Notas da empresa, da mais nova pra mais antiga. Só o que é do emissor:
+    situação da nota e do envio — nada de pagamento (isso é do módulo
+    financeiro, desde a separação de 05/10/2026)."""
     query = (
         db.query(Emissao)
         .options(joinedload(Emissao.vinculo).joinedload(PrestadorTomador.tomador))
@@ -62,7 +55,6 @@ def listar_emissoes(
     elif grupo == "vendedores":
         query = query.filter(Emissao.tomador_documento.isnot(None))
 
-    baixas = Baixas(db)
     emissoes = query.all()
     # Último envio de cada nota (e-mail/WhatsApp/...) numa query só.
     ultimo_envio: dict[uuid.UUID, str] = {}
@@ -91,11 +83,6 @@ def listar_emissoes(
             "estado": e.estado,
             "estado_label": ESTADO_NFSE_LABEL.get(e.estado, e.estado),
             "criado_em": e.criado_em,
-            # Baixa por nota; a do vendedor da Shopee acompanha a nota da Shopee.
-            "pagamento_recebido": (
-                baixas.mes_pago(e.prestador_tomador_id, e.competencia) if e.tomador_documento
-                else baixas.paga(e.id, e.prestador_tomador_id, e.competencia)
-            ),
             "envio_status": ultimo_envio.get(e.id),
             "tem_pdf": e.estado == "confirmado",
             "tem_email": bool((e.tomador_snapshot or {}).get("email") if e.tomador_documento else (e.vinculo.email_para or e.vinculo.email_contato)),
@@ -105,66 +92,4 @@ def listar_emissoes(
         }
         for e in emissoes
     ]
-    if pagamento == "recebido":
-        linhas = [l for l in linhas if l["pagamento_recebido"]]
-    elif pagamento == "pendente":
-        linhas = [l for l in linhas if not l["pagamento_recebido"]]
     return linhas
-
-
-def listar_pagamentos(
-    db: Session,
-    *,
-    ano: str | None = None,
-    vinculo_id: uuid.UUID | None = None,
-    por_recebimento: bool = False,
-) -> list[dict]:
-    """`por_recebimento`: filtra o ano pela data em que o dinheiro caiu
-    (sem data, pela competência) — é assim que o Financeiro soma; antes uma
-    nota de dezembro paga em janeiro sumia dos dois anos.
-
-    `PagamentoRecebido` não tem relationship pro vínculo (ver
-    app/models.py) — join explícito com `PrestadorTomador` só pra buscar o
-    apelido de exibição."""
-    query = (
-        db.query(PagamentoRecebido, PrestadorTomador.apelido, PrestadorTomador.sem_nota)
-        .join(PrestadorTomador, PagamentoRecebido.prestador_tomador_id == PrestadorTomador.id)
-        # Baixa de conciliação (histórico, sem valor) não é recebimento.
-        .filter(PagamentoRecebido.origem != "conciliacao")
-        .order_by(PagamentoRecebido.criado_em.desc())
-    )
-    if ano and por_recebimento:
-        inicio, fim = datetime.date(int(ano), 1, 1), datetime.date(int(ano), 12, 31)
-        query = query.filter(
-            or_(
-                PagamentoRecebido.data_recebimento.between(inicio, fim),
-                and_(PagamentoRecebido.data_recebimento.is_(None), PagamentoRecebido.competencia.like(f"{ano}-%")),
-            )
-        )
-    elif ano:
-        query = query.filter(PagamentoRecebido.competencia.like(f"{ano}-%"))
-    if vinculo_id:
-        query = query.filter(PagamentoRecebido.prestador_tomador_id == vinculo_id)
-
-    return [
-        {
-            "id": p.id,
-            "apelido": apelido,
-            "competencia": p.competencia,
-            "valor": float(p.valor),
-            "data_recebimento": p.data_recebimento,
-            "vinculo_id": p.prestador_tomador_id,
-            "emissao_id": p.emissao_id,
-            "pode_gerar_nota": p.emissao_id is None and not p.mes_inteiro and not sem_nota,
-        }
-        for p, apelido, sem_nota in query.all()
-    ]
-
-
-def listar_despesas(db: Session, *, ano: str | None = None) -> list[dict]:
-    query = db.query(Despesa).order_by(Despesa.criado_em.desc())
-    if ano:
-        query = query.filter(Despesa.competencia.like(f"{ano}-%"))
-    from app.services.financeiro import _linha_despesa
-
-    return [_linha_despesa(d) for d in query.all()]

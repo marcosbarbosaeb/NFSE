@@ -13,7 +13,7 @@ from openpyxl import Workbook
 from app.database import get_db
 from app.main import app, prestador_atual_id
 from app.models import Despesa, DespesaRecorrente, PagamentoRecebido, PrestadorTomador, RotinaMensal, RotinaMensalFeita
-from app.services import importar_planilha
+from app.financeiro import importar_planilha
 from app.services.motor_emissao import criar_rascunho
 
 MESES = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"]
@@ -79,7 +79,7 @@ def test_leitura_da_planilha():
 
 def test_importar_planilha_e_financeiro(client, db, prestador_teste, vinculo_teste, monkeypatch):
     hoje = datetime.date(2026, 9, 28)
-    monkeypatch.setattr("app.main.hoje_br", lambda: hoje)
+    monkeypatch.setattr("app.financeiro.rotas.hoje_br", lambda: hoje)
     arquivo = {"arquivo": ("controle.xlsx", planilha(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
     r = client.post("/api/importar/planilha/previa", files=arquivo, data={"ano": "2026"})
     assert r.status_code == 200, r.text
@@ -160,7 +160,7 @@ def test_contas_fixas_e_lancamento_manual(client, db, prestador_teste, monkeypat
     import calendar
 
     hoje = datetime.date.today()
-    monkeypatch.setattr("app.main.hoje_br", lambda: hoje)
+    monkeypatch.setattr("app.financeiro.rotas.hoje_br", lambda: hoje)
     comp = f"{hoje.year:04d}-{hoje.month:02d}"
     r = client.post("/api/financeiro/contas-fixas", json={"nome": "Cartão Inter", "categoria": "Cartão", "dia_vencimento": 31})
     assert r.status_code == 200, r.text
@@ -193,16 +193,19 @@ def test_recebimento_sem_nota_e_gerar_nota_dele(client, db, prestador_teste, vin
     from app.services.dashboard import proximos
 
     hoje = datetime.date(2026, 10, 1)
-    monkeypatch.setattr("app.main.hoje_br", lambda: hoje)
+    monkeypatch.setattr("app.financeiro.rotas.hoje_br", lambda: hoje)
     r = client.post("/api/pagamentos", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-09", "valor": 1234.5})
     assert r.status_code == 200 and r.json()["sem_nota"] is True
     pagamento_id = r.json()["id"]
 
     lista = client.get("/api/financeiro/recebimentos-sem-nota").json()
     assert [x["competencia"] for x in lista] == ["2026-09"] and lista[0]["valor"] == 1234.5
-    p = proximos(db, prestador_teste.id, hoje)
-    aviso = next(x for x in p["pendencias"] if x["tipo"] == "nota_recebimento")
-    assert f"pagamento={pagamento_id}" in aviso["link"]
+    from app.financeiro.pendencias import pendencias
+
+    aviso = next(x for x in pendencias(db, hoje) if x["tipo"] == "nota_recebimento")
+    assert f"origem=fin:pagamento:{pagamento_id}" in aviso["link"]
+    # a Visão geral do emissor não traz isso (módulos separados)
+    assert all(x["tipo"] != "nota_recebimento" for x in proximos(db, prestador_teste.id, hoje)["pendencias"])
 
     # ignorar e voltar
     assert client.post("/api/painel/pendencias/ignorar", json={"chave": aviso["chave"]}).status_code == 200
@@ -218,7 +221,7 @@ def test_recebimento_sem_nota_e_gerar_nota_dele(client, db, prestador_teste, vin
     assert r.status_code == 200, r.text
     assert r.json()["competencia"] == "2026-10"
     assert client.get("/api/financeiro/recebimentos-sem-nota").json() == []
-    from app.services import a_receber
+    from app.financeiro import a_receber
     assert a_receber.notas_em_aberto(db, hoje) == []
     from app.models import PagamentoRecebido as _P
     pago = db.get(_P, uuid.UUID(pagamento_id))
@@ -243,7 +246,7 @@ def test_recebimento_sem_nota_e_gerar_nota_dele(client, db, prestador_teste, vin
 def test_vendedores_shopee_separados_e_sem_cobranca(client, db, prestador_teste, vinculo_teste):
     """Notas de vendedores da Shopee: aba própria e fora do "a receber" — a
     Shopee paga tudo junto na nota dela (01/10/2026)."""
-    from app.services import a_receber
+    from app.financeiro import a_receber
     from app.services.dashboard import resumo_mes as resumo_do_mes
     from app.services.motor_emissao import montar
 
@@ -273,7 +276,7 @@ def test_vendedores_shopee_separados_e_sem_cobranca(client, db, prestador_teste,
 
 
 def test_conciliar_historico_sem_mexer_no_recebido(client, db, prestador_teste, vinculo_teste):
-    from app.services import a_receber
+    from app.financeiro import a_receber
     from app.services.motor_emissao import montar
 
     for comp in ("2026-01", "2026-05", "2026-09"):

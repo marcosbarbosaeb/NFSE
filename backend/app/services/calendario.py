@@ -51,8 +51,8 @@ from calendar import monthrange
 
 from sqlalchemy.orm import Session
 
-from app.models import AjusteEvento, Emissao, EventoManual, PagamentoRecebido, Prestador, PrestadorTomador
-from app.services.a_receber import Baixas
+from app import eventos as barramento
+from app.models import AjusteEvento, Emissao, EventoManual, Prestador, PrestadorTomador
 from app.services.vinculos import listar_vinculos_ativos
 from app.tempo import data_local, hoje as hoje_br
 
@@ -63,15 +63,6 @@ CATEGORIAS_MANUAIS = ("lembrete", "recebimento_previsto", "prazo_emissao")
 # intervalo pedido — por isso a geração olha um pouco além dele e só
 # filtra pela data final (já ajustada).
 _FOLGA = datetime.timedelta(days=62)
-
-
-def _tem_pagamento(db: Session, prestador_tomador_id: uuid.UUID, competencia: str) -> bool:
-    return (
-        db.query(PagamentoRecebido)
-        .filter_by(prestador_tomador_id=prestador_tomador_id, competencia=competencia)
-        .first()
-        is not None
-    )
 
 
 def _dia_valido_no_mes(ano: int, mes: int, dia: int) -> int:
@@ -144,62 +135,15 @@ def eventos_calendario(db: Session, prestador_id: uuid.UUID, inicio: datetime.da
                 "regra_valor": vinculo.dia_limite_emissao,
             }, ajustes, inicio, fim)
 
-    # 2) Previsão de recebimento
-    # Só quem tem prazo de pagamento configurado, e só o que ainda não foi pago.
-    com_prazo = [v.id for v in vinculos if v.dias_para_recebimento is not None]
-    baixas = Baixas(db)
-    emissoes_ativas = (
-        db.query(Emissao).filter(Emissao.estado != "cancelada", Emissao.prestador_tomador_id.in_(com_prazo)).order_by(Emissao.criado_em).all()
-        if com_prazo else []
-    )
-    # Shopee: várias notas por mês (uma por vendedor) — uma previsão só,
-    # somando os valores, ancorada na primeira nota do mês.
-    agrupadas: dict[tuple, list] = {}
-    for emissao in emissoes_ativas:
-        chave = (emissao.prestador_tomador_id, emissao.competencia) if emissao.tomador_documento else (emissao.id,)
-        agrupadas.setdefault(chave, []).append(emissao)
-    for grupo in agrupadas.values():
-        emissao = grupo[0]
-        vinculo = vinculos_por_id.get(emissao.prestador_tomador_id)
-        if vinculo is None or vinculo.dias_para_recebimento is None:
-            continue
-        if emissao.tomador_documento:
-            if baixas.mes_pago(vinculo.id, emissao.competencia):
-                continue
-        elif baixas.paga(emissao.id, vinculo.id, emissao.competencia):
-            continue
-        _incluir(eventos, {
-            "data": data_local(emissao.criado_em) + datetime.timedelta(days=vinculo.dias_para_recebimento),
-            "tipo": "recebimento_previsto",
-            "titulo": f"Previsão de recebimento — {vinculo.apelido}",
-            "vinculo_id": vinculo.id,
-            "apelido": vinculo.apelido,
-            "valor": float(sum(e.valor for e in grupo)),
-            "chave": str(emissao.id),
-            "regra_valor": vinculo.dias_para_recebimento,
-        }, ajustes, inicio, fim)
-
-    # 3) Recebimentos já confirmados (dado real — não ajustável)
-    pagamentos = (
-        db.query(PagamentoRecebido)
-        .filter(
-            PagamentoRecebido.prestador_id == prestador_id,
-            PagamentoRecebido.data_recebimento.isnot(None),
-            PagamentoRecebido.data_recebimento >= inicio,
-            PagamentoRecebido.data_recebimento <= fim,
-        )
-        .all()
-    )
-    for pagamento in pagamentos:
-        vinculo = vinculos_por_id.get(pagamento.prestador_tomador_id)
-        eventos.append({
-            "data": pagamento.data_recebimento,
-            "tipo": "recebimento_confirmado",
-            "titulo": f"Recebido — {vinculo.apelido if vinculo else 'fornecedor'}",
-            "vinculo_id": pagamento.prestador_tomador_id,
-            "apelido": vinculo.apelido if vinculo else None,
-            "valor": float(pagamento.valor),
-        })
+    # 2) O que outros módulos têm pra agenda (ex.: o financeiro traz a
+    # previsão de recebimento e o que já caiu — só pra empresa que tem o
+    # módulo). O emissor não sabe o que vem: só encaixa (app/eventos.py).
+    for lista in barramento.coletar("agenda", db, prestador_id=prestador_id, inicio=inicio, fim=fim, vinculos=vinculos):
+        for ev in lista:
+            if ev.get("chave"):
+                _incluir(eventos, ev, ajustes, inicio, fim)
+            elif inicio <= ev["data"] <= fim:
+                eventos.append(ev)
 
     # 4) Lembrete de revisar a alíquota de referência (Marco 16) — ligado ao
     # calendário REAL (`date.today()`), não à competência navegada: não faz

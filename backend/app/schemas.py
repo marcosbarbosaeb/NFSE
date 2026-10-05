@@ -80,9 +80,16 @@ class GerarDpsRequest(BaseModel):
     # Gerar a nota de um recebimento que chegou sem nota: o recebimento fica
     # ligado a ela (e passa pro mês da nota).
     pagamento_id: uuid.UUID | None = None
+    # Pedido que veio de outro módulo (texto opaco pro emissor, ex.:
+    # "fin:pagamento:<id>") — o emissor só repassa no evento `nota_criada`.
+    origem: str | None = Field(default=None, max_length=120)
     # Já existe uma nota desse tomador no mês que ainda não foi enviada pra
     # prefeitura: apaga ela e gera esta no lugar (05/10/2026).
     substituir: bool = False
+
+
+class OrigemNotaRequest(BaseModel):
+    origem: str = Field(min_length=1, max_length=120)
 
 
 class EmissaoResponse(BaseModel):
@@ -335,7 +342,6 @@ class EmissaoResumoLinha(BaseModel):
     estado: str
     estado_label: str
     envio_status: str | None = None
-    pagamento_recebido: bool
     tem_pdf: bool = False
     tem_email: bool = False
     homologacao: bool = False
@@ -364,19 +370,13 @@ class DashboardResumoResponse(BaseModel):
     total_vinculos: int
     emitidas: int
     aguardando: int
-    a_receber: float
-    pagamentos_pendentes: int
-    recebido_no_mes: float
-    recebido_mes_anterior: float
-    delta_recebimentos_pct: float | None = None
-    serie_recebimentos: list[PontoSerieMensal]
+    # Valor das notas do mês (o que foi recebido é do módulo financeiro).
+    faturado_no_mes: float
+    faturado_mes_anterior: float
+    delta_faturamento_pct: float | None = None
+    serie_faturamento: list[PontoSerieMensal]
     emissoes: list[EmissaoResumoLinha]
     atencao: list[AtencaoItem]
-    # Todos os meses (28/09/2026) — ver app/services/a_receber.py.
-    a_receber_total: float = 0
-    notas_a_receber: int = 0
-    recebido_total: float = 0
-    notas_recebidas: int = 0
 
 
 class PendenciaItem(BaseModel):
@@ -790,7 +790,6 @@ class EmissaoListaLinha(BaseModel):
     estado: str
     estado_label: str
     criado_em: datetime
-    pagamento_recebido: bool
     envio_status: str | None = None
     tem_pdf: bool = False
     tem_email: bool = False

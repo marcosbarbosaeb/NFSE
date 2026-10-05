@@ -17,8 +17,8 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.services.classificar_extrato import lembrar
-from app.services.pagamentos import registrar_pagamento
+from app.financeiro.classificar_extrato import lembrar
+from app.financeiro.pagamentos import registrar_pagamento
 from app.services.vinculos import buscar_vinculo
 
 

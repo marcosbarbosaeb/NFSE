@@ -22,8 +22,8 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.models import Despesa, LancamentoBancario, PagamentoRecebido, PrestadorTomador
-from app.services import a_receber, classificar_extrato
-from app.services.pagamentos import registrar_pagamento
+from app.financeiro import a_receber, classificar_extrato
+from app.financeiro.pagamentos import registrar_pagamento
 
 
 class ConciliacaoError(Exception):

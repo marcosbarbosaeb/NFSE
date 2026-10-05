@@ -27,7 +27,7 @@ from openpyxl import load_workbook
 from sqlalchemy.orm import Session
 
 from app.models import Despesa, DespesaRecorrente, PagamentoRecebido, Prestador, PrestadorTomador, RotinaMensal, RotinaMensalFeita
-from app.services.importar_adn import criar_tomador_interno
+from app.services.vinculos import criar_tomador_interno
 
 MESES_ABREV = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"]
 
@@ -365,6 +365,6 @@ def importar(db: Session, prestador: Prestador, conteudo: bytes, ano: int, escol
 
 
 def _apelido_livre(db: Session, prestador_id: uuid.UUID, nome: str) -> str:
-    from app.services.importar_adn import _apelido_livre as livre
+    from app.services.vinculos import apelido_livre as livre
 
     return livre(db, prestador_id, nome)

@@ -25,16 +25,10 @@ conceitos que não existem 1:1 no motor de emissão hoje:
    CSV/gerado manualmente esse fornecedor no mês). Se um dia existir um
    estado de rascunho de verdade exposto na UI, essa definição precisa ser
    revisitada.
-2. "A receber" / "pagamentos pendentes": não existe um vínculo formal
-   emissão<->pagamento — `pagamento_recebido` é por vínculo+competência,
-   não por emissão (ver PagamentoRecebido em app/models.py), porque o
-   registro de recebimento é manual e pode nem sempre corresponder 1:1 a
-   uma nota (adiantamento, pagamento agrupado, etc.). Aproximação usada
-   aqui: uma emissão ativa é considerada "recebida" se existe AO MENOS UM
-   PagamentoRecebido pro mesmo vínculo+competência — não confere se o
-   valor bate exatamente, então um pagamento parcial já conta como
-   'recebido' nesta v1. "A receber" soma o valor das emissões ativas do
-   mês sem nenhum pagamento associado.
+2. Nada de pagamento aqui (05/10/2026): o emissor e o financeiro são
+   produtos separados. A Visão geral mostra o que é da nota — emitida,
+   assinada, enviada — e quanto foi FATURADO (valor das notas); o que foi
+   recebido é assunto do módulo financeiro.
 """
 import datetime
 from calendar import monthrange
@@ -44,8 +38,7 @@ from decimal import Decimal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import AjusteEvento, Certificado, Emissao, Envio, PagamentoRecebido, Prestador
-from app.services import a_receber as notas_abertas
+from app.models import AjusteEvento, Certificado, Emissao, Envio, Prestador
 from app.services.envios import listar_envios
 from app.services.vinculos import listar_vinculos_ativos
 from app.tempo import hoje as hoje_br
@@ -88,33 +81,28 @@ def _status_envio(db: Session, emissao: Emissao) -> str | None:
     return envios[0].status if envios else None
 
 
-def _tem_pagamento(db: Session, prestador_tomador_id: uuid.UUID, competencia: str) -> bool:
-    return (
-        db.query(PagamentoRecebido)
-        .filter_by(prestador_tomador_id=prestador_tomador_id, competencia=competencia)
-        .first()
-        is not None
-    )
+# O que já saiu como nota (montado = gerada, ainda sem assinar). Rascunho,
+# erro, cancelada e substituída não contam como faturamento.
+ESTADOS_FATURADOS = ("montado", "assinado", "submetido", "confirmado")
 
 
-def _soma_pagamentos(db: Session, prestador_id: uuid.UUID, competencia: str) -> Decimal:
+def _faturado(db: Session, competencia: str) -> Decimal:
     total = (
-        db.query(func.coalesce(func.sum(PagamentoRecebido.valor), 0))
-        .filter_by(prestador_id=prestador_id, competencia=competencia)
+        db.query(func.coalesce(func.sum(Emissao.valor), 0))
+        .filter(Emissao.competencia == competencia, Emissao.estado.in_(ESTADOS_FATURADOS))
         .scalar()
     )
     return Decimal(total)
 
 
-def _serie_recebimentos(db: Session, prestador_id: uuid.UUID, competencia_final: str, meses: int = 6) -> list[dict]:
-    """Últimos `meses` (incluindo o atual), pro gráfico de barras de
-    'Recebimentos' do dashboard — soma bruta por competência, sem
-    diferenciar por vínculo (a tela mostra um total só)."""
-    serie = []
-    for delta in range(-(meses - 1), 1):
-        mes = _somar_competencia(competencia_final, delta)
-        serie.append({"competencia": mes, "valor": float(_soma_pagamentos(db, prestador_id, mes))})
-    return serie
+def _serie_faturamento(db: Session, competencia_final: str, meses: int = 6) -> list[dict]:
+    """Últimos `meses` (incluindo o atual), pro gráfico de barras da Visão
+    geral: valor das notas de cada mês."""
+    pontos = []
+    for delta in range(meses - 1, -1, -1):
+        comp = _somar_competencia(competencia_final, -delta)
+        pontos.append({"competencia": comp, "valor": float(_faturado(db, comp))})
+    return pontos
 
 
 def _avisos_dia_de_gerar(db: Session, vinculos: list, hoje: datetime.date | None = None) -> list[dict]:
@@ -170,12 +158,11 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
     competencia = competencia or _competencia_atual()
     anterior = _somar_competencia(competencia, -1)
 
-    vinculos = listar_vinculos_ativos(db)
+    # Clientes "só controle" (fontes de receita do financeiro) não são do emissor.
+    vinculos = [v for v in listar_vinculos_ativos(db) if not v.sem_nota]
     emissoes: list[dict] = []
     emitidas = 0
     aguardando = 0
-    a_receber = Decimal(0)
-    pagamentos_pendentes = 0
 
     # Tudo do mês em poucas consultas (antes eram ~4 por tomador): notas,
     # competências pagas e o último envio de cada nota.
@@ -192,7 +179,6 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
             .order_by(Emissao.criado_em)
         ):
             notas_por_vinculo.setdefault(e.prestador_tomador_id, []).append(e)
-    baixas = notas_abertas.Baixas(db)
     # Notas de vendedores da Shopee (avulsas) ficam numa linha própria e
     # fora do controle de pagamento: a Shopee paga tudo junto na nota dela.
     vendedores_por_vinculo: dict[uuid.UUID, list[Emissao]] = {}
@@ -222,7 +208,7 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
                 "apelido": f"{vinculo.apelido} — vendedores ({len(vendedores)} notas)", "tomador_razao_social": "vários vendedores",
                 "competencia": competencia, "valor": float(sum((e.valor for e in vendedores), Decimal(0))),
                 "estado": vendedores[0].estado, "estado_label": ESTADO_NFSE_LABEL.get(vendedores[0].estado, vendedores[0].estado),
-                "envio_status": None, "pagamento_recebido": baixas.mes_pago(vinculo.id, competencia), "tem_pdf": False, "tem_email": False,
+                "envio_status": None, "tem_pdf": False, "tem_email": False,
                 "homologacao": (vendedores[0].tomador_snapshot or {}).get("tpAmb") == "2", "envio_forma": "email",
                 "vendedores": True,
             })
@@ -231,13 +217,8 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
             continue
 
         emitidas += 1
-        # Uma linha por nota (03/10/2026: a baixa é por nota — duas notas do
-        # mesmo tomador no mês são cobradas e recebidas separadamente).
+        # Uma linha por nota.
         for emissao in do_mes:
-            recebido = baixas.paga(emissao.id, vinculo.id, competencia)
-            if not recebido and emissao.estado in notas_abertas.ESTADOS_COBRAVEIS:
-                a_receber += emissao.valor
-                pagamentos_pendentes += 1
             emissoes.append({
                 "emissao_id": emissao.id,
                 "vinculo_id": vinculo.id,
@@ -249,22 +230,19 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
                 "estado": emissao.estado,
                 "estado_label": ESTADO_NFSE_LABEL.get(emissao.estado, emissao.estado),
                 "envio_status": ultimo_envio.get(emissao.id),
-                "pagamento_recebido": recebido,
                 "tem_pdf": emissao.estado == "confirmado",
                 "tem_email": bool(vinculo.email_para or vinculo.email_contato),
                 "homologacao": (emissao.tomador_snapshot or {}).get("tpAmb") == "2",
                 "envio_forma": vinculo.envio_canal,
             })
 
-    recebido_no_mes = _soma_pagamentos(db, prestador_id, competencia)
-    recebido_mes_anterior = _soma_pagamentos(db, prestador_id, anterior)
-    delta_recebimentos_pct = None
-    if recebido_mes_anterior:
-        delta_recebimentos_pct = float((recebido_no_mes - recebido_mes_anterior) / recebido_mes_anterior * 100)
+    faturado_no_mes = _faturado(db, competencia)
+    faturado_mes_anterior = _faturado(db, anterior)
+    delta_faturamento_pct = None
+    if faturado_mes_anterior:
+        delta_faturamento_pct = float((faturado_no_mes - faturado_mes_anterior) / faturado_mes_anterior * 100)
 
     atencao: list[dict] = _avisos_dia_de_gerar(db, vinculos)
-    base_abertas = notas_abertas.calcular(db)
-    atencao += notas_abertas.avisos_abertas_ha_muito(db, base=base_abertas)
     cert = db.query(Certificado).filter_by(prestador_id=prestador_id).one_or_none()
     if cert is not None and cert.validade is not None:
         dias = (cert.validade - hoje_br()).days
@@ -304,13 +282,10 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
         "total_vinculos": len(vinculos),
         "emitidas": emitidas,
         "aguardando": aguardando,
-        "a_receber": float(a_receber),
-        "pagamentos_pendentes": pagamentos_pendentes,
-        "recebido_no_mes": float(recebido_no_mes),
-        "recebido_mes_anterior": float(recebido_mes_anterior),
-        "delta_recebimentos_pct": delta_recebimentos_pct,
-        "serie_recebimentos": _serie_recebimentos(db, prestador_id, competencia),
-        **notas_abertas.totais(db, base_abertas),
+        "faturado_no_mes": float(faturado_no_mes),
+        "faturado_mes_anterior": float(faturado_mes_anterior),
+        "delta_faturamento_pct": delta_faturamento_pct,
+        "serie_faturamento": _serie_faturamento(db, competencia),
         "emissoes": emissoes,
         "atencao": atencao,
     }
@@ -376,45 +351,6 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
             "competencia": competencia, "link": f"/app/nfse?gerar={v.id}&competencia={competencia}", "chave": chave,
         })
 
-    # Recebimento sem nota (ML/Amazon pagam antes): oferece gerar a nota
-    # daquele valor. Só os últimos meses, pra não virar lista de histórico.
-    desde = _mes_anterior(_mes_anterior(_mes_anterior(competencia)))
-    for r in notas_abertas.recebimentos_sem_nota(db, desde):
-        chave = r["chave"]
-        if chave in ignoradas or f"semnota:{r['vinculo_id']}:{r['competencia']}" in ignoradas:
-            continue
-        pendencias.append({
-            "tipo": "nota_recebimento", "titulo": f"Recebimento de {r['apelido']} sem nota", "acao": "Gerar nota",
-            "valor": r["valor"], "competencia": r["competencia"], "vinculo_id": r["vinculo_id"], "chave": chave,
-            "link": f"/app/nfse?gerar={r['vinculo_id']}&pagamento={r['pagamento_id']}",
-        })
-
-    for g in notas_abertas.notas_em_aberto(db, hoje):
-        chave = f"receber:{g['emissao_id']}"
-        # (chave antiga, de quando a baixa era por tomador + mês)
-        if chave in ignoradas or f"receber:{g['vinculo_id']}:{g['competencia']}" in ignoradas:
-            continue
-        pendencias.append({
-            "tipo": "receber", "titulo": f"Receber de {g['apelido']}", "acao": "Dar baixa",
-            "valor": g["valor"], "competencia": g["competencia"], "vinculo_id": g["vinculo_id"],
-            "link": "/app/financeiro#a-receber", "chave": chave,
-        })
-        if sum(1 for p in pendencias if p["tipo"] == "receber") >= 5:
-            break
-
-    # Linhas do extrato importadas e ainda sem classificar (05/10/2026).
-    from app.services import conciliacao
-
-    sem_classificar = conciliacao.contar_pendentes(db)
-    if sem_classificar and "conciliar" not in ignoradas:
-        pendencias.append({
-            "tipo": "conciliar", "acao": "Conciliar", "link": "/app/financeiro/conciliacao", "chave": "conciliar",
-            "titulo": (
-                "1 lançamento do extrato pra classificar" if sem_classificar == 1
-                else f"{sem_classificar} lançamentos do extrato pra classificar"
-            ),
-        })
-
     eventos = eventos_calendario(db, prestador_id, hoje, hoje + datetime.timedelta(days=30))
     agenda = [
         {"data": ev["data"], "tipo": ev.get("categoria") or ev["tipo"], "titulo": ev.get("apelido") or ev["titulo"],
@@ -439,7 +375,7 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
         else:
             agrupadas += do_tipo
     agrupadas += [p for p in pendencias if p["tipo"] not in agrupaveis]
-    ordem = {"erro": 0, "prefeitura": 1, "assinar": 2, "enviar_tomador": 3, "nota_recebimento": 4, "conciliar": 5, "gerar": 6, "receber": 7}
+    ordem = {"erro": 0, "prefeitura": 1, "assinar": 2, "enviar_tomador": 3, "gerar": 4}
     agrupadas.sort(key=lambda p: ordem.get(p["tipo"], 9))
     return {"pendencias": agrupadas[:10], "total_pendencias": len(agrupadas), "agenda": agenda}
 

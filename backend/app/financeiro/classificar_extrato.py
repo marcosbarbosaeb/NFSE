@@ -27,8 +27,8 @@ from sqlalchemy.orm import Session
 from app.models import (
     Despesa, DespesaRecorrente, LancamentoBancario, PagamentoRecebido, Prestador, PrestadorTomador, RegraExtrato,
 )
-from app.services import a_receber
-from app.services.importar_adn import _apelido_livre, criar_tomador_interno
+from app.financeiro import a_receber
+from app.services.vinculos import apelido_livre as _apelido_livre, criar_tomador_interno
 
 CATEGORIAS_PADRAO = (
     "Tarifas bancárias", "Simples Nacional", "INSS", "Pró-labore", "Contador", "Ferramentas e anúncios", "Outras despesas",

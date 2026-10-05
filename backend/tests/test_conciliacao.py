@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from app.database import get_db
 from app.main import app, prestador_atual_id
 from app.models import Despesa, Emissao, LancamentoBancario, PagamentoRecebido, PrestadorTomador
-from app.services import a_receber
+from app.financeiro import a_receber
 
 
 @pytest.fixture
@@ -102,8 +102,10 @@ def test_importar_guarda_tudo_e_conciliar_depois(client, db, prestador_teste, vi
     assert r.json()["pendentes"] == 5 and db.query(PagamentoRecebido).count() == 0
     # reimportar o mesmo arquivo não duplica
     assert client.post("/api/recebimentos/extrato/confirmar", json={"pendentes": pendentes}).json()["pendentes"] == 5
-    proximos = client.get("/api/painel/proximos").json()["pendencias"]
-    assert any(p["tipo"] == "conciliar" and p["titulo"].startswith("5 ") for p in proximos)
+    pendencias = client.get("/api/financeiro/pendencias").json()
+    assert any(p["tipo"] == "conciliar" and p["titulo"].startswith("5 ") for p in pendencias)
+    # ...e a Visão geral do emissor não fala disso
+    assert all(p["tipo"] != "conciliar" for p in client.get("/api/painel/proximos").json()["pendencias"])
 
     painel = client.get("/api/conciliacao").json()
     por_valor = {l["valor"]: l for l in painel["lancamentos"]}
@@ -166,7 +168,7 @@ def test_irmao_com_nota_do_mesmo_valor_ganha_da_regra_lembrada(client, db, prest
     db.flush()
     _nota(db, vinculo_teste, "2026-09", "35951.41", 9701)
     nota_b = _nota(db, irmao, "2026-09", "553.74", 9702)
-    from app.services import classificar_extrato
+    from app.financeiro import classificar_extrato
 
     classificar_extrato.lembrar(db, prestador_teste.id, "Transferencia recebida REDE DE AFILIADOS", credito=True, vinculo_id=vinculo_teste.id)
     arquivo = ("Data;Descrição;Valor\n24/09/2026;Transferencia recebida REDE DE AFILIADOS;35951,41\n"

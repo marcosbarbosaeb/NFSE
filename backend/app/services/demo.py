@@ -46,7 +46,7 @@ from app.models import (
     UsuarioPrestador,
 )
 from app.services.motor_emissao import criar_rascunho, montar
-from app.services.pagamentos import registrar_pagamento
+from app.financeiro.pagamentos import registrar_pagamento
 from app.tempo import hoje as hoje_br
 
 DOMINIO_EMAIL_DEMO = "simulacao.agenteana.com.br"

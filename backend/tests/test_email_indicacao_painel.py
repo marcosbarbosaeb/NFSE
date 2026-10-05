@@ -16,7 +16,7 @@ from app.database import definir_prestador_atual, get_db
 from app.main import app, prestador_atual_id
 from app.models import Assinatura, CodigoIndicacao, Indicacao, PagamentoRecebido, Prestador
 from app.services import mensagens
-from app.services.a_receber import avisos_abertas_ha_muito, notas_em_aberto, totais
+from app.financeiro.a_receber import avisos_abertas_ha_muito, notas_em_aberto, totais
 from app.services.dashboard import proximos
 from app.services.envio_direto import modelo_email, previa_email
 from app.services.indicacao import (
@@ -223,14 +223,18 @@ def test_proximos_traz_pendencias_mesmo_sem_eventos(db, prestador_teste, vinculo
     montar(db, emissao)
     dados = proximos(db, prestador_teste.id, hoje)
     tipos = [p["tipo"] for p in dados["pendencias"]]
-    assert "assinar" in tipos and "gerar" not in tipos and "receber" in tipos
+    # (o "receber" saiu daqui: é do módulo financeiro)
+    assert "assinar" in tipos and "gerar" not in tipos and "receber" not in tipos
+    from app.financeiro.pendencias import pendencias
+
+    assert "receber" in [p["tipo"] for p in pendencias(db, hoje)]
 
 
 def test_endpoints_painel(client, vinculo_teste):
     assert client.get("/api/painel/proximos").status_code == 200
     assert client.get("/api/notas-a-receber").json() == []
     resumo_mes = client.get("/api/painel/resumo-mes").json()
-    assert "a_receber_total" in resumo_mes and "notas_recebidas" in resumo_mes
+    assert "faturado_no_mes" in resumo_mes and "a_receber_total" not in resumo_mes
     lista = client.get("/api/dps").json()
     assert lista == [] or "envio_status" in lista[0]
 

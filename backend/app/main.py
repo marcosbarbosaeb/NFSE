@@ -55,6 +55,8 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import get_settings
+from app.deps import MENSAGEM_DEMO, MODULOS, db_sessao, exige_modulo, exigir_conta_real, ler_upload as _ler_upload, modulos_da_empresa, prestador_atual_id  # noqa: F401
+from app import eventos as integracao
 from app.database import definir_prestador_atual, get_db
 from app.fiscal.dps import DescricaoIncompletaError
 from app.models import (
@@ -90,6 +92,7 @@ from app.schemas import (
     EventoManualCriarRequest,
     ExtratoExtraidoResponse,
     GerarDpsRequest,
+    OrigemNotaRequest,
     LigarPagamentoRequest,
     OrdemRequest,
     PreferenciasRequest,
@@ -202,7 +205,7 @@ from app.services.calendario import (
     remover_ajuste,
 )
 from app.services.dashboard import resumo_mes
-from app.services.despesas import registrar_despesa
+from app.financeiro.despesas import registrar_despesa
 from app.services.envios import (
     CanalInvalidoError,
     EmissaoSemConteudoError,
@@ -215,10 +218,11 @@ from app.services.envios import (
     registrar_envio,
 )
 from app.limites import limitador, limite  # noqa: F401 — limitador: os testes zeram
-from app.services import contas, financeiro, importar_adn, importar_planilha, lotes, mensagens
+from app.services import contas, importar_adn, lotes, mensagens
+from app.financeiro import contas_mes as financeiro, importar_planilha
 from app.services.indicacao import resumo as resumo_indicacao
 from app.services.email import EmailEnvioError, get_email_sender
-from app.services.a_receber import notas_em_aberto, recebimentos_sem_nota
+from app.financeiro.a_receber import notas_em_aberto, recebimentos_sem_nota
 from app.services.dashboard import proximos as proximos_do_painel
 from app.services.envio_direto import (
     EmailIndisponivelError,
@@ -235,7 +239,7 @@ from app.services.envio_direto import (
     opcoes_envio,
 )
 from app.services.demo import criar_conta_demo, eh_email_demo
-from app.services.extrato_pdf import PdfInvalidoError, extrair_extrato
+from app.financeiro.extrato_pdf import PdfInvalidoError, extrair_extrato
 from app.services.limpeza import limpar_dados
 from app.services.ordem_awin import CNPJ_AWIN, OrdemAwinInvalidaError, ler_ordem_awin
 from app.services.relatorio_shopee import RelatorioShopeeInvalidoError, gerar_notas, ler_relatorio
@@ -248,9 +252,9 @@ from app.services.google_oauth import (
     trocar_code_por_usuario,
 )
 from app.services.importacao_csv import CsvInvalidoError, importar_csv
-from app.services import classificar_extrato, conciliacao
-from app.services.importacao_extrato import ItemExtrato, confirmar_importacao_extrato
-from app.services.listagens import listar_despesas, listar_emissoes, listar_pagamentos
+from app.financeiro import classificar_extrato, conciliacao
+from app.financeiro.importacao_extrato import ItemExtrato, confirmar_importacao_extrato
+from app.services.listagens import listar_emissoes
 from app.fiscal.cliente_sefin import ClienteSefin
 from app.services.motor_emissao import (
     EmissaoJaExisteError,
@@ -263,8 +267,8 @@ from app.services.motor_emissao import (
     submeter as submeter_emissao,
 )
 from app.services.nota_visual import montar_nota_visual
-from app.services.pagamentos import registrar_pagamento
-from app.services.painel_status import painel_status_completo
+from app.financeiro.pagamentos import registrar_pagamento
+from app.financeiro.painel_status import painel_status_completo
 from app.services.tomadores import CnpjJaCadastradoError, buscar_tomador, criar_tomador, listar_catalogo
 from app.services.cadastro import (
     EmailJaCadastradoError as CadastroEmailJaCadastradoError,
@@ -347,37 +351,6 @@ def _avisar_segredos_de_desenvolvimento() -> None:
 _avisar_segredos_de_desenvolvimento()
 
 
-def prestador_atual_id(request: Request, db: Session = Depends(get_db)) -> uuid.UUID:
-    """Marco 10 — resolve o prestador a partir da SESSÃO autenticada (não
-    mais config fixa, ver docstring do módulo). `usuario` não tem RLS (ver
-    docstring do modelo em app/models.py), por isso usa `get_db` puro aqui
-    e não `db_sessao` — seria circular, já que `db_sessao` depende desta
-    função. NUNCA aceita prestador_id vindo do cliente: é sempre resolvido
-    no servidor, a partir de quem está logado — é essa garantia que mantém
-    a disciplina de RLS válida com múltiplos usuários."""
-    usuario_id = request.session.get("usuario_id")
-    if usuario_id is None:
-        raise HTTPException(status_code=401, detail="Não autenticado — faça login.")
-    usuario = db.query(Usuario).filter_by(id=uuid.UUID(usuario_id), ativo=True, email_confirmado=True).one_or_none()
-    if usuario is None or not contas.validar_sessao(db, request, usuario):
-        request.session.clear()
-        raise HTTPException(status_code=401, detail="Sessão inválida — faça login novamente.")
-    # Vários CNPJs no mesmo login (29/09/2026): a empresa ativa vem da
-    # sessão, sempre conferida contra as empresas a que o usuário tem acesso.
-    return contas.empresa_ativa(db, request, usuario)
-
-
-def db_sessao(db: Session = Depends(get_db), prestador_id: uuid.UUID = Depends(prestador_atual_id)) -> Session:
-    """RLS continua valendo de verdade aqui — sem isso, toda query nas
-    tabelas protegidas devolve vazio (falha fechada, ver migração de RLS)."""
-    definir_prestador_atual(db, prestador_id)
-    return db
-
-
-MENSAGEM_DEMO = (
-    "Isso não está disponível no modo simulação — aqui nada é enviado à Receita nem a ninguém. "
-    "Crie sua conta grátis para usar de verdade."
-)
 
 
 def _validar_nbs(codigo: str | None) -> str | None:
@@ -405,19 +378,6 @@ def _dados_oficiais_cnpj(cnpj: str):
         return consultar_cnpj(cnpj)
     except Exception:  # noqa: BLE001 — indisponível/não achou: segue com o digitado
         return None
-
-
-def exigir_conta_real(request: Request, db: Session = Depends(get_db)) -> None:
-    """Ambiente de simulação (ver app/services/demo.py): recusa as rotas que
-    falam com o mundo de fora — Receita, e-mail, cobrança, certificado,
-    senha. Usa `usuario` (sem RLS) pra não depender da ordem das outras
-    dependências."""
-    usuario_id = request.session.get("usuario_id")
-    if usuario_id is None:
-        return  # a própria rota devolve o 401 de sempre
-    usuario = db.get(Usuario, uuid.UUID(usuario_id))
-    if usuario is not None and eh_email_demo(usuario.email):
-        raise HTTPException(status_code=403, detail=MENSAGEM_DEMO)
 
 
 @app.post("/api/auth/login", response_model=UsuarioResponse, responses={401: {"model": ErroResponse}, 403: {"model": ErroResponse}}, dependencies=[Depends(limite("login", 20, 600))])
@@ -948,18 +908,6 @@ def api_criar_portal(prestador_id: uuid.UUID = Depends(prestador_atual_id), db: 
     return CheckoutSessaoResponse(url=url)
 
 
-def _ler_upload(arquivo: UploadFile, limite_mb: int) -> bytes:
-    """Lê o arquivo enviado com teto de tamanho (antes lia tudo pra memória
-    antes de conferir). As rotas de upload são `def` (não `async def`):
-    ler/parsear PDF e CSV é trabalho bloqueante e roda no threadpool, sem
-    travar os outros pedidos."""
-    limite = limite_mb * 1024 * 1024
-    dados = arquivo.file.read(limite + 1)
-    if len(dados) > limite:
-        raise HTTPException(status_code=413, detail=f"Arquivo grande demais (máximo {limite_mb} MB).")
-    return dados
-
-
 @app.post("/api/webhooks/stripe")
 async def api_webhook_stripe(request: Request, db: Session = Depends(get_db)):
     """Rota pública (sem sessão) — quem autentica isto é a assinatura
@@ -1466,17 +1414,11 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
     competencia = req.competencia
     if req.data_competencia is not None:
         competencia = f"{req.data_competencia.year:04d}-{req.data_competencia.month:02d}"
-    pagamento = None
-    if req.pagamento_id is not None:
-        # Nota de um recebimento que chegou sem nota (ML/Amazon pagam antes):
-        # a nota sai na competência escolhida e o recebimento fica ligado a
-        # ela (05/10/2026 — antes a nota era forçada pro mês do recebimento,
-        # e a de outubro da Amazon batia na de setembro).
-        pagamento = db.get(PagamentoRecebido, req.pagamento_id)
-        if pagamento is None or pagamento.prestador_tomador_id != vinculo.id:
-            raise HTTPException(status_code=404, detail="Recebimento não encontrado pra este tomador.")
+    # De onde veio o pedido da nota, quando veio de outro módulo (texto
+    # opaco pro emissor — ex.: "fin:pagamento:<id>", ver app/eventos.py).
+    origem = req.origem or (f"fin:pagamento:{req.pagamento_id}" if req.pagamento_id else None)
 
-    herdar: list[PagamentoRecebido] = []
+    depois_da_troca: list = []
     existente = buscar_emissao_ativa(db, vinculo.id, competencia)
     if existente is not None:
         mes = f"{competencia[5:7]}/{competencia[:4]}"
@@ -1491,9 +1433,9 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
                 f"{vinculo.apelido} já tem uma nota de {mes} que ainda não foi enviada ({valor_br}). "
                 "Abra essa nota pra continuar, ou gere esta no lugar dela."
             ))
-        # Troca: a nota que não saiu é apagada e o que estava ligado a ela
-        # (recebimento) passa pra nova.
-        herdar = db.query(PagamentoRecebido).filter(PagamentoRecebido.emissao_id == existente.id).all()
+        # Troca: a nota que não saiu é apagada; o que outros módulos tinham
+        # ligado a ela passa pra nova.
+        depois_da_troca = integracao.coletar("antes_de_trocar_nota", db, emissao=existente)
         db.query(Envio).filter(Envio.emissao_id == existente.id).delete(synchronize_session=False)
         db.delete(existente)
         db.flush()
@@ -1508,43 +1450,32 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except DescricaoIncompletaError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    for p in herdar + ([pagamento] if pagamento is not None and pagamento.emissao_id is None else []):
-        _ligar_pagamento(p, emissao)
+    try:
+        for passar_pra_nova in depois_da_troca:
+            passar_pra_nova(emissao)
+        integracao.publicar("nota_criada", db, emissao=emissao, origem=origem)
+    except integracao.RecusaDeIntegracao as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     db.flush()
     resposta = _para_resposta(emissao)  # antes do commit (RLS vale só na transação)
     db.commit()
     return resposta
 
 
-def _ligar_pagamento(pagamento: PagamentoRecebido, emissao: Emissao | None) -> None:
-    """Esse recebimento paga ESTA nota — e conta no mês dela."""
-    pagamento.emissao_id = emissao.id if emissao is not None else None
-    pagamento.mes_inteiro = False
-    if emissao is not None:
-        pagamento.competencia = emissao.competencia
-
-
-@app.patch("/api/pagamentos/{pagamento_id}", response_model=PagamentoResponse, responses={404: {"model": ErroResponse}})
-def api_ligar_pagamento(pagamento_id: uuid.UUID, req: LigarPagamentoRequest, db: Session = Depends(db_sessao)):
-    """Liga um recebimento a uma nota do mesmo tomador (ou solta, com
-    `emissao_id: null` — volta a ser um recebimento sem nota)."""
-    pagamento = db.get(PagamentoRecebido, pagamento_id)
-    if pagamento is None:
-        raise HTTPException(status_code=404, detail="Recebimento não encontrado.")
-    emissao = None
-    if req.emissao_id is not None:
-        emissao = db.get(Emissao, req.emissao_id)
-        if emissao is None or emissao.prestador_tomador_id != pagamento.prestador_tomador_id:
-            raise HTTPException(status_code=404, detail="Essa nota não é do tomador deste recebimento.")
-    _ligar_pagamento(pagamento, emissao)
+@app.post("/api/dps/{emissao_id}/origem", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 422: {"model": ErroResponse}})
+def api_ligar_origem(emissao_id: uuid.UUID, req: OrigemNotaRequest, db: Session = Depends(db_sessao)):
+    """A nota que JÁ existe atende um pedido que veio de outro módulo (ex.: o
+    financeiro pediu a nota de um recebimento e ela já estava gerada) — o
+    emissor só avisa, como se a nota tivesse acabado de ser criada."""
+    emissao = _emissao_ou_404(db, emissao_id)
+    try:
+        integracao.publicar("nota_criada", db, emissao=emissao, origem=req.origem)
+    except integracao.RecusaDeIntegracao as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     db.flush()
-    vinculo = db.get(PrestadorTomador, pagamento.prestador_tomador_id)
-    resposta = PagamentoResponse(
-        id=pagamento.id, apelido=vinculo.apelido, competencia=pagamento.competencia, valor=float(pagamento.valor),
-        data_recebimento=pagamento.data_recebimento, vinculo_id=vinculo.id, emissao_id=pagamento.emissao_id,
-        sem_nota=pagamento.emissao_id is None and not vinculo.sem_nota,
-        pode_gerar_nota=pagamento.emissao_id is None and not vinculo.sem_nota,
-    )
+    resposta = _para_resposta(emissao)
     db.commit()
     return resposta
 
@@ -1554,22 +1485,15 @@ def api_listar_dps(
     ano: str | None = None,
     vinculo_id: uuid.UUID | None = None,
     estado: str | None = None,
-    pagamento: str | None = None,
     grupo: str | None = Query(default=None, pattern=r"^(notas|vendedores)$"),
     db: Session = Depends(db_sessao),
 ):
     """Marco 14 — tela 'NFS-e': lista completa (todas as competências),
     diferente de /api/painel/resumo-mes (só o mês corrente, pro dashboard).
-    Todos os filtros são opcionais. GET puro, sem efeito colateral.
-
-    `pagamento` (Marco 16, item 3 — confronto emitidas x pagas): "recebido"
-    ou "pendente"; qualquer outro valor é rejeitado pra não filtrar
-    silenciosamente errado num typo de query string."""
+    Todos os filtros são opcionais. GET puro, sem efeito colateral."""
     if ano is not None and (len(ano) != 4 or not ano.isdigit()):
         raise HTTPException(status_code=422, detail="ano deve estar no formato AAAA")
-    if pagamento is not None and pagamento not in ("recebido", "pendente"):
-        raise HTTPException(status_code=422, detail="pagamento deve ser 'recebido' ou 'pendente'")
-    return listar_emissoes(db, ano=ano, vinculo_id=vinculo_id, estado=estado, pagamento=pagamento, grupo=grupo)
+    return listar_emissoes(db, ano=ano, vinculo_id=vinculo_id, estado=estado, grupo=grupo)
 
 
 @app.post("/api/dps/importar-csv", response_model=ImportacaoCsvResponse, responses={400: {"model": ErroResponse}})
@@ -2135,253 +2059,7 @@ def api_marcar_envio_falha(envio_id: uuid.UUID, db: Session = Depends(db_sessao)
     return envio
 
 
-@app.post("/api/pagamentos", response_model=PagamentoResponse, responses={404: {"model": ErroResponse}})
-def api_registrar_pagamento(req: RegistrarPagamentoRequest, db: Session = Depends(db_sessao)):
-    """Marco 8 — registro manual de um pagamento recebido (o lado 'recebi'
-    do painel de status; o lado 'faturei' já é automático via /api/dps)."""
-    vinculo = buscar_vinculo(db, req.vinculo_id)
-    if vinculo is None:
-        raise HTTPException(status_code=404, detail="Vínculo não encontrado (ou não pertence ao prestador ativo)")
-    try:
-        pagamento = registrar_pagamento(
-            db, vinculo, competencia=req.competencia, valor=req.valor, data_recebimento=req.data_recebimento,
-            emissao_id=req.emissao_id,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    # Antes do commit: depois dele a transação nova não tem o prestador (RLS).
-    sem_nota = pagamento.emissao_id is None and not vinculo.sem_nota
-    resposta = PagamentoResponse(
-        id=pagamento.id, apelido=vinculo.apelido, competencia=pagamento.competencia,
-        valor=float(pagamento.valor), data_recebimento=pagamento.data_recebimento,
-        sem_nota=sem_nota, vinculo_id=vinculo.id, emissao_id=pagamento.emissao_id, pode_gerar_nota=sem_nota,
-    )
-    db.commit()
-    return resposta
-
-
-@app.delete("/api/pagamentos")
-def api_desfazer_pagamento(
-    vinculo_id: uuid.UUID | None = None, competencia: str | None = None, emissao_id: uuid.UUID | None = None,
-    db: Session = Depends(db_sessao),
-):
-    """Desfaz a baixa. Com `emissao_id` (03/10/2026, baixa por nota): só
-    daquela nota. Sem ele (telas antigas): apaga o(s) recebimento(s) do
-    tomador+competência."""
-    if emissao_id is not None:
-        from app.services import a_receber as ar
-
-        emissao = db.get(Emissao, emissao_id)
-        if emissao is None:
-            raise HTTPException(status_code=404, detail="Nota não encontrada.")
-        removidos = ar.desfazer_baixa(db, emissao)
-        db.commit()
-        return {"removidos": removidos}
-    if vinculo_id is None or competencia is None or not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", competencia):
-        raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
-    removidos = (
-        db.query(PagamentoRecebido)
-        .filter(PagamentoRecebido.prestador_tomador_id == vinculo_id, PagamentoRecebido.competencia == competencia)
-        .delete(synchronize_session=False)
-    )
-    db.commit()
-    return {"removidos": removidos}
-
-
-@app.get("/api/pagamentos", response_model=list[PagamentoResponse])
-def api_listar_pagamentos(
-    ano: str | None = None,
-    vinculo_id: uuid.UUID | None = None,
-    por: str | None = None,
-    db: Session = Depends(db_sessao),
-):
-    """Marco 14 — tela 'Recebimentos'. GET puro, sem efeito colateral.
-    `por=recebimento`: o ano é o de quando o dinheiro caiu (Financeiro)."""
-    if ano is not None and (len(ano) != 4 or not ano.isdigit()):
-        raise HTTPException(status_code=422, detail="ano deve estar no formato AAAA")
-    return listar_pagamentos(db, ano=ano, vinculo_id=vinculo_id, por_recebimento=por == "recebimento")
-
-
-@app.post("/api/recebimentos/extrato", response_model=ExtratoExtraidoResponse, responses={400: {"model": ErroResponse}})
-def api_extrair_extrato(arquivo: UploadFile = File(...), db: Session = Depends(db_sessao)):
-    """Aceita PDF, OFX ou CSV desde 28/09/2026 (ver app/services/extrato_pdf.py)."""
-    """Marco 15 (item 5) — extração heurística de transações de um extrato
-    bancário em PDF (ver docstring de app/services/extrato_pdf.py). GET
-    conceitual apesar do POST (upload exige POST): não grava NADA no banco
-    — só devolve candidatos pra tela de revisão. `db_sessao` aqui só serve
-    pra manter o padrão de autenticação das outras rotas; o parser em si
-    não toca o banco."""
-    bruto = _ler_upload(arquivo, 15)
-    try:
-        resultado = extrair_extrato(bruto, arquivo.filename)
-    except PdfInvalidoError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    transacoes = resultado.transacoes
-    sugestoes = classificar_extrato.sugerir(db, transacoes)
-    cats = classificar_extrato.categorias(db)
-    return ExtratoExtraidoResponse(
-        categorias=cats["despesas"], categorias_retirada=cats["retiradas"],
-        notas_abertas=classificar_extrato.notas_para_escolher(db),
-        formato=resultado.formato,
-        linhas_lidas=resultado.linhas_lidas,
-        total_transacoes=len(transacoes),
-        transacoes=[
-            {"linha": t.linha, "data": t.data, "descricao": t.descricao, "valor": float(t.valor), **sug}
-            for t, sug in zip(transacoes, sugestoes)
-        ],
-    )
-
-
-@app.post("/api/recebimentos/extrato/confirmar", response_model=ConfirmarExtratoResponse)
-def api_confirmar_extrato(
-    req: ConfirmarExtratoRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
-):
-    """Segunda metade do fluxo acima — grava um PagamentoRecebido por item
-    que a pessoa confirmou na revisão (cada um casado com um vínculo à
-    mão). Mesmo padrão de isolamento por item do /api/dps/importar-csv:
-    um item ruim não derruba os demais (ver
-    app/services/importacao_extrato.py)."""
-    itens = [
-        ItemExtrato(
-            vinculo_id=i.vinculo_id, competencia=i.competencia, valor=i.valor, data_recebimento=i.data_recebimento,
-            descricao=i.descricao, emissao_id=i.emissao_id,
-        )
-        for i in req.itens
-    ]
-    resultados = confirmar_importacao_extrato(db, itens) if itens else []
-    sucesso = sum(1 for r in resultados if r.ok)
-    # Toda linha do extrato fica guardada (05/10/2026): as classificadas já
-    # conciliadas, as outras pendentes pra tela de conciliação.
-    linhas = (
-        [{"data": i.data_recebimento, "descricao": i.descricao, "valor": i.valor, "credito": True} for i in req.itens]
-        + [{"data": d.data, "descricao": d.descricao, "valor": d.valor, "credito": False} for d in req.despesas]
-        + [p.model_dump() for p in req.pendentes]
-    )
-    lancamentos = conciliacao.guardar(db, prestador_id, linhas, req.arquivo)
-    for r in resultados:
-        if r.ok and req.itens[r.indice].descricao:
-            conciliacao.marcar(lancamentos[r.indice], pagamento_id=r.pagamento_id)
-    # Saídas do extrato viram despesas (28/09/2026: "importe as entradas da
-    # forma que está e importe as saídas abaixo").
-    for n, d in enumerate(req.despesas):
-        despesa = classificar_extrato.registrar_saida(
-            db, prestador_id, categoria=d.categoria, competencia=d.competencia, valor=d.valor,
-            descricao=d.descricao, data=d.data, tipo=d.tipo,
-        )
-        classificar_extrato.lembrar(db, prestador_id, d.descricao, credito=False, categoria=d.categoria.strip(), tipo=d.tipo)
-        if d.descricao:
-            conciliacao.marcar(lancamentos[len(req.itens) + n], despesa_id=despesa.id)
-    db.flush()
-    sem_nota = _sem_nota_dos_pagamentos(db, [r.pagamento_id for r in resultados if r.ok and r.pagamento_id])
-    pendentes = conciliacao.contar_pendentes(db)
-    db.commit()
-    return ConfirmarExtratoResponse(
-        total=len(resultados), sucesso=sucesso, erro=len(resultados) - sucesso,
-        itens=[{"indice": r.indice, "ok": r.ok, "mensagem": r.mensagem, "pagamento_id": r.pagamento_id} for r in resultados],
-        despesas_registradas=len(req.despesas), sem_nota=sem_nota, pendentes=pendentes,
-    )
-
-
 # --- Conciliação do extrato (05/10/2026, ver app/services/conciliacao.py) ---
-
-
-@app.get("/api/conciliacao")
-def api_conciliacao(db: Session = Depends(db_sessao)):
-    return conciliacao.painel(db)
-
-
-@app.get("/api/conciliacao/contagem")
-def api_conciliacao_contagem(db: Session = Depends(db_sessao)):
-    return {"pendentes": conciliacao.contar_pendentes(db)}
-
-
-@app.get("/api/conciliacao/ignorados")
-def api_conciliacao_ignorados(db: Session = Depends(db_sessao)):
-    return conciliacao.listar_ignorados(db)
-
-
-@app.post("/api/conciliacao/automatico")
-def api_conciliacao_automatico(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
-    feitos = conciliacao.automatico(db, prestador_id, hoje_br())
-    db.commit()
-    return {"conciliados": feitos}
-
-
-@app.post("/api/conciliacao/{lancamento_id}/receita")
-def api_conciliar_receita(lancamento_id: uuid.UUID, req: ConciliarReceitaRequest, db: Session = Depends(db_sessao)):
-    vinculo = buscar_vinculo(db, req.vinculo_id)
-    if vinculo is None:
-        raise HTTPException(status_code=404, detail="Tomador não encontrado.")
-    try:
-        pagamento = conciliacao.como_receita(
-            db, lancamento_id, vinculo, hoje=hoje_br(), emissao_id=req.emissao_id, competencia=req.competencia,
-        )
-    except conciliacao.ConciliacaoError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    resposta = {
-        "pagamento_id": str(pagamento.id), "vinculo_id": str(vinculo.id), "apelido": vinculo.apelido,
-        "competencia": pagamento.competencia, "valor": float(pagamento.valor),
-        "emissao_id": str(pagamento.emissao_id) if pagamento.emissao_id else None,
-        "pode_gerar_nota": pagamento.emissao_id is None and not vinculo.sem_nota,
-    }
-    db.commit()
-    return resposta
-
-
-@app.post("/api/conciliacao/{lancamento_id}/despesa")
-def api_conciliar_despesa(
-    lancamento_id: uuid.UUID, req: ConciliarDespesaRequest, db: Session = Depends(db_sessao),
-    prestador_id: uuid.UUID = Depends(prestador_atual_id),
-):
-    try:
-        despesa = conciliacao.como_despesa(
-            db, lancamento_id, prestador_id, hoje=hoje_br(), despesa_id=req.despesa_id, categoria=req.categoria,
-            tipo=req.tipo, competencia=req.competencia,
-        )
-    except conciliacao.ConciliacaoError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    resposta = {"despesa_id": str(despesa.id), "categoria": despesa.categoria, "valor": float(despesa.valor)}
-    db.commit()
-    return resposta
-
-
-@app.post("/api/conciliacao/{lancamento_id}/ignorar")
-def api_conciliacao_ignorar(lancamento_id: uuid.UUID, ignorar: bool = True, db: Session = Depends(db_sessao)):
-    try:
-        conciliacao.ignorar(db, lancamento_id, ignorar)
-    except conciliacao.ConciliacaoError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    db.commit()
-    return {"ok": True}
-
-
-@app.post("/api/conciliacao/{lancamento_id}/tipo")
-def api_conciliacao_tipo(lancamento_id: uuid.UUID, credito: bool, db: Session = Depends(db_sessao)):
-    try:
-        conciliacao.trocar_tipo(db, lancamento_id, credito)
-    except conciliacao.ConciliacaoError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    db.commit()
-    return {"ok": True}
-
-
-@app.post("/api/vinculos/controle")
-def api_criar_fonte_de_receita(
-    req: FonteReceitaRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
-):
-    """Tomador criado direto da revisão do extrato (03/10/2026): só o nome,
-    entra como fonte de receita só pra controle (sem nota)."""
-    vinculo = classificar_extrato.criar_fonte(db, db.get(Prestador, prestador_id), req.nome)
-    resposta = {"id": str(vinculo.id), "apelido": vinculo.apelido, "sem_nota": vinculo.sem_nota}
-    db.commit()
-    return resposta
-
-
-def _sem_nota_dos_pagamentos(db: Session, ids: list) -> list[dict]:
-    if not ids:
-        return []
-    alvo = set(ids)
-    return [r for r in recebimentos_sem_nota(db) if r["pagamento_id"] in alvo]
 
 
 def _vinculo_shopee(db: Session, vinculo_id: uuid.UUID):
@@ -2540,75 +2218,6 @@ def api_limpar_dados(
     return LimparDadosResponse(removidos=removidos)
 
 
-@app.post("/api/despesas", response_model=DespesaResponse)
-def api_registrar_despesa(req: RegistrarDespesaRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
-    """Lançamento manual — despesa ou retirada (distribuição de lucros), já
-    paga ou a pagar."""
-    despesa = Despesa(
-        id=uuid.uuid4(), prestador_id=prestador_id, categoria=req.categoria.strip(), competencia=req.competencia,
-        valor=Decimal(str(req.valor)), descricao=(req.descricao or "").strip() or None, tipo=req.tipo,
-        conta=(req.conta or "").strip() or None, vencimento=req.vencimento, pago=req.pago,
-        pago_em=req.pago_em or (hoje_br() if req.pago else None),
-    )
-    db.add(despesa)
-    db.commit()
-    return financeiro._linha_despesa(despesa)
-
-
-def _despesa_ou_404(db: Session, despesa_id: uuid.UUID) -> Despesa:
-    despesa = db.get(Despesa, despesa_id)
-    if despesa is None:
-        raise HTTPException(status_code=404, detail="Lançamento não encontrado.")
-    return despesa
-
-
-@app.patch("/api/despesas/{despesa_id}", response_model=DespesaResponse, responses={404: {"model": ErroResponse}})
-def api_atualizar_despesa(despesa_id: uuid.UUID, req: AtualizarDespesaRequest, db: Session = Depends(db_sessao)):
-    """Editar ou ticar ("pagou ✓") um lançamento."""
-    despesa = _despesa_ou_404(db, despesa_id)
-    campos = req.model_dump(exclude_unset=True)
-    for campo, valor in campos.items():
-        if campo == "valor" and valor is not None:
-            valor = Decimal(str(valor))
-        if campo in ("categoria", "descricao", "conta") and isinstance(valor, str):
-            valor = valor.strip() or (None if campo != "categoria" else despesa.categoria)
-        if campo in ("pago",) and valor is None:
-            continue
-        setattr(despesa, campo, valor)
-    if campos.get("pago") is True and "pago_em" not in campos:
-        despesa.pago_em = despesa.pago_em or hoje_br()
-    if campos.get("pago") is False:
-        despesa.pago_em = None
-    db.commit()
-    return financeiro._linha_despesa(despesa)
-
-
-@app.delete("/api/despesas/{despesa_id}", responses={404: {"model": ErroResponse}})
-def api_apagar_despesa(despesa_id: uuid.UUID, db: Session = Depends(db_sessao)):
-    db.delete(_despesa_ou_404(db, despesa_id))
-    db.commit()
-    return {"ok": True}
-
-
-@app.get("/api/despesas", response_model=list[DespesaResponse])
-def api_listar_despesas(ano: str | None = None, db: Session = Depends(db_sessao)):
-    """Marco 14 — tela 'Despesas'. GET puro, sem efeito colateral."""
-    if ano is not None and (len(ano) != 4 or not ano.isdigit()):
-        raise HTTPException(status_code=422, detail="ano deve estar no formato AAAA")
-    return listar_despesas(db, ano=ano)
-
-
-@app.get("/api/painel/status", response_model=PainelStatusResponse)
-def api_painel_status(ano: str, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
-    """Marco 8 — 'painel de status, seria notas geradas e notas recebidas...
-    igual a esta planilha' (item #7 da lista original). `ano` é obrigatório
-    e no formato AAAA (o painel mostra um ano de cada vez, como a aba única
-    da planilha real hoje mostra 2026)."""
-    if len(ano) != 4 or not ano.isdigit():
-        raise HTTPException(status_code=422, detail="ano deve estar no formato AAAA")
-    return painel_status_completo(db, prestador_id, ano)
-
-
 def _cliente_producao(db: Session, prestador_id: uuid.UUID) -> ClienteSefin:
     try:
         private_key, cert = carregar_certificado(db, prestador_id, get_settings().cert_master_key)
@@ -2672,131 +2281,6 @@ def api_importar_nacional(
 _COMPETENCIA_RE = r"^\d{4}-(0[1-9]|1[0-2])$"
 
 
-@app.get("/api/financeiro/resumo", response_model=ResumoFinanceiroResponse)
-def api_resumo_financeiro(ano: str = Query(pattern=r"^\d{4}$"), db: Session = Depends(db_sessao)):
-    return financeiro.resumo_anual(db, ano)
-
-
-@app.get("/api/financeiro/recebimentos-sem-nota", response_model=list[RecebimentoSemNotaResponse])
-def api_recebimentos_sem_nota(db: Session = Depends(db_sessao)):
-    """Dinheiro que caiu sem nota emitida pro tomador naquele mês (últimos 12
-    meses, sem os avisos ignorados)."""
-    hoje = hoje_br()
-    desde = f"{hoje.year - 1:04d}-{hoje.month:02d}"
-    ignoradas = {c for (c,) in db.query(AjusteEvento.chave).filter(AjusteEvento.tipo == "pendencia", AjusteEvento.oculto.is_(True))}
-    return [
-        r for r in recebimentos_sem_nota(db, desde)
-        # (a chave antiga, por tomador + mês, continua valendo pros ignorados de antes)
-        if r["chave"] not in ignoradas and f"semnota:{r['vinculo_id']}:{r['competencia']}" not in ignoradas
-    ]
-
-
-@app.post("/api/financeiro/conciliar")
-def api_conciliar(req: ConciliarRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
-    """"Considerar recebidas" — notas antigas que eram controladas em outra
-    plataforma saem do "a receber" sem lançar valor (o recebido não muda)."""
-    from app.services import a_receber as ar
-
-    pares = [(i.vinculo_id, i.competencia) for i in req.itens]
-    if req.ate:
-        pares += [(g["vinculo_id"], g["competencia"]) for g in ar.notas_em_aberto(db) if g["competencia"] <= req.ate]
-    feitos = ar.conciliar(db, prestador_id, pares)
-    db.commit()
-    return {"conciliadas": feitos}
-
-
-@app.get("/api/financeiro/mes", response_model=ContasDoMesResponse)
-def api_contas_do_mes(
-    competencia: str = Query(pattern=_COMPETENCIA_RE), db: Session = Depends(db_sessao),
-    prestador_id: uuid.UUID = Depends(prestador_atual_id),
-):
-    """Contas fixas do mês (a pagar / pagas) + rotina de fechamento. Cria os
-    lançamentos do mês das contas fixas na primeira vez que é aberto."""
-    resultado = financeiro.contas_do_mes(db, prestador_id, competencia)
-    db.commit()
-    return resultado
-
-
-@app.get("/api/financeiro/contas-fixas", response_model=list[ContaFixaResponse])
-def api_listar_contas_fixas(db: Session = Depends(db_sessao)):
-    return financeiro.listar_recorrentes(db)
-
-
-@app.post("/api/financeiro/contas-fixas", response_model=ContaFixaResponse)
-def api_criar_conta_fixa(req: ContaFixaRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
-    conta = financeiro.criar_recorrente(
-        db, prestador_id, nome=req.nome.strip(), categoria=(req.categoria or req.nome).strip()[:100], tipo=req.tipo,
-        valor_padrao=Decimal(str(req.valor_padrao)) if req.valor_padrao else None, dia_vencimento=req.dia_vencimento,
-        conta=(req.conta or "").strip() or None,
-    )
-    db.commit()
-    return conta
-
-
-def _conta_fixa_ou_404(db: Session, conta_id: uuid.UUID) -> DespesaRecorrente:
-    conta = db.get(DespesaRecorrente, conta_id)
-    if conta is None:
-        raise HTTPException(status_code=404, detail="Conta fixa não encontrada.")
-    return conta
-
-
-@app.patch("/api/financeiro/contas-fixas/{conta_id}", response_model=ContaFixaResponse, responses={404: {"model": ErroResponse}})
-def api_atualizar_conta_fixa(conta_id: uuid.UUID, req: ContaFixaAtualizarRequest, db: Session = Depends(db_sessao)):
-    conta = _conta_fixa_ou_404(db, conta_id)
-    for campo, valor in req.model_dump(exclude_unset=True).items():
-        if campo == "valor_padrao":
-            valor = Decimal(str(valor)) if valor else None
-        if campo in ("nome", "categoria") and valor is None:
-            continue
-        setattr(conta, campo, valor)
-    db.commit()
-    return conta
-
-
-@app.delete("/api/financeiro/contas-fixas/{conta_id}", responses={404: {"model": ErroResponse}})
-def api_apagar_conta_fixa(conta_id: uuid.UUID, db: Session = Depends(db_sessao)):
-    """Para de lançar a conta nos próximos meses (o histórico fica). Tira o
-    lançamento em aberto e sem valor deste mês em diante."""
-    conta = _conta_fixa_ou_404(db, conta_id)
-    conta.ativa = False
-    hoje = hoje_br()
-    db.query(Despesa).filter(
-        Despesa.recorrente_id == conta.id, Despesa.pago.is_(False), Despesa.competencia >= f"{hoje.year:04d}-{hoje.month:02d}",
-    ).delete(synchronize_session=False)
-    db.commit()
-    return {"ok": True}
-
-
-@app.get("/api/financeiro/rotinas", response_model=list[RotinaResponse])
-def api_listar_rotinas(db: Session = Depends(db_sessao)):
-    return db.query(RotinaMensal).order_by(RotinaMensal.ativa.desc(), RotinaMensal.ordem, RotinaMensal.nome).all()
-
-
-@app.post("/api/financeiro/rotinas", response_model=RotinaResponse)
-def api_criar_rotina(req: RotinaRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
-    rotina = financeiro.criar_rotina(db, prestador_id, req.nome)
-    db.commit()
-    return rotina
-
-
-def _rotina_ou_404(db: Session, rotina_id: uuid.UUID) -> RotinaMensal:
-    rotina = db.get(RotinaMensal, rotina_id)
-    if rotina is None:
-        raise HTTPException(status_code=404, detail="Item da rotina não encontrado.")
-    return rotina
-
-
-@app.put("/api/financeiro/rotinas/ordem")
-def api_ordenar_rotinas(req: OrdemRequest, db: Session = Depends(db_sessao)):
-    """Nova ordem dos itens da rotina de fechamento (arrastar na tela)."""
-    por_id = {r.id: r for r in db.query(RotinaMensal)}
-    for posicao, rotina_id in enumerate(req.ids, start=1):
-        if rotina_id in por_id:
-            por_id[rotina_id].ordem = posicao
-    db.commit()
-    return {"ok": True}
-
-
 @app.get("/api/conta/preferencias")
 def api_preferencias(request: Request, db: Session = Depends(get_db)):
     """Disposição dos cards (Financeiro, Visão geral) — da pessoa, não da empresa."""
@@ -2812,66 +2296,7 @@ def api_salvar_preferencias(req: PreferenciasRequest, request: Request, db: Sess
     return resposta
 
 
-@app.patch("/api/financeiro/rotinas/{rotina_id}", response_model=RotinaResponse, responses={404: {"model": ErroResponse}})
-def api_atualizar_rotina(rotina_id: uuid.UUID, req: RotinaAtualizarRequest, db: Session = Depends(db_sessao)):
-    rotina = _rotina_ou_404(db, rotina_id)
-    if req.nome is not None:
-        rotina.nome = req.nome.strip()
-    if req.ativa is not None:
-        rotina.ativa = req.ativa
-    db.commit()
-    return rotina
-
-
-@app.post("/api/financeiro/rotinas/{rotina_id}/check", responses={404: {"model": ErroResponse}})
-def api_check_rotina(
-    rotina_id: uuid.UUID, req: RotinaCheckRequest, db: Session = Depends(db_sessao),
-    prestador_id: uuid.UUID = Depends(prestador_atual_id),
-):
-    financeiro.marcar_rotina(db, prestador_id, _rotina_ou_404(db, rotina_id), req.competencia, req.feita)
-    db.commit()
-    return {"ok": True}
-
-
 # --- Importar a planilha de controle (28/09/2026) ---
-
-
-def _ano_planilha(ano: int | None) -> int:
-    if ano is None:
-        return hoje_br().year
-    if not 2000 <= ano <= 2100:
-        raise HTTPException(status_code=422, detail="Ano inválido.")
-    return ano
-
-
-@app.post("/api/importar/planilha/previa", responses={400: {"model": ErroResponse}})
-def api_previa_planilha(arquivo: UploadFile = File(...), ano: int | None = Form(default=None), db: Session = Depends(db_sessao)):
-    """Lê a planilha e devolve o que seria importado — não grava nada."""
-    try:
-        return importar_planilha.previa(db, _ler_upload(arquivo, 10), _ano_planilha(ano), hoje_br())
-    except importar_planilha.PlanilhaInvalidaError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.post("/api/importar/planilha", response_model=ImportarPlanilhaResponse, responses={400: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
-def api_importar_planilha(
-    arquivo: UploadFile = File(...), ano: int | None = Form(default=None), escolhas: str = Form(default="{}"),
-    db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
-):
-    try:
-        opcoes = json.loads(escolhas)
-        if not isinstance(opcoes, dict):
-            raise ValueError
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail="Escolhas inválidas.") from exc
-    try:
-        resultado = importar_planilha.importar(
-            db, db.get(Prestador, prestador_id), _ler_upload(arquivo, 10), _ano_planilha(ano), opcoes, hoje_br(),
-        )
-    except importar_planilha.PlanilhaInvalidaError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    db.commit()
-    return resultado
 
 
 @app.post("/api/painel/pendencias/ignorar")
@@ -2893,12 +2318,6 @@ def api_ignorar_pendencia(
 def api_painel_proximos(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     """O que fazer agora + agenda dos próximos 30 dias (Visão geral)."""
     return proximos_do_painel(db, prestador_id)
-
-
-@app.get("/api/notas-a-receber", response_model=list[NotaAbertaResponse])
-def api_notas_a_receber(db: Session = Depends(db_sessao)):
-    """Notas sem pagamento registrado, de todos os meses (Financeiro)."""
-    return notas_em_aberto(db)
 
 
 @app.get("/api/painel/resumo-mes", response_model=DashboardResumoResponse)
@@ -2943,6 +2362,16 @@ def _index_html() -> FileResponse:
     # Sempre revalida o index.html (senão, depois de um deploy, o navegador
     # guarda a página velha apontando pra arquivos que não existem mais).
     return FileResponse(indice, headers={"Cache-Control": "no-cache"})
+
+
+# --- Módulo financeiro: produto à parte, com as rotas dele (05/10/2026) ---
+# Entra aqui (antes do catch-all do frontend) e registra o que ele ouve do
+# emissor (app/eventos.py). O emissor não importa nada de app/financeiro.
+from app.financeiro import integracao as _integracao_financeiro  # noqa: E402
+from app.financeiro.rotas import rotas as _rotas_financeiro  # noqa: E402
+
+_integracao_financeiro.registrar()
+app.include_router(_rotas_financeiro)
 
 
 @app.get("/", include_in_schema=False)

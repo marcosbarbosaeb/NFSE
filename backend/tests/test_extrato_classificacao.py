@@ -11,8 +11,8 @@ from fastapi.testclient import TestClient
 from app.database import get_db
 from app.main import app, prestador_atual_id
 from app.models import Despesa, Emissao, PagamentoRecebido, PrestadorTomador, RegraExtrato
-from app.services import classificar_extrato
-from app.services.extrato_pdf import extrair_de_texto
+from app.financeiro import classificar_extrato
+from app.financeiro.extrato_pdf import extrair_de_texto
 
 
 @pytest.fixture
