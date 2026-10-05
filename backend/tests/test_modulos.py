@@ -177,3 +177,36 @@ def test_empresa_nova_herda_os_modulos_da_empresa_aberta(db, prestador_teste):
         db, usuario, cpf_cnpj="60.701.190/0001-04", razao_social="Mais Uma LTDA", cod_municipio="3550308",
     )
     assert padrao.modulos == ["emissor"]
+
+
+def test_clientes_do_financeiro_sem_o_modulo_de_notas(client, db, prestador_teste):
+    """Quem tem só o Financeiro cadastra, renomeia e desativa clientes sem
+    nenhum dado fiscal — e vê quanto cada um já pagou."""
+    prestador_teste.modulos = ["financeiro"]
+    db.flush()
+    novo = client.post("/api/financeiro/clientes", json={"nome": "  Padaria   Central "})
+    assert novo.status_code == 200, novo.text
+    cliente = novo.json()
+    assert cliente["nome"] == "Padaria Central" and cliente["so_controle"] is True
+
+    ano = "2026"
+    assert client.post("/api/pagamentos", json={
+        "vinculo_id": cliente["id"], "competencia": f"{ano}-09", "valor": 150.5, "data_recebimento": f"{ano}-09-10",
+    }).status_code == 200
+    assert client.post("/api/pagamentos", json={"vinculo_id": cliente["id"], "competencia": f"{ano}-10", "valor": 49.5}).status_code == 200
+    linha = next(c for c in client.get(f"/api/financeiro/clientes?ano={ano}").json() if c["id"] == cliente["id"])
+    assert linha["recebido"] == 200.0 and linha["recebimentos"] == 2 and linha["ultimo_recebimento"] == f"{ano}-09-10"
+
+    outro = client.post("/api/financeiro/clientes", json={"nome": "Oficina"}).json()
+    repetido = client.patch(f"/api/financeiro/clientes/{outro['id']}", json={"nome": "padaria central"})
+    assert repetido.status_code == 422 and "Já existe" in repetido.json()["detail"]
+    ok = client.patch(f"/api/financeiro/clientes/{outro['id']}", json={"nome": "Oficina do Zé", "ativo": False})
+    assert ok.status_code == 200 and ok.json() == {"id": outro["id"], "nome": "Oficina do Zé", "ativo": False, "so_controle": True}
+    # Inativo vai pro fim da lista.
+    assert client.get(f"/api/financeiro/clientes?ano={ano}").json()[-1]["id"] == outro["id"]
+
+
+def test_clientes_do_financeiro_pede_o_modulo(client, db, prestador_teste):
+    prestador_teste.modulos = ["emissor"]
+    db.flush()
+    assert client.get("/api/financeiro/clientes").status_code == 403

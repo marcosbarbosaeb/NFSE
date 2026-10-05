@@ -22,6 +22,7 @@ const ContaPage = lazy(() => import("./pages/ContaPage").then((m) => ({ default:
 const EmpresaPage = lazy(() => import("./pages/EmpresaPage").then((m) => ({ default: m.EmpresaPage })))
 const DashboardPage = lazy(() => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardPage })))
 const EmissaoDetalhePage = lazy(() => import("./pages/EmissaoDetalhePage").then((m) => ({ default: m.EmissaoDetalhePage })))
+const ClientesFinanceiroPage = lazy(() => import("./pages/ClientesFinanceiroPage").then((m) => ({ default: m.ClientesFinanceiroPage })))
 const ConciliacaoPage = lazy(() => import("./pages/ConciliacaoPage").then((m) => ({ default: m.ConciliacaoPage })))
 const FinanceiroPage = lazy(() => import("./pages/FinanceiroPage").then((m) => ({ default: m.FinanceiroPage })))
 const NfsePage = lazy(() => import("./pages/NfsePage").then((m) => ({ default: m.NfsePage })))
@@ -68,6 +69,7 @@ export default function App() {
             {/* Módulo financeiro — produto à parte (05/10/2026). */}
             <Route path="financeiro" element={<SoModulo modulo="financeiro"><FinanceiroPage /></SoModulo>} />
             <Route path="financeiro/conciliacao" element={<SoModulo modulo="financeiro"><ConciliacaoPage /></SoModulo>} />
+            <Route path="financeiro/clientes" element={<SoModulo modulo="financeiro"><ClientesFinanceiroPage /></SoModulo>} />
             {/* Recebimentos e Despesas viraram uma aba só (28/09/2026). */}
             <Route path="recebimentos" element={<Navigate to="/app/financeiro" replace />} />
             <Route path="despesas" element={<Navigate to="/app/financeiro?aba=despesas" replace />} />

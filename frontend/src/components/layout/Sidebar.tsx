@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Building2, CalendarDays, FileText, Gift, Home, UserRound, Users, Wallet } from "lucide-react"
+import { ArrowLeftRight, Building2, CalendarDays, Contact, FileText, Gift, Home, UserRound, Users, Wallet } from "lucide-react"
 import { Link, NavLink, useLocation } from "react-router-dom"
 import { useModulos } from "../../lib/modulos"
 import { BotaoSuporte } from "../SuporteModal"
@@ -16,6 +16,7 @@ const NOTAS = [
 const FINANCEIRO = [
   { to: "/app/financeiro", label: "Painel", icon: Wallet, end: true },
   { to: "/app/financeiro/conciliacao", label: "Conciliação", icon: ArrowLeftRight },
+  { to: "/app/financeiro/clientes", label: "Clientes", icon: Contact },
 ]
 // "Configurações" virou "Empresa" (dados do CNPJ ativo) + "Minha conta"
 // (no pé da barra e no menu do usuário) — 29/09/2026.

@@ -36,7 +36,7 @@ const VISAO_GERAL: PassoTour[] = [
     alvo: "menu",
     titulo: "Suas abas",
     texto:
-      "Cada módulo tem o seu grupo: em Notas ficam a visão geral, as NFS-e, os tomadores e o calendário; em Financeiro, o painel e a conciliação. Em Empresa ficam os dados comuns e os módulos ligados.",
+      "Cada módulo tem o seu grupo: em Notas ficam a visão geral, as NFS-e, os tomadores e o calendário; em Financeiro, o painel, a conciliação e os clientes. Em Empresa ficam os dados comuns e os módulos ligados.",
   },
   {
     titulo: "Visão geral",

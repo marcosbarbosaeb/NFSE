@@ -16,10 +16,11 @@ import uuid
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.deps import db_sessao, exige_modulo, exigir_conta_real, ler_upload as _ler_upload, prestador_atual_id
-from app.financeiro import classificar_extrato, conciliacao, importar_planilha
+from app.financeiro import classificar_extrato, clientes, conciliacao, importar_planilha
 from app.financeiro import contas_mes as financeiro
 from app.financeiro.a_receber import notas_em_aberto, recebimentos_sem_nota
 from app.financeiro.extrato_pdf import PdfInvalidoError, extrair_extrato
@@ -604,3 +605,37 @@ def api_importar_planilha(
 def api_notas_a_receber(db: Session = Depends(db_sessao)):
     """Notas sem pagamento registrado, de todos os meses (Financeiro)."""
     return notas_em_aberto(db)
+
+
+# --- Clientes do financeiro (de quem o dinheiro entra) ---
+
+class _ClienteAtualizarRequest(BaseModel):
+    nome: str | None = Field(default=None, max_length=60)
+    ativo: bool | None = None
+
+
+@rotas.get("/api/financeiro/clientes")
+def api_clientes_do_financeiro(ano: str | None = Query(default=None, pattern=r"^\d{4}$"), db: Session = Depends(db_sessao)):
+    return clientes.listar(db, ano=ano or str(hoje_br().year))
+
+
+@rotas.post("/api/financeiro/clientes")
+def api_criar_cliente_do_financeiro(
+    req: FonteReceitaRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Cliente novo só com o nome (o cadastro fiscal, pra emitir nota, é do
+    módulo de notas)."""
+    vinculo = classificar_extrato.criar_fonte(db, db.get(Prestador, prestador_id), req.nome)
+    resposta = {"id": str(vinculo.id), "nome": vinculo.apelido, "ativo": bool(vinculo.ativo), "so_controle": bool(vinculo.sem_nota)}
+    db.commit()
+    return resposta
+
+
+@rotas.patch("/api/financeiro/clientes/{vinculo_id}")
+def api_atualizar_cliente_do_financeiro(vinculo_id: uuid.UUID, req: _ClienteAtualizarRequest, db: Session = Depends(db_sessao)):
+    try:
+        resposta = clientes.atualizar(db, vinculo_id, nome=req.nome, ativo=req.ativo)
+    except clientes.ClienteError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    db.commit()
+    return resposta
