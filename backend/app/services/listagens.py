@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models import Emissao, Envio, PrestadorTomador
 from app.services.dashboard import ESTADO_NFSE_LABEL
-from app.services.motor_emissao import motivo_da_recusa
+from app.services.motor_emissao import motivo_da_recusa, recusa_corrigivel
 
 
 def listar_emissoes(
@@ -92,6 +92,7 @@ def listar_emissoes(
             "envio_forma": "email" if e.tomador_documento else e.vinculo.envio_canal,
             # Por que a prefeitura recusou — a lista mostra junto do selo.
             "erro_detalhe": motivo_da_recusa(e.erro_detalhe) if e.estado == "erro" else None,
+            "erro_corrigivel": e.estado == "erro" and recusa_corrigivel(e.erro_detalhe),
         }
         for e in emissoes
     ]

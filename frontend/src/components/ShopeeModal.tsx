@@ -36,6 +36,7 @@ export function ShopeeModal({
   onVerNotas?: (competencia: string) => void
 }) {
   const [arquivo, setArquivo] = useState<File | null>(null)
+  const [arrastando, setArrastando] = useState(false)
   const [previa, setPrevia] = useState<PreviaShopee | null>(null)
   const [competencia, setCompetencia] = useState("")
   const [valorMinimo, setValorMinimo] = useState("0")
@@ -117,9 +118,36 @@ export function ShopeeModal({
             “MonthlyReport…csv”) e envie aqui. Eu gero uma nota pra cada vendedor que te pagou comissão no mês — os vendedores
             não ficam salvos como tomadores.
           </p>
-          <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 hover:border-primary-400 dark:border-slate-600">
+          {/* Arrastar e soltar (05/10/2026): sem tratar o "drop", o navegador
+              abria o arquivo em vez de carregar aqui. */}
+          <label
+            onDragOver={(e) => {
+              e.preventDefault()
+              setArrastando(true)
+            }}
+            onDragLeave={() => setArrastando(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setArrastando(false)
+              const solto = e.dataTransfer.files?.[0]
+              if (!solto) return
+              if (!/\.csv$/i.test(solto.name)) {
+                setErro("Esse não parece o relatório da Shopee — ele é um arquivo .csv.")
+                return
+              }
+              setErro(null)
+              setArquivo(solto)
+            }}
+            className={`flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 text-center text-sm text-slate-500 hover:border-primary-400 ${
+              arrastando ? "border-primary-500 bg-primary-50 dark:bg-primary-900/30" : "border-slate-300 dark:border-slate-600"
+            }`}
+          >
             <FileSpreadsheet size={28} className="text-primary-500" />
-            {arquivo ? <span className="font-medium text-slate-800 dark:text-slate-100">{arquivo.name}</span> : "Clique pra escolher o arquivo .csv"}
+            {arquivo ? (
+              <span className="font-medium text-slate-800 dark:text-slate-100">{arquivo.name}</span>
+            ) : (
+              "Arraste o arquivo .csv pra cá ou clique pra escolher"
+            )}
             <input type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => setArquivo(e.target.files?.[0] ?? null)} />
           </label>
           <div className="flex justify-end gap-3">
@@ -182,8 +210,9 @@ export function ShopeeModal({
               <input type="checkbox" checked={incluirEstrangeiros} onChange={(e) => setIncluirEstrangeiros(e.target.checked)} className="mt-0.5" />
               <span>
                 <Globe2 size={14} className="mr-1 inline" />
-                Incluir {estrangeiros} vendedor(es) de fora do Brasil. Nota pra fora do país é exportação de serviço e tem
-                regra própria de ISS — confirme com seu contador antes.
+                Incluir {estrangeiros} vendedor(es) de fora do Brasil. A nota sai do mesmo jeito das que você já emitia pra eles
+                (identificação fiscal estrangeira, país do vendedor e ISS tributado aqui). Se for a primeira vez, confirme com seu
+                contador.
               </span>
             </label>
           )}

@@ -573,7 +573,27 @@ class DespesaRecorrente(Base):
     conta: Mapped[str | None] = mapped_column(String(60))
     ativa: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
     ordem: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    # Pagamento já agendado/pago até este mês (AAAA-MM, inclusive): os
+    # lançamentos até lá nascem ticados (05/10/2026).
+    agendado_ate: Mapped[str | None] = mapped_column(String(7))
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Anotacao(Base):
+    """Aba/nota livre do Financeiro (05/10/2026): a pessoa cria pra deixar
+    registrado o que quiser — controle de recarga de telefone, lembretes..."""
+
+    __tablename__ = "anotacao"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False
+    )
+    titulo: Mapped[str] = mapped_column(String(80), nullable=False)
+    texto: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    ordem: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=_agora_utc)
 
 
 class RotinaMensal(Base):

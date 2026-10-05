@@ -97,10 +97,16 @@ export function PainelCards({
   // Ordem escolhida primeiro; cards novos (que a pessoa ainda não ordenou)
   // entram no lugar padrão deles.
   const visiveis = secoes.filter((s) => !s.oculto)
-  const posicao = (id: string) => {
-    const i = disposicao.ordem.indexOf(id)
-    return i === -1 ? 1000 + secoes.findIndex((s) => s.id === id) : i
-  }
+  // Card novo (que a pessoa ainda não ordenou) entra logo depois do vizinho
+  // que vem antes dele no padrão — não lá no fim da tela.
+  const posicoes = new Map<string, number>()
+  let anterior = -1
+  secoes.forEach((s) => {
+    const i = disposicao.ordem.indexOf(s.id)
+    anterior = i === -1 ? anterior + 0.001 : i
+    posicoes.set(s.id, anterior)
+  })
+  const posicao = (id: string) => posicoes.get(id) ?? 0
   const ordenadas = [...visiveis].sort((a, b) => posicao(a.id) - posicao(b.id))
   const ids = ordenadas.map((s) => s.id)
 

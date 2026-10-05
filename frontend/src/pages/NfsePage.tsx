@@ -1,8 +1,8 @@
+import { CaixaBusca } from "../components/ui/CaixaBusca"
 import { MoedaField } from "../components/ui/CampoMoeda"
 import {
   CheckCircle2,
   Clock,
-  DownloadCloud,
   FileArchive,
   FileSpreadsheet,
   FileText,
@@ -126,7 +126,9 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
   // Vindo do botão "Gerar" da aba Tomadores: ?gerar=<vínculo>&competencia=AAAA-MM
   const [modalNova, setModalNova] = useState(Boolean(searchParams.get("gerar") || searchParams.get("nova")))
   const [modalCsv, setModalCsv] = useState(false)
-  const [modalNacional, setModalNacional] = useState(false)
+  // "Importar do Emissor Nacional" mora em Empresa › Notas (05/10/2026): é
+  // usado uma vez ou outra — de lá o link abre esta tela com ?importar=1.
+  const [modalNacional, setModalNacional] = useState(searchParams.get("importar") === "1" && !emLote)
   const [shopee, setShopee] = useState<VinculoResumo | null>(null)
   // Marco 16, item 5 — só pra pré-preencher aliq_sn na Nova emissão (ver
   // NovaEmissaoModal abaixo); nunca aplicada sem o usuário poder confirmar.
@@ -365,9 +367,6 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
             )
           ) : (
             <>
-              <Button variant="outline" onClick={() => setModalNacional(true)} title="Trazer as notas já emitidas no Emissor Nacional">
-                <DownloadCloud size={16} /> Importar do Emissor Nacional
-              </Button>
               <Button
                 variant="accent"
                 onClick={() => (emissiveis.length > 0 ? setModalNova(true) : navigate("/app/tomadores/novo"))}
@@ -437,14 +436,14 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
               </option>
             ))}
           </select>
-          <select value={vinculoFiltro} onChange={(e) => trocarVinculo(e.target.value)} aria-label="Tomador" className={SELECT_FILTRO}>
-            <option value="">Todos os tomadores</option>
-            {vinculos.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.apelido}
-              </option>
-            ))}
-          </select>
+          <CaixaBusca
+            valor={vinculoFiltro}
+            opcoes={[{ id: "", rotulo: "Todos os tomadores" }, ...vinculos.map((v) => ({ id: v.id, rotulo: v.apelido }))]}
+            onEscolher={trocarVinculo}
+            placeholder="Todos os tomadores"
+            ariaLabel="Tomador"
+            className="w-56"
+          />
           <div className="relative ml-auto w-full max-w-xs">
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
             <input
@@ -966,21 +965,18 @@ function NovaEmissaoModal({
         {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
 
         <FieldWrap label="Tomador">
-          <select
-            required
-            value={vinculoId}
-            onChange={(e) => setVinculoId(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-          >
-            <option value="" disabled>
-              Selecione...
-            </option>
-            {vinculos.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.apelido} — {v.tomador_razao_social}
-              </option>
-            ))}
-          </select>
+          <CaixaBusca
+            valor={vinculoId}
+            opcoes={vinculos.map((v) => ({
+              id: v.id,
+              rotulo: v.apelido === v.tomador_razao_social ? v.apelido : `${v.apelido} — ${v.tomador_razao_social}`,
+            }))}
+            onEscolher={setVinculoId}
+            placeholder="Digite o nome do tomador pra buscar"
+            ariaLabel="Tomador"
+            alerta={!vinculoId}
+            className="[&_input]:py-2 [&_input]:pl-3"
+          />
         </FieldWrap>
 
         {notaDaShopee && vinculo?.metodo_captura_valor === "csv" && (

@@ -234,7 +234,7 @@ def test_recusa_da_sefin_vira_texto_legivel():
     recusa = RespostaSefin(status_code=400, dados={"erros": [{"Codigo": "E0008", "Descricao": "A data de emissão da DPS não pode ser posterior à data do seu processamento."}]})
     texto = erro_legivel(recusa)
     assert texto.startswith("A Receita recusou a nota: E0008 — A data de emissão")
-    assert "Gere a nota de novo" in texto
+    assert "Corrigir e reenviar" in texto
     assert erro_legivel(RespostaSefin(status_code=502, dados=None, texto_bruto="Bad Gateway")) == "Bad Gateway"
 
 
@@ -250,3 +250,24 @@ def test_dhemi_sai_na_hora_de_brasilia_e_nunca_no_futuro():
     assert "agora_br() - datetime.timedelta(minutes=2)" in fonte
     carimbo = (agora() - datetime.timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M:%S%z")
     assert re.search(r"-03:?00$", carimbo)
+
+
+def test_remontar_troca_so_a_hora_e_recusa_de_hora_e_corrigivel(db, vinculo_teste):
+    from app.services.motor_emissao import criar_rascunho, montar, recusa_corrigivel, remontar, TransicaoInvalidaError, MARCA_FALHA_COMUNICACAO
+
+    emissao = montar(db, criar_rascunho(db, vinculo_teste, competencia="2026-08", valor=100))
+    numero, antes = emissao.n_dps, emissao.xml_dps
+    emissao.estado = "erro"
+    emissao.erro_detalhe = "A Receita recusou a nota: E0008 — A data de emissão da DPS não pode ser posterior à data do seu processamento."
+    assert recusa_corrigivel(emissao.erro_detalhe) and not recusa_corrigivel("A Receita recusou a nota: E0121 — outro motivo")
+    remontar(db, emissao)
+    assert emissao.estado == "montado" and emissao.n_dps == numero and emissao.xml_assinado is None
+    assert "<dhEmi>" in emissao.xml_dps and antes.split("<dhEmi>")[0] == emissao.xml_dps.split("<dhEmi>")[0]
+
+    # Queda de rede não se "corrige" remontando: a nota pode ter chegado.
+    emissao.estado = "erro"
+    emissao.erro_detalhe = f"{MARCA_FALHA_COMUNICACAO} caiu"
+    import pytest
+
+    with pytest.raises(TransicaoInvalidaError):
+        remontar(db, emissao)

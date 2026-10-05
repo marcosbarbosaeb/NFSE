@@ -67,11 +67,29 @@ def garantir_lancamentos(db: Session, prestador_id: uuid.UUID, competencia: str)
             continue
         if r.criado_em and _competencia_de(r.criado_em.date()) > competencia:
             continue
+        # Agendada até este mês (inclusive): já nasce ticada.
+        agendada = bool(r.agendado_ate and competencia <= r.agendado_ate)
         db.add(Despesa(
             id=uuid.uuid4(), prestador_id=prestador_id, categoria=r.categoria, descricao=r.nome, tipo=r.tipo,
             competencia=competencia, valor=r.valor_padrao or Decimal(0), conta=r.conta,
-            vencimento=_vencimento(competencia, r.dia_vencimento), pago=False, recorrente_id=r.id, origem="recorrente",
+            vencimento=_vencimento(competencia, r.dia_vencimento), pago=agendada, recorrente_id=r.id, origem="recorrente",
         ))
+    db.flush()
+
+
+def aplicar_agendamento(db: Session, conta: DespesaRecorrente, hoje: datetime.date) -> None:
+    """A pessoa disse "está agendado até tal mês": os lançamentos em aberto
+    da conta, deste mês até lá, ficam ticados (os próximos nascem assim)."""
+    if not conta.agendado_ate:
+        return
+    atual = _competencia_de(hoje)
+    for d in db.query(Despesa).filter(
+        Despesa.recorrente_id == conta.id, Despesa.pago.is_(False),
+        Despesa.competencia >= atual, Despesa.competencia <= conta.agendado_ate,
+    ):
+        d.pago = True
+        if conta.valor_padrao and not d.valor:
+            d.valor = conta.valor_padrao
     db.flush()
 
 
@@ -80,6 +98,15 @@ def _linha_despesa(d: Despesa) -> dict:
         "id": d.id, "categoria": d.categoria, "descricao": d.descricao, "tipo": d.tipo, "competencia": d.competencia,
         "valor": float(d.valor), "conta": d.conta, "vencimento": d.vencimento, "pago": d.pago, "pago_em": d.pago_em,
         "recorrente_id": d.recorrente_id, "valor_a_definir": d.recorrente_id is not None and not d.pago and d.valor == 0,
+    }
+
+
+def _agendadas(db: Session, competencia: str) -> dict:
+    """Contas recorrentes com pagamento agendado que cobre este mês."""
+    return {
+        r.id: r.agendado_ate
+        for r in db.query(DespesaRecorrente).filter(DespesaRecorrente.agendado_ate.isnot(None))
+        if r.agendado_ate >= competencia
     }
 
 
@@ -96,7 +123,8 @@ def contas_do_mes(db: Session, prestador_id: uuid.UUID, competencia: str) -> dic
         {"id": r.id, "nome": r.nome, "feita": r.id in feitas, "feita_em": feitas.get(r.id)}
         for r in db.query(RotinaMensal).filter(RotinaMensal.ativa.is_(True)).order_by(RotinaMensal.ordem, RotinaMensal.nome)
     ]
-    linhas = [_linha_despesa(d) for d in despesas]
+    agendadas = _agendadas(db, competencia)
+    linhas = [{**_linha_despesa(d), "agendado_ate": agendadas.get(d.recorrente_id) if d.pago else None} for d in despesas]
     so_despesas = [x for x in linhas if x["tipo"] == "despesa"]
     return {
         "competencia": competencia,

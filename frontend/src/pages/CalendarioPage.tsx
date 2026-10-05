@@ -1,3 +1,4 @@
+import { CaixaBusca } from "../components/ui/CaixaBusca"
 import { MoedaField } from "../components/ui/CampoMoeda"
 import { Plus, RotateCcw } from "lucide-react"
 import { type FormEvent, useEffect, useMemo, useState } from "react"
@@ -353,14 +354,14 @@ function EventoModal({
         <Field label="Data" type="date" required value={data} onChange={(e) => setData(e.target.value)} />
         {usaFornecedor && (
           <FieldWrap label="Fornecedor (opcional)">
-            <select value={vinculoId} onChange={(e) => setVinculoId(e.target.value)} className={CLASSE_SELECT}>
-              <option value="">Nenhum</option>
-              {vinculos.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.apelido}
-                </option>
-              ))}
-            </select>
+            <CaixaBusca
+              valor={vinculoId}
+              opcoes={[{ id: "", rotulo: "Nenhum" }, ...vinculos.map((v) => ({ id: v.id, rotulo: v.apelido }))]}
+              onEscolher={setVinculoId}
+              placeholder="Nenhum (digite pra buscar)"
+              ariaLabel="Fornecedor"
+              className="[&_input]:py-2 [&_input]:pl-3"
+            />
           </FieldWrap>
         )}
         {categoria === "recebimento_previsto" && (

@@ -104,6 +104,7 @@ export interface EmissaoResumoLinha {
   vendedores?: boolean
   /** Motivo da recusa da prefeitura (só no estado "erro"). */
   erro_detalhe?: string | null
+  erro_corrigivel?: boolean
 }
 
 export interface AtencaoItem {
@@ -390,6 +391,7 @@ export interface EmissaoListaLinha {
   envio_forma?: FormaEnvio | null
   /** Motivo da recusa da prefeitura (só no estado "erro"). */
   erro_detalhe?: string | null
+  erro_corrigivel?: boolean
 }
 
 export interface GerarDpsRequest {
@@ -449,6 +451,7 @@ export interface Emissao {
   xml: string | null
   chave_acesso: string | null
   erro_detalhe: string | null
+  erro_corrigivel?: boolean
   atualizado_em: string
   /** 'importada' = trazida do Emissor Nacional (dá pra mudar de tomador). */
   origem?: "ana" | "importada"
@@ -596,6 +599,8 @@ export interface Despesa {
   pago_em?: string | null
   recorrente_id?: string | null
   /** Conta fixa de valor variável ainda sem o valor do mês. */
+  /** Conta recorrente com pagamento agendado que cobre este mês (AAAA-MM). */
+  agendado_ate?: string | null
   valor_a_definir?: boolean
 }
 
@@ -700,6 +705,9 @@ export interface PendenciaItem {
   competencia?: string | null
   /** POST /painel/pendencias/ignorar {chave, ignorar} — "ignorar este aviso". */
   chave?: string | null
+  /** Dia combinado pra fazer (AAAA-MM-DD) e se já passou. */
+  data?: string | null
+  atrasada?: boolean
 }
 
 export interface AgendaItem {
@@ -938,6 +946,8 @@ export interface ContaFixa {
   dia_vencimento: number | null
   conta: string | null
   ativa: boolean
+  /** Pagamento agendado até este mês (AAAA-MM, inclusive). */
+  agendado_ate?: string | null
 }
 
 export interface ContaFixaRequest {
@@ -948,6 +958,7 @@ export interface ContaFixaRequest {
   dia_vencimento?: number | null
   conta?: string | null
   ativa?: boolean
+  agendado_ate?: string | null
 }
 
 // GET/POST /financeiro/rotinas, PATCH /financeiro/rotinas/{id} {nome?, ativa?},

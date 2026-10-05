@@ -321,11 +321,20 @@ export function TomadoresPage() {
                           {v.apelido}
                         </Link>
                         {inativo && <span className="ml-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">inativo</span>}
-                        {v.sem_nota && (
-                          <span className="ml-2 align-middle" title="Só controle de recebimento — a Ana não gera nota pra este tomador">
-                            <Badge>Só controle</Badge>
-                          </span>
-                        )}
+                        {v.sem_nota &&
+                          (v.tomador_cnpj ? (
+                            <Link
+                              to={`/app/tomadores/${v.id}`}
+                              className="ml-2 align-middle"
+                              title="Ainda falta configurar a nota deste tomador (código do serviço e descrição). Clique pra configurar — eu preencho com base na última nota dele."
+                            >
+                              <Badge variant="warning">Falta configurar a nota</Badge>
+                            </Link>
+                          ) : (
+                            <span className="ml-2 align-middle" title="Você só controla o que este cliente paga — não emite nota pra ele por aqui.">
+                              <Badge>Sem nota</Badge>
+                            </span>
+                          ))}
                         <p className="text-xs text-slate-400 dark:text-slate-500">
                           {v.tomador_razao_social}
                           {v.tomador_cnpj && ` · ${formatarDocumento(v.tomador_cnpj)}`}
@@ -339,6 +348,15 @@ export function TomadoresPage() {
                       </td>
                       <td className="py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {v.sem_nota && v.tomador_cnpj && (
+                            <Link
+                              to={`/app/tomadores/${v.id}`}
+                              className="inline-flex items-center gap-1 rounded-md bg-accent-50 px-2 py-1 text-xs font-semibold text-accent-700 hover:bg-accent-100 dark:bg-accent-900/30 dark:text-accent-200"
+                              title="Configurar a nota deste tomador"
+                            >
+                              Configurar
+                            </Link>
+                          )}
                           {!v.emissao_id && !inativo && !v.sem_nota && (
                             <button
                               type="button"

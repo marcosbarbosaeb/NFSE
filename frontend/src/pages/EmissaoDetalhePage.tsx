@@ -1,3 +1,4 @@
+import { CaixaBusca } from "../components/ui/CaixaBusca"
 import {
   ArrowLeftRight,
   Trash2,
@@ -181,6 +182,21 @@ export function EmissaoDetalhePage() {
     }
   }
 
+  /** Recusa por causa da hora (E0008): acerta a hora, assina e reenvia. */
+  async function corrigirEReenviar() {
+    if (!id) return
+    setErroAcao(null)
+    setProcessando(true)
+    try {
+      setDados(await api.post<Emissao>(`/dps/${id}/corrigir-reenviar`, {}))
+      carregar()
+    } catch (err) {
+      setErroAcao(err instanceof ApiError ? formatarErro(err.detail) : "Falha ao reenviar.")
+    } finally {
+      setProcessando(false)
+    }
+  }
+
   async function cancelarNota(e: FormEvent) {
     e.preventDefault()
     if (!id) return
@@ -280,12 +296,18 @@ export function EmissaoDetalhePage() {
 
       {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
       {nota.estado === "erro" && nota.erro_detalhe && (
-        <p className="flex items-start gap-2 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">
+        <p className="flex flex-wrap items-start gap-2 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-          <span>
-            A Sefin recusou a última tentativa de envio: <strong>{nota.erro_detalhe}</strong>. Corrija o que for
-            preciso e tente submeter de novo — o XML assinado não muda, só reenviamos.
+          <span className="min-w-0 flex-1">
+            <strong>{nota.erro_detalhe}</strong>
+            {!dados?.erro_corrigivel && " Corrija o que for preciso (no cadastro do tomador ou gerando a nota de novo) e envie outra vez."}
+            {erroAcao && <span className="mt-1 block">{erroAcao}</span>}
           </span>
+          {dados?.erro_corrigivel && (
+            <Button type="button" variant="accent" disabled={processando} onClick={corrigirEReenviar} className="shrink-0">
+              {processando ? "Reenviando..." : "Corrigir e reenviar"}
+            </Button>
+          )}
         </p>
       )}
 
@@ -592,19 +614,14 @@ export function EmissaoDetalhePage() {
               Nota importada do Emissor Nacional. Escolha a qual tomador ela pertence (útil quando o mesmo CNPJ tem mais de um cadastro,
               como AWIN e AWIN Rchlo). A nota em si não muda.
             </p>
-            <select
-              value={destino}
-              onChange={(e) => setDestino(e.target.value)}
-              aria-label="Tomador"
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-            >
-              {vinculos.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.apelido}
-                  {v.tomador_cnpj ? ` — ${v.tomador_cnpj}` : ""}
-                </option>
-              ))}
-            </select>
+            <CaixaBusca
+              valor={destino}
+              opcoes={vinculos.map((v) => ({ id: v.id, rotulo: `${v.apelido}${v.tomador_cnpj ? ` — ${v.tomador_cnpj}` : ""}` }))}
+              onEscolher={setDestino}
+              placeholder="Digite o nome do tomador pra buscar"
+              ariaLabel="Tomador"
+              className="[&_input]:py-2 [&_input]:pl-3"
+            />
             {erroAcao && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erroAcao}</p>}
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setModalMover(false)} disabled={processando}>

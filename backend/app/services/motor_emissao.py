@@ -75,6 +75,14 @@ class TransicaoInvalidaError(Exception):
         self.atual = atual
 
 
+class ReenvioPrecisaConferirError(TransicaoInvalidaError):
+    """A última tentativa caiu no meio (rede): não se remonta, se confere."""
+
+    def __init__(self):
+        Exception.__init__(self, "A última tentativa caiu no meio: envie de novo que a Ana confere com a Receita antes.")
+        self.esperado, self.atual = "erro", "erro"
+
+
 class EmissaoJaExisteError(Exception):
     """Já existe uma emissão ativa (não cancelada) pra esse vínculo+competência
     — mesma regra do índice único parcial `uq_emissao_vinculo_competencia_ativa`."""
@@ -233,6 +241,28 @@ def montar(db: Session, emissao: Emissao) -> Emissao:
     """rascunho -> montado. Usa o snapshot congelado (tomador/descrição),
     não o catálogo ao vivo — é essa a garantia contra edição retroativa."""
     _exigir_estado(emissao, "rascunho")
+    return _montar_xml(db, emissao)
+
+
+def remontar(db: Session, emissao: Emissao) -> Emissao:
+    """erro -> montado, com o MESMO número de DPS e os mesmos dados (o
+    snapshot), só com a hora de emissão nova. É o conserto das recusas que
+    não dependem dos dados da nota (E0008, hora à frente do relógio da
+    Receita). Não vale pra falha de comunicação: ali a nota pode ter
+    chegado, e `submeter` confere antes de reenviar."""
+    _exigir_estado(emissao, "erro")
+    if (emissao.erro_detalhe or "").startswith(MARCA_FALHA_COMUNICACAO):
+        raise ReenvioPrecisaConferirError()
+    emissao.xml_assinado = None
+    return _montar_xml(db, emissao)
+
+
+def recusa_corrigivel(erro_detalhe: str | None) -> bool:
+    """A recusa some só de remontar a nota (hora nova)?"""
+    return bool(erro_detalhe) and any(codigo in erro_detalhe for codigo in _RECUSAS_DE_HORA)
+
+
+def _montar_xml(db: Session, emissao: Emissao) -> Emissao:
     prestador = emissao.vinculo.prestador
     snap = emissao.tomador_snapshot
 
@@ -248,6 +278,8 @@ def montar(db: Session, emissao: Emissao) -> Emissao:
         "xLgr": snap["endereco"]["xLgr"], "nro": snap["endereco"]["nro"],
         "xCpl": snap["endereco"].get("xCpl"), "xBairro": snap["endereco"]["xBairro"],
     }
+    if tipo_doc == "NIF" and snap.get("pais") and str(snap["pais"]).upper() != "BR":
+        toma["cPais"] = snap["pais"]
     serv = {**snap["codigo_servico_usado"], "descricao": snap["descricao_renderizada"]}
 
     dps_el = montar_dps_xml(
@@ -303,8 +335,10 @@ def _confirmar_com_resposta(db: Session, emissao: Emissao, resposta, cliente: Cl
 
 
 _DICAS_DE_RECUSA = {
-    "E0008": "A hora da nota ficou à frente do relógio da Receita. Gere a nota de novo (marcando pra substituir esta) e envie.",
+    "E0008": "A hora da nota ficou à frente do relógio da Receita. Clique em “Corrigir e reenviar”: a Ana acerta a hora e manda de novo.",
 }
+# Recusas que se resolvem remontando a nota com a hora de agora.
+_RECUSAS_DE_HORA = ("E0008",)
 
 
 def erro_legivel(resposta) -> str:
@@ -346,7 +380,11 @@ def motivo_da_recusa(texto: str | None) -> str | None:
             return texto
         if isinstance(dados, dict):
             return erro_legivel(SimpleNamespace(dados=dados, texto_bruto=texto, status_code=0))
-    return texto
+    # Dica gravada antes do botão "Corrigir e reenviar" existir.
+    return texto.replace(
+        "Gere a nota de novo (marcando pra substituir esta) e envie.",
+        "Clique em “Corrigir e reenviar”: a Ana acerta a hora e manda de novo.",
+    )
 
 
 def submeter(db: Session, emissao: Emissao, cliente: ClienteSefin) -> Emissao:

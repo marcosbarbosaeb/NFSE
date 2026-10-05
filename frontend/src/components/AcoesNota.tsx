@@ -1,5 +1,6 @@
 import { FileCode2, FileDown } from "lucide-react"
 import { type ReactNode, useEffect, useRef, useState } from "react"
+import { Link } from "react-router-dom"
 import { ApiError, api, formatarErro } from "../lib/api"
 import type { FormaEnvio } from "../lib/types"
 import { EnvioNota, envioLiberado } from "./EnvioNota"
@@ -29,6 +30,8 @@ export interface NotaParaAcoes {
   vinculo_id?: string | null
   /** Motivo da recusa da prefeitura (estado "erro"). */
   erro_detalhe?: string | null
+  /** A recusa se resolve sozinha: "Corrigir e reenviar" (hora da nota). */
+  erro_corrigivel?: boolean
 }
 
 /** Selo com confirmação em popover (position:fixed — tabelas com overflow cortariam um popover comum). */
@@ -221,7 +224,7 @@ export function SeloPrefeitura({ nota, onMudou }: { nota: NotaParaAcoes; onMudou
       <span className="inline-flex max-w-[15rem] flex-col items-start gap-1">
       <SeloAcao
         rotulo={erro ? "Recusada" : "A enviar"}
-        rotuloHover={erro ? "Tentar de novo" : "Enviar"}
+        rotuloHover={nota.erro_corrigivel ? "Corrigir" : erro ? "Tentar de novo" : "Enviar"}
         variante={erro ? "danger" : "warning"}
         titulo={erro ? (motivo ?? "A prefeitura recusou — clique pra tentar de novo") : "Assinada — clique pra enviar à prefeitura"}
         larguraPainel={motivo ? 340 : 272}
@@ -236,14 +239,41 @@ export function SeloPrefeitura({ nota, onMudou }: { nota: NotaParaAcoes; onMudou
                     {motivo}
                   </span>
                 )}
-                {erro ? "Enviar de novo à prefeitura" : "Enviar esta nota à prefeitura"}
-                {nota.homologacao ? " (ambiente de teste)" : ""}? {erro && "Se o erro foi nos dados, corrija antes na página da nota."}
+                {nota.erro_corrigivel ? (
+                  "Eu acerto a hora da nota, assino de novo e envio à prefeitura. O número e os dados da nota não mudam."
+                ) : (
+                  <>
+                    {erro ? "Enviar de novo à prefeitura" : "Enviar esta nota à prefeitura"}
+                    {nota.homologacao ? " (ambiente de teste)" : ""}?{" "}
+                    {erro && (
+                      <>
+                        Se o erro foi nos dados,{" "}
+                        <Link to={`/app/nfse/${nota.id}`} className="font-semibold text-primary-600 underline">
+                          abra a nota
+                        </Link>
+                        {nota.vinculo_id && (
+                          <>
+                            {" "}
+                            ou o{" "}
+                            <Link to={`/app/tomadores/${nota.vinculo_id}`} className="font-semibold text-primary-600 underline">
+                              cadastro do tomador
+                            </Link>
+                          </>
+                        )}{" "}
+                        pra corrigir antes.
+                      </>
+                    )}
+                  </>
+                )}
               </>
             }
-            botao="Enviar à prefeitura"
+            botao={nota.erro_corrigivel ? "Corrigir e reenviar" : "Enviar à prefeitura"}
             fechar={fechar}
             onConfirmar={async () => {
-              const r = await api.post<{ estado: string; erro_detalhe?: string | null }>(`/dps/${nota.id}/submeter`, {})
+              const r = await api.post<{ estado: string; erro_detalhe?: string | null }>(
+                `/dps/${nota.id}/${nota.erro_corrigivel ? "corrigir-reenviar" : "submeter"}`,
+                {},
+              )
               setResultado(r.estado === "confirmado" ? "Autorizada!" : null)
               onMudou()
               // Recusa da prefeitura volta com 200 + estado "erro": mostra o motivo.

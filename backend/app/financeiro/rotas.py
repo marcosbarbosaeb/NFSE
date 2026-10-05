@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.deps import db_sessao, exige_modulo, exigir_conta_real, ler_upload as _ler_upload, prestador_atual_id
@@ -30,7 +31,7 @@ from app.financeiro.painel_status import painel_status_completo
 from app.financeiro.integracao import ligar_pagamento as _ligar_pagamento
 from app.financeiro.pagamentos import registrar_pagamento
 from app.financeiro.pendencias import pendencias as pendencias_do_financeiro
-from app.models import AjusteEvento, Despesa, DespesaRecorrente, Emissao, PagamentoRecebido, Prestador, PrestadorTomador, RotinaMensal
+from app.models import AjusteEvento, Anotacao, Despesa, DespesaRecorrente, Emissao, PagamentoRecebido, Prestador, PrestadorTomador, RotinaMensal
 from app.schemas import (
     AtualizarDespesaRequest,
     ConciliarDespesaRequest,
@@ -472,8 +473,9 @@ def api_criar_conta_fixa(req: ContaFixaRequest, db: Session = Depends(db_sessao)
     conta = financeiro.criar_recorrente(
         db, prestador_id, nome=req.nome.strip(), categoria=(req.categoria or req.nome).strip()[:100], tipo=req.tipo,
         valor_padrao=Decimal(str(req.valor_padrao)) if req.valor_padrao else None, dia_vencimento=req.dia_vencimento,
-        conta=(req.conta or "").strip() or None,
+        conta=(req.conta or "").strip() or None, agendado_ate=req.agendado_ate or None,
     )
+    financeiro.aplicar_agendamento(db, conta, hoje_br())
     db.commit()
     return conta
 
@@ -493,7 +495,11 @@ def api_atualizar_conta_fixa(conta_id: uuid.UUID, req: ContaFixaAtualizarRequest
             valor = Decimal(str(valor)) if valor else None
         if campo in ("nome", "categoria") and valor is None:
             continue
+        if campo == "agendado_ate":
+            valor = valor or None
         setattr(conta, campo, valor)
+    db.flush()
+    financeiro.aplicar_agendamento(db, conta, hoje_br())
     db.commit()
     return conta
 
@@ -639,3 +645,60 @@ def api_atualizar_cliente_do_financeiro(vinculo_id: uuid.UUID, req: _ClienteAtua
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     db.commit()
     return resposta
+
+
+# --- Anotações: abas/notas livres que a pessoa cria (05/10/2026) ---
+
+class _AnotacaoRequest(BaseModel):
+    titulo: str | None = Field(default=None, min_length=1, max_length=80)
+    texto: str | None = Field(default=None, max_length=20000)
+
+
+def _anotacao_dict(a: Anotacao) -> dict:
+    return {"id": str(a.id), "titulo": a.titulo, "texto": a.texto, "atualizado_em": a.atualizado_em}
+
+
+@rotas.get("/api/financeiro/anotacoes")
+def api_listar_anotacoes(db: Session = Depends(db_sessao)):
+    return [_anotacao_dict(a) for a in db.query(Anotacao).order_by(Anotacao.ordem, Anotacao.criado_em)]
+
+
+@rotas.post("/api/financeiro/anotacoes")
+def api_criar_anotacao(req: _AnotacaoRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    if db.query(Anotacao).count() >= 30:
+        raise HTTPException(status_code=422, detail="Dá pra ter até 30 anotações. Apague alguma pra criar outra.")
+    ordem = (db.query(func.max(Anotacao.ordem)).scalar() or 0) + 1
+    nota = Anotacao(
+        id=uuid.uuid4(), prestador_id=prestador_id, titulo=(req.titulo or "Nova anotação").strip()[:80],
+        texto=req.texto or "", ordem=ordem,
+    )
+    db.add(nota)
+    db.flush()
+    resposta = _anotacao_dict(nota)
+    db.commit()
+    return resposta
+
+
+@rotas.patch("/api/financeiro/anotacoes/{anotacao_id}")
+def api_atualizar_anotacao(anotacao_id: uuid.UUID, req: _AnotacaoRequest, db: Session = Depends(db_sessao)):
+    nota = db.get(Anotacao, anotacao_id)
+    if nota is None:
+        raise HTTPException(status_code=404, detail="Anotação não encontrada.")
+    if req.titulo is not None:
+        nota.titulo = req.titulo.strip()[:80] or nota.titulo
+    if req.texto is not None:
+        nota.texto = req.texto
+    db.flush()
+    resposta = _anotacao_dict(nota)
+    db.commit()
+    return resposta
+
+
+@rotas.delete("/api/financeiro/anotacoes/{anotacao_id}")
+def api_apagar_anotacao(anotacao_id: uuid.UUID, db: Session = Depends(db_sessao)):
+    nota = db.get(Anotacao, anotacao_id)
+    if nota is None:
+        raise HTTPException(status_code=404, detail="Anotação não encontrada.")
+    db.delete(nota)
+    db.commit()
+    return {"ok": True}

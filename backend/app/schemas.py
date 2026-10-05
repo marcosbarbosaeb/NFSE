@@ -104,6 +104,7 @@ class EmissaoResponse(BaseModel):
     descricao: str
     xml: str | None
     chave_acesso: str | None = None
+    erro_corrigivel: bool = False
     erro_detalhe: str | None = None
     atualizado_em: datetime
     origem: str = "ana"
@@ -308,6 +309,8 @@ class DespesaResponse(BaseModel):
     pago_em: date | None = None
     recorrente_id: uuid.UUID | None = None
     valor_a_definir: bool = False
+    # Conta recorrente com pagamento agendado que cobre este mês (AAAA-MM).
+    agendado_ate: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -346,6 +349,7 @@ class EmissaoResumoLinha(BaseModel):
     tem_email: bool = False
     homologacao: bool = False
     envio_forma: str | None = None
+    erro_corrigivel: bool = False
     erro_detalhe: str | None = None
     # Linha das notas de vendedores da Shopee (pagamento indireto).
     vendedores: bool = False
@@ -391,6 +395,9 @@ class PendenciaItem(BaseModel):
     competencia: str | None = None
     # Pra "ignorar este aviso" (POST /api/painel/pendencias/ignorar).
     chave: str | None = None
+    # Dia combinado pra fazer (notas a gerar) e se já passou.
+    data: date | None = None
+    atrasada: bool = False
 
 
 class AgendaItem(BaseModel):
@@ -806,6 +813,7 @@ class EmissaoListaLinha(BaseModel):
     avulsa: bool = False  # nota de vendedor da Shopee (destinatário fixo)
     envio_forma: str | None = None  # como o tomador recebe: email|whatsapp|portal|nenhum
     erro_detalhe: str | None = None  # motivo da recusa da prefeitura (estado "erro")
+    erro_corrigivel: bool = False  # dá pra consertar com "Corrigir e reenviar"
 
 
 class EventoCalendarioResponse(BaseModel):
@@ -1330,6 +1338,8 @@ class ContaFixaRequest(BaseModel):
     valor_padrao: float | None = Field(default=None, ge=0)
     dia_vencimento: int | None = Field(default=None, ge=1, le=31)
     conta: str | None = Field(default=None, max_length=60)
+    # Pagamento agendado até este mês (AAAA-MM, inclusive); "" ou null = sem agendamento.
+    agendado_ate: str | None = Field(default=None, pattern=r"^(\d{4}-(0[1-9]|1[0-2]))?$")
 
 
 class ContaFixaAtualizarRequest(BaseModel):
@@ -1339,6 +1349,8 @@ class ContaFixaAtualizarRequest(BaseModel):
     valor_padrao: float | None = Field(default=None, ge=0)
     dia_vencimento: int | None = Field(default=None, ge=1, le=31)
     conta: str | None = Field(default=None, max_length=60)
+    # Pagamento agendado até este mês (AAAA-MM, inclusive); "" ou null = sem agendamento.
+    agendado_ate: str | None = Field(default=None, pattern=r"^(\d{4}-(0[1-9]|1[0-2]))?$")
     ativa: bool | None = None
 
 
@@ -1350,6 +1362,7 @@ class ContaFixaResponse(BaseModel):
     valor_padrao: float | None
     dia_vencimento: int | None
     conta: str | None
+    agendado_ate: str | None = None
     ativa: bool
 
     model_config = {"from_attributes": True}

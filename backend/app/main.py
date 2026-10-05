@@ -233,8 +233,11 @@ from app.services.motor_emissao import (
     criar_rascunho,
     montar as montar_emissao,
     motivo_da_recusa,
+    recusa_corrigivel,
+    remontar as remontar_emissao,
     submeter as submeter_emissao,
 )
+from app.services import assistente_tomador
 from app.services.nota_visual import montar_nota_visual
 from app.services.tomadores import CnpjJaCadastradoError, buscar_tomador, criar_tomador, listar_catalogo
 from app.services.cadastro import (
@@ -1006,6 +1009,61 @@ def api_ver_vinculo(vinculo_id: uuid.UUID, db: Session = Depends(db_sessao)):
     return vinculo
 
 
+# --- Cadastro assistido de tomador (05/10/2026) ---
+
+
+@app.get("/api/vinculos/{vinculo_id}/ultima-nota", dependencies=[_SO_EMISSOR])
+def api_ultima_nota_do_vinculo(vinculo_id: uuid.UUID, db: Session = Depends(db_sessao)):
+    """O que dá pra aproveitar da última nota deste tomador (emitida aqui ou
+    importada) pra configurar a emissão: códigos e a descrição, com o que
+    muda todo mês já trocado por campo automático."""
+    if buscar_vinculo(db, vinculo_id) is None:
+        raise HTTPException(status_code=404, detail="Tomador não encontrado.")
+    return {"nota": assistente_tomador.ultima_nota_do_vinculo(db, vinculo_id)}
+
+
+@app.post("/api/tomadores/ler-nota", dependencies=[_SO_EMISSOR], responses={422: {"model": ErroResponse}})
+def api_ler_nota_antiga(
+    arquivo: UploadFile = File(...), db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Cadastro assistido: a pessoa manda uma nota que já emitiu pra este
+    cliente (XML, ou o PDF — aí a Ana busca o XML na Receita pela chave de
+    acesso impressa nele) e o cadastro vem preenchido."""
+    conteudo = _ler_upload(arquivo, 5)
+    if conteudo[:5] == b"%PDF-":
+        chave = assistente_tomador.chave_no_pdf(conteudo)
+        if not chave:
+            raise HTTPException(status_code=422, detail="Não achei a chave de acesso nesse PDF. Se tiver o XML da nota, envie ele.")
+        try:
+            private_key, cert = carregar_certificado(db, prestador_id, get_settings().cert_master_key)
+        except CertificadoNaoEncontradoError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="Pra ler a nota pelo PDF eu preciso do seu certificado digital (Empresa › Certificado). Sem ele, envie o XML da nota.",
+            ) from exc
+        try:
+            resposta = ClienteSefin(private_key, cert, "1", timeout=15).consultar_nfse(chave)
+            conteudo = ClienteSefin.extrair_nfse_xml(resposta) if resposta.ok else None
+        except Exception as exc:  # noqa: BLE001 — rede/Receita fora do ar
+            raise HTTPException(status_code=422, detail="Não consegui buscar essa nota na Receita agora. Tente de novo ou envie o XML.") from exc
+        if not conteudo:
+            raise HTTPException(
+                status_code=422,
+                detail="A Receita não devolveu essa nota — ela precisa ter sido emitida pelo CNPJ desta empresa. Se tiver o XML, envie ele.",
+            )
+    try:
+        return assistente_tomador.ler_xml(conteudo)
+    except assistente_tomador.NotaIlegivelError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/servicos/codigos-usados", dependencies=[_SO_EMISSOR])
+def api_codigos_usados(cod_trib_nacional: str | None = Query(default=None, max_length=10), db: Session = Depends(db_sessao)):
+    """Códigos de tributação municipal e NBS que já saíram nas notas desta
+    empresa (com a descrição da Receita) — pra escolher numa lista."""
+    return assistente_tomador.codigos_usados(db, cod_trib_nacional or None)
+
+
 @app.post("/api/vinculos", response_model=VinculoDetalheResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
 def api_criar_vinculo(
     req: VinculoCriarRequest, request: Request,
@@ -1348,6 +1406,7 @@ def _para_resposta(emissao: Emissao) -> EmissaoResponse:
         descricao=snap.get("descricao_renderizada", ""),
         xml=emissao.xml_assinado or emissao.xml_dps,
         chave_acesso=emissao.chave_acesso, erro_detalhe=motivo_da_recusa(emissao.erro_detalhe),
+        erro_corrigivel=emissao.estado == "erro" and recusa_corrigivel(emissao.erro_detalhe),
         atualizado_em=emissao.atualizado_em, origem=emissao.origem or "ana", vinculo_id=emissao.prestador_tomador_id,
         avulsa=bool(emissao.tomador_documento),
     )
@@ -1795,8 +1854,33 @@ def api_submeter_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), pr
         emissao = submeter_emissao(db, emissao, cliente)
     except TransicaoInvalidaError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    resposta = _para_resposta(emissao)  # antes do commit (RLS vale só na transação)
     db.commit()
-    return _para_resposta(emissao)
+    return resposta
+
+
+@app.post("/api/dps/{emissao_id}/corrigir-reenviar", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
+def api_corrigir_e_reenviar(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Nota recusada por causa da hora de emissão (E0008): remonta com a
+    hora de agora (mesmo número de DPS, mesmos dados), assina e envia de
+    novo — um clique no aviso de recusa, sem refazer a nota (05/10/2026)."""
+    emissao = db.query(Emissao).filter_by(id=emissao_id).one_or_none()
+    if emissao is None:
+        raise HTTPException(status_code=404, detail="Emissão não encontrada (ou não pertence ao prestador ativo)")
+    try:
+        private_key, cert = carregar_certificado(db, prestador_id, get_settings().cert_master_key)
+    except CertificadoNaoEncontradoError as exc:
+        raise HTTPException(status_code=409, detail="Nenhum certificado carregado — envie o .pfx antes de reenviar.") from exc
+    try:
+        remontar_emissao(db, emissao)
+        assinar_emissao(db, emissao, private_key, cert)
+        tpAmb = (emissao.tomador_snapshot or {}).get("tpAmb", "2")
+        emissao = submeter_emissao(db, emissao, ClienteSefin(private_key, cert, tpAmb))
+    except TransicaoInvalidaError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    resposta = _para_resposta(emissao)  # antes do commit (RLS vale só na transação)
+    db.commit()
+    return resposta
 
 
 @app.post("/api/dps/{emissao_id}/cancelar", response_model=EmissaoResponse, responses={400: {"model": ErroResponse}, 404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])

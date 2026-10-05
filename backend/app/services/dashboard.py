@@ -40,7 +40,7 @@ from sqlalchemy.orm import Session
 
 from app.models import AjusteEvento, Certificado, Emissao, Envio, Prestador
 from app.services.envios import listar_envios
-from app.services.motor_emissao import motivo_da_recusa
+from app.services.motor_emissao import motivo_da_recusa, recusa_corrigivel
 from app.services.vinculos import listar_vinculos_ativos
 from app.tempo import hoje as hoje_br
 
@@ -236,6 +236,7 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
                 "homologacao": (emissao.tomador_snapshot or {}).get("tpAmb") == "2",
                 "envio_forma": vinculo.envio_canal,
                 "erro_detalhe": motivo_da_recusa(emissao.erro_detalhe) if emissao.estado == "erro" else None,
+                "erro_corrigivel": emissao.estado == "erro" and recusa_corrigivel(emissao.erro_detalhe),
             })
 
     faturado_no_mes = _faturado(db, competencia)
@@ -347,18 +348,34 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
         chave = f"gerar:{v.id}:{competencia}"
         if chave in ignoradas:
             continue
-        quando = f" (dia {v.dia_limite_emissao})" if v.dia_limite_emissao else ""
+        # Dia combinado pra gerar (o último dia do mês quando o mês é mais curto).
+        data = (
+            datetime.date(hoje.year, hoje.month, min(v.dia_limite_emissao, monthrange(hoje.year, hoje.month)[1]))
+            if v.dia_limite_emissao else None
+        )
         pendencias.append({
-            "tipo": "gerar", "titulo": f"Gerar a nota de {v.apelido}{quando}", "acao": "Gerar", "vinculo_id": v.id,
+            "tipo": "gerar", "titulo": f"Gerar a nota de {v.apelido}", "acao": "Gerar", "vinculo_id": v.id,
             "competencia": competencia, "link": f"/app/nfse?gerar={v.id}&competencia={competencia}", "chave": chave,
+            "data": data, "atrasada": bool(data and data < hoje),
         })
 
     eventos = eventos_calendario(db, prestador_id, hoje, hoje + datetime.timedelta(days=30))
+    # A agenda é só o que AINDA vai acontecer e não está na lista de cima:
+    # "dia de gerar a nota" deste mês já é uma pendência (aparecia duas
+    # vezes) e "recebido" já aconteceu — não é próximo passo (05/10/2026).
+    a_gerar = {str(p["vinculo_id"]) for p in pendencias if p["tipo"] == "gerar"}
     agenda = [
         {"data": ev["data"], "tipo": ev.get("categoria") or ev["tipo"], "titulo": ev.get("apelido") or ev["titulo"],
          "detalhe": ev["titulo"], "valor": ev.get("valor")}
         for ev in eventos
-    ][:8]
+        if ev["tipo"] != "recebimento_confirmado"
+        and not (
+            ev["tipo"] == "prazo_emissao" and str(ev.get("vinculo_id")) in a_gerar
+            and (ev["data"].year, ev["data"].month) == (hoje.year, hoje.month)
+        )
+    ]
+    agenda.sort(key=lambda ev: ev["data"])
+    agenda = agenda[:8]
     # Muitas notas na mesma etapa viram uma linha só ("Assinar 8 notas").
     agrupaveis = {
         "erro": ("{n} notas recusadas pela prefeitura", "Ver"),
@@ -378,7 +395,9 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
             agrupadas += do_tipo
     agrupadas += [p for p in pendencias if p["tipo"] not in agrupaveis]
     ordem = {"erro": 0, "prefeitura": 1, "assinar": 2, "enviar_tomador": 3, "gerar": 4}
-    agrupadas.sort(key=lambda p: ordem.get(p["tipo"], 9))
+    # Primeiro o que já dá pra resolver agora; depois as notas a gerar, na
+    # ordem do dia combinado (as sem dia por último).
+    agrupadas.sort(key=lambda p: (ordem.get(p["tipo"], 9), p.get("data") or datetime.date.max, p["titulo"].lower()))
     return {"pendencias": agrupadas[:10], "total_pendencias": len(agrupadas), "agenda": agenda}
 
 

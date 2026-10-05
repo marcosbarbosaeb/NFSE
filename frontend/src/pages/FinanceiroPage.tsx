@@ -1,9 +1,10 @@
-import { ArrowLeftRight, FileUp, LayoutDashboard, Pencil, Plus, Trash2 } from "lucide-react"
+import { ArrowLeftRight, FileUp, LayoutDashboard, Pencil, Plus, StickyNote, Trash2 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { Link, useLocation, useSearchParams } from "react-router-dom"
 import { BaixaPagamento } from "../components/BaixaPagamento"
 import { PainelCards } from "../components/PainelCards"
 import { RecebimentosSemNotaCard, linkGerarNota } from "../components/financeiro/RecebimentosSemNota"
+import { AnotacaoCard, useAnotacoes } from "../components/financeiro/Anotacoes"
 import { ContasDoMesPainel } from "../components/financeiro/ContasDoMesPainel"
 import { LancamentoModal } from "../components/financeiro/LancamentoModal"
 import { ResultadoAno } from "../components/financeiro/ResultadoAno"
@@ -84,7 +85,7 @@ export function FinanceiroPage() {
   async function apagarDespesa(d: Despesa) {
     const nome = d.descricao || d.categoria
     const aviso = d.recorrente_id
-      ? "\n\nÉ o lançamento de uma conta fixa: ele volta a aparecer quando o mês for aberto em “Contas do mês”. Pra parar de lançar, desative a conta em Contas fixas."
+      ? "\n\nÉ o lançamento de uma conta recorrente: ele volta a aparecer quando o mês for aberto em “Contas do mês”. Pra parar de lançar, desative a conta em Contas recorrentes."
       : ""
     if (!window.confirm(`Apagar "${nome}" (${formatBRL(d.valor)}, ${d.competencia})?${aviso}`)) return
     try {
@@ -104,6 +105,8 @@ export function FinanceiroPage() {
   const modulos = useModulos()
   // Disposição dos cards (05/10/2026): abrir/fechar e arrastar.
   const [editando, setEditando] = useState(false)
+  const { anotacoes, erro: erroAnotacao, criar: criarAnotacao, atualizar: atualizarAnotacao, apagar: apagarAnotacao } = useAnotacoes(true)
+  const [anotacaoNova, setAnotacaoNova] = useState<string | null>(null)
   const [pendentesExtrato, setPendentesExtrato] = useState(0)
   const [semNota, setSemNota] = useState(0)
 
@@ -178,6 +181,19 @@ export function FinanceiroPage() {
           <Button variant="ghost" onClick={() => setEditando((e) => !e)} aria-pressed={editando} data-tour="financeiro-disposicao">
             <LayoutDashboard size={16} /> {editando ? "Concluir" : "Editar disposição"}
           </Button>
+          <Button
+            variant="ghost"
+            title="Crie uma anotação pra deixar registrado o que quiser (ex.: controle de recarga de telefone)"
+            onClick={async () => {
+              const nova = await criarAnotacao("Nova anotação")
+              if (!nova) return
+              setAnotacaoNova(nova.id)
+              // Espera o card existir na tela e leva a pessoa até ele.
+              window.setTimeout(() => document.getElementById(`nota-${nova.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 150)
+            }}
+          >
+            <StickyNote size={16} /> Nova anotação
+          </Button>
           <Link
             to="/app/financeiro/conciliacao"
             className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
@@ -218,6 +234,7 @@ export function FinanceiroPage() {
       </div>
 
       {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
+      {erroAnotacao && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erroAnotacao}</p>}
 
       {pendentesExtrato > 0 && !editando && (
         <Link
@@ -253,9 +270,11 @@ export function FinanceiroPage() {
           },
           {
             id: "contas",
-            titulo: "Contas e rotina do mês",
+            titulo: "Contas do mês",
+            meia: true,
             conteudo: (
       <ContasDoMesPainel
+        parte="contas"
         competencia={competenciaContas}
         onCompetencia={setCompetenciaContas}
         versao={versaoMes}
@@ -265,6 +284,38 @@ export function FinanceiroPage() {
       />
             ),
           },
+          {
+            id: "rotina",
+            titulo: "Rotina de fechamento",
+            meia: true,
+            conteudo: (
+      <ContasDoMesPainel
+        parte="rotina"
+        competencia={competenciaContas}
+        onCompetencia={setCompetenciaContas}
+        versao={versaoMes}
+        onMudou={recarregar}
+        semTitulo
+      />
+            ),
+          },
+          // Anotações: abas/notas que a pessoa cria (uma por card).
+          ...anotacoes.map((nota) => ({
+            id: `nota:${nota.id}`,
+            ancora: `nota-${nota.id}`,
+            titulo: nota.titulo,
+            grupo: "anotação",
+            meia: true,
+            conteudo: (
+              <AnotacaoCard
+                key={nota.id}
+                nota={nota}
+                nova={nota.id === anotacaoNova}
+                onMudou={(m) => atualizarAnotacao(nota.id, m)}
+                onApagar={() => apagarAnotacao(nota.id)}
+              />
+            ),
+          })),
           {
             id: "a_receber",
             // Notas a receber: só existe com o módulo de notas (integração).

@@ -31,7 +31,11 @@ export function ContasDoMesPainel({
   onMudou,
   onLancar,
   semTitulo,
+  parte = "tudo",
 }: {
+  /** Contas do mês e Rotina de fechamento são cards separados (05/10/2026):
+   * cada tela monta um painel com a parte que quer. */
+  parte?: "contas" | "rotina" | "tudo"
   /** A tela já mostra o título do card. */
   semTitulo?: boolean
   competencia: string
@@ -50,6 +54,9 @@ export function ContasDoMesPainel({
   const [modal, setModal] = useState<"contas" | "rotinas" | null>(null)
   // Arrastar um item da rotina pra mudar a ordem (05/10/2026).
   const [arrastando, setArrastando] = useState<string | null>(null)
+  // O que já foi ticado fica recolhido ("Mostrar mais") pra tela não encher.
+  const [verPagas, setVerPagas] = useState(false)
+  const [verFeitas, setVerFeitas] = useState(false)
 
   function passarSobre(alvoId: string) {
     if (!arrastando || arrastando === alvoId) return
@@ -179,6 +186,9 @@ export function ContasDoMesPainel({
   const retiradasMes = contas.filter((c) => c.tipo === "retirada")
   const previsto = despesasMes.reduce((s, c) => s + c.valor, 0)
   const pago = despesasMes.filter((c) => c.pago).reduce((s, c) => s + c.valor, 0)
+  const despesasAbertas = despesasMes.filter((c) => !c.pago)
+  const retiradasAbertas = retiradasMes.filter((c) => !c.pago)
+  const jaPagas = contas.filter((c) => c.pago)
   const aPagar = contas.filter((c) => !c.pago)
   const valorAPagar = aPagar.reduce((s, c) => s + c.valor, 0)
   const aDefinir = aPagar.filter((c) => c.valor_a_definir).length
@@ -208,7 +218,9 @@ export function ContasDoMesPainel({
             {(detalhes || c.vencimento || c.pago_em) && (
               <p className="flex flex-wrap items-center gap-x-2 text-xs text-slate-400 dark:text-slate-500">
                 {detalhes && <span className="truncate">{detalhes}</span>}
-                {c.pago && c.pago_em ? (
+                {c.pago && c.agendado_ate ? (
+                  <span className="font-medium text-primary-600 dark:text-primary-300">agendado até {formatCompetenciaLonga(c.agendado_ate).toLowerCase()}</span>
+                ) : c.pago && c.pago_em ? (
                   <span>pago em {formatDiaMes(c.pago_em)}</span>
                 ) : c.vencimento ? (
                   <span className={vencida ? "font-semibold text-danger-600 dark:text-danger-400" : ""}>
@@ -266,9 +278,11 @@ export function ContasDoMesPainel({
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 id="titulo-contas-mes" className={semTitulo ? "sr-only" : "text-base font-semibold text-slate-800 dark:text-slate-200"}>
-            Contas e rotina do mês
+            {parte === "contas" ? "Contas do mês" : parte === "rotina" ? "Rotina de fechamento" : "Contas e rotina do mês"}
           </h2>
-          <p className="text-xs text-slate-400 dark:text-slate-500">Tique o que já foi pago e o que já foi conferido.</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500">
+            {parte === "rotina" ? "Tique o que já foi conferido neste mês." : parte === "contas" ? "Tique o que já foi pago." : "Tique o que já foi pago e o que já foi conferido."}
+          </p>
         </div>
         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800">
           <button
@@ -304,8 +318,9 @@ export function ContasDoMesPainel({
         </p>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+      <div className={parte === "tudo" ? "grid grid-cols-1 gap-6 lg:grid-cols-5" : ""}>
         {/* a. Contas do mês */}
+        {parte !== "rotina" && (
         <section className="lg:col-span-3" aria-labelledby="titulo-contas-lista">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h3 id="titulo-contas-lista" className="text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
@@ -313,7 +328,7 @@ export function ContasDoMesPainel({
             </h3>
             <div className="flex flex-wrap gap-1">
               <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => setModal("contas")}>
-                <Repeat size={14} /> Contas fixas
+                <Repeat size={14} /> Contas recorrentes
               </Button>
               {onLancar && (
                 <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => onLancar(competencia)}>
@@ -348,30 +363,51 @@ export function ContasDoMesPainel({
           ) : contas.length === 0 ? (
             <div className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">
               <p>Nenhuma conta em {formatCompetenciaLonga(competencia).toLowerCase()}.</p>
-              <p className="mt-1 text-xs">Cadastre as contas fixas (pró-labore, Simples, cartão, ferramentas) pra elas aparecerem aqui todo mês.</p>
+              <p className="mt-1 text-xs">Cadastre as contas recorrentes (pró-labore, Simples, cartão, ferramentas) pra elas aparecerem aqui todo mês.</p>
               <Button variant="outline" className="mt-3 px-3 py-1.5 text-xs" onClick={() => setModal("contas")}>
-                <Repeat size={14} /> Cadastrar contas fixas
+                <Repeat size={14} /> Cadastrar contas recorrentes
               </Button>
             </div>
           ) : (
             <>
-              {despesasMes.length > 0 && <ul className="divide-y divide-slate-100 dark:divide-slate-700/60">{despesasMes.map(linhaConta)}</ul>}
-              {retiradasMes.length > 0 && (
+              {despesasAbertas.length > 0 && <ul className="divide-y divide-slate-100 dark:divide-slate-700/60">{despesasAbertas.map(linhaConta)}</ul>}
+              {despesasAbertas.length === 0 && despesasMes.length > 0 && (
+                <p className="py-3 text-center text-sm text-success-700 dark:text-success-300">Todas as contas do mês estão pagas ✓</p>
+              )}
+              {retiradasAbertas.length > 0 && (
                 <div className="mt-3">
                   <p className="mb-1 flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
                     Retiradas / distribuição de lucros
-                    <span className="tabular-nums text-slate-400 dark:text-slate-500">{formatBRL(retiradasMes.reduce((s, c) => s + c.valor, 0))}</span>
+                    <span className="tabular-nums text-slate-400 dark:text-slate-500">{formatBRL(retiradasAbertas.reduce((s, c) => s + c.valor, 0))}</span>
                   </p>
                   <ul className="divide-y divide-slate-100 border-t border-slate-100 dark:divide-slate-700/60 dark:border-slate-700/60">
-                    {retiradasMes.map(linhaConta)}
+                    {retiradasAbertas.map(linhaConta)}
                   </ul>
+                </div>
+              )}
+              {jaPagas.length > 0 && (
+                <div className="mt-2 border-t border-slate-100 pt-2 dark:border-slate-700/60">
+                  <button
+                    type="button"
+                    onClick={() => setVerPagas((v) => !v)}
+                    aria-expanded={verPagas}
+                    className="flex w-full items-center justify-between rounded-md px-1 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700/40"
+                  >
+                    <span>
+                      {verPagas ? "Esconder" : "Mostrar"} {jaPagas.length} já {jaPagas.length === 1 ? "paga" : "pagas"}
+                    </span>
+                    <span className="tabular-nums font-normal">{formatBRL(jaPagas.reduce((s, c) => s + c.valor, 0))}</span>
+                  </button>
+                  {verPagas && <ul className="divide-y divide-slate-100 dark:divide-slate-700/60">{jaPagas.map(linhaConta)}</ul>}
                 </div>
               )}
             </>
           )}
         </section>
+        )}
 
         {/* b. Rotina de fechamento */}
+        {parte !== "contas" && (
         <section className="lg:col-span-2" aria-labelledby="titulo-rotina">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h3 id="titulo-rotina" className="text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
@@ -411,7 +447,7 @@ export function ContasDoMesPainel({
                 </div>
               </div>
               <ul className="divide-y divide-slate-100 dark:divide-slate-700/60">
-                {rotinas.map((r) => (
+                {rotinas.filter((r) => verFeitas || !r.feita).map((r) => (
                   <li
                     key={r.id}
                     draggable
@@ -448,9 +484,20 @@ export function ContasDoMesPainel({
                   </li>
                 ))}
               </ul>
+              {feitas > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setVerFeitas((v) => !v)}
+                  aria-expanded={verFeitas}
+                  className="mt-2 w-full rounded-md border-t border-slate-100 px-1 pb-1 pt-2 text-left text-xs font-semibold text-slate-500 hover:bg-slate-50 dark:border-slate-700/60 dark:text-slate-400 dark:hover:bg-slate-700/40"
+                >
+                  {verFeitas ? "Esconder" : "Mostrar"} {feitas} já {feitas === 1 ? "feita" : "feitas"}
+                </button>
+              )}
             </>
           )}
         </section>
+        )}
       </div>
 
       {modal === "contas" && <ContasFixasModal onClose={() => setModal(null)} onMudou={recarregarTudo} />}

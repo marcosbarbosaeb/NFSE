@@ -232,7 +232,7 @@ def ler_relatorio(conteudo: bytes) -> RelatorioShopee:
         endereco = None if estrangeiro else parsear_endereco(endereco_bruto)
         avisos = []
         if estrangeiro:
-            avisos.append("Vendedor estrangeiro: nota pra fora do país é exportação de serviço — confira com seu contador.")
+            avisos.append("Vendedor de fora do Brasil: a nota sai com a identificação fiscal estrangeira e o país dele.")
         elif endereco is None:
             avisos.append("Endereço não reconhecido — a nota sai sem o endereço do tomador.")
         agrupados[chave] = VendedorShopee(

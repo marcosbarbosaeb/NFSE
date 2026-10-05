@@ -50,7 +50,7 @@ function badgeEnvio(status: string | null) {
 
 
 function notaDaLinha(l: EmissaoResumoLinha): NotaParaAcoes {
-  return { id: l.emissao_id, estado: l.estado, envio_status: l.envio_status, tem_pdf: l.tem_pdf, tem_email: l.tem_email, homologacao: l.homologacao, envio_forma: l.envio_forma, vinculo_id: l.vinculo_id, erro_detalhe: l.erro_detalhe }
+  return { id: l.emissao_id, estado: l.estado, envio_status: l.envio_status, tem_pdf: l.tem_pdf, tem_email: l.tem_email, homologacao: l.homologacao, envio_forma: l.envio_forma, vinculo_id: l.vinculo_id, erro_detalhe: l.erro_detalhe, erro_corrigivel: l.erro_corrigivel }
 }
 
 const COR_PENDENCIA: Record<string, string> = {
@@ -368,6 +368,12 @@ export function DashboardPage() {
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">{p.titulo}</p>
                               <p className="text-xs text-slate-400 dark:text-slate-500">
+                                {p.data && (
+                                  <span className={p.atrasada ? "font-semibold text-danger-600 dark:text-danger-300" : ""}>
+                                    {p.atrasada ? `era pra ${formatDataCurta(p.data)}` : `até ${formatDataCurta(p.data)}`}
+                                    {" · "}
+                                  </span>
+                                )}
                                 {[p.competencia ? formatCompetenciaLonga(p.competencia) : null, p.valor != null ? formatBRL(p.valor) : null]
                                   .filter(Boolean)
                                   .join(" · ")}
@@ -395,7 +401,7 @@ export function DashboardPage() {
                   )}
                   {proximos.agenda.length > 0 && (
                     <div>
-                      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Agenda</p>
+                      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Depois, na agenda</p>
                       <ul className="flex flex-col gap-2">
                         {proximos.agenda.map((ev, i) => (
                           <li
@@ -531,14 +537,32 @@ export function DashboardPage() {
           },
           {
             id: "fin_contas",
-            titulo: "Contas e rotina do mês",
+            titulo: "Contas do mês",
             grupo: "Financeiro",
+            meia: true,
             conteudo: (
               <ContasDoMesPainel
+                parte="contas"
                 competencia={competencia}
                 onCompetencia={setCompetencia}
                 versao={recarga}
                 onMudou={() => setRecarga((n) => n + 1)}
+                semTitulo
+              />
+            ),
+          },
+          {
+            id: "fin_rotina",
+            titulo: "Rotina de fechamento",
+            grupo: "Financeiro",
+            meia: true,
+            conteudo: (
+              <ContasDoMesPainel
+                parte="rotina"
+                competencia={competencia}
+                onCompetencia={setCompetencia}
+                versao={recarga}
+                onMudou={() => undefined}
                 semTitulo
               />
             ),

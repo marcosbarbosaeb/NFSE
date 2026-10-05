@@ -1,7 +1,11 @@
-import { Check, ExternalLink, Loader2, Mail, MessageCircle, MinusCircle, Sparkles } from "lucide-react"
+import { Check, ExternalLink, Loader2, Mail, MessageCircle, MinusCircle, Sparkles, Wand2 } from "lucide-react"
 import { type FormEvent, useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { EditorModeloEmail, type ValorModeloEmail } from "../components/EditorModeloEmail"
+import { CampoCodigoUsado, type CodigoUsado } from "../components/tomador/CampoCodigoUsado"
+import { DescricaoNota, previaDescricao } from "../components/tomador/DescricaoNota"
+import { type DadosNotaAntiga, NotaAntiga, ResumoNotaAntiga } from "../components/tomador/NotaAntiga"
+import { CaixaBusca } from "../components/ui/CaixaBusca"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { CampoCidade } from "../components/ui/CampoCidade"
@@ -10,7 +14,6 @@ import { Field, FieldWrap } from "../components/ui/Field"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useModulos } from "../lib/modulos"
 import { formatarDocumento } from "../lib/documento"
-import { competenciaAtual } from "../lib/format"
 import type { ConsultaCnpj, FormaEnvio, Prestador, Tomador, VinculoCriarRequest, VinculoDetalhe, VinculoResumo } from "../lib/types"
 
 // Pedido do Marcos (28/09/2026):
@@ -23,23 +26,11 @@ import type { ConsultaCnpj, FormaEnvio, Prestador, Tomador, VinculoCriarRequest,
 //   nota se ajusta depois (aqui na edição, na lista de Tomadores ou no
 //   Calendário), e o jeito de informar o valor se escolhe na hora de gerar.
 
-const MESES = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"]
-
 const MODELOS_PADRAO = [
   "Comissão de vendas - {mes_nome_upper}/{ano}",
   "Serviços de divulgação e publicidade - {competencia_mm_aaaa}",
   "Comissão sobre vendas como afiliado - {mes_nome_upper}/{ano}",
 ]
-
-function previaDescricao(template: string, ordem = "123"): string {
-  const [ano, mes] = competenciaAtual().split("-")
-  return template
-    .replaceAll("{competencia_mm_aaaa}", `${mes}/${ano}`)
-    .replaceAll("{mes_nome_upper}", MESES[Number(mes) - 1])
-    .replaceAll("{ano}", ano)
-    .replaceAll("{mes}", mes)
-    .replaceAll("{ordem}", ordem)
-}
 
 /** "AWIN BRASIL SERVICOS DE MARKETING LTDA" -> "Awin Brasil" */
 function apelidoDe(razaoSocial: string): string {
@@ -127,16 +118,7 @@ const METODO_POR_CNPJ: Record<string, string> = {
   "35635824000112": "csv", // Shopee
 }
 
-const METODOS = [
-  { value: "manual", titulo: "Digitar o valor", texto: "Você informa o valor na hora de gerar." },
-  { value: "csv", titulo: "Relatório em planilha (Shopee)", texto: "Uma nota pra cada vendedor do relatório mensal." },
-  { value: "pdf", titulo: "Relatório em PDF (Awin)", texto: "O valor vem do PDF de comissões." },
-]
-
 const NOVO_TOMADOR_VAZIO = { cnpj: "", razao_social: "", cod_municipio: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "" }
-
-const classeInput =
-  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
 
 interface Sugestao {
   campo: keyof FormState
@@ -155,19 +137,23 @@ export function VinculoFormPage() {
 
   const [form, setForm] = useState<FormState>(ESTADO_INICIAL)
   const [tomadorExistenteId, setTomadorExistenteId] = useState<string | null>(searchParams.get("tomador_id"))
-  const [modoTomador, setModoTomador] = useState<"existente" | "novo">("existente")
+  const [modoTomador, setModoTomador] = useState<"existente" | "novo">(searchParams.get("tomador_id") ? "existente" : "novo")
   const [tomadorSelecionado, setTomadorSelecionado] = useState<Tomador | null>(null)
   const [tomadores, setTomadores] = useState<Tomador[]>([])
   const [meusVinculos, setMeusVinculos] = useState<VinculoResumo[]>([])
   const [novoTomador, setNovoTomador] = useState(NOVO_TOMADOR_VAZIO)
   const [consultaCnpj, setConsultaCnpj] = useState<{ estado: "consultando" | "ok" | "aviso"; texto: string } | null>(null)
-  const [buscaTomador, setBuscaTomador] = useState("")
 
   const [carregando, setCarregando] = useState(editando)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [prestadorModelo, setPrestadorModelo] = useState<Prestador | null>(null)
   const [emailAberto, setEmailAberto] = useState(false)
+  // Cadastro assistido: o que veio de uma nota antiga (enviada agora ou a
+  // última nota deste tomador) e os códigos já usados nas notas da empresa.
+  const [notaAntiga, setNotaAntiga] = useState<DadosNotaAntiga | null>(null)
+  const [buscandoUltima, setBuscandoUltima] = useState(false)
+  const [codigosUsados, setCodigosUsados] = useState<{ municipais: CodigoUsado[]; nbs: CodigoUsado[] }>({ municipais: [], nbs: [] })
   useEffect(() => {
     api.get<Prestador>("/prestador").then(setPrestadorModelo).catch(() => {})
   }, [])
@@ -298,6 +284,79 @@ export function VinculoFormPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tomadorSelecionado?.id])
 
+  // Códigos municipais e NBS que já saíram nas notas com este código nacional.
+  useEffect(() => {
+    if (!form.cod_trib_nacional) return
+    let vivo = true
+    api
+      .get<{ municipais: CodigoUsado[]; nbs: CodigoUsado[] }>(`/servicos/codigos-usados?cod_trib_nacional=${form.cod_trib_nacional}`)
+      .then((c) => vivo && setCodigosUsados(c))
+      .catch(() => undefined)
+    return () => {
+      vivo = false
+    }
+  }, [form.cod_trib_nacional])
+
+  /** Preenche o cadastro com o que veio de uma nota já emitida. */
+  function aplicarNotaAntiga(d: DadosNotaAntiga, opcoes: { comTomador: boolean }) {
+    setNotaAntiga(d)
+    setErro(null)
+    if (opcoes.comTomador) {
+      const doc = (d.tomador.documento ?? "").replace(/\D/g, "")
+      const noCatalogo = tomadores.find((t) => t.cnpj === doc)
+      if (noCatalogo) {
+        setModoTomador("existente")
+        setTomadorExistenteId(noCatalogo.id)
+      } else {
+        setModoTomador("novo")
+        setTomadorExistenteId(null)
+        setNovoTomador({
+          cnpj: d.tomador.documento ?? "",
+          razao_social: d.tomador.razao_social ?? "",
+          cod_municipio: d.tomador.cod_municipio ?? "",
+          cep: d.tomador.cep ?? "",
+          logradouro: d.tomador.logradouro ?? "",
+          numero: d.tomador.numero ?? "",
+          complemento: d.tomador.complemento ?? "",
+          bairro: d.tomador.bairro ?? "",
+        })
+        setConsultaCnpj(null)
+      }
+    }
+    setForm((f) => ({
+      ...f,
+      sem_nota: false,
+      apelido: f.apelido || apelidoDe(d.tomador.razao_social ?? ""),
+      cod_trib_nacional: d.cod_trib_nacional || f.cod_trib_nacional,
+      cod_trib_municipal: d.cod_trib_municipal ?? f.cod_trib_municipal,
+      cod_nbs: d.cod_nbs ? mascaraNbs(d.cod_nbs) : f.cod_nbs,
+      cod_local_prestacao: d.cod_local_prestacao || f.cod_local_prestacao,
+      serie: d.serie || f.serie,
+      template_descricao: d.modelo_sugerido || f.template_descricao,
+      email_contato: f.email_contato || d.tomador.email || "",
+      metodo_captura_valor: METODO_POR_CNPJ[(d.tomador.documento ?? "").replace(/\D/g, "")] ?? f.metodo_captura_valor,
+    }))
+  }
+
+  /** Tomador que veio de importação/controle: configura com a última nota dele. */
+  async function configurarPelaUltimaNota() {
+    if (!id) return
+    setBuscandoUltima(true)
+    setErro(null)
+    try {
+      const { nota } = await api.get<{ nota: DadosNotaAntiga | null }>(`/vinculos/${id}/ultima-nota`)
+      if (nota) aplicarNotaAntiga(nota, { comTomador: false })
+      else {
+        atualizarCampo("sem_nota", false)
+        setErro("Não achei nenhuma nota deste tomador com os dados completos. Preencha o código do serviço e a descrição abaixo.")
+      }
+    } catch (err) {
+      setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
+    } finally {
+      setBuscandoUltima(false)
+    }
+  }
+
   async function consultarCnpj(valor: string) {
     const digitos = valor.replace(/\D/g, "")
     if (digitos.length !== 14) return
@@ -349,6 +408,10 @@ export function VinculoFormPage() {
       setErro("Código NBS tem 9 dígitos (ex.: 1.1406.20.00).")
       return
     }
+    if (!form.sem_nota && !form.cod_local_prestacao) {
+      setErro("Falta a cidade onde o serviço é prestado (em “Mais opções”).")
+      return
+    }
     setEnviando(true)
     try {
       // "Só controle": os campos de emissão ficam escondidos, mas a API ainda
@@ -362,7 +425,7 @@ export function VinculoFormPage() {
         cod_trib_nacional: codigo,
         cod_trib_municipal: form.cod_trib_municipal || null,
         template_descricao: descricao,
-        serie: form.serie,
+        serie: form.serie.trim() || "1",
         metodo_captura_valor: form.metodo_captura_valor,
         requer_revisao: form.requer_revisao,
         dia_limite_emissao: form.dia_limite_emissao ? Number(form.dia_limite_emissao) : null,
@@ -408,12 +471,6 @@ export function VinculoFormPage() {
     }
   }
 
-  const tomadoresFiltrados = useMemo(() => {
-    const termo = buscaTomador.trim().toLowerCase()
-    if (!termo) return tomadores
-    return tomadores.filter((t) => t.razao_social.toLowerCase().includes(termo) || t.cnpj.includes(termo.replace(/\D/g, "") || "§"))
-  }, [tomadores, buscaTomador])
-
   if (carregando) return <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>
 
   const destaquesCodigo = [tomadorSelecionado?.sug_cod_trib_nacional, ...meusCodigos].filter((c): c is string => Boolean(c))
@@ -425,7 +482,7 @@ export function VinculoFormPage() {
         <p className="text-sm text-slate-500 dark:text-slate-400">
           {editando
             ? "Estas regras valem para as próximas notas deste tomador — não alteram notas já emitidas."
-            : "Escolha um tomador que já está no catálogo ou digite o CNPJ de um novo — o resto a gente preenche."}
+            : "O jeito mais fácil é enviar uma nota antiga deste cliente. Se não tiver, digite o CNPJ que eu preencho o resto."}
         </p>
       </div>
 
@@ -443,10 +500,12 @@ export function VinculoFormPage() {
             </Card>
           )
         ) : (
+          <>
+          {notaAntiga ? <ResumoNotaAntiga dados={notaAntiga} /> : <NotaAntiga onLida={(d) => aplicarNotaAntiga(d, { comTomador: true })} />}
           <Card className="p-5">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Tomador</h2>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Quem é o tomador</h2>
             <div className="mb-4 flex rounded-lg bg-slate-100 p-1 text-sm dark:bg-slate-700">
-              {(["existente", "novo"] as const).map((m) => (
+              {(["novo", "existente"] as const).map((m) => (
                 <button
                   key={m}
                   type="button"
@@ -455,38 +514,26 @@ export function VinculoFormPage() {
                     modoTomador === m ? "bg-white text-primary-700 shadow-sm dark:bg-slate-800" : "text-slate-500 dark:text-slate-400"
                   }`}
                 >
-                  {m === "existente" ? "Usar tomador existente" : "Cadastrar novo tomador"}
+                  {m === "existente" ? "Escolher do catálogo" : "Digitar o CNPJ"}
                 </button>
               ))}
             </div>
 
             {modoTomador === "existente" ? (
               <div className="flex flex-col gap-3">
-                <input
-                  value={buscaTomador}
-                  onChange={(e) => setBuscaTomador(e.target.value)}
-                  placeholder="Filtrar por nome ou CNPJ..."
-                  className={classeInput}
-                />
                 <FieldWrap label="Tomador do catálogo">
-                  <select
-                    required
-                    value={tomadorExistenteId ?? ""}
-                    onChange={(e) => setTomadorExistenteId(e.target.value || null)}
-                    className={classeInput}
-                  >
-                    <option value="" disabled>
-                      Selecione...
-                    </option>
-                    {tomadoresFiltrados.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.razao_social} — {t.cnpj}
-                      </option>
-                    ))}
-                  </select>
+                  <CaixaBusca
+                    valor={tomadorExistenteId ?? ""}
+                    opcoes={tomadores.map((t) => ({ id: t.id, rotulo: `${t.razao_social} — ${formatarDocumento(t.cnpj)}` }))}
+                    onEscolher={(v) => setTomadorExistenteId(v || null)}
+                    placeholder="Digite o nome ou o CNPJ pra buscar"
+                    ariaLabel="Tomador do catálogo"
+                    className="[&_input]:py-2 [&_input]:pl-3"
+                    quebrar
+                  />
                 </FieldWrap>
                 <p className="text-xs text-slate-400 dark:text-slate-500">
-                  Não achou? Use “Cadastrar novo tomador” e digite o CNPJ.
+                  Não achou? Use “Digitar o CNPJ”.
                 </p>
 
                 {sugestoes.length > 0 && (
@@ -572,19 +619,27 @@ export function VinculoFormPage() {
                   codigo={novoTomador.cod_municipio}
                   onChange={(codigo) => setNovoTomador((t) => ({ ...t, cod_municipio: codigo }))}
                 />
+                <details className="sm:col-span-2" open={Boolean(consultaCnpj?.estado === "aviso")}>
+                  <summary className="cursor-pointer select-none text-xs font-semibold text-slate-500 hover:text-primary-600 dark:text-slate-400">
+                    Endereço {novoTomador.logradouro ? `— ${novoTomador.logradouro}${novoTomador.numero ? `, ${novoTomador.numero}` : ""}` : "(preenchido pelo CNPJ)"}
+                  </summary>
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="CEP" value={novoTomador.cep} onChange={(e) => setNovoTomador((t) => ({ ...t, cep: e.target.value }))} />
                 <Field label="Logradouro" value={novoTomador.logradouro} onChange={(e) => setNovoTomador((t) => ({ ...t, logradouro: e.target.value }))} />
                 <Field label="Número" value={novoTomador.numero} onChange={(e) => setNovoTomador((t) => ({ ...t, numero: e.target.value }))} />
                 <Field label="Complemento" value={novoTomador.complemento} onChange={(e) => setNovoTomador((t) => ({ ...t, complemento: e.target.value }))} />
                 <Field label="Bairro" value={novoTomador.bairro} onChange={(e) => setNovoTomador((t) => ({ ...t, bairro: e.target.value }))} />
+                  </div>
+                </details>
               </div>
             )}
           </Card>
+          </>
         )}
 
         <Card className="p-5">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            {form.sem_nota ? "Cadastro" : "Regras de emissão"}
+            {form.sem_nota ? "Cadastro" : "Como a nota sai"}
           </h2>
 
           <label className={`mb-4 cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700 ${financeiro || form.sem_nota ? "flex" : "hidden"}`}>
@@ -600,14 +655,26 @@ export function VinculoFormPage() {
               className="relative mt-0.5 inline-flex h-5 w-9 shrink-0 rounded-full bg-slate-300 transition-colors peer-checked:bg-primary-600 peer-focus-visible:ring-2 peer-focus-visible:ring-primary-300 dark:bg-slate-600 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-4"
             />
             <span className="text-sm text-slate-700 dark:text-slate-300">
-              Só controle de recebimento (a Ana não gera nota pra este tomador)
+              Não emito nota pra este cliente por aqui (só controlo o que ele me paga)
               <span className="mt-0.5 block text-xs text-slate-400 dark:text-slate-500">
                 {form.sem_nota
-                  ? "Os dados de emissão ficam guardados, só escondidos — desligue pra ver e editar."
-                  : "Pra fontes de receita sem nota pela Ana: parcerias, pessoa física, exterior, notas importadas."}
+                  ? "Desligue pra configurar a nota dele — os dados ficam guardados."
+                  : "Pra quem paga sem nota pela Ana: parcerias, pessoa física, exterior."}
               </span>
             </span>
           </label>
+          {editando && form.sem_nota && tomadorSelecionado?.cnpj && (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-accent-50 px-4 py-3 text-sm text-slate-700 dark:bg-accent-900/20 dark:text-slate-200">
+              <p className="min-w-0 flex-1">
+                <strong>Falta configurar a nota deste tomador.</strong> Eu preencho o código do serviço e a descrição com base na última
+                nota dele — você só confere.
+              </p>
+              <Button type="button" variant="accent" disabled={buscandoUltima} onClick={configurarPelaUltimaNota}>
+                <Wand2 size={16} /> {buscandoUltima ? "Buscando..." : "Configurar pra gerar notas"}
+              </Button>
+            </div>
+          )}
+          {editando && notaAntiga && <div className="mb-4"><ResumoNotaAntiga dados={notaAntiga} /></div>}
           {editando && tomadorSelecionado && !tomadorSelecionado.cnpj && !form.sem_nota && (
             <p className="mb-4 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
               Este tomador não tem CNPJ cadastrado — sem ele a Ana não consegue gerar nota. Deixe como “só controle” ou cadastre o
@@ -623,59 +690,50 @@ export function VinculoFormPage() {
               onChange={(e) => atualizarCampo("apelido", e.target.value)}
               placeholder='Como você chama esse tomador (ex.: "Awin")'
             />
-            <CampoCidade
-              label="Cidade onde o serviço é prestado"
-              required
-              codigo={form.cod_local_prestacao}
-              onChange={(codigo) => atualizarCampo("cod_local_prestacao", codigo)}
-              hint="Normalmente é a sua própria cidade."
-            />
             {!form.sem_nota && (
               <>
               <div className="sm:col-span-2" data-tour="form-codigo">
                 <CampoServico
-                  label="Código do serviço (lista nacional)"
+                  label="Código do serviço"
                   required
                   codigo={form.cod_trib_nacional}
                   onChange={(codigo) => atualizarCampo("cod_trib_nacional", codigo)}
                   destaques={destaquesCodigo}
-                  hint="Afiliados costumam usar 17.06.01 (propaganda e publicidade) — confirme com seu contador."
+                  hint="O tipo de serviço, pela lista nacional. Afiliados costumam usar 17.06.01 (propaganda e publicidade) — confirme com seu contador."
                 />
               </div>
-              <Field
+              <CampoCodigoUsado
                 label="Código de tributação municipal"
-                value={form.cod_trib_municipal}
-                onChange={(e) => atualizarCampo("cod_trib_municipal", e.target.value)}
-                hint="Opcional — só se a sua prefeitura exigir."
+                valor={form.cod_trib_municipal}
+                onChange={(c) => atualizarCampo("cod_trib_municipal", c)}
+                opcoes={codigosUsados.municipais}
+                hint={
+                  codigosUsados.municipais.length
+                    ? "Os que já saíram nas suas notas com esse serviço. Só é preciso se a sua prefeitura exigir."
+                    : "Só se a sua prefeitura exigir — escolha “Nenhum” se não souber."
+                }
               />
-              <Field
-                label="Código NBS"
-                inputMode="numeric"
-                value={form.cod_nbs}
-                onChange={(e) => atualizarCampo("cod_nbs", mascaraNbs(e.target.value))}
-                placeholder="1.1406.20.00"
-                hint="Opcional. Alguns municípios/tomadores exigem. Nomenclatura Brasileira de Serviços, 9 dígitos."
+              <CampoCodigoUsado
+                label="Item da NBS"
+                valor={form.cod_nbs}
+                onChange={(c) => atualizarCampo("cod_nbs", mascaraNbs(c))}
+                opcoes={codigosUsados.nbs}
+                formatar={mascaraNbs}
+                hint={
+                  codigosUsados.nbs.length
+                    ? "Nomenclatura Brasileira de Serviços — os que já saíram nas suas notas com esse serviço."
+                    : "Nomenclatura Brasileira de Serviços (9 dígitos). Opcional."
+                }
               />
-              <Field label="Série" required value={form.serie} onChange={(e) => atualizarCampo("serie", e.target.value)} hint="Deixe 1 se não souber." />
               </>
             )}
           </div>
 
           {!form.sem_nota && (
             <>
-            <div data-tour="form-descricao" className="mt-5">
-              <p className="mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">Descrição do serviço na nota</p>
-              <div className="rounded-lg border border-primary-100 bg-primary-50/60 px-3 py-2.5 dark:border-primary-900/40 dark:bg-primary-900/20">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-600 dark:text-primary-300">
-                  Na nota deste mês vai sair assim
-                </p>
-                <p className="mt-0.5 text-sm text-slate-800 dark:text-slate-100">
-                  {form.template_descricao ? previaDescricao(form.template_descricao) : <span className="text-slate-400">—</span>}
-                </p>
-              </div>
-
+            <div className="mt-5">
               {modelosDescricao.filter((m) => m !== form.template_descricao).length > 0 && (
-                <div className="mt-2 flex flex-col gap-1.5">
+                <div className="mb-3 flex flex-col gap-1.5">
                   {modelosDescricao
                     .filter((m) => m !== form.template_descricao)
                     .map((m) => (
@@ -687,44 +745,31 @@ export function VinculoFormPage() {
                       >
                         <Sparkles size={14} className="mt-0.5 shrink-0 text-accent-500" />
                         <span>
-                          <span className="font-semibold text-accent-700 dark:text-accent-200">Usar a já cadastrada pra este tomador: </span>
+                          <span className="font-semibold text-accent-700 dark:text-accent-200">Usar a que já foi cadastrada pra este tomador: </span>
                           {previaDescricao(m)}
                         </span>
                       </button>
                     ))}
                 </div>
               )}
-
-              <textarea
-                required
-                aria-label="Modelo da descrição"
-                value={form.template_descricao}
-                onChange={(e) => atualizarCampo("template_descricao", e.target.value)}
-                rows={2}
-                placeholder={MODELOS_PADRAO[0]}
-                className={`mt-2 ${classeInput}`}
-              />
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
-                <span>Partes que mudam sozinhas todo mês:</span>
-                {[
-                  ["{mes_nome_upper}", "mês (SETEMBRO)"],
-                  ["{ano}", "ano (2026)"],
-                  ["{competencia_mm_aaaa}", "mês/ano (09/2026)"],
-                  ["{ordem}", "nº da ordem de pagamento"],
-                ].map(([token, rotulo]) => (
-                  <button
-                    key={token}
-                    type="button"
-                    onClick={() => atualizarCampo("template_descricao", `${form.template_descricao}${form.template_descricao && !form.template_descricao.endsWith(" ") ? " " : ""}${token}`)}
-                    className="rounded-full border border-slate-200 px-2 py-0.5 text-slate-500 hover:border-primary-300 hover:text-primary-700 dark:border-slate-600 dark:text-slate-400"
-                    title={`Inserir ${token}`}
-                  >
-                    + {rotulo}
-                  </button>
-                ))}
-              </div>
+              <DescricaoNota modelo={form.template_descricao} onChange={(m) => atualizarCampo("template_descricao", m)} />
             </div>
 
+            <details className="mt-5 rounded-xl border border-slate-200 dark:border-slate-700">
+              <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Mais opções
+                <span className="ml-2 text-xs font-normal text-slate-400">quase ninguém precisa mexer</span>
+              </summary>
+              <div className="border-t border-slate-200 p-4 dark:border-slate-700">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <CampoCidade
+                  label="Cidade onde o serviço é prestado"
+                  codigo={form.cod_local_prestacao}
+                  onChange={(codigo) => atualizarCampo("cod_local_prestacao", codigo)}
+                  hint="Normalmente é a sua própria cidade."
+                />
+                <Field label="Série da nota" value={form.serie} onChange={(e) => atualizarCampo("serie", e.target.value)} hint="Deixe 1 se não souber." />
+              </div>
             <label className="mt-4 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
               <input
                 type="checkbox"
@@ -754,6 +799,8 @@ export function VinculoFormPage() {
                 </span>
               </span>
             </label>
+              </div>
+            </details>
             </>
           )}
 
@@ -769,30 +816,6 @@ export function VinculoFormPage() {
             </label>
           )}
         </Card>
-
-        {editando && !form.sem_nota && (
-          <Card className="p-5">
-            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Como o valor chega</h2>
-            <p className="mb-3 text-xs text-slate-400 dark:text-slate-500">Define o que aparece na hora de gerar a nota deste tomador.</p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              {METODOS.map((m) => (
-                <button
-                  key={m.value}
-                  type="button"
-                  onClick={() => atualizarCampo("metodo_captura_valor", m.value)}
-                  className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                    form.metodo_captura_valor === m.value
-                      ? "border-primary-500 bg-primary-50 text-primary-800 dark:bg-primary-900/30 dark:text-primary-200"
-                      : "border-slate-200 text-slate-600 hover:border-primary-300 dark:border-slate-600 dark:text-slate-300"
-                  }`}
-                >
-                  <span className="block font-medium">{m.titulo}</span>
-                  <span className="text-xs opacity-80">{m.texto}</span>
-                </button>
-              ))}
-            </div>
-          </Card>
-        )}
 
         {editando && (
           <Card className="p-5">

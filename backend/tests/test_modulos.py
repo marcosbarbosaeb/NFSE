@@ -210,3 +210,34 @@ def test_clientes_do_financeiro_pede_o_modulo(client, db, prestador_teste):
     prestador_teste.modulos = ["emissor"]
     db.flush()
     assert client.get("/api/financeiro/clientes").status_code == 403
+
+
+def test_conta_recorrente_agendada_ja_nasce_ticada(client, db, prestador_teste, monkeypatch):
+    """"A contabilidade está agendada até dezembro: só pago de novo em janeiro"."""
+    import datetime
+
+    from app.financeiro import rotas
+
+    monkeypatch.setattr(rotas, "hoje_br", lambda: datetime.date(2026, 10, 5))
+    conta = client.post("/api/financeiro/contas-fixas", json={"nome": "Contabilidade", "valor_padrao": 570, "dia_vencimento": 10}).json()
+    aberto = client.get("/api/financeiro/mes?competencia=2026-10").json()["contas"]
+    assert [(c["descricao"], c["pago"]) for c in aberto] == [("Contabilidade", False)]
+
+    r = client.patch(f"/api/financeiro/contas-fixas/{conta['id']}", json={"agendado_ate": "2026-12"})
+    assert r.status_code == 200 and r.json()["agendado_ate"] == "2026-12"
+    for mes, pago, agendado in (("2026-10", True, "2026-12"), ("2026-12", True, "2026-12"), ("2027-01", False, None)):
+        linha = client.get(f"/api/financeiro/mes?competencia={mes}").json()["contas"][0]
+        assert (linha["pago"], linha["agendado_ate"], linha["valor"]) == (pago, agendado, 570.0), mes
+    # Tirar o agendamento não desfaz o que já foi ticado, só para de ticar os próximos.
+    assert client.patch(f"/api/financeiro/contas-fixas/{conta['id']}", json={"agendado_ate": ""}).json()["agendado_ate"] is None
+    assert client.get("/api/financeiro/mes?competencia=2027-02").json()["contas"][0]["pago"] is False
+
+
+def test_anotacoes_livres_do_financeiro(client, db, prestador_teste):
+    nota = client.post("/api/financeiro/anotacoes", json={"titulo": "Recarga de telefone"}).json()
+    assert nota["titulo"] == "Recarga de telefone" and nota["texto"] == ""
+    r = client.patch(f"/api/financeiro/anotacoes/{nota['id']}", json={"texto": "10/10 — R$ 30 (Vivo)"})
+    assert r.status_code == 200 and r.json()["texto"].startswith("10/10")
+    assert [a["titulo"] for a in client.get("/api/financeiro/anotacoes").json()] == ["Recarga de telefone"]
+    assert client.delete(f"/api/financeiro/anotacoes/{nota['id']}").status_code == 200
+    assert client.get("/api/financeiro/anotacoes").json() == []

@@ -117,7 +117,18 @@ def _pessoa(tag: str, dados: dict):
     else:
         doc = _leaf("NIF", dados["NIF"])
     end = None
-    if dados.get("cMun"):
+    if not dados.get("CNPJ") and not dados.get("CPF") and dados.get("cPais"):
+        # Estrangeiro (NIF): endereço no exterior. Só o país é conhecido — o
+        # resto vai com "-", do jeito que a Receita já autorizou em notas
+        # emitidas pra vendedores de fora (conferido em 05/10/2026).
+        end = _el("end", [
+            _el("endExt", [
+                _leaf("cPais", str(dados["cPais"]).upper()[:2]), _leaf("cEndPost", dados.get("cEndPost") or "-"),
+                _leaf("xCidade", dados.get("xCidade") or "-"), _leaf("xEstProvReg", dados.get("xEstProvReg") or "-"),
+            ]),
+            _leaf("xLgr", dados.get("xLgr") or "-"), _leaf("nro", dados.get("nro") or "-"), _leaf("xBairro", dados.get("xBairro") or "-"),
+        ])
+    elif dados.get("cMun"):
         filhos = [_el("endNac", [_leaf("cMun", dados["cMun"]), _leaf("CEP", dados["CEP"])]), _leaf("xLgr", dados["xLgr"]), _leaf("nro", dados["nro"])]
         if dados.get("xCpl"):
             filhos.append(_leaf("xCpl", dados["xCpl"]))
@@ -201,7 +212,17 @@ def montar_dps_xml(
         _leaf("xDescServ", serv["descricao"]),
         _leaf("cNBS", cnbs) if len(cnbs) == 9 else None,
     ])
-    serv_el = _el("serv", [locPrest, cServ])
+    # Tomador no exterior: o grupo de comércio exterior é obrigatório. O
+    # serviço é prestado daqui, em reais, sem vínculo nem benefício — os
+    # mesmos valores das notas pra vendedores estrangeiros já autorizadas
+    # (o ISS continua tributável aqui: tribISSQN=1).
+    com_ext = None
+    if toma.get("NIF") and toma.get("cPais"):
+        com_ext = _el("comExt", [
+            _leaf("mdPrestacao", "1"), _leaf("vincPrest", "0"), _leaf("tpMoeda", "986"), _leaf("vServMoeda", f"{valor:.2f}"),
+            _leaf("mecAFComexP", "01"), _leaf("mecAFComexT", "01"), _leaf("movTempBens", "1"), _leaf("mdic", "0"),
+        ])
+    serv_el = _el("serv", [locPrest, cServ, com_ext])
 
     vServPrest = _el("vServPrest", [_leaf("vServ", f"{valor:.2f}")])
     tribMun = _el("tribMun", [_leaf("tribISSQN", "1"), _leaf("tpRetISSQN", "1")])

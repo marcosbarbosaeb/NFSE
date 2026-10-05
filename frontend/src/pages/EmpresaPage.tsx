@@ -1,6 +1,7 @@
 import {
   Building2,
   CheckCircle2,
+  DownloadCloud,
   Eraser,
   FileBadge,
   FlaskConical,
@@ -14,7 +15,7 @@ import {
   UploadCloud,
 } from "lucide-react"
 import { type FormEvent, type ReactNode, type SelectHTMLAttributes, useEffect, useState } from "react"
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom"
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom"
 import { EditorModeloEmail, type ValorModeloEmail } from "../components/EditorModeloEmail"
 import { PaginaAbas, TituloSecao } from "../components/PaginaAbas"
 import { avisarEmpresaAtualizada } from "../components/TrocaEmpresa"
@@ -122,7 +123,12 @@ export function EmpresaPage() {
           ),
         }),
         ...soEmissor({ id: "aliquotas", rotulo: "Alíquotas", icone: Percent, conteudo: () => <AliquotaCard prestador={prestador} onAtualizado={setPrestador} /> }),
-        ...soEmissor({ id: "notas", rotulo: "Notas", icone: ReceiptText, conteudo: () => <AmbienteNotasCard prestador={prestador} onAtualizado={setPrestador} /> }),
+        ...soEmissor({ id: "notas", rotulo: "Notas", icone: ReceiptText, conteudo: () => (
+            <div className="flex flex-col gap-6">
+              <AmbienteNotasCard prestador={prestador} onAtualizado={setPrestador} />
+              <ImportarNacionalCard />
+            </div>
+          ) }),
         ...soEmissor({ id: "certificado", rotulo: "Certificado", icone: FileBadge, conteudo: () => <CertificadoCard /> }),
         { id: "modulos", rotulo: "Módulos", icone: LayoutGrid, conteudo: () => <ModulosCard /> },
         { id: "dados", rotulo: "Limpar e excluir", icone: Trash2, perigo: true, conteudo: () => <AbaDados prestador={prestador} /> },
@@ -653,6 +659,28 @@ function AmbienteNotasCard({ prestador, onAtualizado }: { prestador: Prestador; 
 }
 
 // --- Certificado ------------------------------------------------------------
+
+/** Trazer as notas já emitidas no Emissor Nacional (saiu do topo da tela
+ * NFS-e em 05/10/2026: usa-se uma vez, ao começar, e de vez em quando). */
+function ImportarNacionalCard() {
+  return (
+    <Card className="p-6">
+      <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+        <DownloadCloud size={16} /> Importar do Emissor Nacional
+      </h2>
+      <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+        Traga pra Ana as notas que você já emitiu no Emissor Nacional (ou por outro sistema): elas entram na lista de NFS-e e os
+        tomadores já ficam cadastrados.
+      </p>
+      <Link
+        to="/app/nfse?importar=1"
+        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+      >
+        <DownloadCloud size={16} /> Importar notas
+      </Link>
+    </Card>
+  )
+}
 
 function CertificadoCard() {
   const [certificado, setCertificado] = useState<CertificadoStatus | null>(null)

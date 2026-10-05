@@ -28,7 +28,10 @@ export function CaixaBusca({
   alerta,
   className = "",
   ariaLabel,
+  quebrar = false,
 }: {
+  /** Opções longas quebram em várias linhas em vez de cortar com "…". */
+  quebrar?: boolean
   valor: string
   opcoes: OpcaoBusca[]
   onEscolher: (id: string) => void
@@ -188,7 +191,7 @@ export function CaixaBusca({
                   onMouseDown={(e) => e.preventDefault()}
                   onMouseEnter={() => setAtivo(i)}
                   onClick={() => escolher(i)}
-                  className={`block w-full truncate px-3 py-1.5 text-left ${i === ativo ? "bg-primary-50 text-primary-800 dark:bg-primary-900/40 dark:text-primary-100" : "text-slate-700 dark:text-slate-200"} ${o.id === valor ? "font-semibold" : ""}`}
+                  className={`block w-full px-3 py-1.5 text-left ${quebrar ? "whitespace-normal break-words" : "truncate"} ${i === ativo ? "bg-primary-50 text-primary-800 dark:bg-primary-900/40 dark:text-primary-100" : "text-slate-700 dark:text-slate-200"} ${o.id === valor ? "font-semibold" : ""}`}
                 >
                   {o.rotulo}
                 </button>

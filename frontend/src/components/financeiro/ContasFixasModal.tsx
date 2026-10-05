@@ -3,7 +3,7 @@ import { Pencil, Plus, RotateCcw, Trash2 } from "lucide-react"
 import { type FormEvent, useEffect, useId, useState } from "react"
 import { api } from "../../lib/api"
 import { classeCampo, mensagemErro, valorParaCampo } from "../../lib/financeiro"
-import { formatBRL, parseBRL } from "../../lib/format"
+import { formatBRL, formatCompetenciaLonga, parseBRL } from "../../lib/format"
 import type { ContaFixa, ContaFixaRequest, TipoLancamento } from "../../lib/types"
 import { Badge } from "../ui/Badge"
 import { Button } from "../ui/Button"
@@ -21,9 +21,11 @@ interface Formulario {
   valor: string
   dia: string
   conta: string
+  /** Pagamento agendado até este mês (AAAA-MM, inclusive); "" = não. */
+  agendadoAte: string
 }
 
-const VAZIO: Formulario = { id: null, nome: "", categoria: "", tipo: "despesa", valor: "", dia: "", conta: "" }
+const VAZIO: Formulario = { id: null, nome: "", categoria: "", tipo: "despesa", valor: "", dia: "", conta: "", agendadoAte: "" }
 
 export function ContasFixasModal({ onClose, onMudou }: { onClose: () => void; onMudou: () => void }) {
   const [lista, setLista] = useState<ContaFixa[] | null>(null)
@@ -55,6 +57,7 @@ export function ContasFixasModal({ onClose, onMudou }: { onClose: () => void; on
       valor: valorParaCampo(c.valor_padrao),
       dia: c.dia_vencimento ? String(c.dia_vencimento) : "",
       conta: c.conta ?? "",
+      agendadoAte: c.agendado_ate ?? "",
     })
   }
 
@@ -79,6 +82,11 @@ export function ContasFixasModal({ onClose, onMudou }: { onClose: () => void; on
       valor_padrao: valor || null,
       dia_vencimento: dia,
       conta: form.conta.trim() || null,
+      agendado_ate: form.agendadoAte || "",
+    }
+    if (form.agendadoAte && !valor) {
+      setErro("Pra deixar o pagamento agendado, informe o valor da conta.")
+      return
     }
     setEnviando(true)
     try {
@@ -127,7 +135,14 @@ export function ContasFixasModal({ onClose, onMudou }: { onClose: () => void; on
           {c.nome} {c.tipo === "retirada" && <Badge variant="info">retirada</Badge>}
         </p>
         <p className="truncate text-xs text-slate-400 dark:text-slate-500">
-          {[c.categoria !== c.nome ? c.categoria : null, c.dia_vencimento ? `vence dia ${c.dia_vencimento}` : null, c.conta].filter(Boolean).join(" · ") || "sem vencimento"}
+          {[
+            c.categoria !== c.nome ? c.categoria : null,
+            c.dia_vencimento ? `vence dia ${c.dia_vencimento}` : null,
+            c.conta,
+            c.agendado_ate ? `agendado até ${formatCompetenciaLonga(c.agendado_ate).toLowerCase()}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") || "sem vencimento"}
         </p>
       </div>
       <span className="shrink-0 text-sm tabular-nums text-slate-700 dark:text-slate-200">
@@ -166,17 +181,18 @@ export function ContasFixasModal({ onClose, onMudou }: { onClose: () => void; on
   )
 
   return (
-    <Modal titulo="Contas fixas" onClose={onClose} largura="max-w-xl">
+    <Modal titulo="Contas recorrentes" onClose={onClose} largura="max-w-xl">
       <div className="flex flex-col gap-4">
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Cada conta fixa aparece todo mês em <strong className="font-medium text-slate-700 dark:text-slate-200">Contas do mês</strong>, pra você ticar quando pagar.
-          Sem valor padrão, você informa o valor na hora de ticar (Simples, cartão...).
+          Cada conta recorrente aparece todo mês em <strong className="font-medium text-slate-700 dark:text-slate-200">Contas do mês</strong>, pra você ticar quando pagar.
+          Sem valor, você informa na hora de ticar (Simples, cartão...). Se o pagamento já está agendado no banco, diga até que
+          mês: ela já aparece ticada até lá.
         </p>
         {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700 dark:bg-danger-900/40 dark:text-danger-300">{erro}</p>}
 
         {form ? (
           <form onSubmit={salvar} className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">{form.id ? "Editar conta fixa" : "Nova conta fixa"}</h3>
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">{form.id ? "Editar conta recorrente" : "Nova conta recorrente"}</h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Nome" required maxLength={120} value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex.: Pró-labore" />
               <Field
@@ -196,7 +212,7 @@ export function ContasFixasModal({ onClose, onMudou }: { onClose: () => void; on
             </label>
             <div className="grid grid-cols-2 gap-3">
               <MoedaField
-                label="Valor padrão"
+                label="Valor"
                 saida="br"
                 valor={form.valor}
                 onChange={(valor) => setForm({ ...form, valor })}
@@ -214,6 +230,26 @@ export function ContasFixasModal({ onClose, onMudou }: { onClose: () => void; on
               />
             </div>
             <Field label="Conta (opcional)" maxLength={60} value={form.conta} onChange={(e) => setForm({ ...form, conta: e.target.value })} placeholder="Ex.: Inter" />
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Pagamento já agendado até (opcional)</span>
+              <span className="flex items-center gap-2">
+                <input
+                  type="month"
+                  value={form.agendadoAte}
+                  onChange={(e) => setForm({ ...form, agendadoAte: e.target.value })}
+                  className={classeCampo}
+                  aria-label="Pagamento agendado até o mês"
+                />
+                {form.agendadoAte && (
+                  <button type="button" onClick={() => setForm({ ...form, agendadoAte: "" })} className="shrink-0 text-xs font-medium text-slate-500 hover:text-danger-600">
+                    tirar
+                  </button>
+                )}
+              </span>
+              <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
+                Até este mês (inclusive) a conta já aparece ticada. No mês seguinte ela volta a aparecer pra pagar.
+              </span>
+            </label>
             {form.id && <p className="text-xs text-slate-400 dark:text-slate-500">A mudança vale pros próximos meses; o lançamento deste mês você ajusta direto na lista.</p>}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setForm(null)}>
@@ -226,14 +262,14 @@ export function ContasFixasModal({ onClose, onMudou }: { onClose: () => void; on
           </form>
         ) : (
           <Button variant="outline" onClick={() => setForm({ ...VAZIO })} className="self-start">
-            <Plus size={16} /> Nova conta fixa
+            <Plus size={16} /> Nova conta recorrente
           </Button>
         )}
 
         {lista === null ? (
           <p className="py-4 text-center text-sm text-slate-400">Carregando...</p>
         ) : ativas.length === 0 ? (
-          <p className="py-4 text-center text-sm text-slate-400 dark:text-slate-500">Nenhuma conta fixa ainda.</p>
+          <p className="py-4 text-center text-sm text-slate-400 dark:text-slate-500">Nenhuma conta recorrente ainda.</p>
         ) : (
           <ul className="divide-y divide-slate-100 dark:divide-slate-700/60">{ativas.map(linha)}</ul>
         )}

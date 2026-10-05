@@ -144,3 +144,17 @@ def test_tomador_so_controle_nao_gera_nota(client, db, prestador_teste):
     assert r.status_code == 422 and "controle" in r.json()["detail"]
     item = next(x for x in client.get("/api/vinculos").json() if x["id"] == str(v.id))
     assert item["tomador_cnpj"] == "" and item["sem_nota"] is True
+
+
+def test_cadastro_assistido_le_a_nota_antiga_e_sugere_o_modelo(client):
+    xml, _ = nfse(7, "11222333000181", "Loja Exemplo LTDA", "2026-09", "123.45", desc="Comissão de vendas - SETEMBRO/2026")
+    r = client.post("/api/tomadores/ler-nota", files={"arquivo": ("nota.xml", xml, "application/xml")})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["tomador"]["documento"] == "11222333000181" and d["tomador"]["razao_social"] == "Loja Exemplo LTDA"
+    assert d["tomador"]["cod_municipio"] == "3550308" and d["cod_trib_nacional"] == "100101"
+    assert d["modelo_sugerido"] == "Comissão de vendas - {mes_nome_upper}/{ano}"
+    assert d["partes"][0]["trecho"] == "SETEMBRO/2026"
+    assert client.post("/api/tomadores/ler-nota", files={"arquivo": ("x.xml", b"<nada/>", "application/xml")}).status_code == 422
+    # PDF sem chave de acesso: explica, não quebra.
+    assert client.post("/api/tomadores/ler-nota", files={"arquivo": ("x.pdf", b"%PDF-1.4 nada", "application/pdf")}).status_code == 422

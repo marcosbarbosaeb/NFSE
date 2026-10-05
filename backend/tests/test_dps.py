@@ -107,3 +107,29 @@ def test_squad_epoca_bate_com_golden_file_real():
         etree.tostring(novo).replace(b"<dCompet>2026-09-10</dCompet>", f"<dCompet>{dcompet_golden}</dCompet>".encode())
     )
     assert _normaliza(novo) == _normaliza(golden)
+
+
+def test_tomador_estrangeiro_sai_com_endereco_no_exterior_e_comercio_exterior():
+    """Vendedor de fora (NIF): a mesma receita das notas já autorizadas pela
+    Receita pra vendedores estrangeiros — endExt só com o país, grupo comExt
+    e ISS tributável aqui. E o XML continua válido no XSD oficial."""
+    from app.fiscal.dps import NS, montar_dps_xml
+
+    dps = montar_dps_xml(
+        prest={"CNPJ": "11222333000181", "IM": "123", "cMun": "3106200", "opSimpNac": "3", "regApTribSN": "1", "regEspTrib": "0"},
+        toma={"NIF": "91440300MA5XYZ", "xNome": "SHENZHEN LOJA CO., LIMITED", "cPais": "cn", "cMun": None, "CEP": None, "xLgr": None, "nro": None, "xBairro": None},
+        serv={"cLocPrestacao": "3106200", "cTribNac": "170601", "cTribMun": "001", "descricao": "Comissão", "cNBS": "114062000"},
+        serie="900", n_dps=7, valor=2.83, tpAmb="2", aliq_sn=12.5,
+    )
+    etree.XMLSchema(etree.parse(str(SCHEMAS_DIR / "DPS_v1.00.xsd"))).assertValid(etree.ElementTree(dps))
+    t = lambda caminho: dps.find(".//" + "/".join(f"{{{NS}}}{p}" for p in caminho.split("/")))
+    assert t("toma/end/endExt/cPais").text == "CN" and t("toma/end/endExt/xCidade").text == "-"
+    assert t("serv/comExt/vServMoeda").text == "2.83" and t("serv/comExt/tpMoeda").text == "986"
+    assert t("valores/trib/tribMun/tribISSQN").text == "1"
+    # Tomador brasileiro não ganha nada disso.
+    br = montar_dps_xml(
+        prest={"CNPJ": "11222333000181", "IM": "123", "cMun": "3106200", "opSimpNac": "3", "regApTribSN": "1", "regEspTrib": "0"},
+        toma={"CNPJ": "11222333000181", "xNome": "Loja", "cMun": "3550308", "CEP": "01311000", "xLgr": "Av X", "nro": "1", "xBairro": "Centro"},
+        serv={"cLocPrestacao": "3106200", "cTribNac": "170601", "descricao": "Comissão"}, serie="900", n_dps=8, valor=10, tpAmb="2",
+    )
+    assert br.find(f".//{{{NS}}}comExt") is None and br.find(f".//{{{NS}}}endExt") is None

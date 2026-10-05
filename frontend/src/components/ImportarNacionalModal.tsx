@@ -604,7 +604,7 @@ function LinhaGrupo({
     dica =
       g.tipo === "CNPJ"
         ? "Cadastra o tomador com o código e a descrição das notas."
-        : "Cria um tomador só de controle (a Ana não gera nota pra ele)."
+        : "Cria o cliente só pra controle (sem CNPJ não dá pra emitir nota pra ele)."
   } else if (regra.acao === "vinculo" && irmaos && irmaos.length > 1) {
     dica = `Mesmo CNPJ em ${irmaos.join(", ")}: cada nota vai pro da descrição mais parecida.`
   } else if (regra.acao === "avulsa") {
