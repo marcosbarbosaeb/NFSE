@@ -130,3 +130,30 @@ def test_nota_pedida_pelo_financeiro_volta_ligada_ao_recebimento(client, db, vin
     assert r.status_code == 200, r.text
     db.expire_all()
     assert db.get(PagamentoRecebido, uuid.UUID(pag2["id"])).emissao_id == existente.id
+
+
+def test_so_financeiro_fecha_o_emissor_e_funciona_sozinho(client, db, prestador_teste):
+    """Empresa que comprou só o financeiro: não emite nota, mas lança
+    receita (com cliente próprio), despesa e concilia extrato."""
+    prestador_teste.modulos = ["financeiro"]
+    db.flush()
+    assert client.get("/api/dps").status_code == 403
+    assert client.get("/api/painel/resumo-mes").status_code == 403
+    assert "Notas" in client.post("/api/dps", json={"vinculo_id": str(uuid.uuid4()), "competencia": "2026-09", "valor": 1}).json()["detail"]
+
+    cliente = client.post("/api/vinculos/controle", json={"nome": "Cliente Sem Nota"}).json()
+    assert client.post("/api/pagamentos", json={
+        "vinculo_id": cliente["id"], "competencia": "2026-09", "valor": 250, "data_recebimento": "2026-09-10",
+    }).status_code == 200
+    assert client.post("/api/despesas", json={"categoria": "Aluguel", "competencia": "2026-09", "valor": 100}).status_code == 200
+    resumo = client.get("/api/financeiro/resumo?ano=2026").json()
+    assert resumo["totais"]["recebido"] == 250 and resumo["totais"]["despesas"] == 100
+    # cliente só de controle não vira pendência de "gerar nota"
+    assert client.get("/api/financeiro/recebimentos-sem-nota").json() == []
+    assert client.get("/api/notas-a-receber").json() == []
+    r = client.post("/api/recebimentos/extrato/confirmar", json={"pendentes": [
+        {"data": "2026-09-12", "descricao": "Pix recebido CLIENTE SEM NOTA", "valor": 80, "credito": True},
+    ]})
+    assert r.status_code == 200 and r.json()["pendentes"] == 1
+    painel = client.get("/api/conciliacao").json()
+    assert painel["notas_abertas"] == [] and painel["lancamentos"][0]["vinculo_id"] == cliente["id"]

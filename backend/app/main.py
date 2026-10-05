@@ -260,6 +260,9 @@ from app.tempo import hoje as hoje_br
 
 logger = logging.getLogger("agenteana.api")
 app = FastAPI(title="Painel NFS-e — Raiana (Marco 5/6/9/10)")
+
+# Rotas do EMISSOR só respondem pra empresa que tem o módulo (05/10/2026).
+_SO_EMISSOR = Depends(exige_modulo("emissor"))
 # same_site="lax": suficiente pro painel ser first-party (o próprio backend
 # serve a página em /); https_only fica False aqui de propósito porque este
 # ambiente de dev roda em http puro — LIGAR em produção atrás de HTTPS de
@@ -1253,7 +1256,7 @@ def api_preferencias_prestador(
     return prestador
 
 
-@app.get("/api/email-modelo", response_model=ModeloEmailPadraoResponse)
+@app.get("/api/email-modelo", response_model=ModeloEmailPadraoResponse, dependencies=[_SO_EMISSOR])
 def api_modelo_email_padrao():
     """Texto de sempre do e-mail da nota e os códigos que dá pra usar."""
     return {
@@ -1304,7 +1307,7 @@ def api_atualizar_lembrete_aliquota(
     return prestador
 
 
-@app.get("/api/certificado/status", response_model=CertificadoStatus)
+@app.get("/api/certificado/status", response_model=CertificadoStatus, dependencies=[_SO_EMISSOR])
 def api_status_certificado(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     registro = db.query(Certificado).filter_by(prestador_id=prestador_id).one_or_none()
     if registro is None:
@@ -1312,7 +1315,7 @@ def api_status_certificado(db: Session = Depends(db_sessao), prestador_id: uuid.
     return CertificadoStatus(carregado=True, validade=registro.validade, vencido=certificado_vencido(registro))
 
 
-@app.post("/api/certificado", response_model=CertificadoStatus, dependencies=[Depends(exigir_conta_real)])
+@app.post("/api/certificado", response_model=CertificadoStatus, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
 def api_salvar_certificado(
     pfx: UploadFile = File(...), senha: str = Form(...),
     db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
@@ -1345,7 +1348,7 @@ def _para_resposta(emissao: Emissao) -> EmissaoResponse:
     )
 
 
-@app.get("/api/dps/verificar-duplicata", response_model=VerificarDuplicataResponse)
+@app.get("/api/dps/verificar-duplicata", response_model=VerificarDuplicataResponse, dependencies=[_SO_EMISSOR])
 def api_verificar_duplicata(vinculo_id: uuid.UUID, competencia: str, db: Session = Depends(db_sessao)):
     """Marco 16 — a tela de 'Nova emissão' chama isso assim que
     fornecedor+competência ficam preenchidos, pra avisar de uma possível
@@ -1382,7 +1385,7 @@ def _tp_amb_da_nota(db: Session, prestador_id: uuid.UUID, pedido: str | None) ->
     return pedido or _tp_amb_da_conta(db, prestador_id)
 
 
-@app.post("/api/dps", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}})
+@app.post("/api/dps", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
     """Cria e monta (rascunho -> montado) — persiste de verdade, com nDPS
     atribuído automaticamente. Essa é a 'caixa de revisão' antes de assinar."""
@@ -1448,7 +1451,7 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
     return resposta
 
 
-@app.post("/api/dps/{emissao_id}/origem", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 422: {"model": ErroResponse}})
+@app.post("/api/dps/{emissao_id}/origem", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 422: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_ligar_origem(emissao_id: uuid.UUID, req: OrigemNotaRequest, db: Session = Depends(db_sessao)):
     """A nota que JÁ existe atende um pedido que veio de outro módulo (ex.: o
     financeiro pediu a nota de um recebimento e ela já estava gerada) — o
@@ -1464,7 +1467,7 @@ def api_ligar_origem(emissao_id: uuid.UUID, req: OrigemNotaRequest, db: Session 
     return resposta
 
 
-@app.get("/api/dps", response_model=list[EmissaoListaLinha])
+@app.get("/api/dps", response_model=list[EmissaoListaLinha], dependencies=[_SO_EMISSOR])
 def api_listar_dps(
     ano: str | None = None,
     vinculo_id: uuid.UUID | None = None,
@@ -1480,7 +1483,7 @@ def api_listar_dps(
     return listar_emissoes(db, ano=ano, vinculo_id=vinculo_id, estado=estado, grupo=grupo)
 
 
-@app.post("/api/dps/importar-csv", response_model=ImportacaoCsvResponse, responses={400: {"model": ErroResponse}})
+@app.post("/api/dps/importar-csv", response_model=ImportacaoCsvResponse, responses={400: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_importar_csv(arquivo: UploadFile = File(...), db: Session = Depends(db_sessao)):
     """Marco 7 — gera várias emissões de uma vez a partir de um CSV
     (colunas: apelido, competencia, valor[, ordem][, aliq_sn]). Cada linha
@@ -1527,13 +1530,13 @@ def _ids_do_lote(db: Session, req: CriarLoteRequest) -> list[uuid.UUID]:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@app.post("/api/lotes/previa", response_model=PreviaLoteResponse)
+@app.post("/api/lotes/previa", response_model=PreviaLoteResponse, dependencies=[_SO_EMISSOR])
 def api_previa_lote(req: CriarLoteRequest, db: Session = Depends(db_sessao)):
     """Quantas notas a ação vai pegar (pra tela confirmar antes)."""
     return {"acao": req.acao, "quantidade": len(_ids_do_lote(db, req))}
 
 
-@app.post("/api/lotes", response_model=LoteResponse, responses={422: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
+@app.post("/api/lotes", response_model=LoteResponse, responses={422: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
 def api_criar_lote(
     req: CriarLoteRequest, request: Request,
     db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
@@ -1550,7 +1553,7 @@ def api_criar_lote(
     return lotes.resumo(lote)
 
 
-@app.get("/api/lotes", response_model=list[LoteResponse])
+@app.get("/api/lotes", response_model=list[LoteResponse], dependencies=[_SO_EMISSOR])
 def api_listar_lotes(db: Session = Depends(db_sessao)):
     recentes = db.query(LoteAcao).order_by(LoteAcao.criado_em.desc()).limit(10).all()
     for lote in recentes:
@@ -1566,14 +1569,14 @@ def _lote_ou_404(db: Session, lote_id: uuid.UUID) -> LoteAcao:
     return lote
 
 
-@app.get("/api/lotes/{lote_id}", response_model=LoteResponse)
+@app.get("/api/lotes/{lote_id}", response_model=LoteResponse, dependencies=[_SO_EMISSOR])
 def api_ver_lote(lote_id: uuid.UUID, db: Session = Depends(db_sessao)):
     lote = lotes.atualizar_parado(db, _lote_ou_404(db, lote_id))
     db.commit()
     return lotes.resumo(lote)
 
 
-@app.post("/api/lotes/{lote_id}/cancelar", response_model=LoteResponse)
+@app.post("/api/lotes/{lote_id}/cancelar", response_model=LoteResponse, dependencies=[_SO_EMISSOR])
 def api_cancelar_lote(lote_id: uuid.UUID, db: Session = Depends(db_sessao)):
     lote = _lote_ou_404(db, lote_id)
     if lote.status in ("fila", "executando", "interrompido"):
@@ -1582,7 +1585,7 @@ def api_cancelar_lote(lote_id: uuid.UUID, db: Session = Depends(db_sessao)):
     return lotes.resumo(lote)
 
 
-@app.post("/api/lotes/{lote_id}/retomar", response_model=LoteResponse, dependencies=[Depends(exigir_conta_real)])
+@app.post("/api/lotes/{lote_id}/retomar", response_model=LoteResponse, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
 def api_retomar_lote(
     lote_id: uuid.UUID, request: Request,
     db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
@@ -1596,7 +1599,7 @@ def api_retomar_lote(
     return lotes.resumo(lote)
 
 
-@app.post("/api/lotes/{lote_id}/refazer-falhas", response_model=LoteResponse, dependencies=[Depends(exigir_conta_real)])
+@app.post("/api/lotes/{lote_id}/refazer-falhas", response_model=LoteResponse, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
 def api_refazer_falhas(
     lote_id: uuid.UUID, request: Request,
     db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
@@ -1614,7 +1617,7 @@ def api_refazer_falhas(
     return lotes.resumo(novo)
 
 
-@app.get("/api/envios/resumo", response_model=ResumoEnviosResponse)
+@app.get("/api/envios/resumo", response_model=ResumoEnviosResponse, dependencies=[_SO_EMISSOR])
 def api_resumo_envios(
     ano: str | None = Query(default=None, pattern=r"^\d{4}$"), vinculo_id: uuid.UUID | None = None,
     competencia: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"), db: Session = Depends(db_sessao),
@@ -1643,7 +1646,7 @@ def api_resumo_envios(
     return {"enviados": enviados, "falhas": falhas, "notas_sem_envio": len(ids) - enviados - falhas}
 
 
-@app.get("/api/dps/zip", responses={404: {"model": ErroResponse}})
+@app.get("/api/dps/zip", responses={404: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_zip_notas(
     ids: str | None = None, competencia: str | None = None, vinculo_id: uuid.UUID | None = None,
     db: Session = Depends(db_sessao),
@@ -1683,7 +1686,7 @@ def api_zip_notas(
     return Response(content=buffer.getvalue(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{nome_zip}"'})
 
 
-@app.delete("/api/dps/{emissao_id}", responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
+@app.delete("/api/dps/{emissao_id}", responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_apagar_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
     """Apaga uma nota que nunca virou NFS-e (rascunho, montada, assinada ou
     recusada) — ex.: as notas de teste. Autorizada/enviada não: essa se
@@ -1697,7 +1700,7 @@ def api_apagar_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
     return {"ok": True}
 
 
-@app.patch("/api/dps/{emissao_id}/tomador", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
+@app.patch("/api/dps/{emissao_id}/tomador", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_mover_nota(emissao_id: uuid.UUID, req: MoverNotaRequest, db: Session = Depends(db_sessao)):
     """Muda o tomador (vínculo) de uma nota importada do Emissor Nacional —
     ex.: AWIN x AWIN Rchlo, mesmo CNPJ. Notas geradas pela Ana não mudam."""
@@ -1715,7 +1718,7 @@ def api_mover_nota(emissao_id: uuid.UUID, req: MoverNotaRequest, db: Session = D
     return resposta
 
 
-@app.get("/api/dps/{emissao_id}", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}})
+@app.get("/api/dps/{emissao_id}", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_ver_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
     emissao = db.query(Emissao).filter_by(id=emissao_id).one_or_none()
     if emissao is None:
@@ -1723,7 +1726,7 @@ def api_ver_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
     return _para_resposta(emissao)
 
 
-@app.get("/api/dps/{emissao_id}/nota", response_model=NotaVisualResponse, responses={404: {"model": ErroResponse}})
+@app.get("/api/dps/{emissao_id}/nota", response_model=NotaVisualResponse, responses={404: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_nota_visual(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
     """Marco 11 — a mesma emissão de /api/dps/{id}, mas com os campos já
     lidos e rotulados em português pra o painel desenhar uma 'nota' de
@@ -1738,7 +1741,7 @@ def api_nota_visual(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
     return montar_nota_visual(emissao)
 
 
-@app.post("/api/dps/{emissao_id}/assinar", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
+@app.post("/api/dps/{emissao_id}/assinar", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
 def api_assinar_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     """montado -> assinado, com o certificado carregado (Marco 4). Não
     envia pra Sefin (ver docstring do módulo)."""
@@ -1760,7 +1763,7 @@ def api_assinar_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), pre
     return _para_resposta(emissao)
 
 
-@app.post("/api/dps/{emissao_id}/submeter", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
+@app.post("/api/dps/{emissao_id}/submeter", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
 def api_submeter_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     """Marco 16, item 7 — assinado/erro -> submetido -> confirmado (ou ->
     erro de novo, retentável), chamando a Sefin DE VERDADE (ver
@@ -1791,7 +1794,7 @@ def api_submeter_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), pr
     return _para_resposta(emissao)
 
 
-@app.post("/api/dps/{emissao_id}/cancelar", response_model=EmissaoResponse, responses={400: {"model": ErroResponse}, 404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
+@app.post("/api/dps/{emissao_id}/cancelar", response_model=EmissaoResponse, responses={400: {"model": ErroResponse}, 404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
 def api_cancelar_dps(
     emissao_id: uuid.UUID,
     req: CancelarDpsRequest,
@@ -1834,7 +1837,7 @@ def api_cancelar_dps(
     return _para_resposta(emissao)
 
 
-@app.get("/api/dps/{emissao_id}/mensagem-pronta", response_model=MensagemProntaResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
+@app.get("/api/dps/{emissao_id}/mensagem-pronta", response_model=MensagemProntaResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_mensagem_pronta(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
     """Marco 9 — texto pronto pra copiar/colar (WhatsApp, e-mail, ...).
     GET puro, sem efeito colateral — não registra tentativa de envio
@@ -1848,7 +1851,7 @@ def api_mensagem_pronta(emissao_id: uuid.UUID, db: Session = Depends(db_sessao))
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@app.get("/api/dps/{emissao_id}/download", responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
+@app.get("/api/dps/{emissao_id}/download", responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_download_xml(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
     """Marco 9 — baixa o melhor XML disponível pro estado atual da emissão
     (NÃO é o DANFSE oficial — ver ressalva em app/services/envios.py).
@@ -1870,7 +1873,7 @@ def _emissao_ou_404(db: Session, emissao_id: uuid.UUID) -> Emissao:
     return emissao
 
 
-@app.get("/api/dps/{emissao_id}/envio-opcoes", response_model=OpcoesEnvioResponse, responses={404: {"model": ErroResponse}})
+@app.get("/api/dps/{emissao_id}/envio-opcoes", response_model=OpcoesEnvioResponse, responses={404: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_opcoes_envio(emissao_id: uuid.UUID, request: Request, db: Session = Depends(db_sessao)):
     """Marco 17 — o que dá pra usar no card 'Envio ao fornecedor' desta nota
     (e-mail direto ligado/desligado e por quê, WhatsApp, link público)."""
@@ -1878,7 +1881,7 @@ def api_opcoes_envio(emissao_id: uuid.UUID, request: Request, db: Session = Depe
     return opcoes_envio(db, emissao, base_url(str(request.base_url)))
 
 
-@app.post("/api/dps/{emissao_id}/enviar-geral", response_model=EnvioResponse, responses={400: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
+@app.post("/api/dps/{emissao_id}/enviar-geral", response_model=EnvioResponse, responses={400: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
 def api_enviar_geral(
     emissao_id: uuid.UUID, request: Request, req: EnviarGeralRequest | None = None,
     db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
@@ -1898,7 +1901,7 @@ def api_enviar_geral(
     return envio
 
 
-@app.post("/api/dps/{emissao_id}/marcar-enviada", response_model=EnvioResponse)
+@app.post("/api/dps/{emissao_id}/marcar-enviada", response_model=EnvioResponse, dependencies=[_SO_EMISSOR])
 def api_marcar_enviada(emissao_id: uuid.UUID, req: MarcarEnviadaRequest, db: Session = Depends(db_sessao)):
     """"Já mandei" — pelo portal do tomador ou outro jeito fora daqui."""
     emissao = _emissao_ou_404(db, emissao_id)
@@ -1907,14 +1910,14 @@ def api_marcar_enviada(emissao_id: uuid.UUID, req: MarcarEnviadaRequest, db: Ses
     return envio
 
 
-@app.get("/api/dps/{emissao_id}/email-previa", response_model=PreviaEmailResponse, responses={404: {"model": ErroResponse}})
+@app.get("/api/dps/{emissao_id}/email-previa", response_model=PreviaEmailResponse, responses={404: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_previa_email(emissao_id: uuid.UUID, request: Request, db: Session = Depends(db_sessao)):
     """Como o e-mail desta nota vai sair (destino, assunto, texto, anexos)."""
     emissao = _emissao_ou_404(db, emissao_id)
     return previa_email(db, emissao, base_url(str(request.base_url)))
 
 
-@app.post("/api/dps/{emissao_id}/enviar-email", response_model=EnvioResponse, responses={400: {"model": ErroResponse}, 404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
+@app.post("/api/dps/{emissao_id}/enviar-email", response_model=EnvioResponse, responses={400: {"model": ErroResponse}, 404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
 def api_enviar_email(
     emissao_id: uuid.UUID, request: Request, req: EnviarEmailRequest | None = None,
     db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
@@ -1938,7 +1941,7 @@ def api_enviar_email(
     return envio
 
 
-@app.post("/api/dps/{emissao_id}/whatsapp", response_model=WhatsappLinkResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}})
+@app.post("/api/dps/{emissao_id}/whatsapp", response_model=WhatsappLinkResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_link_whatsapp(
     emissao_id: uuid.UUID, request: Request, req: WhatsappRequest | None = None, db: Session = Depends(db_sessao),
 ):
@@ -1956,7 +1959,7 @@ def api_link_whatsapp(
     return {"url": url, "envio": envio}
 
 
-@app.get("/api/dps/{emissao_id}/pdf", responses={404: {"model": ErroResponse}})
+@app.get("/api/dps/{emissao_id}/pdf", responses={404: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_baixar_pdf(
     emissao_id: uuid.UUID, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
 ):
@@ -1995,7 +1998,7 @@ def api_nota_publica(token: str, db: Session = Depends(get_db)):
     return Response(content=conteudo, media_type="application/xml", headers={"Content-Disposition": f'attachment; filename="{nome}"'})
 
 
-@app.post("/api/dps/{emissao_id}/envios", response_model=EnvioResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}})
+@app.post("/api/dps/{emissao_id}/envios", response_model=EnvioResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_registrar_envio(emissao_id: uuid.UUID, req: RegistrarEnvioRequest, db: Session = Depends(db_sessao)):
     """Marco 9 — registra uma tentativa de entrega. 'download'/'mensagem_pronta'
     já nascem 'enviado' (o próprio app gerou o conteúdo); os outros canais
@@ -2015,7 +2018,7 @@ def api_registrar_envio(emissao_id: uuid.UUID, req: RegistrarEnvioRequest, db: S
     return envio
 
 
-@app.get("/api/dps/{emissao_id}/envios", response_model=list[EnvioResponse], responses={404: {"model": ErroResponse}})
+@app.get("/api/dps/{emissao_id}/envios", response_model=list[EnvioResponse], responses={404: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_listar_envios(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
     emissao = db.query(Emissao).filter_by(id=emissao_id).one_or_none()
     if emissao is None:
@@ -2023,7 +2026,7 @@ def api_listar_envios(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
     return listar_envios(db, emissao)
 
 
-@app.post("/api/envios/{envio_id}/marcar-enviado", response_model=EnvioResponse, responses={404: {"model": ErroResponse}})
+@app.post("/api/envios/{envio_id}/marcar-enviado", response_model=EnvioResponse, responses={404: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_marcar_envio_enviado(envio_id: uuid.UUID, db: Session = Depends(db_sessao)):
     envio = buscar_envio(db, envio_id)
     if envio is None:
@@ -2033,7 +2036,7 @@ def api_marcar_envio_enviado(envio_id: uuid.UUID, db: Session = Depends(db_sessa
     return envio
 
 
-@app.post("/api/envios/{envio_id}/marcar-falha", response_model=EnvioResponse, responses={404: {"model": ErroResponse}})
+@app.post("/api/envios/{envio_id}/marcar-falha", response_model=EnvioResponse, responses={404: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_marcar_envio_falha(envio_id: uuid.UUID, db: Session = Depends(db_sessao)):
     envio = buscar_envio(db, envio_id)
     if envio is None:
@@ -2053,7 +2056,7 @@ def _vinculo_shopee(db: Session, vinculo_id: uuid.UUID):
     return vinculo
 
 
-@app.post("/api/awin/ordem", response_model=OrdemAwinResponse, responses={400: {"model": ErroResponse}})
+@app.post("/api/awin/ordem", response_model=OrdemAwinResponse, responses={400: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_ler_ordem_awin(
     arquivo: UploadFile = File(...), vinculo_id: uuid.UUID | None = Form(default=None),
     db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
@@ -2101,7 +2104,7 @@ def api_ler_ordem_awin(
     }
 
 
-@app.post("/api/shopee/previa", response_model=PreviaShopeeResponse, responses={400: {"model": ErroResponse}})
+@app.post("/api/shopee/previa", response_model=PreviaShopeeResponse, responses={400: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_previa_shopee(
     vinculo_id: uuid.UUID = Form(...), arquivo: UploadFile = File(...), db: Session = Depends(db_sessao),
 ):
@@ -2143,7 +2146,7 @@ def api_previa_shopee(
     }
 
 
-@app.post("/api/shopee/gerar", response_model=GeracaoShopeeResponse, responses={400: {"model": ErroResponse}})
+@app.post("/api/shopee/gerar", response_model=GeracaoShopeeResponse, responses={400: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_gerar_shopee(
     vinculo_id: uuid.UUID = Form(...),
     competencia: str = Form(...),
@@ -2210,7 +2213,7 @@ def _cliente_producao(db: Session, prestador_id: uuid.UUID) -> ClienteSefin:
     return ClienteSefin(private_key, cert, "1")
 
 
-@app.get("/api/importar/nacional", response_model=PreviaNacionalResponse)
+@app.get("/api/importar/nacional", response_model=PreviaNacionalResponse, dependencies=[_SO_EMISSOR])
 def api_previa_nacional(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     return importar_adn.previa(db, db.get(Prestador, prestador_id))
 
@@ -2235,7 +2238,7 @@ def api_buscar_nacional(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@app.post("/api/importar/nacional/limpar", dependencies=[Depends(exigir_conta_real)])
+@app.post("/api/importar/nacional/limpar", dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
 def api_limpar_importadas(req: LimparImportadasRequest, db: Session = Depends(db_sessao)):
     """Tira do controle as notas importadas antes de um mês (histórico que
     não vai ser acompanhado). Notas geradas pela Ana ficam."""
@@ -2298,13 +2301,13 @@ def api_ignorar_pendencia(
     return {"ok": True}
 
 
-@app.get("/api/painel/proximos", response_model=ProximosResponse)
+@app.get("/api/painel/proximos", response_model=ProximosResponse, dependencies=[_SO_EMISSOR])
 def api_painel_proximos(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     """O que fazer agora + agenda dos próximos 30 dias (Visão geral)."""
     return proximos_do_painel(db, prestador_id)
 
 
-@app.get("/api/painel/resumo-mes", response_model=DashboardResumoResponse)
+@app.get("/api/painel/resumo-mes", response_model=DashboardResumoResponse, dependencies=[_SO_EMISSOR])
 def api_painel_resumo_mes(
     competencia: str | None = None,
     db: Session = Depends(db_sessao),
