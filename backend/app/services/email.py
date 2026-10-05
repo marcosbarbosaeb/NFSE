@@ -23,6 +23,7 @@ verdade liga o Resend. Nada mais no resto do código precisa saber qual das
 duas está ativa.
 """
 import base64
+import time
 import logging
 
 import requests
@@ -38,6 +39,16 @@ class EmailEnvioError(Exception):
     do cadastro (ver app/services/cadastro.py) — a conta já foi criada no
     banco nesse ponto; falhar o e-mail não deve reverter o cadastro (o
     usuário pode pedir reenvio depois), só precisa ser visível em log."""
+
+
+class EmailCotaEsgotadaError(EmailEnvioError):
+    """O provedor (Resend) não aceita mais e-mails hoje (ou neste mês): o
+    plano gratuito libera 100 por dia / 3.000 por mês. Não é falha da nota
+    nem do destinatário — o envio fica pra depois."""
+
+    def __init__(self, mensagem: str, mensal: bool = False):
+        super().__init__(mensagem)
+        self.mensal = mensal
 
 
 class EmailSender:
@@ -98,16 +109,41 @@ class EmailSenderResend(EmailSender):
             corpo["attachments"] = [
                 {"filename": nome, "content": base64.b64encode(conteudo).decode("ascii")} for nome, conteudo in anexos
             ]
-        try:
-            resp = requests.post(
-                self._URL,
-                headers={"Authorization": f"Bearer {self._api_key}"},
-                json=corpo,
-                timeout=20,
-            )
-            resp.raise_for_status()
-        except requests.RequestException as exc:
-            raise EmailEnvioError(f"Falha ao enviar e-mail via Resend: {exc}") from exc
+        # Limite por segundo do Resend (rate_limit_exceeded): espera e tenta
+        # de novo, até 4 vezes. Cota do dia/mês esgotada é outro erro —
+        # insistir não adianta; quem chama decide o que fazer (05/10/2026).
+        for tentativa in range(4):
+            try:
+                resp = requests.post(self._URL, headers={"Authorization": f"Bearer {self._api_key}"}, json=corpo, timeout=20)
+            except requests.RequestException as exc:
+                logger.warning("E-mail não saiu (rede): %s", type(exc).__name__)
+                raise EmailEnvioError("Não deu pra falar com o serviço de e-mail agora. Tente de novo em instantes.") from exc
+            if resp.status_code < 300:
+                return
+            try:
+                dados = resp.json()
+            except ValueError:
+                dados = {}
+            nome = str(dados.get("name") or "")
+            mensagem = str(dados.get("message") or "")[:200]
+            if resp.status_code == 429 and nome in ("daily_quota_exceeded", "monthly_quota_exceeded"):
+                logger.warning("E-mail não saiu: cota do Resend esgotada (%s)", nome)
+                raise EmailCotaEsgotadaError(
+                    "O serviço de e-mail atingiu o limite de envios de hoje."
+                    if nome == "daily_quota_exceeded" else "O serviço de e-mail atingiu o limite de envios do mês.",
+                    mensal=nome == "monthly_quota_exceeded",
+                )
+            if resp.status_code == 429 and tentativa < 3:
+                try:
+                    espera = float(resp.headers.get("retry-after") or 0)
+                except ValueError:
+                    espera = 0
+                time.sleep(min(max(espera, 1.0 + tentativa), 10))
+                continue
+            logger.warning("E-mail não saiu: HTTP %s %s %s", resp.status_code, nome, mensagem)
+            if resp.status_code == 429:
+                raise EmailEnvioError("O serviço de e-mail está recebendo pedidos demais agora. Tente de novo em alguns minutos.")
+            raise EmailEnvioError(f"O serviço de e-mail recusou o envio ({mensagem or f'HTTP {resp.status_code}'}).")
 
 
 def get_email_sender() -> EmailSender:

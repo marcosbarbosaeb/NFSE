@@ -8,6 +8,7 @@ export const NOME_ACAO: Record<AcaoLote, string> = {
   email: "Envio ao tomador por e-mail",
   email_geral: "Cópia pro contador",
   completo: "Processo completo",
+  drive: "Arquivos no Google Drive",
 }
 
 /** Verbo da ação numa frase ("prontas para enviar à prefeitura"). */
@@ -17,6 +18,7 @@ export const VERBO_ACAO: Record<AcaoLote, string> = {
   email: "enviar ao tomador por e-mail",
   email_geral: "mandar a cópia pro contador",
   completo: "fazer o que falta (assinar, enviar à prefeitura e mandar por e-mail)",
+  drive: "guardar no Google Drive",
 }
 
 export const POR_QUE_NENHUMA: Record<AcaoLote, string> = {
@@ -26,6 +28,13 @@ export const POR_QUE_NENHUMA: Record<AcaoLote, string> = {
     "Só vão por e-mail notas autorizadas pela prefeitura (ou de teste) que ainda não foram enviadas, de tomadores que recebem por e-mail.",
   email_geral: "Só vão notas autorizadas pela prefeitura (ou de teste) que ainda não foram enviadas pro contador.",
   completo: "Estas notas já passaram por todos os passos.",
+  drive: "Só sobem pro Drive notas já autorizadas pela prefeitura.",
 }
 
 export const LOTE_RODANDO = (l: Lote) => l.status === "fila" || l.status === "executando"
+
+/** Esperando o limite de e-mails voltar: retoma sozinho, sem ninguém clicar. */
+export const LOTE_ESPERANDO = (l: Lote) => l.status === "aguardando"
+
+/** Falhas que ainda pedem alguma coisa (as já corrigidas depois não contam). */
+export const PENDENTES = (l: Lote) => l.pendentes ?? l.falhas

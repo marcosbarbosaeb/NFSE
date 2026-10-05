@@ -443,3 +443,73 @@ def test_nota_visual_reflete_estado_apos_assinar(client, vinculo_teste, certific
 def test_nota_visual_emissao_inexistente_da_404(client, prestador_teste):
     resp = client.get(f"/api/dps/{uuid.uuid4()}/nota")
     assert resp.status_code == 404
+
+
+# --- Gráficos da Visão geral (05/10/2026) ---
+
+
+def _nota_grafico(db, vinculo, competencia, valor, *, estado="confirmado", documento=None, n=[990000]):
+    from decimal import Decimal
+
+    from app.models import Emissao
+
+    n[0] += 1
+    db.add(Emissao(
+        id=uuid.uuid4(), prestador_id=vinculo.prestador_id, prestador_tomador_id=vinculo.id, competencia=competencia,
+        serie="77", n_dps=n[0], estado=estado, valor=Decimal(str(valor)), origem="importada",
+        tomador_snapshot={"apelido": vinculo.apelido}, tomador_documento=documento,
+    ))
+    db.flush()
+
+
+def test_graficos_do_painel(client, db, prestador_teste, vinculo_teste):
+    tomador = Tomador(id=uuid.uuid4(), cnpj="22333444000181", razao_social="MARKETPLACE SINTETICO LTDA", cod_municipio="3550308")
+    db.add(tomador)
+    db.flush()
+    marketplace = PrestadorTomador(
+        id=uuid.uuid4(), prestador_id=prestador_teste.id, tomador_id=tomador.id, apelido="Marketplace",
+        cod_local_prestacao="3550308", cod_trib_nacional="170601", template_descricao="x",
+    )
+    db.add(marketplace)
+    db.flush()
+
+    _nota_grafico(db, vinculo_teste, "2026-10", 1000)
+    _nota_grafico(db, vinculo_teste, "2026-08", 500, estado="montado")
+    _nota_grafico(db, vinculo_teste, "2025-11", 300)       # primeiro mês da janela de 12
+    _nota_grafico(db, vinculo_teste, "2025-10", 9999)      # fora da janela (13 meses atrás)
+    _nota_grafico(db, vinculo_teste, "2026-09", 7777, estado="cancelada")  # não é faturamento
+    # notas de vendedores (relatório do marketplace): entram no nome do marketplace
+    for doc, valor in (("52998224725", 40), ("11222333000181", 60.5), ("39053344705", 20)):
+        _nota_grafico(db, marketplace, "2026-10", valor, documento=doc)
+
+    r = client.get("/api/painel/graficos?competencia=2026-10")
+    assert r.status_code == 200, r.text
+    g = r.json()
+    serie = g["serie"]
+    assert [p["competencia"] for p in serie] == [
+        "2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04",
+        "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10",
+    ]
+    valores = {p["competencia"]: p["valor"] for p in serie}
+    assert valores["2025-11"] == 300 and valores["2026-08"] == 500 and valores["2026-09"] == 0
+    assert valores["2026-10"] == 1120.5
+    assert g["media"] == round((300 + 500 + 1120.5) / 12, 2)
+    # o mês do gráfico bate com o "Faturado no mês" da mesma tela
+    assert client.get("/api/painel/resumo-mes?competencia=2026-10").json()["faturado_no_mes"] == valores["2026-10"]
+
+    assert g["ano"] == "2026" and g["total_ano"] == 1620.5
+    assert [(t["nome"], t["total"], t["notas"]) for t in g["por_tomador"]] == [
+        ("Fornecedor Teste", 1500.0, 2), ("Marketplace", 120.5, 3),
+    ]
+
+    # empresa sem nota nenhuma: série zerada, sem média, sem tomador
+    vazio = client.get("/api/painel/graficos?competencia=2024-06").json()
+    assert all(p["valor"] == 0 for p in vazio["serie"]) and vazio["media"] is None and vazio["por_tomador"] == []
+    assert client.get("/api/painel/graficos?competencia=2026-13").status_code == 422
+    assert len(client.get("/api/painel/graficos").json()["serie"]) == 12
+
+
+def test_graficos_do_painel_pedem_o_emissor(client, db, prestador_teste):
+    prestador_teste.modulos = ["financeiro"]
+    db.flush()
+    assert client.get("/api/painel/graficos").status_code == 403

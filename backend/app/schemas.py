@@ -31,6 +31,10 @@ class VinculoResumo(BaseModel):
     emissao_quantidade: int = 0
     metodo_captura_valor: str = "manual"
     sem_nota: bool = False
+    # Tomador de fora do Brasil (05/10/2026): país (ISO, 2 letras) e a
+    # identificação fiscal de lá — no lugar do CNPJ, que ele não tem.
+    tomador_pais: str | None = None
+    tomador_nif: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -398,6 +402,8 @@ class PendenciaItem(BaseModel):
     # Dia combinado pra fazer (notas a gerar) e se já passou.
     data: date | None = None
     atrasada: bool = False
+    # Linha que junta várias ("Gerar 8 notas"): cada uma, pra abrir na tela.
+    itens: list["PendenciaItem"] | None = None
 
 
 class AgendaItem(BaseModel):
@@ -406,12 +412,16 @@ class AgendaItem(BaseModel):
     titulo: str
     detalhe: str | None = None
     valor: float | None = None
+    # > 1 quando a linha junta vários avisos iguais do mesmo dia.
+    quantidade: int = 1
 
 
 class ProximosResponse(BaseModel):
     pendencias: list[PendenciaItem]
     total_pendencias: int
     agenda: list[AgendaItem]
+    # Quantas linhas a agenda dos próximos 30 dias tem (vêm só as 8 primeiras).
+    total_agenda: int = 0
 
 
 class NotaAbertaResponse(BaseModel):
@@ -529,6 +539,9 @@ class CadastroRequest(BaseModel):
 
 
 class CadastroResponse(BaseModel):
+    # False quando o e-mail de confirmação não saiu (serviço de e-mail fora
+    # do ar ou no limite) — a tela avisa e oferece reenviar.
+    email_enviado: bool = True
     mensagem: str
     email: str
 
@@ -570,8 +583,15 @@ class TomadorResponse(BaseModel):
     sug_template_descricao: str | None = None
     sug_dia_emissao: int | None = None
     sug_dias_recebimento: int | None = None
+    sug_cod_trib_municipal: str | None = None
+    sug_cod_nbs: str | None = None
+    sug_meses_atras: int | None = None
     # 'interno' = só desta conta (sem CNPJ: parceria, pessoa física, exterior).
     status: str = "aprovado"
+    # Empresa de fora do Brasil: país (ISO, 2 letras) e identificação fiscal
+    # de lá. Em tomador de fora, `logradouro` guarda a cidade/endereço no exterior.
+    pais: str | None = None
+    nif: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -626,6 +646,35 @@ class VinculoDetalheResponse(BaseModel):
     sem_nota: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class IdentificarTomadorRequest(BaseModel):
+    """Cliente que nasceu "só controle" (sem CNPJ) ganha identidade pra poder
+    receber nota — ver app/services/identificar_tomador.py.
+
+    `tipo="cnpj"`: empresa do Brasil. Só o `cnpj` é obrigatório; nome, cidade
+    e endereço são o que a pessoa digitou quando a consulta à Receita não
+    respondeu (se o CNPJ já está no catálogo, são ignorados).
+    `tipo="exterior"`: empresa de fora — `razao_social`, `pais` e `nif`."""
+    tipo: Literal["cnpj", "exterior"]
+    cnpj: str | None = Field(default=None, max_length=20)
+    razao_social: str | None = Field(default=None, max_length=200)
+    cod_municipio: str | None = Field(default=None, max_length=7)
+    cep: str | None = Field(default=None, max_length=10)
+    logradouro: str | None = Field(default=None, max_length=200)
+    numero: str | None = Field(default=None, max_length=20)
+    complemento: str | None = Field(default=None, max_length=100)
+    bairro: str | None = Field(default=None, max_length=100)
+    pais: str | None = Field(default=None, max_length=2)
+    nif: str | None = Field(default=None, max_length=40)
+    # Cidade/endereço lá fora — opcional, só pra consulta (não vai na nota).
+    endereco_exterior: str | None = Field(default=None, max_length=200)
+
+
+class IdentificarTomadorResponse(BaseModel):
+    vinculo: VinculoDetalheResponse
+    # Algo que a pessoa precisa saber (ex.: já existe outro cliente dela com este CNPJ).
+    aviso: str | None = None
 
 
 class EmailExtra(BaseModel):
@@ -1022,10 +1071,13 @@ class ConciliarDespesaRequest(BaseModel):
 class PreferenciasRequest(BaseModel):
     """Disposição dos cards de uma tela: ordem e quais estão fechados."""
     tela: Literal["financeiro", "visao_geral"]
-    ordem: list[str] = Field(default_factory=list, max_length=40)
-    fechados: list[str] = Field(default_factory=list, max_length=40)
+    ordem: list[str] = Field(default_factory=list, max_length=80)
+    fechados: list[str] = Field(default_factory=list, max_length=80)
     # Composição: cards que a pessoa tirou da tela (05/10/2026).
-    ocultos: list[str] = Field(default_factory=list, max_length=40)
+    ocultos: list[str] = Field(default_factory=list, max_length=80)
+    # Largura que a pessoa escolheu pra um card (05/10/2026): sem entrada,
+    # vale a largura padrão dele. Layout salvo antes disso não tem a chave.
+    larguras: dict[str, Literal["meia", "inteira"]] = Field(default_factory=dict, max_length=60)
 
 
 class OrdemRequest(BaseModel):
@@ -1186,7 +1238,11 @@ class WhatsappRequest(BaseModel):
 class CriarLoteRequest(BaseModel):
     """Ação em lote (29/09/2026). Ou uma lista de notas (seleção na tela),
     ou um filtro (ex.: todas as notas da Shopee de um mês)."""
-    acao: str = Field(pattern=r"^(email|email_geral|assinar|submeter|completo)$")
+    acao: str = Field(pattern=r"^(email|email_geral|assinar|submeter|completo|drive)$")
+    # Só no lote "drive": o que subir (pdf | xml | ambos).
+    conteudo: str | None = Field(default=None, pattern=r"^(pdf|xml|ambos)$")
+    # Só as notas de vendedores de relatório (tela Notas em lote).
+    so_avulsas: bool = False
     # Só no lote "completo": até onde ir (assinar -> submeter -> email).
     passos: list[str] | None = Field(default=None, max_length=3)
     emissao_ids: list[uuid.UUID] | None = Field(default=None, max_length=3000)
@@ -1215,6 +1271,23 @@ class LoteResponse(BaseModel):
     passos: list[str] = []
     relatorio: dict[str, int] = {}
     linhas_relatorio: list[str] = []
+    # Falhas ainda sem solução (as corrigidas depois saem da conta) e o que
+    # não é falha mas a pessoa precisa saber (vendedor sem e-mail...).
+    pendentes: int = 0
+    resolvidas: int = 0
+    avisos: list[dict] = []
+    link: str | None = None
+    cota_mensal: bool = False
+
+
+class PacoteEmailRequest(BaseModel):
+    """Um e-mail só com o .zip das notas (pro contador, pra própria pessoa)."""
+    para: list[str] = Field(min_length=1, max_length=5)
+    conteudo: str = Field(default="ambos", pattern=r"^(pdf|xml|ambos)$")
+    emissao_ids: list[uuid.UUID] | None = Field(default=None, max_length=3000)
+    vinculo_id: uuid.UUID | None = None
+    competencia: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    mensagem: str | None = Field(default=None, max_length=2000)
 
 
 class PreviaLoteResponse(BaseModel):

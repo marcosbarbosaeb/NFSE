@@ -141,11 +141,13 @@ def criar_cadastro(
     db.add(UsuarioPrestador(usuario_id=usuario.id, prestador_id=prestador.id))
     db.flush()
 
-    _enviar_email_confirmacao(usuario.email, token)
+    # Guardado no objeto (não é coluna) só pra rota contar à tela.
+    usuario.email_enviado = _enviar_email_confirmacao(usuario.email, token)
     return usuario
 
 
-def _enviar_email_confirmacao(email: str, token: str) -> None:
+def _enviar_email_confirmacao(email: str, token: str) -> bool:
+    """True se o e-mail saiu. A conta já existe de qualquer jeito."""
     link = f"{get_settings().app_base_url}/confirmar-email?token={token}"
     corpo_texto = (
         f"Oi! Eu sou a Ana, sua agente de notas fiscais. Que bom ter você aqui!\n\n"
@@ -166,10 +168,10 @@ def _enviar_email_confirmacao(email: str, token: str) -> None:
             responder_para=get_settings().email_suporte or None,
         )
     except EmailEnvioError:
-        # Ver docstring do módulo: a conta já foi criada, não desfaz o
-        # cadastro por causa disso — só fica pendente até reenvio/confirmação
-        # manual. app/services/email.py já loga o motivo da falha.
-        pass
+        # A conta já foi criada, não desfaz o cadastro por causa disso — só
+        # fica pendente até reenviar. app/services/email.py loga o motivo.
+        return False
+    return True
 
 
 def confirmar_email(db: Session, token: str) -> Usuario:

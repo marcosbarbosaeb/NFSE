@@ -12,7 +12,7 @@ import datetime
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import func
+from sqlalchemy import String, cast, func
 from sqlalchemy.orm import Session
 
 from app.models import Emissao, PagamentoRecebido, PrestadorTomador
@@ -84,6 +84,41 @@ def _notas(db: Session) -> list[dict]:
     ]
 
 
+def notas_em_lote(db: Session) -> list[dict]:
+    """Notas de vendedores (relatório da Shopee: centenas de notas pequenas,
+    pagas num depósito só) JUNTAS por tomador + mês — uma linha por mês, já
+    somada no banco (05/10/2026, conciliação notas x recebimentos).
+
+    `emissao_id` é UMA das notas do mês, sempre a mesma: é nela que a baixa
+    do depósito fica ligada (o mês conta como pago quando alguma nota dele
+    está paga — ver `Baixas.mes_pago`)."""
+    linhas = (
+        db.query(
+            Emissao.prestador_tomador_id, Emissao.competencia, func.count(Emissao.id), func.sum(Emissao.valor),
+            func.min(Emissao.criado_em), func.max(Emissao.criado_em), func.min(cast(Emissao.id, String)),
+        )
+        .filter(Emissao.estado.in_(ESTADOS_COBRAVEIS), Emissao.tomador_documento.isnot(None))
+        .group_by(Emissao.prestador_tomador_id, Emissao.competencia)
+        .all()
+    )
+    return [
+        {
+            "vinculo_id": vinculo_id, "competencia": competencia, "quantidade": quantidade, "valor": valor,
+            "emitida_em": primeira, "ultima_em": ultima, "emissao_id": uuid.UUID(uma),
+        }
+        for vinculo_id, competencia, quantidade, valor, primeira, ultima, uma in linhas
+    ]
+
+
+def meses_com_lote(db: Session) -> set[tuple[uuid.UUID, str]]:
+    """(tomador, mês) que têm notas de vendedores: o depósito do marketplace
+    naquele mês paga essas notas — não é um "recebimento sem nota"."""
+    return {
+        (v, c) for v, c in db.query(Emissao.prestador_tomador_id, Emissao.competencia)
+        .filter(Emissao.estado.in_(ESTADOS_COBRAVEIS), Emissao.tomador_documento.isnot(None)).distinct()
+    }
+
+
 def calcular(db: Session) -> tuple[list[dict], Baixas]:
     """Notas + baixas, pra reaproveitar numa mesma tela."""
     return _notas(db), Baixas(db)
@@ -118,6 +153,9 @@ def recebimentos_sem_nota(db: Session, desde: str | None = None) -> list[dict]:
         (v, c) for v, c in db.query(Emissao.prestador_tomador_id, Emissao.competencia)
         .filter(Emissao.estado.notin_(("cancelada", "substituida")), Emissao.tomador_documento.is_(None)).distinct()
     }
+    # O depósito do marketplace no mês das notas dos vendedores TEM nota: são
+    # as centenas de notas pequenas daquele mês (05/10/2026).
+    com_lote = meses_com_lote(db)
     query = (
         db.query(PagamentoRecebido, PrestadorTomador.apelido)
         .join(PrestadorTomador, PrestadorTomador.id == PagamentoRecebido.prestador_tomador_id)
@@ -128,7 +166,7 @@ def recebimentos_sem_nota(db: Session, desde: str | None = None) -> list[dict]:
     grupos: dict[tuple, dict] = {}
     for p, apelido in query.order_by(PagamentoRecebido.competencia, PagamentoRecebido.criado_em):
         mes = (p.prestador_tomador_id, p.competencia)
-        if p.mes_inteiro and mes in com_nota:
+        if (p.mes_inteiro and mes in com_nota) or mes in com_lote:
             continue
         # Recebimento novo: uma linha por recebimento (cada um pode virar uma
         # nota). Histórico: junto por tomador + mês, como antes.

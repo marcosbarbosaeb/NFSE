@@ -40,6 +40,7 @@ import json
 import zipfile
 from urllib.parse import urlparse
 import os
+import html
 import re
 from html import escape
 import uuid
@@ -60,8 +61,8 @@ from app import eventos as integracao
 from app.database import definir_prestador_atual, get_db
 from app.fiscal.dps import DescricaoIncompletaError
 from app.models import (
-    AjusteEvento, Assinatura, Certificado, Emissao, Envio, LoteAcao, 
-    Prestador, Usuario,
+    AjusteEvento, Assinatura, Certificado, Emissao, Envio, LoteAcao, UsuarioPrestador, 
+    Prestador, Tomador, Usuario,
 )
 from app.schemas import (
     AjusteOcorrenciaRequest,
@@ -117,6 +118,7 @@ from app.schemas import (
     EmitenteAtualizarRequest,
     CriarLoteRequest,
     LoteResponse,
+    PacoteEmailRequest,
     PreviaLoteResponse,
     ResumoEnviosResponse,
     WhatsappRequest,
@@ -139,6 +141,8 @@ from app.schemas import (
     ReenviarConfirmacaoRequest,
     RegistrarEnvioRequest,
     ServicoNacionalResponse,
+    IdentificarTomadorRequest,
+    IdentificarTomadorResponse,
     TomadorResponse,
     TrocarSenhaRequest,
     UsuarioResponse,
@@ -184,6 +188,7 @@ from app.services.calendario import (
     remover_ajuste,
 )
 from app.services.dashboard import resumo_mes
+from app.services.painel_graficos import graficos as graficos_do_painel
 from app.services.envios import (
     CanalInvalidoError,
     EmissaoSemConteudoError,
@@ -201,6 +206,7 @@ from app.services.indicacao import resumo as resumo_indicacao
 from app.services.email import EmailEnvioError, get_email_sender
 from app.services.dashboard import proximos as proximos_do_painel
 from app.services.envio_direto import (
+    email_da_conta_teste,
     FORMAS_VALIDAS,
     EmailIndisponivelError,
     canal_principal,
@@ -246,7 +252,7 @@ from app.services.motor_emissao import (
     remontar as remontar_emissao,
     submeter as submeter_emissao,
 )
-from app.services import assistente_tomador, billing
+from app.services import assistente_tomador, billing, drive, pacote, identificar_tomador
 from app.services import cep as servico_cep
 from app.services import conferencia
 from pydantic import BaseModel, Field
@@ -287,6 +293,7 @@ def _retomar_lotes_interrompidos() -> None:
         retomados = lotes.retomar_pendentes()
         if retomados:
             logger.info("Retomando %s lote(s) interrompido(s) pelo reinício", retomados)
+        lotes.iniciar_relogio()
     except Exception:  # noqa: BLE001 — subir o servidor nunca depende disto
         logger.exception("Falha ao retomar lotes")
 
@@ -566,9 +573,14 @@ def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
     except PrestadorJaCadastradoError:
         raise HTTPException(status_code=409, detail="Já existe uma conta cadastrada com este CNPJ.")
     db.commit()
+    enviado = bool(getattr(usuario, "email_enviado", True))
     return CadastroResponse(
-        mensagem="Conta criada! Enviamos um link de confirmação pro seu e-mail — confira sua caixa de entrada.",
-        email=usuario.email,
+        mensagem=(
+            "Conta criada! Enviamos um link de confirmação pro seu e-mail — confira sua caixa de entrada."
+            if enviado else
+            "Conta criada, mas não consegui mandar o e-mail de confirmação agora. Tente “reenviar” daqui a pouco na tela de entrar."
+        ),
+        email=usuario.email, email_enviado=enviado,
     )
 
 
@@ -1127,6 +1139,7 @@ def api_listar_vinculos(todos: bool = False, competencia: str | None = None, db:
         resposta.append(VinculoResumo(
             id=v.id, apelido=v.apelido, tomador_razao_social=v.tomador.razao_social,
             tomador_cnpj="" if v.tomador.status == "interno" else v.tomador.cnpj, serie=v.serie, template_descricao=v.template_descricao,
+            tomador_pais=v.tomador.pais if v.tomador.de_fora else None, tomador_nif=v.tomador.nif if v.tomador.de_fora else None,
             requer_revisao=v.requer_revisao, ativo=v.ativo, tomador_id=v.tomador_id,
             cod_trib_nacional=v.cod_trib_nacional, cod_local_prestacao=v.cod_local_prestacao,
             dia_limite_emissao=v.dia_limite_emissao, dias_para_recebimento=v.dias_para_recebimento,
@@ -1387,6 +1400,62 @@ def api_atualizar_dados_do_tomador(vinculo_id: uuid.UUID, req: _DadosTomadorRequ
     return resposta
 
 
+@app.post(
+    "/api/vinculos/{vinculo_id}/identificar", response_model=IdentificarTomadorResponse,
+    responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}, 422: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR],
+)
+def api_identificar_tomador(vinculo_id: uuid.UUID, req: IdentificarTomadorRequest, request: Request, db: Session = Depends(db_sessao)):
+    """Cliente que começou "só controle" (sem CNPJ) passa a ter identidade
+    pra receber nota: o CNPJ dele (o vínculo passa a apontar pro tomador do
+    catálogo — o MESMO vínculo, com os recebimentos e as notas que já tinha)
+    ou, se a empresa é de fora do Brasil, país + identificação fiscal de lá.
+    Não liga a emissão: `sem_nota` só muda quando a pessoa salva o cadastro
+    com o código do serviço e a descrição conferidos."""
+    vinculo = buscar_vinculo(db, vinculo_id)
+    if vinculo is None or vinculo.excluido_em is not None:
+        raise HTTPException(status_code=404, detail="Tomador não encontrado (ou não pertence à empresa ativa)")
+    aviso = None
+    try:
+        if req.tipo == "cnpj":
+            demo = _sessao_demo(request, db)
+            numeros = re.sub(r"\D", "", req.cnpj or "")
+            # A Receita só é consultada pra CNPJ novo no catálogo, de conta real.
+            ja_no_catalogo = len(numeros) == 14 and db.query(Tomador.id).filter_by(cnpj=numeros, status="aprovado").first() is not None
+            oficial = None if demo or ja_no_catalogo or not conferencia.cnpj_valido(numeros) else _dados_oficiais_cnpj(numeros)
+            aviso = identificar_tomador.identificar_com_cnpj(
+                db, vinculo, cnpj=req.cnpj or "", oficial=oficial, demo=demo,
+                digitado=req.model_dump(include={"razao_social", "cod_municipio", "cep", "logradouro", "numero", "complemento", "bairro"}),
+            )
+        else:
+            identificar_tomador.identificar_do_exterior(
+                db, vinculo, razao_social=req.razao_social or "", pais=req.pais or "", nif=req.nif or "", endereco=req.endereco_exterior,
+            )
+    except identificar_tomador.IdentificacaoError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    except CnpjJaCadastradoError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.refresh(vinculo)
+    resposta = IdentificarTomadorResponse(vinculo=VinculoDetalheResponse.model_validate(vinculo), aviso=aviso)  # antes do commit (RLS)
+    db.commit()
+    return resposta
+
+
+@app.post("/api/vinculos/publicar-sugestoes", dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
+def api_publicar_sugestoes(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Curadoria do catálogo: as regras de nota dos tomadores DESTA empresa
+    (códigos, descrição, dia, prazo — sem dados de contato) viram a
+    sugestão padrão pra quem cadastrar os mesmos tomadores. Só contas
+    administrativas (assinatura "cortesia") podem publicar."""
+    from app.services.vinculos import publicar_sugestoes
+
+    assinatura = db.query(Assinatura).filter_by(prestador_id=prestador_id).one_or_none()
+    if assinatura is None or assinatura.status != "cortesia":
+        raise HTTPException(status_code=403, detail="Só a conta administradora publica sugestões no catálogo.")
+    resposta = {"publicados": publicar_sugestoes(db)}
+    db.commit()
+    return resposta
+
+
 def _validar_formas(formas: list[str]) -> list[str]:
     desconhecidas = [f for f in formas if f not in FORMAS_VALIDAS]
     if desconhecidas:
@@ -1453,6 +1522,7 @@ def api_listar_tomadores(
             TomadorResponse.model_validate(t).model_copy(update={
                 "sug_cod_trib_nacional": None, "sug_template_descricao": None,
                 "sug_dia_emissao": None, "sug_dias_recebimento": None,
+                "sug_cod_trib_municipal": None, "sug_cod_nbs": None, "sug_meses_atras": None,
             })
             for t in tomadores
         ]
@@ -1920,7 +1990,7 @@ def _ids_do_lote(db: Session, req: CriarLoteRequest) -> list[uuid.UUID]:
         return lotes.selecionar(
             db, req.acao, emissao_ids=req.emissao_ids, vinculo_id=req.vinculo_id,
             competencia=req.competencia, reenviar=req.reenviar,
-            passos=lotes.normalizar_passos(req.passos),
+            passos=lotes.normalizar_passos(req.passos), so_avulsas=req.so_avulsas,
         )
     except lotes.LoteInvalidoError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1942,7 +2012,10 @@ def api_criar_lote(
         raise HTTPException(status_code=422, detail="Nenhuma nota selecionada está pronta pra essa ação.")
     base = base_url(str(request.base_url))
     try:
-        lote = lotes.criar_lote(db, prestador_id, req.acao, ids, passos=req.passos, base_url=base)
+        lote = lotes.criar_lote(
+            db, prestador_id, req.acao, ids, passos=req.passos, base_url=base,
+            opcoes={"conteudo": req.conteudo or "ambos"} if req.acao == "drive" else None,
+        )
     except lotes.LoteInvalidoError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     resposta = lotes.resumo(lote)
@@ -1956,8 +2029,18 @@ def api_listar_lotes(db: Session = Depends(db_sessao)):
     recentes = db.query(LoteAcao).order_by(LoteAcao.criado_em.desc()).limit(10).all()
     for lote in recentes:
         lotes.atualizar_parado(db, lote)
+    resposta = [lotes.resumo(l, db) for l in recentes]  # antes do commit (RLS vale só na transação)
     db.commit()
-    return [lotes.resumo(l) for l in recentes]
+    return resposta
+
+
+@app.get("/api/lotes/andamento", dependencies=[_SO_EMISSOR])
+def api_andamento_do_lote(vinculo_id: uuid.UUID | None = None, competencia: str | None = None, db: Session = Depends(db_sessao)):
+    """Passo a passo de Notas em lote: em que etapa está o mês (assinar,
+    prefeitura, enviar aos vendedores, pacote) e o que precisa de atenção."""
+    if competencia is not None and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", competencia):
+        raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
+    return lotes.andamento(db, vinculo_id, competencia)
 
 
 def _lote_ou_404(db: Session, lote_id: uuid.UUID) -> LoteAcao:
@@ -1970,17 +2053,20 @@ def _lote_ou_404(db: Session, lote_id: uuid.UUID) -> LoteAcao:
 @app.get("/api/lotes/{lote_id}", response_model=LoteResponse, dependencies=[_SO_EMISSOR])
 def api_ver_lote(lote_id: uuid.UUID, db: Session = Depends(db_sessao)):
     lote = lotes.atualizar_parado(db, _lote_ou_404(db, lote_id))
+    resposta = lotes.resumo(lote, db)
     db.commit()
-    return lotes.resumo(lote)
+    return resposta
 
 
 @app.post("/api/lotes/{lote_id}/cancelar", response_model=LoteResponse, dependencies=[_SO_EMISSOR])
 def api_cancelar_lote(lote_id: uuid.UUID, db: Session = Depends(db_sessao)):
     lote = _lote_ou_404(db, lote_id)
-    if lote.status in ("fila", "executando", "interrompido"):
+    resposta = None
+    if lote.status in ("fila", "executando", "interrompido", "aguardando"):
         lote.status = "cancelado"
+        resposta = lotes.resumo(lote)
         db.commit()
-    return lotes.resumo(lote)
+    return resposta or lotes.resumo(lote)
 
 
 @app.post("/api/lotes/{lote_id}/retomar", response_model=LoteResponse, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
@@ -2050,41 +2136,125 @@ def api_resumo_envios(
 @app.get("/api/dps/zip", responses={404: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_zip_notas(
     ids: str | None = None, competencia: str | None = None, vinculo_id: uuid.UUID | None = None,
-    db: Session = Depends(db_sessao),
+    conteudo: str = "ambos", db: Session = Depends(db_sessao),
 ):
-    """XMLs (e os PDFs oficiais já baixados) de várias notas num .zip — a
-    seleção da tela (`ids` separados por vírgula) ou um mês inteiro."""
-    query = db.query(Emissao).filter(Emissao.estado != "cancelada")
+    """PDFs e/ou XMLs de várias notas num .zip — a seleção da tela (`ids`
+    separados por vírgula) ou um mês inteiro. `conteudo`: pdf | xml | ambos."""
+    if conteudo not in pacote.CONTEUDOS:
+        raise HTTPException(status_code=422, detail="conteudo deve ser pdf, xml ou ambos")
+    emissoes = _notas_do_pacote(db, ids.split(",") if ids else None, competencia, vinculo_id)
+    conteudo_zip, quantas = pacote.montar_zip(db, emissoes, conteudo)
+    if not quantas:
+        raise HTTPException(status_code=404, detail="Nenhuma nota com arquivo nessa seleção.")
+    nome_zip = f"notas_{competencia or 'selecao'}{'' if conteudo == 'ambos' else '_' + conteudo}.zip"
+    return Response(content=conteudo_zip, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{nome_zip}"'})
+
+
+def _notas_do_pacote(db: Session, ids, competencia: str | None, vinculo_id: uuid.UUID | None) -> list[Emissao]:
     if ids:
         try:
-            lista = [uuid.UUID(i) for i in ids.split(",") if i.strip()][:3000]
+            lista = [i if isinstance(i, uuid.UUID) else uuid.UUID(str(i).strip()) for i in ids if str(i).strip()]
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="ids inválidos") from exc
-        query = query.filter(Emissao.id.in_(lista))
-    elif competencia:
-        if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", competencia):
-            raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
-        query = query.filter(Emissao.competencia == competencia)
-        if vinculo_id:
-            query = query.filter(Emissao.prestador_tomador_id == vinculo_id)
-    else:
+        return pacote.selecionar(db, ids=lista)
+    if not competencia:
         raise HTTPException(status_code=422, detail="Informe as notas ou a competência.")
-    buffer = io.BytesIO()
-    quantos = 0
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for emissao in query.order_by(Emissao.n_dps).limit(3000):
-            try:
-                nome, conteudo = melhor_xml_disponivel(emissao)
-            except EmissaoSemConteudoError:
-                continue
-            zf.writestr(f"xml/{nome}", conteudo)
-            if emissao.estado == "confirmado" and emissao.danfse_pdf:
-                zf.writestr(f"pdf/{nome_pdf(emissao)}", emissao.danfse_pdf)
-            quantos += 1
-    if not quantos:
-        raise HTTPException(status_code=404, detail="Nenhuma nota com XML nessa seleção.")
-    nome_zip = f"notas_{competencia or 'selecao'}.zip"
-    return Response(content=buffer.getvalue(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{nome_zip}"'})
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", competencia):
+        raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
+    return pacote.selecionar(db, competencia=competencia, vinculo_id=vinculo_id)
+
+
+@app.post("/api/pacote/email", responses={400: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
+def api_pacote_por_email(req: PacoteEmailRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Manda UM e-mail com o .zip das notas (pro contador, pra você mesmo).
+    Gasta um envio só do serviço de e-mail, não um por nota."""
+    from app.services.email import EmailCotaEsgotadaError, EmailEnvioError, get_email_sender
+    from app.services.envio_direto import lista_emails, remetente_da_nota
+
+    destinos = lista_emails(req.para)
+    if not destinos:
+        raise HTTPException(status_code=400, detail="Informe um e-mail válido pra receber o pacote.")
+    emissoes = _notas_do_pacote(db, req.emissao_ids, req.competencia, req.vinculo_id)
+    conteudo_zip, quantas = pacote.montar_zip(db, emissoes, req.conteudo)
+    if not quantas:
+        raise HTTPException(status_code=400, detail="Nenhuma nota com arquivo nessa seleção.")
+    if len(conteudo_zip) > pacote.LIMITE_EMAIL_BYTES:
+        raise HTTPException(status_code=400, detail=(
+            f"O pacote ficou com {len(conteudo_zip) / 1048576:.0f} MB — grande demais pra ir por e-mail. "
+            "Baixe o .zip ou guarde no Google Drive."
+        ))
+    prestador = db.get(Prestador, prestador_id)
+    teste = email_da_conta_teste(db, prestador)
+    if teste:
+        destinos = [teste]
+    periodo = f" de {req.competencia[5:]}/{req.competencia[:4]}" if req.competencia else ""
+    oque = {"pdf": "os PDFs", "xml": "os XMLs", "ambos": "os PDFs e XMLs"}[req.conteudo]
+    texto = (req.mensagem or "").strip() or (
+        f"Olá!\n\nSegue em anexo {oque} de {quantas} nota(s) fiscal(is) de serviço{periodo}"
+        f" emitida(s) por {prestador.razao_social}.\n\nQualquer dúvida, é só responder este e-mail."
+    )
+    try:
+        get_email_sender().enviar(
+            destinatario=destinos, assunto=f"Notas fiscais{periodo} — {prestador.razao_social}"[:300],
+            corpo_texto=texto, corpo_html="<p>" + html.escape(texto).replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>",
+            remetente=remetente_da_nota(prestador.razao_social), responder_para=prestador.email or None,
+            anexos=[(f"notas{('_' + req.competencia) if req.competencia else ''}.zip", conteudo_zip)],
+        )
+    except EmailCotaEsgotadaError as exc:
+        raise HTTPException(status_code=400, detail=f"{exc} Baixe o .zip ou tente o e-mail amanhã.") from exc
+    except EmailEnvioError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"enviado_para": destinos, "notas": quantas, "tamanho_bytes": len(conteudo_zip)}
+
+
+# --- Google Drive da empresa (05/10/2026, ver app/services/drive.py) ---
+
+
+@app.get("/api/drive", dependencies=[_SO_EMISSOR])
+def api_drive_status(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    return drive.status(db, prestador_id)
+
+
+@app.post("/api/drive/conectar", dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
+def api_drive_conectar(request: Request, prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Devolve a URL do Google pra pessoa autorizar. O `state` (anti-CSRF)
+    e a empresa ficam na sessão e são conferidos no retorno."""
+    state = gerar_state()
+    request.session["drive_state"] = state
+    request.session["drive_prestador"] = str(prestador_id)
+    try:
+        return {"url": drive.url_de_conexao(state)}
+    except drive.DriveNaoConfiguradoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/drive/callback")
+def api_drive_callback(request: Request, code: str | None = None, state: str | None = None, error: str | None = None, db: Session = Depends(get_db)):
+    """Retorno do Google: guarda a autorização (cifrada) e volta pra tela."""
+    destino = "/app/nfse/lote?drive="
+    esperado = request.session.pop("drive_state", None)
+    prestador_bruto = request.session.pop("drive_prestador", None)
+    if error or not code or not state or not esperado or state != esperado or not prestador_bruto or not request.session.get("usuario_id"):
+        return RedirectResponse(destino + "recusado", status_code=303)
+    prestador_id = uuid.UUID(prestador_bruto)
+    # A empresa tem que ser uma das que este login opera.
+    if db.query(UsuarioPrestador).filter_by(usuario_id=uuid.UUID(request.session["usuario_id"]), prestador_id=prestador_id).first() is None:
+        return RedirectResponse(destino + "recusado", status_code=303)
+    definir_prestador_atual(db, prestador_id)
+    try:
+        drive.concluir_conexao(db, prestador_id, code)
+    except (drive.DriveFalhaError, drive.DriveNaoConectadoError, drive.DriveNaoConfiguradoError):
+        db.rollback()
+        return RedirectResponse(destino + "falhou", status_code=303)
+    db.commit()
+    return RedirectResponse(destino + "conectado", status_code=303)
+
+
+@app.delete("/api/drive", dependencies=[_SO_EMISSOR])
+def api_drive_desconectar(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    drive.desconectar(db, prestador_id)
+    db.commit()
+    return {"conectado": False}
 
 
 @app.delete("/api/dps/{emissao_id}", responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
@@ -2735,7 +2905,7 @@ def api_preferencias(request: Request, db: Session = Depends(get_db)):
 @app.put("/api/conta/preferencias")
 def api_salvar_preferencias(req: PreferenciasRequest, request: Request, db: Session = Depends(get_db)):
     usuario = _usuario_logado(request, db)
-    usuario.preferencias = {**(usuario.preferencias or {}), req.tela: {"ordem": req.ordem, "fechados": req.fechados, "ocultos": req.ocultos}}
+    usuario.preferencias = {**(usuario.preferencias or {}), req.tela: {"ordem": req.ordem, "fechados": req.fechados, "ocultos": req.ocultos, "larguras": req.larguras}}
     resposta = dict(usuario.preferencias)
     db.commit()
     return resposta
@@ -2788,6 +2958,16 @@ def api_painel_resumo_mes(
     return resumo_mes(db, prestador_id, competencia)
 
 
+@app.get("/api/painel/graficos", dependencies=[_SO_EMISSOR])
+def api_painel_graficos(
+    competencia: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    db: Session = Depends(db_sessao),
+):
+    """Gráficos da Visão geral (05/10/2026): notas dos últimos 12 meses e
+    quanto cada tomador somou no ano. Só leitura (app/services/painel_graficos.py)."""
+    return graficos_do_painel(db, competencia)
+
+
 # Frontend novo (React/Vite, Marco 12/13) — o build (`npm run build` em
 # frontend/) é copiado pra frontend/dist pelo Dockerfile (estágio Node,
 # separado da imagem final — não roda servidor Node em produção, só serve
@@ -2825,6 +3005,12 @@ from app.financeiro.rotas import rotas as _rotas_financeiro  # noqa: E402
 
 _integracao_financeiro.registrar()
 app.include_router(_rotas_financeiro)
+
+# Anotações: da empresa, não de um módulo — valem com qualquer combinação
+# de produtos (quem tem só o emissor anota na Visão geral).
+from app.anotacoes import rotas as _rotas_anotacoes  # noqa: E402
+
+app.include_router(_rotas_anotacoes)
 
 
 @app.get("/", include_in_schema=False)

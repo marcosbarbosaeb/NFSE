@@ -150,16 +150,22 @@ def test_lote_completo_faz_tudo_conserta_cep_e_gera_relatorio(client, db, presta
     # o CEP foi achado pelo endereço e a nota reenviada com o mesmo número
     assert cep_ruim.tomador_snapshot["endereco"]["CEP"] == "01311000"
     assert "endereco_corrigido" in cep_ruim.tomador_snapshot
-    assert lote.relatorio == {"assinadas": 4, "autorizadas": 4, "cep_corrigido": 1, "enviadas": 3, "email_falhou": 1}
-    assert (lote.feitos, lote.falhas) == (3, 1) and lote.erros[0]["erro"].startswith("E-mail:")
+    # vendedor sem e-mail não é falha: vira aviso e a situação fica regular
+    assert lote.relatorio == {"assinadas": 4, "autorizadas": 4, "cep_corrigido": 1, "enviadas": 3, "sem_email": 1}
+    assert (lote.feitos, lote.falhas) == (4, 0) and lote.erros == []
     assert db.get(LoteFila, lote.id) is None
     resumo = client.get(f"/api/lotes/{lote.id}").json()
     assert "4 autorizadas pela prefeitura" in resumo["linhas_relatorio"] and "1 com o CEP corrigido automaticamente" in resumo["linhas_relatorio"]
-    # o relatório também foi pro e-mail de quem usa a conta? (sem usuário no teste: só não quebra)
+    assert resumo["pendentes"] == 0 and [a["nome"] for a in resumo["avisos"]] == ["Loja 60"]
+    assert "não informou e-mail" in resumo["avisos"][0]["aviso"]
     enviados_tomador = [m for m in pipeline.enviados if "anexos" in m]
     assert len(enviados_tomador) == 3
-    # nada mais a fazer: um novo lote completo não pega as que já terminaram
-    assert client.post("/api/lotes/previa", json=corpo).json()["quantidade"] == 1  # só a do e-mail que falhou
+    # nada mais a fazer: a sem e-mail não volta a entrar no lote
+    assert client.post("/api/lotes/previa", json=corpo).json()["quantidade"] == 0
+    # o passo a passo mostra o mês como regular, com a nota sem e-mail só indicada
+    a = client.get(f"/api/lotes/andamento?vinculo_id={vinculo_teste.id}&competencia=2026-09").json()
+    assert (a["total"], a["autorizadas"], a["enviadas"], a["a_enviar"], a["total_sem_email"]) == (4, 4, 3, 0, 1)
+    assert a["regular"] is True and a["etapa"] == "pacote" and a["sem_email"][0]["nome"] == "Loja 60"
 
 
 def test_lote_completo_so_ate_a_prefeitura_e_retoma_nota_que_ficou_no_meio(client, db, prestador_teste, vinculo_teste, pipeline):
@@ -353,3 +359,200 @@ def test_plano_define_os_modulos_da_empresa(client, db, prestador_teste, monkeyp
     assert r.status_code == 200 and r.json()["modulos"] == ["emissor", "financeiro"]
     assert chamadas["items"] == [{"id": "si_1", "price": "price_tudo"}] and prestador_teste.modulos == ["emissor", "financeiro"]
     assert db.query(Assinatura).filter_by(prestador_id=prestador_teste.id).one().plano == "ambos"
+
+
+def test_lote_de_email_nao_reenvia_nota_ja_entregue_por_outro_caminho(client, db, vinculo_teste, pipeline):
+    """Nota importada entra marcada como entregue (direto_fornecedor): o
+    lote de e-mail não pode mandar de novo (aconteceu em 05/10/2026)."""
+    from app.services.envio_direto import marcar_enviada
+
+    antiga = _avulsa(db, vinculo_teste, "11222333000111", "antiga@x.com")
+    nova = _avulsa(db, vinculo_teste, "11222333000112", "nova@x.com")
+    for e in (antiga, nova):
+        e.estado = "confirmado"
+    marcar_enviada(db, antiga, "importada")
+    db.flush()
+    assert lotes.selecionar(db, "email", emissao_ids=[antiga.id, nova.id]) == [nova.id]
+    assert lotes.selecionar(db, "completo", emissao_ids=[antiga.id, nova.id]) == [nova.id]
+    assert set(lotes.selecionar(db, "email", emissao_ids=[antiga.id, nova.id], reenviar=True)) == {antiga.id, nova.id}
+
+
+class _EmailComCota(_Email):
+    """Aceita N e-mails e depois responde que a cota do dia acabou."""
+
+    def __init__(self, aceita):
+        super().__init__()
+        self.aceita = aceita
+
+    def enviar(self, **kw):
+        from app.services.email import EmailCotaEsgotadaError
+
+        if len(self.enviados) >= self.aceita:
+            raise EmailCotaEsgotadaError("O serviço de e-mail atingiu o limite de envios de hoje.")
+        super().enviar(**kw)
+
+
+def test_cota_de_email_lote_espera_e_volta_sozinho(client, db, prestador_teste, vinculo_teste, pipeline, monkeypatch):
+    import datetime
+
+    import app.services.envio_direto as envio_direto
+
+    com_cota = _EmailComCota(aceita=1)
+    monkeypatch.setattr(envio_direto, "get_email_sender", lambda: com_cota)
+    vinculo_teste.email_anexos = "xml"
+    notas = [_avulsa(db, vinculo_teste, f"112223330002{i:02d}", f"c{i}@x.com") for i in range(3)]
+    for e in notas:
+        e.estado = "confirmado"
+    db.flush()
+    r = client.post("/api/lotes", json={"acao": "email", "emissao_ids": [str(e.id) for e in notas]})
+    lote = db.get(LoteAcao, uuid.UUID(r.json()["id"]))
+    lotes.processar(db, lote, prestador_teste.id, "https://x")
+    # 1 saiu; as outras 2 não são falha: o lote fica esperando
+    assert (lote.status, lote.feitos, lote.falhas) == ("aguardando", 1, 0)
+    assert lote.relatorio["aguardando_cota"] == 2 and db.get(LoteFila, lote.id).retomar_em is not None
+    assert db.query(Envio).filter(Envio.emissao_id.in_([e.id for e in notas])).count() == 1  # nenhuma "falha" registrada
+    # ainda não deu a hora: o relógio não retoma
+    chamados = []
+    monkeypatch.setattr(lotes, "iniciar", lambda *a, **k: chamados.append(a[0]))
+    monkeypatch.setattr(lotes, "SessionLocal", lambda: db)
+    monkeypatch.setattr(db, "close", lambda: None)
+    lotes.retomar_pendentes()
+    assert lote.id not in chamados
+    # a cota voltou
+    com_cota.aceita = 99
+    db.get(LoteFila, lote.id).retomar_em = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1)
+    db.flush()
+    lotes.retomar_pendentes()
+    assert lote.id in chamados
+    lotes.processar(db, lote, prestador_teste.id, "https://x")
+    assert (lote.status, lote.feitos, lote.falhas) == ("concluido", 3, 0) and "aguardando_cota" not in lote.relatorio
+    # envio de uma nota só: a cota vira mensagem clara (400), não erro 500
+    com_cota.aceita = 0
+    outra = _avulsa(db, vinculo_teste, "11222333000299", "z@x.com")
+    r = client.post(f"/api/dps/{outra.id}/enviar-email", json={})
+    assert r.status_code == 400 and "limite de envios de hoje" in r.json()["detail"]
+
+
+def test_cota_no_lote_completo_adia_so_os_emails(client, db, prestador_teste, vinculo_teste, pipeline, monkeypatch):
+    import app.services.envio_direto as envio_direto
+
+    com_cota = _EmailComCota(aceita=1)
+    monkeypatch.setattr(envio_direto, "get_email_sender", lambda: com_cota)
+    vinculo_teste.email_anexos = "xml"
+    notas = [_avulsa(db, vinculo_teste, f"112223330003{i:02d}", f"d{i}@x.com") for i in range(3)]
+    r = client.post("/api/lotes", json={"acao": "completo", "emissao_ids": [str(e.id) for e in notas]})
+    lote = db.get(LoteAcao, uuid.UUID(r.json()["id"]))
+    lotes.processar(db, lote, prestador_teste.id, "https://x")
+    # todas autorizadas; 1 e-mail saiu, 2 ficaram pra depois num lote que espera
+    assert all(e.estado == "confirmado" for e in notas)
+    assert lote.status == "concluido" and lote.falhas == 0
+    assert lote.relatorio["autorizadas"] == 3 and lote.relatorio["enviadas"] == 1 and lote.relatorio["email_adiado"] == 2
+    espera = db.query(LoteAcao).filter(LoteAcao.status == "aguardando").one()
+    assert espera.acao == "email" and espera.total == 2 and db.get(LoteFila, espera.id).retomar_em is not None
+    assert any("continuo sozinha" in linha for linha in lotes.texto_do_relatorio(lote))
+
+
+def test_falha_ja_corrigida_some_do_processamento_antigo(client, db, prestador_teste, vinculo_teste, pipeline):
+    e = _avulsa(db, vinculo_teste, "11222333000401", "e@x.com")
+    lote = lotes.criar_lote(db, prestador_teste.id, "submeter", [e.id])
+    lote.status, lote.falhas = "concluido", 1
+    lote.erros = [{"emissao_id": str(e.id), "nome": "Loja 01", "erro": "A Receita recusou a nota: E0240"}]
+    db.flush()
+    assert client.get(f"/api/lotes/{lote.id}").json()["pendentes"] == 1
+    e.estado = "confirmado"  # a pessoa corrigiu e reenviou pela página da nota
+    db.flush()
+    resumo = client.get(f"/api/lotes/{lote.id}").json()
+    assert resumo["pendentes"] == 0 and resumo["resolvidas"] == 1 and resumo["erros"] == [] and resumo["falhas"] == 1
+
+
+def test_pacote_zip_por_conteudo_e_por_email(client, db, vinculo_teste, pipeline, monkeypatch):
+    import io
+    import zipfile
+
+    a = _avulsa(db, vinculo_teste, "11222333000501", "p@x.com")
+    b = _avulsa(db, vinculo_teste, "11222333000502", "q@x.com")
+    monkeypatch.setattr("app.services.pacote.obter_danfse", lambda db, e, pid: b"%PDF-falso" if e.estado == "confirmado" else None)
+    a.estado = "confirmado"
+    db.flush()
+
+    def nomes(resp):
+        return sorted(zipfile.ZipFile(io.BytesIO(resp.content)).namelist())
+
+    r = client.get(f"/api/dps/zip?competencia=2026-09&vinculo_id={vinculo_teste.id}")
+    assert r.status_code == 200 and len(nomes(r)) == 3 and nomes(r)[0].startswith("pdf/") and nomes(r)[1].startswith("xml/")
+    r = client.get(f"/api/dps/zip?competencia=2026-09&vinculo_id={vinculo_teste.id}&conteudo=pdf")
+    assert len(nomes(r)) == 1 and nomes(r)[0].endswith(".pdf") and "/" not in nomes(r)[0]
+    assert len(nomes(client.get(f"/api/dps/zip?ids={a.id},{b.id}&conteudo=xml"))) == 2
+    assert client.get("/api/dps/zip?competencia=2026-09&conteudo=docx").status_code == 422
+
+    monkeypatch.setattr("app.services.email.get_email_sender", lambda: pipeline)
+    r = client.post("/api/pacote/email", json={"para": ["contador@c.com"], "conteudo": "ambos", "competencia": "2026-09", "vinculo_id": str(vinculo_teste.id)})
+    assert r.status_code == 200, r.text
+    assert r.json()["notas"] == 2 and pipeline.enviados[-1]["destinatario"] == ["contador@c.com"]
+    assert pipeline.enviados[-1]["anexos"][0][0] == "notas_2026-09.zip" and len(pipeline.enviados) == 1  # um e-mail só
+    assert client.post("/api/pacote/email", json={"para": ["nada"], "competencia": "2026-09"}).status_code == 400
+
+
+def test_google_drive_conectar_e_subir_as_notas(client, db, prestador_teste, vinculo_teste, pipeline, monkeypatch):
+    import app.services.drive as drive
+    from app.config import get_settings
+
+    s = get_settings()
+    monkeypatch.setattr(s, "google_oauth_client_id", "id-teste")
+    monkeypatch.setattr(s, "google_oauth_client_secret", "segredo-teste")
+    assert client.get("/api/drive").json() == {"disponivel": True, "conectado": False, "email": None}
+    assert "drive.file" in drive.url_de_conexao("abc") and "access_type=offline" in drive.url_de_conexao("abc")
+
+    pedidos = []
+
+    class R:
+        def __init__(self, status, dados):
+            self.status_code, self._d = status, dados
+
+        def json(self):
+            return self._d
+
+    def post(url, **kw):
+        pedidos.append(("POST", url))
+        return R(200, {"access_token": "at", "refresh_token": "rt-secreto"})
+
+    def request(metodo, url, **kw):
+        pedidos.append((metodo, url, (kw.get("json") or {}).get("name")))
+        if metodo == "GET":
+            return R(200, {"files": []})
+        return R(200, {"id": f"id{len(pedidos)}"})
+
+    monkeypatch.setattr(drive.requests, "post", post)
+    monkeypatch.setattr(drive.requests, "request", request)
+    monkeypatch.setattr(drive.requests, "get", lambda url, **kw: R(200, {"email": "dono@gmail.com"}))
+    assert drive.concluir_conexao(db, prestador_teste.id, "code") == "dono@gmail.com"
+    assert prestador_teste.drive_token and b"rt-secreto" not in prestador_teste.drive_token  # cifrado
+    assert client.get("/api/drive").json() == {"disponivel": True, "conectado": True, "email": "dono@gmail.com"}
+
+    nota = _avulsa(db, vinculo_teste, "11222333000601", "g@x.com")
+    pendente = _avulsa(db, vinculo_teste, "11222333000602", "h@x.com")
+    nota.estado = "confirmado"
+    db.flush()
+    corpo = {"acao": "drive", "vinculo_id": str(vinculo_teste.id), "competencia": "2026-09", "conteudo": "xml"}
+    assert client.post("/api/lotes/previa", json=corpo).json()["quantidade"] == 1  # só nota autorizada
+    lote = db.get(LoteAcao, uuid.UUID(client.post("/api/lotes", json=corpo).json()["id"]))
+    lotes.processar(db, lote, prestador_teste.id, "https://x")
+    assert (lote.status, lote.feitos, lote.falhas) == ("concluido", 1, 0) and lote.relatorio == {"no_drive": 1}
+    resumo = client.get(f"/api/lotes/{lote.id}").json()
+    assert resumo["link"].startswith("https://drive.google.com/drive/folders/")
+    criadas = [p[2] for p in pedidos if p[0] == "POST" and len(p) == 3 and "upload" not in p[1]]
+    assert criadas == ["Agente Ana", "Fornecedor Teste", "2026-09"]  # pasta raiz / tomador / mês
+    assert sum(1 for p in pedidos if "upload/drive" in p[1]) == 1 and pendente.estado != "confirmado"
+    assert client.delete("/api/drive").json() == {"conectado": False} and prestador_teste.drive_token is None
+
+
+def test_cadastro_avisa_quando_o_email_de_confirmacao_nao_saiu(monkeypatch):
+    import app.services.cadastro as cadastro
+    from app.services.email import EmailCotaEsgotadaError
+
+    class SemCota:
+        def enviar(self, **kw):
+            raise EmailCotaEsgotadaError("limite de hoje")
+
+    monkeypatch.setattr(cadastro, "get_email_sender", lambda: SemCota())
+    assert cadastro._enviar_email_confirmacao("x@y.com", "tok") is False

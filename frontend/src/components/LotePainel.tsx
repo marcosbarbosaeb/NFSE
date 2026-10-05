@@ -1,8 +1,8 @@
-import { AlertTriangle, CheckCircle2, ChevronDown, Loader2, PauseCircle, X, XCircle } from "lucide-react"
+import { AlertTriangle, CheckCircle2, ChevronDown, Clock, ExternalLink, Loader2, PauseCircle, X, XCircle } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { ApiError, api, formatarErro } from "../lib/api"
-import { LOTE_RODANDO, NOME_ACAO, POR_QUE_NENHUMA, VERBO_ACAO } from "../lib/lotes"
+import { LOTE_ESPERANDO, LOTE_RODANDO, NOME_ACAO, PENDENTES, POR_QUE_NENHUMA, VERBO_ACAO } from "../lib/lotes"
 import type { CriarLoteBody, Lote, PreviaLote } from "../lib/types"
 import { Badge } from "./ui/Badge"
 import { Button } from "./ui/Button"
@@ -185,6 +185,8 @@ export function LotePainel({
   const [erro, setErro] = useState<string | null>(null)
   const [verErros, setVerErros] = useState(false)
   const rodando = LOTE_RODANDO(lote)
+  const esperando = LOTE_ESPERANDO(lote)
+  const pendentes = PENDENTES(lote)
 
   // Callbacks mais recentes sem reiniciar o polling a cada render do pai.
   const cb = useRef({ onMudou, onTerminou })
@@ -195,7 +197,7 @@ export function LotePainel({
   // Polling a cada 2s enquanto roda (setTimeout encadeado: nunca sobrepõe
   // duas requisições). Um erro de rede isolado não para o acompanhamento.
   useEffect(() => {
-    if (!rodando) return
+    if (!rodando && !esperando) return
     let vivo = true
     let timer: ReturnType<typeof setTimeout>
     const passo = () => {
@@ -204,18 +206,18 @@ export function LotePainel({
           const atual = await api.get<Lote>(`/lotes/${lote.id}`)
           if (!vivo) return
           cb.current.onMudou(atual)
-          if (LOTE_RODANDO(atual)) passo()
+          if (LOTE_RODANDO(atual) || LOTE_ESPERANDO(atual)) passo()
         } catch {
           if (vivo) passo()
         }
-      }, 2000)
+      }, esperando ? 60000 : 2000)
     }
     passo()
     return () => {
       vivo = false
       clearTimeout(timer)
     }
-  }, [lote.id, rodando])
+  }, [lote.id, rodando, esperando])
 
   // Terminou (concluído/cancelado/interrompido) depois de estar rodando.
   const anterior = useRef<{ id: string; rodando: boolean }>({ id: lote.id, rodando })
@@ -247,8 +249,9 @@ export function LotePainel({
   const status = {
     fila: { label: "Na fila", variant: "info" as const, icone: <Loader2 size={16} className="animate-spin text-primary-600" /> },
     executando: { label: "Em andamento", variant: "info" as const, icone: <Loader2 size={16} className="animate-spin text-primary-600" /> },
+    aguardando: { label: "Esperando o limite de e-mails", variant: "info" as const, icone: <Clock size={16} className="text-primary-600" /> },
     concluido:
-      lote.falhas > 0
+      pendentes > 0
         ? { label: "Concluído com falhas", variant: "warning" as const, icone: <AlertTriangle size={16} className="text-warning-600" /> }
         : { label: "Concluído", variant: "success" as const, icone: <CheckCircle2 size={16} className="text-success-600" /> },
     cancelado: { label: "Cancelado", variant: "neutral" as const, icone: <XCircle size={16} className="text-slate-500" /> },
@@ -318,6 +321,22 @@ export function LotePainel({
           ))}
         </ul>
       )}
+      {esperando && (
+        <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+          O serviço de e-mail atingiu o limite de envios {lote.cota_mensal ? "do mês" : "de hoje"}. Não é falha: eu continuo sozinha assim que o limite
+          voltar. Pode fechar a página.
+        </p>
+      )}
+      {!rodando && (lote.avisos ?? []).length > 0 && (
+        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          {(lote.avisos ?? []).length} nota{(lote.avisos ?? []).length === 1 ? "" : "s"} sem e-mail do vendedor — não é falha. Veja no relatório.
+        </p>
+      )}
+      {lote.link && (
+        <a href={lote.link} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary-700 hover:underline dark:text-primary-300">
+          <ExternalLink size={13} /> Abrir a pasta no Google Drive
+        </a>
+      )}
       {lote.status === "interrompido" && (
         <p className="mt-2 text-xs text-warning-700 dark:text-warning-300">
           O servidor reiniciou no meio. Retome pra continuar de onde parou.
@@ -356,9 +375,9 @@ export function LotePainel({
         </div>
       )}
 
-      {(rodando || lote.status === "interrompido" || (lote.status === "concluido" && lote.falhas > 0)) && (
+      {(rodando || esperando || lote.status === "interrompido" || (lote.status === "concluido" && pendentes > 0)) && (
         <div className="mt-3 flex flex-wrap justify-end gap-2">
-          {(rodando || lote.status === "interrompido") && (
+          {(rodando || esperando || lote.status === "interrompido") && (
             <Button type="button" variant="outline" className="px-3 py-1.5" disabled={agindo} onClick={() => acao("cancelar")}>
               Cancelar
             </Button>
@@ -368,9 +387,9 @@ export function LotePainel({
               Retomar
             </Button>
           )}
-          {lote.status === "concluido" && lote.falhas > 0 && (
+          {lote.status === "concluido" && pendentes > 0 && (
             <Button type="button" variant="accent" className="px-3 py-1.5" disabled={agindo} onClick={() => acao("refazer-falhas")}>
-              {agindo ? "Iniciando..." : `Refazer falhas (${lote.falhas})`}
+              {agindo ? "Iniciando..." : `Refazer falhas (${pendentes})`}
             </Button>
           )}
         </div>
@@ -390,6 +409,7 @@ function quando(iso: string | null): string {
 const STATUS_LOTE: Record<Lote["status"], string> = {
   fila: "Na fila",
   executando: "Em andamento",
+  aguardando: "Esperando o limite de e-mails voltar (continua sozinho)",
   concluido: "Concluído",
   cancelado: "Cancelado",
   interrompido: "Interrompido",
@@ -402,6 +422,9 @@ export function RelatorioLoteModal({ lote, onClose, onRefazer }: { lote: Lote; o
   const [agindo, setAgindo] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const rodando = LOTE_RODANDO(lote)
+  const pendentes = PENDENTES(lote)
+  const avisos = lote.avisos ?? []
+  const resolvidas = lote.resolvidas ?? 0
 
   async function refazer() {
     setAgindo(true)
@@ -447,11 +470,22 @@ export function RelatorioLoteModal({ lote, onClose, onRefazer }: { lote: Lote; o
             <p className="text-2xl font-semibold text-success-700 dark:text-success-300">{lote.feitos}</p>
             <p className="text-xs text-success-700 dark:text-success-300">deram certo</p>
           </div>
-          <div className={`rounded-xl px-3 py-3 ${lote.falhas > 0 ? "bg-danger-50 dark:bg-danger-900/30" : "bg-slate-50 dark:bg-slate-900/40"}`}>
-            <p className={`text-2xl font-semibold ${lote.falhas > 0 ? "text-danger-700 dark:text-danger-300" : "text-slate-900 dark:text-slate-100"}`}>{lote.falhas}</p>
+          <div className={`rounded-xl px-3 py-3 ${pendentes > 0 ? "bg-danger-50 dark:bg-danger-900/30" : "bg-slate-50 dark:bg-slate-900/40"}`}>
+            <p className={`text-2xl font-semibold ${pendentes > 0 ? "text-danger-700 dark:text-danger-300" : "text-slate-900 dark:text-slate-100"}`}>{pendentes}</p>
             <p className="text-xs text-slate-500 dark:text-slate-400">precisam de atenção</p>
           </div>
         </div>
+        {LOTE_ESPERANDO(lote) && (
+          <p className="rounded-lg bg-primary-50 px-3 py-2 text-sm text-primary-800 dark:bg-primary-900/30 dark:text-primary-200">
+            O serviço de e-mail atingiu o limite de envios {lote.cota_mensal ? "do mês" : "de hoje"} ({lote.feitos} de {lote.total} já foram). Não é falha: eu
+            continuo sozinha assim que o limite voltar.
+          </p>
+        )}
+        {lote.link && (
+          <a href={lote.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-700 hover:underline dark:text-primary-300">
+            <ExternalLink size={15} /> Abrir a pasta no Google Drive
+          </a>
+        )}
         {rodando && (
           <p className="rounded-lg bg-primary-50 px-3 py-2 text-sm text-primary-800 dark:bg-primary-900/30 dark:text-primary-200">
             Ainda está rodando ({lote.feitos + lote.falhas} de {lote.total}). Pode fechar a página — o relatório completo fica aqui.
@@ -482,7 +516,31 @@ export function RelatorioLoteModal({ lote, onClose, onRefazer }: { lote: Lote; o
             </ul>
           </div>
         ) : (
-          !rodando && <p className="rounded-lg bg-success-50 px-3 py-2 text-sm text-success-700 dark:bg-success-900/30 dark:text-success-300">Nenhuma nota ficou pra trás.</p>
+          !rodando &&
+          !LOTE_ESPERANDO(lote) && (
+            <p className="rounded-lg bg-success-50 px-3 py-2 text-sm text-success-700 dark:bg-success-900/30 dark:text-success-300">
+              {resolvidas > 0
+                ? `Nenhuma pendência: ${resolvidas === 1 ? "a nota que tinha falhado já foi corrigida" : `as ${resolvidas} notas que tinham falhado já foram corrigidas`}. Sua situação está regular.`
+                : "Nenhuma nota ficou pra trás. Sua situação está regular."}
+            </p>
+          )
+        )}
+        {avisos.length > 0 && (
+          <details className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
+            <summary className="cursor-pointer select-none text-slate-700 dark:text-slate-200">
+              {avisos.length} nota{avisos.length === 1 ? "" : "s"} não {avisos.length === 1 ? "foi enviada" : "foram enviadas"} porque o vendedor não informou e-mail{" "}
+              <span className="text-slate-400">— não é pendência sua</span>
+            </summary>
+            <ul className="mt-2 max-h-40 overflow-y-auto">
+              {avisos.map((a, i) => (
+                <li key={`${a.emissao_id}-${i}`} className="py-0.5">
+                  <Link to={`/app/nfse/${a.emissao_id}`} className="text-primary-700 hover:underline dark:text-primary-300">
+                    {a.nome || "Nota"}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
         {erro && (
           <p role="alert" className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">
@@ -495,9 +553,9 @@ export function RelatorioLoteModal({ lote, onClose, onRefazer }: { lote: Lote; o
               Baixar a lista (.csv)
             </Button>
           )}
-          {onRefazer && lote.status === "concluido" && lote.falhas > 0 && (
+          {onRefazer && lote.status === "concluido" && pendentes > 0 && (
             <Button type="button" variant="outline" disabled={agindo} onClick={refazer}>
-              {agindo ? "Iniciando..." : `Tentar de novo as ${lote.falhas} que falharam`}
+              {agindo ? "Iniciando..." : `Tentar de novo as ${pendentes} que falharam`}
             </Button>
           )}
           <Button type="button" variant="accent" onClick={onClose}>

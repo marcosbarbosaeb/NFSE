@@ -7,10 +7,14 @@ import { CampoMoeda, formatarMoedaCampo } from "../ui/CampoMoeda"
 import { Card } from "../ui/Card"
 import { Modal } from "../ui/Modal"
 
-/** Anotações (05/10/2026): abas/notas que a pessoa cria no Financeiro pra
- * deixar registrado o que quiser — "controle de recarga de telefone", um
- * lembrete, uma lista. Cada uma vira um card (dá pra recolher e reordenar
- * em "Editar disposição", como os outros). Tudo salva sozinho.
+/** Anotações (05/10/2026): abas/notas que a pessoa cria pra deixar
+ * registrado o que quiser — "controle de recarga de telefone", um lembrete,
+ * uma lista. Cada uma vira um card (dá pra recolher e reordenar em "Editar
+ * disposição", como os outros). Tudo salva sozinho.
+ *
+ * São da empresa, não de um módulo: aparecem no Financeiro e/ou na Visão
+ * geral (`telas`). A nota nasce na tela em que foi criada e a pessoa troca
+ * no próprio card ("Aparece em").
  *
  * Cada anotação tem um formato:
  * - "texto": bloco de notas livre (coluna `texto`);
@@ -43,13 +47,26 @@ export interface DadosTabela {
   linhas: CelulaAnotacao[][]
 }
 
+export type TelaAnotacao = "financeiro" | "visao_geral"
+
 export interface Anotacao {
   id: string
   titulo: string
   texto: string
   formato?: FormatoAnotacao
   dados?: DadosLista | DadosTabela | null
+  /** Em que telas a nota aparece (nota antiga: só no Financeiro). */
+  telas?: TelaAnotacao[]
   atualizado_em?: string
+}
+
+const NOME_TELA: Record<TelaAnotacao, string> = { financeiro: "Financeiro", visao_geral: "Visão geral" }
+
+/** A nota aparece nesta tela? Empresa sem o Financeiro só tem a Visão
+ * geral: lá aparecem todas (senão uma nota "do Financeiro" ficaria perdida). */
+export function anotacaoApareceEm(nota: Anotacao, tela: TelaAnotacao, temFinanceiro: boolean): boolean {
+  if (tela === "visao_geral" && !temFinanceiro) return true
+  return (nota.telas?.length ? nota.telas : ["financeiro"]).includes(tela)
 }
 
 // Os mesmos limites que o servidor confere.
@@ -212,7 +229,8 @@ function converterCelula(de: TipoColunaAnotacao, para: TipoColunaAnotacao, celul
   return isoDeDigitos(completarData(digitos)) ?? ""
 }
 
-export function useAnotacoes(ligado: boolean) {
+/** `tela`: onde a pessoa está — a nota criada aqui nasce aparecendo aqui. */
+export function useAnotacoes(ligado: boolean, tela: TelaAnotacao = "financeiro") {
   const [anotacoes, setAnotacoes] = useState<Anotacao[]>([])
   const [erro, setErro] = useState<string | null>(null)
 
@@ -227,6 +245,7 @@ export function useAnotacoes(ligado: boolean) {
       const nova = await api.post<Anotacao>("/financeiro/anotacoes", {
         titulo,
         formato,
+        telas: [tela],
         ...(formato === "tabela" ? { dados: tabelaPadrao() } : {}),
       })
       setAnotacoes((a) => [...a, nova])
@@ -235,7 +254,7 @@ export function useAnotacoes(ligado: boolean) {
       setErro(mensagemErro(err))
       return null
     }
-  }, [])
+  }, [tela])
 
   const atualizar = useCallback((id: string, mudanca: Partial<Anotacao>) => {
     setAnotacoes((a) => a.map((n) => (n.id === id ? { ...n, ...mudanca } : n)))
@@ -289,16 +308,22 @@ const BOTAO_APAGAR =
 const CAMPO_CELULA =
   "block w-full bg-transparent px-2.5 py-2 text-sm text-slate-800 placeholder:text-slate-300 focus:bg-primary-50/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500 dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:bg-slate-900"
 
-type Carga = Partial<Pick<Anotacao, "texto" | "formato" | "dados">>
+type Carga = Partial<Pick<Anotacao, "texto" | "formato" | "dados" | "telas">>
 
 export function AnotacaoCard({
   nota,
   onMudou,
   onApagar,
   nova = false,
+  tela = "financeiro",
+  podeTrocarTela = false,
 }: {
   /** Acabou de ser criada: já abre pedindo o nome. */
   nova?: boolean
+  /** A tela em que este card está sendo mostrado. */
+  tela?: TelaAnotacao
+  /** A empresa tem as duas telas (Financeiro e Visão geral): mostra o "Aparece em". */
+  podeTrocarTela?: boolean
   nota: Anotacao
   onMudou: (mudanca: Partial<Anotacao>) => void
   onApagar: () => void
@@ -383,6 +408,18 @@ export function AnotacaoCard({
     salvar({ formato: para, ...convertido }, true)
   }
 
+  const telas: TelaAnotacao[] = nota.telas?.length ? nota.telas : ["financeiro"]
+  const ondeAparece = telas.length > 1 ? "duas" : telas[0]
+
+  function mudarTelas(para: string) {
+    const novas: TelaAnotacao[] = para === "duas" ? ["financeiro", "visao_geral"] : [para as TelaAnotacao]
+    const outra = novas[0]
+    // Sai desta tela: avisa antes, pra pessoa não achar que a nota sumiu.
+    if (!novas.includes(tela) && !window.confirm(`A anotação "${nota.titulo}" sai desta tela e passa a aparecer só em ${NOME_TELA[outra]}. Continuar?`)) return
+    onMudou({ telas: novas })
+    salvar({ telas: novas }, true)
+  }
+
   async function salvarTitulo() {
     const novo = titulo.trim()
     setRenomeando(false)
@@ -403,7 +440,7 @@ export function AnotacaoCard({
       <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
         {renomeando ? (
           <form
-            className="flex min-w-0 flex-1 items-center gap-1.5"
+            className="flex min-w-[10rem] flex-1 items-center gap-1.5"
             onSubmit={(e) => {
               e.preventDefault()
               void salvarTitulo()
@@ -414,6 +451,8 @@ export function AnotacaoCard({
               value={titulo}
               maxLength={80}
               onChange={(e) => setTitulo(e.target.value)}
+              // Já vem selecionado: é só digitar o nome por cima.
+              onFocus={(e) => e.currentTarget.select()}
               onBlur={() => void salvarTitulo()}
               aria-label="Nome da anotação"
               className="w-full max-w-sm rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 focus:border-primary-500 focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
@@ -427,7 +466,7 @@ export function AnotacaoCard({
             type="button"
             onClick={() => setRenomeando(true)}
             title="Mudar o nome"
-            className="flex min-w-0 flex-1 items-center gap-1.5 whitespace-nowrap text-left text-xs font-medium text-slate-400 hover:text-primary-600 dark:text-slate-500"
+            className="flex min-w-[7.5rem] flex-1 items-center gap-1.5 whitespace-nowrap text-left text-xs font-medium text-slate-400 hover:text-primary-600 dark:text-slate-500"
           >
             <Pencil size={13} /> mudar o nome
           </button>
@@ -445,7 +484,23 @@ export function AnotacaoCard({
             </option>
           ))}
         </select>
-        <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500" aria-live="polite">
+        {podeTrocarTela && (
+          <label className="flex shrink-0 items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+            <span>Aparece em</span>
+            <select
+              value={ondeAparece}
+              onChange={(e) => mudarTelas(e.target.value)}
+              aria-label={`Em que tela a anotação ${nota.titulo} aparece`}
+              title="Escolha em que tela esta anotação aparece"
+              className="rounded-lg border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-600 focus:border-primary-500 focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300"
+            >
+              <option value="financeiro">{tela === "financeiro" ? "só aqui (Financeiro)" : "só no Financeiro"}</option>
+              <option value="visao_geral">{tela === "visao_geral" ? "só aqui (Visão geral)" : "só na Visão geral"}</option>
+              <option value="duas">{tela === "financeiro" ? "aqui e na Visão geral" : "aqui e no Financeiro"}</option>
+            </select>
+          </label>
+        )}
+        <span className="ml-auto shrink-0 text-xs text-slate-400 dark:text-slate-500" aria-live="polite">
           {estado === "salvando" ? (
             "salvando..."
           ) : estado === "erro" ? (

@@ -233,6 +233,16 @@ def test_conta_recorrente_agendada_ja_nasce_ticada(client, db, prestador_teste, 
     assert client.get("/api/financeiro/mes?competencia=2027-02").json()["contas"][0]["pago"] is False
 
 
+def test_anotacoes_nao_moram_no_modulo_financeiro():
+    """As anotações são da empresa (valem só com o emissor também): as
+    rotas ficam em app/anotacoes.py, fora de app/financeiro e sem depender
+    dele nem do emissor — só do cadastro geral."""
+    fonte = (RAIZ / "anotacoes.py").read_text()
+    assert "exige_modulo" not in re.sub(r'""".*?"""', "", fonte, count=1, flags=re.S)
+    assert set(re.findall(r"^from (app\.[\w.]+) import", fonte, re.M)) == {"app.deps", "app.models"}
+    assert "anotacoes" not in (RAIZ / "financeiro" / "rotas.py").read_text().split('"""', 2)[2].replace("app/anotacoes.py", "")
+
+
 def test_anotacoes_livres_do_financeiro(client, db, prestador_teste):
     nota = client.post("/api/financeiro/anotacoes", json={"titulo": "Recarga de telefone"}).json()
     assert nota["titulo"] == "Recarga de telefone" and nota["texto"] == ""

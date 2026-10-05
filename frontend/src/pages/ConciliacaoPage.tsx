@@ -1,515 +1,251 @@
-import { ArrowLeft, ArrowLeftRight, CheckCircle2, EyeOff, FileUp, Sparkles, Undo2 } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
-import { Link } from "react-router-dom"
+import { AlertTriangle, ArrowLeft, CheckCircle2, Clock, FileCheck2, FileUp, Landmark, Minus } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Link, useSearchParams } from "react-router-dom"
+import { ConciliacaoExtrato } from "../components/financeiro/ConciliacaoExtrato"
+import { ConciliacaoNotas, type FiltroNotas, ehFiltroNotas } from "../components/financeiro/ConciliacaoNotas"
 import { ImportarExtratoModal } from "../components/financeiro/ImportarExtratoModal"
-import { linkGerarNota } from "../components/financeiro/RecebimentosSemNota"
-import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
-import { CaixaBusca, type OpcaoBusca } from "../components/ui/CaixaBusca"
 import { Card } from "../components/ui/Card"
-import { ApiError, api, formatarErro } from "../lib/api"
-import { competenciaAtual, formatBRL, formatCompetenciaAbrev, formatCompetenciaLonga } from "../lib/format"
-import { useModulos } from "../lib/modulos"
-import type { ContaAPagar, LancamentoPendente, PainelConciliacao, VinculoResumo } from "../lib/types"
+import { api } from "../lib/api"
+import { NOMES_MESES } from "../lib/financeiro"
+import type { FechamentoDoMes, ResumoConciliacao, VinculoResumo } from "../lib/types"
 
-/** Conciliação do extrato (05/10/2026): o que veio do banco e ainda não foi
- * classificado de um lado; o que está em aberto no sistema (notas a receber,
- * contas a pagar) do outro. A pessoa escolhe um de cada lado e concilia — ou
- * classifica na hora quando não há par. */
+/** Conciliação (05/10/2026) — pedido do Marcos: "existem duas conciliações
+ * que devem ser feitas. Uma é na importação do extrato. E a segunda, mais
+ * importante, é se as notas geradas foram pagas. Isso é importante de
+ * aparecer de forma bem clara nesse ambiente de conciliação."
+ *
+ * A tela tem as duas partes, com nome e estado próprios, a das notas
+ * primeiro:
+ *   1. "As notas foram pagas?"            (?parte=notas)   components/financeiro/ConciliacaoNotas
+ *   2. "O extrato está todo classificado?" (?parte=extrato) components/financeiro/ConciliacaoExtrato
+ * e, juntando as duas, o "Fechamento do mês". Outras telas ligam direto na
+ * parte certa pelo endereço (?parte=..., e ?filtro=atrasadas etc. na 1). */
 
-type Aba = "receitas" | "despesas"
+type Parte = "notas" | "extrato"
 
-function dataBR(iso: string | null): string {
-  return iso ? iso.split("-").reverse().join("/") : "sem data"
+const nomeDoMes = (competencia: string) => NOMES_MESES[Number(competencia.slice(5)) - 1]
+const plural = (n: number, um: string, varios: string) => `${n.toLocaleString("pt-BR")} ${n === 1 ? um : varios}`
+
+function Fechamento({ mes, comNotas, onIr }: { mes: FechamentoDoMes; comNotas: boolean; onIr: (parte: Parte) => void }) {
+  const ESTADOS = {
+    fechado: { rotulo: "Fechado", cor: "text-success-700 dark:text-success-300", fundo: "border-success-100 bg-success-50/60 dark:border-success-900/40 dark:bg-success-900/20", Icone: CheckCircle2 },
+    aguardando: { rotulo: "Aguardando pagamento", cor: "text-primary-700 dark:text-primary-300", fundo: "border-primary-100 bg-primary-50/60 dark:border-primary-900/40 dark:bg-primary-900/20", Icone: Clock },
+    pendente: { rotulo: "Falta conferir", cor: "text-warning-700 dark:text-warning-300", fundo: "border-warning-100 bg-warning-50/70 dark:border-warning-900/40 dark:bg-warning-900/20", Icone: AlertTriangle },
+    vazio: { rotulo: "Nada lançado", cor: "text-slate-500 dark:text-slate-400", fundo: "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/60", Icone: Minus },
+  } as const
+  const e = ESTADOS[mes.estado]
+  const notas =
+    mes.notas === 0
+      ? "nenhuma nota"
+      : mes.notas_pagas === mes.notas
+        ? `${plural(mes.notas, "nota paga", "notas pagas")}${mes.diferencas > 0 ? ` · ${mes.diferencas} com diferença` : ""}`
+        : `${mes.notas_pagas} de ${plural(mes.notas, "nota paga", "notas pagas")}${mes.notas_atrasadas > 0 ? ` · ${plural(mes.notas_atrasadas, "atrasada", "atrasadas")}` : ""}`
+  const extrato =
+    mes.extrato_linhas === 0
+      ? "nenhum extrato importado"
+      : mes.extrato_pendentes === 0
+        ? `${plural(mes.extrato_linhas, "linha classificada", "linhas classificadas")}`
+        : `${plural(mes.extrato_pendentes, "linha", "linhas")} sem classificar`
+  const linha = (rotulo: string, texto: string, ok: boolean, parte: Parte) => (
+    <button type="button" onClick={() => onIr(parte)} className="flex w-full items-baseline gap-1.5 text-left text-xs hover:underline">
+      <span className={`h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full ${ok ? "bg-success-600" : "bg-warning-600"}`} aria-hidden />
+      <span className="text-slate-500 dark:text-slate-400">{rotulo}:</span>
+      <span className="text-slate-700 dark:text-slate-200">{texto}</span>
+    </button>
+  )
+  return (
+    <div className={`min-w-[15.5rem] shrink-0 rounded-xl border px-3.5 py-3 sm:min-w-0 sm:flex-1 sm:shrink sm:basis-56 ${e.fundo}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+          {nomeDoMes(mes.competencia)}
+          {mes.em_andamento && <span className="block text-[11px] font-normal leading-tight text-slate-500 dark:text-slate-400">mês em andamento</span>}
+        </p>
+        <span className={`inline-flex items-center gap-1 text-xs font-semibold ${e.cor}`}>
+          <e.Icone size={14} aria-hidden /> {e.rotulo}
+        </span>
+      </div>
+      <div className="mt-1.5 flex flex-col gap-0.5">
+        {comNotas && linha("Notas", notas, mes.notas_atrasadas === 0 && mes.diferencas === 0, "notas")}
+        {linha("Extrato", extrato, mes.extrato_pendentes === 0, "extrato")}
+      </div>
+    </div>
+  )
 }
 
-const igual = (a: number, b: number) => Math.abs(a - b) < 0.005
-
 export function ConciliacaoPage() {
-  // Notas a receber (e "gerar nota") só existem com o módulo de notas —
-  // é o ponto de integração. Sem ele, a entrada só é classificada por cliente.
-  const { emissor } = useModulos()
-  const [dados, setDados] = useState<PainelConciliacao | null>(null)
+  const [params, setParams] = useSearchParams()
+  const [resumo, setResumo] = useState<ResumoConciliacao | null>(null)
   const [vinculos, setVinculos] = useState<VinculoResumo[]>([])
-  const [erro, setErro] = useState<string | null>(null)
-  const [aba, setAba] = useState<Aba>("receitas")
-  const [selecionado, setSelecionado] = useState<string | null>(null)
-  const [par, setPar] = useState("")
-  const [tomador, setTomador] = useState("")
-  const [categoria, setCategoria] = useState("")
-  const [mes, setMes] = useState(competenciaAtual())
-  const [busca, setBusca] = useState("")
-  const [ocupado, setOcupado] = useState(false)
-  const [feito, setFeito] = useState<{ texto: string; link?: string; rotuloLink?: string } | null>(null)
   const [importando, setImportando] = useState(false)
-  const [verIgnorados, setVerIgnorados] = useState(false)
-  const [ignorados, setIgnorados] = useState<LancamentoPendente[]>([])
-  const [categoriasNovas, setCategoriasNovas] = useState<string[]>([])
+  const [recarga, setRecarga] = useState(0)
 
-  function carregar() {
-    return api
-      .get<PainelConciliacao>("/conciliacao")
-      .then((d) => {
-        setDados(d)
-        setErro(null)
-        return d
+  const carregarResumo = () =>
+    api
+      .get<ResumoConciliacao>("/conciliacao/resumo")
+      .then((r) => {
+        setResumo(r)
+        // o selo do menu acompanha (components/layout/Sidebar.tsx)
+        window.dispatchEvent(new CustomEvent("agenteana:conciliacao", { detail: { notas: r.notas.aplica ? r.notas.pendencias : 0, extrato: r.extrato.pendentes } }))
       })
-      .catch((err) => {
-        setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão.")
-        return null
-      })
-  }
+      .catch(() => undefined)
   const carregarVinculos = () => api.get<VinculoResumo[]>("/vinculos").then(setVinculos).catch(() => undefined)
 
   useEffect(() => {
-    void carregar().then((d) => {
-      // Abre na aba que tem o que fazer.
-      if (d && !d.lancamentos.some((l) => l.credito) && d.lancamentos.some((l) => !l.credito)) setAba("despesas")
-    })
+    void carregarResumo()
     void carregarVinculos()
   }, [])
 
-  const lancamentos = dados?.lancamentos ?? []
-  const receitas = lancamentos.filter((l) => l.credito)
-  const despesas = lancamentos.filter((l) => !l.credito)
-  const daAba = aba === "receitas" ? receitas : despesas
-  const atual = daAba.find((l) => l.id === selecionado) ?? null
-  const automaticos = receitas.filter((l) => l.nota_exata && l.emissao_id).length
+  // A parte aberta mora no endereço (?parte=notas | extrato), pra outras telas
+  // ligarem direto. Sem nada no endereço: as notas — a mais importante — ou o
+  // extrato quando a empresa não tem nota nenhuma pra conferir.
+  const pedida = params.get("parte")
+  const semNotas = resumo !== null && !resumo.notas.aplica
+  const parte: Parte = pedida === "extrato" || pedida === "notas" ? pedida : semNotas ? "extrato" : "notas"
+  const filtroInicial = ehFiltroNotas(params.get("filtro")) ? (params.get("filtro") as FiltroNotas) : undefined
 
-  // Sem nada selecionado (ou o selecionado saiu da lista): pega o primeiro.
-  useEffect(() => {
-    if (!atual && daAba.length > 0) setSelecionado(daAba[0].id)
-  }, [atual, daAba])
-
-  // Trocou de lançamento: o lado direito começa na sugestão.
-  useEffect(() => {
-    if (!atual) return
-    setPar(atual.credito ? (atual.emissao_id ?? "") : (atual.despesa_id ?? ""))
-    setTomador(atual.vinculo_id ?? "")
-    setCategoria(`${atual.tipo_despesa}|${atual.categoria}`)
-    setMes(atual.data ? atual.data.slice(0, 7) : competenciaAtual())
-    setBusca("")
-  }, [atual?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const opcoesTomador: OpcaoBusca[] = useMemo(
-    () => [
-      ...vinculos.filter((v) => !v.sem_nota).map((v) => ({ id: v.id, rotulo: v.apelido })),
-      ...vinculos.filter((v) => v.sem_nota).map((v) => ({ id: v.id, rotulo: v.apelido, grupo: "Só controle (sem nota)" })),
-    ],
-    [vinculos],
-  )
-  const opcoesCategoria: OpcaoBusca[] = useMemo(() => {
-    const base = [
-      ...[...(dados?.categorias ?? []), ...categoriasNovas].map((c) => ({ id: `despesa|${c}`, rotulo: c })),
-      ...(dados?.categorias_retirada ?? []).map((c) => ({ id: `retirada|${c}`, rotulo: c, grupo: "Retiradas (não entram como despesa)" })),
-    ]
-    if (categoria && !base.some((o) => o.id === categoria)) base.unshift({ id: categoria, rotulo: categoria.split("|").slice(1).join("|") })
-    return base
-  }, [dados, categoria, categoriasNovas])
-
-  // Lado direito, ordenado pelo que mais parece com o lançamento escolhido.
-  const filtro = busca.trim().toLowerCase()
-  const notas = useMemo(() => {
-    const lista = (dados?.notas_abertas ?? []).filter((n) => !filtro || n.apelido.toLowerCase().includes(filtro))
-    if (!atual) return lista
-    const peso = (n: (typeof lista)[number]) =>
-      (n.emissao_id === atual.emissao_id ? -4 : 0) + (igual(n.valor, atual.valor) ? -2 : 0) + (n.vinculo_id === atual.vinculo_id ? -1 : 0)
-    return [...lista].sort((a, b) => peso(a) - peso(b) || Math.abs(a.valor - atual.valor) - Math.abs(b.valor - atual.valor))
-  }, [dados, atual, filtro])
-  const contas = useMemo(() => {
-    const lista = (dados?.contas_a_pagar ?? []).filter(
-      (c) => !filtro || c.nome.toLowerCase().includes(filtro) || c.categoria.toLowerCase().includes(filtro),
-    )
-    if (!atual) return lista
-    const peso = (c: ContaAPagar) => (c.id === atual.despesa_id ? -4 : 0) + (igual(c.valor, atual.valor) ? -2 : 0)
-    return [...lista].sort((a, b) => peso(a) - peso(b) || Math.abs(a.valor - atual.valor) - Math.abs(b.valor - atual.valor))
-  }, [dados, atual, filtro])
-
-  async function agir(acao: () => Promise<{ texto: string; link?: string; rotuloLink?: string }>) {
-    setOcupado(true)
-    setErro(null)
-    try {
-      const resultado = await acao()
-      setFeito(resultado)
-      setSelecionado(null)
-      await carregar()
-    } catch (err) {
-      setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
-    } finally {
-      setOcupado(false)
-    }
+  function irPara(nova: Parte) {
+    setParams(nova === "notas" ? { parte: "notas" } : { parte: "extrato" }, { replace: true })
   }
 
-  function conciliarReceita(comNota: boolean) {
-    if (!atual) return
-    const nota = comNota ? dados?.notas_abertas.find((n) => n.emissao_id === par) : undefined
-    const vinculoId = nota?.vinculo_id ?? tomador
-    if (!vinculoId) return
-    void agir(async () => {
-      const r = await api.post<{ pagamento_id: string; vinculo_id: string; apelido: string; pode_gerar_nota: boolean }>(
-        `/conciliacao/${atual.id}/receita`,
-        { vinculo_id: vinculoId, emissao_id: nota?.emissao_id ?? null, competencia: nota ? null : mes },
-      )
-      if (nota) return { texto: `Baixa dada na nota de ${formatCompetenciaLonga(nota.competencia).toLowerCase()} de ${r.apelido}.` }
-      return r.pode_gerar_nota && emissor
-        ? {
-            texto: `Recebimento de ${r.apelido} lançado, sem nota.`,
-            link: linkGerarNota({ vinculo_id: r.vinculo_id, pagamento_id: r.pagamento_id, valor: atual.valor }),
-            rotuloLink: "Gerar a nota dele",
-          }
-        : { texto: `Recebimento de ${r.apelido} lançado.` }
-    })
-  }
+  const estadoNotas = resumo?.notas
+  const estadoExtrato = resumo?.extrato
 
-  function conciliarDespesa(comConta: boolean) {
-    if (!atual) return
-    const conta = comConta ? dados?.contas_a_pagar.find((c) => c.id === par) : undefined
-    const [tipo, ...resto] = categoria.split("|")
-    const nomeCategoria = resto.join("|")
-    if (!conta && !nomeCategoria) return
-    void agir(async () => {
-      await api.post(`/conciliacao/${atual.id}/despesa`, conta ? { despesa_id: conta.id } : { categoria: nomeCategoria, tipo, competencia: mes })
-      return { texto: conta ? `${conta.nome} marcada como paga.` : `Despesa lançada em ${nomeCategoria}.` }
-    })
-  }
-
-  function ignorar() {
-    if (!atual) return
-    void agir(async () => {
-      await api.post(`/conciliacao/${atual.id}/ignorar?ignorar=true`, {})
-      return { texto: "Lançamento ignorado — não entra como receita nem despesa." }
-    })
-  }
-
-  function trocarTipo() {
-    if (!atual) return
-    const paraCredito = !atual.credito
-    void agir(async () => {
-      await api.post(`/conciliacao/${atual.id}/tipo?credito=${paraCredito}`, {})
-      setAba(paraCredito ? "receitas" : "despesas")
-      return { texto: paraCredito ? "Movido pra receitas." : "Movido pra despesas." }
-    })
-  }
-
-  function conciliarIguais() {
-    void agir(async () => {
-      const r = await api.post<{ conciliados: number }>("/conciliacao/automatico", {})
-      return { texto: `${r.conciliados} recebimento(s) conciliado(s) com a nota do mesmo valor.` }
-    })
-  }
-
-  async function criarTomador(nome: string) {
-    try {
-      const novo = await api.post<{ id: string }>("/vinculos/controle", { nome })
-      await carregarVinculos()
-      setTomador(novo.id)
-      setPar("")
-    } catch (err) {
-      setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão.")
-    }
-  }
-
-  async function abrirIgnorados() {
-    setVerIgnorados(true)
-    setIgnorados(await api.get<LancamentoPendente[]>("/conciliacao/ignorados").catch(() => []))
-  }
-
-  async function reabrir(id: string) {
-    await api.post(`/conciliacao/${id}/ignorar?ignorar=false`, {}).catch(() => undefined)
-    setIgnorados((atuais) => atuais.filter((l) => l.id !== id))
-    void carregar()
-  }
-
-  const abaBotao = (qual: Aba, rotulo: string, n: number) => (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={aba === qual}
-      onClick={() => {
-        setAba(qual)
-        setSelecionado(null)
-        setFeito(null)
-      }}
-      className={`rounded-lg px-3 py-1.5 text-sm font-medium ${aba === qual ? "bg-primary-600 text-white" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"}`}
-    >
-      {rotulo} <span className="tabular-nums opacity-80">({n})</span>
-    </button>
-  )
-
-  const itemDireita = (id: string, titulo: string, detalhe: string, valor: number) => {
-    const mesmoValor = !!atual && igual(valor, atual.valor)
+  const aba = (qual: Parte, numero: number, Icone: typeof FileCheck2, titulo: string, explicacao: string, estado: { ok: boolean; texto: string; neutro?: boolean } | null) => {
+    const ativa = parte === qual
     return (
-      <li key={id}>
-        <label
-          className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 ${par === id ? "border-primary-500 bg-primary-50 dark:bg-primary-900/30" : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-700/40"}`}
+      <button
+        type="button"
+        role="tab"
+        id={`aba-${qual}`}
+        aria-selected={ativa}
+        aria-controls={`parte-${qual}`}
+        onClick={() => irPara(qual)}
+        className={`flex flex-1 basis-72 items-start gap-3 rounded-2xl border-2 px-4 py-3.5 text-left transition-colors ${
+          ativa
+            ? "border-primary-600 bg-white shadow-sm dark:border-primary-400 dark:bg-slate-800"
+            : "border-slate-200 bg-white/60 hover:border-slate-300 hover:bg-white dark:border-slate-700 dark:bg-slate-800/50 dark:hover:border-slate-600"
+        }`}
+      >
+        <span
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${ativa ? "bg-primary-600 text-white" : "bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300"}`}
+          aria-hidden
         >
-          <input type="radio" name="par" checked={par === id} onChange={() => setPar(id)} disabled={!atual} />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium text-slate-800 dark:text-slate-200">{titulo}</span>
-            <span className="block text-xs text-slate-400 dark:text-slate-500">{detalhe}</span>
+          <Icone size={18} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            {numero}ª conciliação{numero === 1 ? " · a mais importante" : ""}
           </span>
-          {mesmoValor && <Badge variant="success">mesmo valor</Badge>}
-          <span className="shrink-0 text-sm tabular-nums text-slate-700 dark:text-slate-200">{formatBRL(valor)}</span>
-        </label>
-      </li>
+          <span className="block text-base font-semibold text-slate-900 dark:text-slate-100">{titulo}</span>
+          <span className="block text-xs text-slate-500 dark:text-slate-400">{explicacao}</span>
+          {estado && (
+            <span
+              className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                estado.neutro
+                  ? "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                  : estado.ok
+                    ? "bg-success-50 text-success-700 dark:bg-success-900/40 dark:text-success-300"
+                    : "bg-warning-50 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300"
+              }`}
+            >
+              {estado.neutro ? <Minus size={13} aria-hidden /> : estado.ok ? <CheckCircle2 size={13} aria-hidden /> : <AlertTriangle size={13} aria-hidden />}
+              {estado.texto}
+            </span>
+          )}
+        </span>
+      </button>
     )
   }
+
+  const textoNotas = !estadoNotas
+    ? null
+    : !estadoNotas.aplica
+      ? { ok: true, neutro: true, texto: "Sem notas pra conferir (só o Financeiro)" }
+      : estadoNotas.ok
+        ? { ok: true, texto: estadoNotas.no_prazo > 0 ? `Tudo conferido · ${plural(estadoNotas.no_prazo, "nota", "notas")} ainda no prazo` : "Tudo conferido" }
+        : { ok: false, texto: plural(estadoNotas.pendencias, "pendência", "pendências") }
+  const textoExtrato = !estadoExtrato
+    ? null
+    : estadoExtrato.linhas === 0
+      ? { ok: true, neutro: true, texto: "Nenhum extrato importado" }
+      : estadoExtrato.ok
+        ? { ok: true, texto: "Tudo conferido" }
+        : { ok: false, texto: plural(estadoExtrato.pendentes, "pendência", "pendências") }
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <Link to="/app/financeiro" className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-primary-600">
             <ArrowLeft size={14} /> Financeiro
           </Link>
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Conciliação</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            {emissor
-              ? "O que veio do extrato e ainda não foi classificado, lado a lado com o que está em aberto."
-              : "O que veio do extrato e ainda não foi classificado: escolha o cliente da entrada ou a conta/categoria da saída."}
+          <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+            <strong className="font-semibold text-slate-700 dark:text-slate-200">1. As notas foram pagas?</strong> Eu confiro cada nota que você
+            emitiu com o dinheiro que entrou.
+            <br />
+            <strong className="font-semibold text-slate-700 dark:text-slate-200">2. O extrato está todo classificado?</strong> Cada linha do
+            banco vira um recebimento ou uma despesa.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {automaticos > 0 && emissor && (
-            <Button variant="outline" disabled={ocupado} onClick={conciliarIguais}>
-              <Sparkles size={16} /> Conciliar {automaticos} de mesmo valor
-            </Button>
-          )}
-          <Button variant="accent" onClick={() => setImportando(true)}>
-            <FileUp size={16} /> Importar extrato
-          </Button>
-        </div>
+        <Button variant="accent" onClick={() => setImportando(true)}>
+          <FileUp size={16} /> Importar extrato
+        </Button>
       </div>
 
-      {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
-      {feito && (
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-success-50 px-4 py-3 text-sm text-success-700" role="status">
-          <CheckCircle2 size={16} className="shrink-0" /> {feito.texto}
-          {feito.link && (
-            <Link to={feito.link} className="font-semibold underline">
-              {feito.rotuloLink} →
-            </Link>
-          )}
-        </p>
+      {/* Fechamento do mês: as duas conciliações juntas */}
+      {resumo && (
+        <Card className="p-4">
+          <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-3">
+            <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Fechamento do mês</h2>
+            <p className="hidden text-xs text-slate-500 sm:block dark:text-slate-400">
+              O mês fecha quando {semNotas ? "todas as linhas do extrato dele estão classificadas" : "as notas dele estão pagas e o extrato dele está todo classificado"}.
+            </p>
+          </div>
+          {/* o mês atual primeiro; no celular rola pro lado */}
+          <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible">
+            {resumo.fechamentos.map((mes) => (
+              <Fechamento key={mes.competencia} mes={mes} comNotas={!semNotas} onIr={irPara} />
+            ))}
+          </div>
+        </Card>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div role="tablist" className="flex gap-1 rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-800">
-          {abaBotao("receitas", "Receitas", receitas.length)}
-          {abaBotao("despesas", "Despesas", despesas.length)}
-        </div>
-        {(dados?.ignorados ?? 0) > 0 && (
-          <button type="button" onClick={abrirIgnorados} className="text-xs font-medium text-slate-500 underline hover:text-slate-700">
-            {dados?.ignorados} ignorado(s)
-          </button>
+      <div role="tablist" aria-label="As duas conciliações" className="flex flex-wrap gap-3">
+        {aba("notas", 1, FileCheck2, "As notas foram pagas?", "Notas emitidas × dinheiro que entrou, por tomador.", textoNotas)}
+        {aba("extrato", 2, Landmark, "O extrato do banco está todo classificado?", "Linhas do extrato × recebimentos e despesas.", textoExtrato)}
+      </div>
+
+      <div role="tabpanel" id={`parte-${parte}`} aria-labelledby={`aba-${parte}`}>
+        {!pedida && resumo === null ? (
+          <p className="py-10 text-center text-sm text-slate-400">Carregando...</p>
+        ) : parte === "notas" ? (
+          <ConciliacaoNotas
+            recarga={recarga}
+            filtroInicial={filtroInicial}
+            onMudou={() => void carregarResumo()}
+            onImportar={() => setImportando(true)}
+          />
+        ) : (
+          <ConciliacaoExtrato
+            resumo={resumo?.extrato ?? null}
+            recarga={recarga}
+            vinculos={vinculos}
+            onVinculosMudaram={carregarVinculos}
+            onMudou={() => void carregarResumo()}
+            onImportar={() => setImportando(true)}
+          />
         )}
       </div>
-
-      {verIgnorados && (
-        <Card className="p-4">
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Ignorados</h2>
-            <button type="button" onClick={() => setVerIgnorados(false)} className="text-xs text-slate-500 underline">
-              fechar
-            </button>
-          </div>
-          {ignorados.length === 0 ? (
-            <p className="py-2 text-sm text-slate-400">Nenhum.</p>
-          ) : (
-            <ul className="divide-y divide-slate-100 dark:divide-slate-700/60">
-              {ignorados.map((l) => (
-                <li key={l.id} className="flex items-center gap-3 py-2 text-sm">
-                  <span className="w-20 shrink-0 text-xs text-slate-400">{dataBR(l.data)}</span>
-                  <span className="min-w-0 flex-1 break-words text-slate-700 dark:text-slate-300">{l.descricao}</span>
-                  <span className="shrink-0 tabular-nums text-slate-700 dark:text-slate-200">
-                    {l.credito ? "+" : "−"} {formatBRL(l.valor)}
-                  </span>
-                  <button type="button" onClick={() => reabrir(l.id)} className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary-600 hover:underline">
-                    <Undo2 size={13} /> voltar pra lista
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      )}
-
-      {dados === null ? (
-        <p className="py-10 text-center text-sm text-slate-400">Carregando...</p>
-      ) : lancamentos.length === 0 ? (
-        <Card className="p-8 text-center">
-          <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-success-600" aria-hidden />
-          <p className="font-medium text-slate-800 dark:text-slate-100">Tudo classificado.</p>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Quando você importar um extrato, o que não for classificado na hora aparece aqui.
-          </p>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
-          {/* Esquerda: o que veio do banco */}
-          <Card className="p-4">
-            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-              Do extrato · {aba === "receitas" ? "entradas" : "saídas"} sem classificar
-            </h2>
-            {daAba.length === 0 ? (
-              <p className="py-6 text-center text-sm text-slate-400">
-                Nenhuma {aba === "receitas" ? "entrada" : "saída"} pendente.
-              </p>
-            ) : (
-              <ul className="-mx-1 flex max-h-[68vh] flex-col gap-1 overflow-y-auto px-1 py-1">
-                {daAba.map((l) => (
-                  <li key={l.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelecionado(l.id)
-                        setFeito(null)
-                      }}
-                      aria-pressed={l.id === atual?.id}
-                      className={`w-full rounded-lg border px-3 py-2 text-left ${l.id === atual?.id ? "border-primary-500 bg-primary-50 dark:bg-primary-900/30" : "border-slate-100 hover:bg-slate-50 dark:border-slate-700/60 dark:hover:bg-slate-700/40"}`}
-                    >
-                      <span className="flex items-baseline justify-between gap-3">
-                        <span className="text-xs text-slate-400 dark:text-slate-500">{dataBR(l.data)}</span>
-                        <span className="text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatBRL(l.valor)}</span>
-                      </span>
-                      <span className="mt-0.5 block break-words text-sm text-slate-700 dark:text-slate-300">{l.descricao}</span>
-                      <span className="mt-1 flex flex-wrap gap-1">
-                        {l.credito && l.nota_exata && emissor && <Badge variant="success">tem nota do mesmo valor</Badge>}
-                        {!l.credito && l.despesa_id && <Badge variant="success">tem conta a pagar que bate</Badge>}
-                        {l.origem_sugestao === "lembrado" && <Badge variant="info">como da última vez</Badge>}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-
-          {/* Direita: o que está em aberto no sistema */}
-          <Card className="p-4 lg:sticky lg:top-20">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                {aba === "receitas" ? (emissor ? "Em aberto · notas a receber" : "Classificar a entrada") : "Em aberto · contas a pagar"}
-              </h2>
-              <input
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-                placeholder="Filtrar..."
-                aria-label="Filtrar a lista"
-                className="w-36 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-              />
-            </div>
-
-            {!atual ? (
-              <p className="py-6 text-center text-sm text-slate-400">Escolha um lançamento à esquerda.</p>
-            ) : (
-              <>
-                {(aba === "despesas" || emissor) && (<>
-                <ul className="-mx-1 flex max-h-[34vh] flex-col gap-0.5 overflow-y-auto px-1">
-                  {aba === "receitas"
-                    ? notas.map((n) =>
-                        itemDireita(n.emissao_id, n.apelido, `nota de ${formatCompetenciaAbrev(n.competencia)}${n.n_dps ? ` · nº ${n.n_dps}` : ""}`, n.valor),
-                      )
-                    : contas.map((c) =>
-                        itemDireita(
-                          c.id,
-                          c.nome,
-                          `${c.categoria !== c.nome ? `${c.categoria} · ` : ""}${formatCompetenciaAbrev(c.competencia)}${c.vencimento ? ` · vence ${dataBR(c.vencimento).slice(0, 5)}` : ""}`,
-                          c.valor,
-                        ),
-                      )}
-                  {(aba === "receitas" ? notas : contas).length === 0 && (
-                    <li className="py-4 text-center text-sm text-slate-400">
-                      {aba === "receitas" ? "Nenhuma nota em aberto." : "Nenhuma conta a pagar em aberto."}
-                    </li>
-                  )}
-                </ul>
-                <Button
-                  className="mt-3 w-full"
-                  disabled={ocupado || !par}
-                  onClick={() => (aba === "receitas" ? conciliarReceita(true) : conciliarDespesa(true))}
-                >
-                  {aba === "receitas" ? "Dar baixa na nota escolhida" : "Marcar a conta escolhida como paga"}
-                </Button>
-                </>)}
-
-                <div className={aba === "despesas" || emissor ? "mt-4 border-t border-slate-100 pt-3 dark:border-slate-700/60" : ""}>
-                  <p className="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                    {aba === "receitas"
-                      ? emissor
-                        ? "Não é de nenhuma nota? Lance como recebimento:"
-                        : "De qual cliente é esse dinheiro?"
-                      : "Não estava prevista? Lance como despesa:"}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {aba === "receitas" ? (
-                      <CaixaBusca
-                        valor={tomador}
-                        opcoes={opcoesTomador}
-                        onEscolher={setTomador}
-                        onCriar={criarTomador}
-                        rotuloCriar="Novo cliente"
-                        placeholder="Cliente (digite pra buscar)"
-                        ariaLabel="Cliente"
-                        className="min-w-[180px] flex-1"
-                      />
-                    ) : (
-                      <CaixaBusca
-                        valor={categoria}
-                        opcoes={opcoesCategoria}
-                        onEscolher={setCategoria}
-                        onCriar={(nome) => {
-                          setCategoriasNovas((atuais) => [...atuais, nome])
-                          setCategoria(`despesa|${nome}`)
-                        }}
-                        rotuloCriar="Nova categoria"
-                        placeholder="Categoria (digite pra buscar)"
-                        ariaLabel="Categoria"
-                        className="min-w-[180px] flex-1"
-                      />
-                    )}
-                    <input
-                      type="month"
-                      value={mes}
-                      onChange={(e) => setMes(e.target.value)}
-                      aria-label="Mês"
-                      className="w-40 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                    <Button
-                      variant="outline"
-                      disabled={ocupado || (aba === "receitas" ? !tomador : !categoria.split("|")[1])}
-                      onClick={() => (aba === "receitas" ? conciliarReceita(false) : conciliarDespesa(false))}
-                    >
-                      Lançar
-                    </Button>
-                  </div>
-                  {aba === "receitas" && emissor && (
-                    <p className="mt-1.5 text-xs text-slate-400 dark:text-slate-500">
-                      Depois de lançar, dá pra gerar a nota desse recebimento (caso de quem paga antes da nota).
-                    </p>
-                  )}
-                </div>
-
-                <div className="mt-3 flex flex-wrap gap-1 border-t border-slate-100 pt-3 dark:border-slate-700/60">
-                  <Button variant="ghost" className="px-2 py-1 text-xs" disabled={ocupado} onClick={trocarTipo}>
-                    <ArrowLeftRight size={14} /> {atual.credito ? "Na verdade é despesa" : "Na verdade é receita"}
-                  </Button>
-                  <Button variant="ghost" className="px-2 py-1 text-xs" disabled={ocupado} onClick={ignorar}>
-                    <EyeOff size={14} /> Ignorar (não é receita nem despesa)
-                  </Button>
-                </div>
-              </>
-            )}
-          </Card>
-        </div>
-      )}
 
       {importando && (
         <ImportarExtratoModal
           vinculos={vinculos}
           onClose={() => setImportando(false)}
           onImportado={() => {
-            void carregar()
+            setRecarga((n) => n + 1)
+            void carregarResumo()
             void carregarVinculos()
           }}
         />

@@ -1,5 +1,6 @@
-"""Anotações do Financeiro em três formatos: texto, lista e tabela
-(05/10/2026). Só dados sintéticos."""
+"""Anotações em três formatos (texto, lista e tabela), em que telas cada uma
+aparece e a disposição dos cards que as mostra (05/10/2026). Só dados
+sintéticos."""
 import uuid
 
 import pytest
@@ -205,3 +206,103 @@ def test_mudar_de_formato(client):
     # repetir o mesmo formato sem conteúdo não apaga nada
     client.patch(url, json={"dados": {"itens": itens}})
     assert client.patch(url, json={"formato": "lista"}).json()["dados"] == {"itens": itens}
+
+
+# --- Onde a nota aparece: Financeiro, Visão geral ou as duas ---
+
+
+def test_nota_nasce_no_financeiro_e_muda_de_tela(client):
+    nota = client.post(URL, json={"titulo": "Recarga"}).json()
+    assert nota["telas"] == ["financeiro"]
+    # "mostrar também na Visão geral": a ordem guardada é sempre a mesma
+    r = client.patch(f"{URL}/{nota['id']}", json={"telas": ["visao_geral", "financeiro"]})
+    assert r.status_code == 200 and r.json()["telas"] == ["financeiro", "visao_geral"]
+    # só na Visão geral (repetido não conta duas vezes)
+    r = client.patch(f"{URL}/{nota['id']}", json={"telas": ["visao_geral", "visao_geral"]})
+    assert r.json()["telas"] == ["visao_geral"]
+    # mexer em outra coisa não muda onde ela aparece
+    r = client.patch(f"{URL}/{nota['id']}", json={"texto": "R$ 30"})
+    assert r.json()["telas"] == ["visao_geral"] and r.json()["texto"] == "R$ 30"
+    assert client.get(URL).json()[0]["telas"] == ["visao_geral"]
+
+
+def test_nota_criada_na_visao_geral(client):
+    nota = client.post(URL, json={"titulo": "Lembrar", "formato": "lista", "telas": ["visao_geral"]}).json()
+    assert nota["telas"] == ["visao_geral"] and nota["dados"] == {"itens": []}
+
+
+def test_telas_invalidas(client):
+    assert client.post(URL, json={"titulo": "x", "telas": ["calendario"]}).status_code == 422
+    nota = client.post(URL, json={"titulo": "x"}).json()
+    # sem tela nenhuma a nota sumiria sem ser apagada
+    r = client.patch(f"{URL}/{nota['id']}", json={"telas": []})
+    assert r.status_code == 422 and "pelo menos uma tela" in r.json()["detail"]
+    assert client.patch(f"{URL}/{nota['id']}", json={"telas": ["financeiro", "outra"]}).status_code == 422
+    assert client.get(URL).json()[0]["telas"] == ["financeiro"]
+
+
+def test_nota_antiga_sem_telas_fica_no_financeiro(client, db, prestador_teste):
+    """Linha gravada como antes da coluna `telas`: o padrão do banco a
+    deixa onde sempre esteve."""
+    db.execute(
+        text("INSERT INTO anotacao (id, prestador_id, titulo) VALUES (:id, :p, 'Antiga')"),
+        {"id": uuid.uuid4(), "p": prestador_teste.id},
+    )
+    assert [n["telas"] for n in client.get(URL).json()] == [["financeiro"]]
+
+
+@pytest.mark.parametrize("modulos", [["emissor"], ["financeiro"], ["emissor", "financeiro"]])
+def test_anotacoes_valem_com_qualquer_modulo(client, db, prestador_teste, modulos):
+    """A anotação é da empresa, não de um módulo: quem tem só o emissor
+    anota na Visão geral — e o resto do Financeiro continua fechado pra ele."""
+    prestador_teste.modulos = modulos
+    db.flush()
+    nota = client.post(URL, json={"titulo": "Da empresa", "telas": ["visao_geral"]})
+    assert nota.status_code == 200, nota.text
+    nota_id = nota.json()["id"]
+    assert client.patch(f"{URL}/{nota_id}", json={"texto": "oi"}).status_code == 200
+    assert [n["texto"] for n in client.get(URL).json()] == ["oi"]
+    assert client.get("/api/financeiro/resumo?ano=2026").status_code == (200 if "financeiro" in modulos else 403)
+    assert client.delete(f"{URL}/{nota_id}").status_code == 200
+    assert client.get(URL).json() == []
+
+
+# --- Disposição dos cards: a largura escolhida entra junto, sem quebrar o que já estava salvo ---
+
+
+def test_disposicao_guarda_larguras_e_aceita_o_formato_antigo(db, prestador_teste):
+    from app.models import Usuario, UsuarioPrestador
+    from app.services.usuarios import criar_usuario
+
+    db.commit = db.flush
+
+    def _get_db_override():
+        yield db
+
+    app.dependency_overrides[get_db] = _get_db_override
+    try:
+        usuario = criar_usuario(db, prestador_teste.id, "paineis@example.com", "senha-forte-1")
+        db.add(UsuarioPrestador(usuario_id=usuario.id, prestador_id=prestador_teste.id))
+        # layout salvo antes das larguras: só ordem/fechados/ocultos
+        usuario.preferencias = {"financeiro": {"ordem": ["contas", "resultado"], "fechados": ["confronto"], "ocultos": []}}
+        db.flush()
+        c = TestClient(app)
+        assert c.post("/api/auth/login", json={"email": "paineis@example.com", "senha": "senha-forte-1"}).status_code == 200
+        assert c.get("/api/conta/preferencias").json()["financeiro"]["ordem"] == ["contas", "resultado"]
+
+        r = c.put("/api/conta/preferencias", json={
+            "tela": "visao_geral", "ordem": ["graf_faturamento", "notas_resumo"], "fechados": [], "ocultos": ["atalhos"],
+            "larguras": {"notas_resumo": "meia", "graf_faturamento": "inteira"},
+        })
+        assert r.status_code == 200, r.text
+        salvo = r.json()
+        assert salvo["visao_geral"]["larguras"] == {"notas_resumo": "meia", "graf_faturamento": "inteira"}
+        assert salvo["financeiro"]["ordem"] == ["contas", "resultado"]  # a outra tela não foi tocada
+        # tela antiga (sem `larguras` no pedido) continua salvando
+        r = c.put("/api/conta/preferencias", json={"tela": "financeiro", "ordem": ["resultado"], "fechados": [], "ocultos": []})
+        assert r.status_code == 200 and r.json()["financeiro"]["larguras"] == {}
+        assert db.get(Usuario, usuario.id).preferencias["visao_geral"]["ocultos"] == ["atalhos"]
+        # largura que não existe é recusada
+        assert c.put("/api/conta/preferencias", json={"tela": "financeiro", "larguras": {"resultado": "um terço"}}).status_code == 422
+    finally:
+        app.dependency_overrides.pop(get_db, None)

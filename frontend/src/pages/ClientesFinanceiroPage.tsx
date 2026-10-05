@@ -177,7 +177,16 @@ export function ClientesFinanceiroPage() {
                           <span className="font-medium text-slate-800 dark:text-slate-200">{c.nome}</span>
                           {emissor &&
                             (c.so_controle ? (
-                              <Badge variant="neutral">sem nota</Badge>
+                              <>
+                                <Badge variant="neutral">sem nota</Badge>
+                                <Link
+                                  to={`/app/tomadores/${c.id}?emitir=1`}
+                                  className="text-xs font-medium text-primary-600 hover:underline"
+                                  title="Hoje você só controla o que ele te paga. Clique pra passar a emitir nota pra ele."
+                                >
+                                  emitir nota pra ele →
+                                </Link>
+                              </>
                             ) : (
                               <Link to={`/app/tomadores/${c.id}`} className="text-xs font-medium text-primary-600 hover:underline">
                                 dados da nota →

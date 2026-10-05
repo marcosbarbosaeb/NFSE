@@ -43,7 +43,7 @@ from app.fiscal.cliente_sefin import ClienteSefin
 from app.models import Emissao, Envio, Prestador, PrestadorTomador
 from app.services import mensagens
 from app.services.certificados import CertificadoNaoEncontradoError, carregar_certificado
-from app.services.email import EmailEnvioError, get_email_sender
+from app.services.email import EmailCotaEsgotadaError, EmailEnvioError, get_email_sender
 from app.services.envios import melhor_xml_disponivel
 
 logger = logging.getLogger("agenteana.envio")
@@ -59,6 +59,20 @@ class LinkInvalidoError(Exception):
 class EmailIndisponivelError(Exception):
     """Envio por e-mail não pode acontecer (sistema sem domínio ou fornecedor
     sem e-mail) — mensagem já vem pronta pra mostrar na tela."""
+
+
+class EmailCotaError(EmailIndisponivelError):
+    """O serviço de e-mail atingiu o limite de envios do dia (ou do mês).
+    Não é falha da nota: nada fica registrado e dá pra mandar depois."""
+
+    def __init__(self, mensagem: str, mensal: bool = False):
+        super().__init__(mensagem)
+        self.mensal = mensal
+
+
+def _cota(exc: EmailCotaEsgotadaError) -> EmailCotaError:
+    quando = "no mês que vem" if exc.mensal else "amanhã"
+    return EmailCotaError(f"{exc} Esta nota não foi enviada — tente de novo {quando}.", mensal=exc.mensal)
 
 
 # --- link público ---
@@ -475,6 +489,10 @@ def enviar_email(
             anexos=anexos,
             copia=copias or None,
         )
+    except EmailCotaEsgotadaError as exc:
+        db.delete(envio)  # não é tentativa falha: o provedor nem aceitou
+        db.flush()
+        raise _cota(exc) from exc
     except EmailEnvioError as exc:
         envio.status = "falha"
         envio.erro = str(exc)
@@ -658,6 +676,10 @@ def enviar_geral(
             remetente=remetente_da_nota(prestador.razao_social if prestador else None),
             responder_para=prestador.email if prestador and prestador.email else None, anexos=anexos,
         )
+    except EmailCotaEsgotadaError as exc:
+        db.delete(envio)
+        db.flush()
+        raise _cota(exc) from exc
     except EmailEnvioError as exc:
         envio.status, envio.erro = "falha", str(exc)
     else:

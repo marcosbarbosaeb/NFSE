@@ -1,18 +1,22 @@
 import { Check, Loader2, MapPin, Pencil, RefreshCw, Search } from "lucide-react"
 import { useState } from "react"
 import { ApiError, api, formatarErro } from "../../lib/api"
-import { formatarDocumento } from "../../lib/documento"
-import type { ConsultaCnpj, Tomador, VinculoDetalhe } from "../../lib/types"
+import { documentoDoTomador, formatarDocumento } from "../../lib/documento"
+import type { ConsultaCnpj, IdentificarTomadorResposta, Tomador, VinculoDetalhe } from "../../lib/types"
 import { Button } from "../ui/Button"
 import { CampoCidade } from "../ui/CampoCidade"
 import { Card } from "../ui/Card"
 import { Field } from "../ui/Field"
+import { AvisoNotaExterior, CamposEmpresaDeFora, type DadosEmpresaDeFora, corpoEmpresaDeFora, empresaDeForaCompleta } from "./EmpresaDeFora"
 
 /** Dados do tomador (nome e endereço) com edição (05/10/2026: "o CEP deu
  * errado e ao entrar em tomador não aparece pra editar"). O CNPJ não muda.
  * A Ana ajuda de três jeitos: puxa tudo da Receita, preenche a rua pelo CEP
  * e acha o CEP pelo endereço. O CEP é conferido com a cidade antes de
- * gravar — é o erro que mais faz a prefeitura recusar nota. */
+ * gravar — é o erro que mais faz a prefeitura recusar nota.
+ *
+ * Empresa de fora do Brasil (tem país + NIF no lugar do CNPJ): aqui se edita
+ * o nome, o país e o NIF — endereço e CEP do Brasil não se aplicam. */
 
 interface Dados {
   razao_social: string
@@ -43,6 +47,13 @@ const deTomador = (t: Tomador): Dados => ({
   bairro: t.bairro ?? "",
 })
 
+const foraDeTomador = (t: Tomador): DadosEmpresaDeFora => ({
+  razao_social: t.razao_social,
+  pais: t.pais ?? "",
+  nif: t.nif ?? "",
+  endereco: t.logradouro ?? "",
+})
+
 const mascaraCep = (v: string) => {
   const d = v.replace(/\D/g, "").slice(0, 8)
   return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d
@@ -55,11 +66,14 @@ export function DadosTomador({
   tomador,
   abrirEditando = false,
   onSalvo,
+  onTrocarParaCnpj,
 }: {
   vinculoId: string
   tomador: Tomador
   abrirEditando?: boolean
   onSalvo: (tomador: Tomador) => void
+  /** Empresa de fora cadastrada por engano: abre o passo "Quem é" pra informar o CNPJ. */
+  onTrocarParaCnpj?: () => void
 }) {
   const [editando, setEditando] = useState(abrirEditando)
   const [d, setD] = useState<Dados>(() => deTomador(tomador))
@@ -68,6 +82,9 @@ export function DadosTomador({
   const [nota, setNota] = useState<string | null>(null)
   const [candidatos, setCandidatos] = useState<CepAchado[] | null>(null)
   const temCnpj = /^\d{14}$/.test(tomador.cnpj)
+  // De fora do Brasil: país e/ou NIF no lugar do CNPJ.
+  const deFora = !temCnpj && Boolean(tomador.pais || tomador.nif)
+  const [fora, setFora] = useState<DadosEmpresaDeFora>(() => foraDeTomador(tomador))
   const mudar = (campo: keyof Dados, valor: string) => setD((a) => ({ ...a, [campo]: valor }))
 
   async function puxarDaReceita() {
@@ -157,6 +174,21 @@ export function DadosTomador({
     }
   }
 
+  async function salvarDeFora() {
+    setOcupado("salvar")
+    setErro(null)
+    try {
+      const r = await api.post<IdentificarTomadorResposta>(`/vinculos/${vinculoId}/identificar`, corpoEmpresaDeFora(fora))
+      onSalvo(r.vinculo.tomador)
+      setFora(foraDeTomador(r.vinculo.tomador))
+      setEditando(false)
+    } catch (err) {
+      setErro(msg(err))
+    } finally {
+      setOcupado("")
+    }
+  }
+
   const endereco = [tomador.logradouro && `${tomador.logradouro}${tomador.numero ? `, ${tomador.numero}` : ""}`, tomador.bairro, tomador.cep && `CEP ${mascaraCep(tomador.cep)}`]
     .filter(Boolean)
     .join(" · ")
@@ -170,11 +202,12 @@ export function DadosTomador({
             type="button"
             onClick={() => {
               setD(deTomador(tomador))
+              setFora(foraDeTomador(tomador))
               setEditando(true)
             }}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-primary-600 hover:bg-primary-50 dark:text-primary-300 dark:hover:bg-primary-900/30"
           >
-            <Pencil size={13} /> Editar nome e endereço
+            <Pencil size={13} /> {deFora ? "Editar nome, país e NIF" : "Editar nome e endereço"}
           </button>
         )}
       </div>
@@ -182,12 +215,71 @@ export function DadosTomador({
       {!editando ? (
         <>
           <p className="font-medium text-slate-800 dark:text-slate-200">{tomador.razao_social}</p>
-          <p className="text-sm text-slate-500 dark:text-slate-400">{temCnpj ? formatarDocumento(tomador.cnpj) : "Sem CNPJ (só controle)"}</p>
-          <p className="mt-1 flex items-start gap-1 text-sm text-slate-500 dark:text-slate-400">
-            <MapPin size={14} className="mt-0.5 shrink-0" />
-            {endereco || "Sem endereço cadastrado — a nota sai sem o endereço do tomador."}
-          </p>
+          {deFora ? (
+            <>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Empresa de fora do Brasil{documentoDoTomador(tomador) && ` · ${documentoDoTomador(tomador)}`}
+              </p>
+              {(!tomador.pais || !tomador.nif) && (
+                <p className="mt-1 text-sm font-medium text-warning-700 dark:text-warning-300">
+                  Falta {!tomador.pais ? "o país" : "o NIF (número fiscal no país dela)"} — sem isso eu não consigo gerar a nota. Clique em “Editar”.
+                </p>
+              )}
+              <p className="mt-1 flex items-start gap-1 text-sm text-slate-500 dark:text-slate-400">
+                <MapPin size={14} className="mt-0.5 shrink-0" />
+                {tomador.logradouro ? `${tomador.logradouro} (na nota vai só o país)` : "Na nota vai só o país — empresa de fora não tem endereço do Brasil."}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-slate-500 dark:text-slate-400">{temCnpj ? formatarDocumento(tomador.cnpj) : "Sem CNPJ (só controle)"}</p>
+              <p className="mt-1 flex items-start gap-1 text-sm text-slate-500 dark:text-slate-400">
+                <MapPin size={14} className="mt-0.5 shrink-0" />
+                {endereco || "Sem endereço cadastrado — a nota sai sem o endereço do tomador."}
+              </p>
+            </>
+          )}
         </>
+      ) : deFora ? (
+        <div
+          className="flex flex-col gap-3"
+          // Dentro do formulário do tomador: Enter aqui não pode salvar o de fora.
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT" && !e.defaultPrevented) e.preventDefault()
+          }}
+        >
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            O que você salvar aqui vale pras próximas notas — as que já foram geradas não mudam.
+          </p>
+          <CamposEmpresaDeFora valor={fora} onChange={setFora} />
+          <AvisoNotaExterior />
+          {erro && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700 dark:bg-danger-900/30 dark:text-danger-300">{erro}</p>}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {onTrocarParaCnpj ? (
+              <button type="button" onClick={onTrocarParaCnpj} className="text-xs font-medium text-primary-600 hover:underline dark:text-primary-300">
+                Na verdade é uma empresa do Brasil? Informar o CNPJ
+              </button>
+            ) : (
+              <span />
+            )}
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={ocupado === "salvar"}
+                onClick={() => {
+                  setEditando(false)
+                  setErro(null)
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button type="button" variant="accent" disabled={ocupado !== "" || !empresaDeForaCompleta(fora)} onClick={salvarDeFora}>
+                {ocupado === "salvar" ? "Salvando..." : "Salvar dados do tomador"}
+              </Button>
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
           <p className="text-xs text-slate-500 dark:text-slate-400">

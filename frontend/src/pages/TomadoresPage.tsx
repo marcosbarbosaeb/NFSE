@@ -6,7 +6,7 @@ import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
-import { formatarDocumento } from "../lib/documento"
+import { documentoDoTomador, formatarDocumento } from "../lib/documento"
 import { competenciaAtual, formatBRL, formatCompetenciaLonga } from "../lib/format"
 import { useModulos } from "../lib/modulos"
 import type { ConferenciaTomadores, Tomador, VinculoResumo } from "../lib/types"
@@ -20,6 +20,13 @@ import type { ConferenciaTomadores, Tomador, VinculoResumo } from "../lib/types"
 // 3) "excluir": aí sim ele some (se já tiver nota, ela continua guardada).
 
 type Aba = "meus" | "todos"
+
+/** Dá pra emitir nota pra ele? Tem CNPJ, ou é de fora do Brasil com país + NIF.
+ * Quem não tem nada disso nasceu "só controle" (um recebimento lançado no
+ * financeiro, por exemplo) e ainda precisa dizer quem é. */
+function identificado(v: VinculoResumo): boolean {
+  return Boolean(v.tomador_cnpj) || Boolean(v.tomador_pais && v.tomador_nif)
+}
 
 function ordenar(lista: VinculoResumo[]): VinculoResumo[] {
   return [...lista].sort((a, b) => {
@@ -198,7 +205,8 @@ export function TomadoresPage() {
       (v) =>
         v.apelido.toLowerCase().includes(termo) ||
         v.tomador_razao_social.toLowerCase().includes(termo) ||
-        (digitos !== "" && v.tomador_cnpj.includes(digitos))
+        (digitos !== "" && v.tomador_cnpj.includes(digitos)) ||
+        (v.tomador_nif ?? "").toLowerCase().includes(termo)
     )
   }, [vinculos, busca])
 
@@ -338,7 +346,7 @@ export function TomadoresPage() {
                         </Link>
                         {inativo && <span className="ml-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">inativo</span>}
                         {v.sem_nota &&
-                          (v.tomador_cnpj ? (
+                          (identificado(v) ? (
                             <Link
                               to={`/app/tomadores/${v.id}`}
                               className="ml-2 align-middle"
@@ -347,7 +355,10 @@ export function TomadoresPage() {
                               <Badge variant="warning">Falta configurar a nota</Badge>
                             </Link>
                           ) : (
-                            <span className="ml-2 align-middle" title="Você só controla o que este cliente paga — não emite nota pra ele por aqui.">
+                            <span
+                              className="ml-2 align-middle"
+                              title="Você só controla o que este cliente paga — não emite nota pra ele por aqui. Se quiser emitir, clique em “Emitir nota pra este cliente”."
+                            >
                               <Badge>Sem nota</Badge>
                             </span>
                           ))}
@@ -370,7 +381,8 @@ export function TomadoresPage() {
                         ) : null}
                         <p className="text-xs text-slate-400 dark:text-slate-500">
                           {v.tomador_razao_social}
-                          {v.tomador_cnpj && ` · ${formatarDocumento(v.tomador_cnpj)}`}
+                          {documentoDoTomador({ cnpj: v.tomador_cnpj, nif: v.tomador_nif, pais: v.tomador_pais }) &&
+                            ` · ${documentoDoTomador({ cnpj: v.tomador_cnpj, nif: v.tomador_nif, pais: v.tomador_pais })}`}
                         </p>
                       </td>
                       <td className="py-2.5 pr-3">
@@ -381,13 +393,22 @@ export function TomadoresPage() {
                       </td>
                       <td className="py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {v.sem_nota && v.tomador_cnpj && (
+                          {v.sem_nota && identificado(v) && (
                             <Link
-                              to={`/app/tomadores/${v.id}`}
+                              to={`/app/tomadores/${v.id}?emitir=1`}
                               className="inline-flex items-center gap-1 rounded-md bg-accent-50 px-2 py-1 text-xs font-semibold text-accent-700 hover:bg-accent-100 dark:bg-accent-900/30 dark:text-accent-200"
                               title="Configurar a nota deste tomador"
                             >
                               Configurar
+                            </Link>
+                          )}
+                          {v.sem_nota && !identificado(v) && !inativo && (
+                            <Link
+                              to={`/app/tomadores/${v.id}?emitir=1`}
+                              className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-accent-50 px-2 py-1 text-xs font-semibold text-accent-700 hover:bg-accent-100 dark:bg-accent-900/30 dark:text-accent-200"
+                              title="Hoje você só controla o que ele te paga. Clique pra me contar quem ele é (CNPJ, ou empresa de fora do Brasil) e passar a gerar nota pra ele."
+                            >
+                              <FilePlus2 size={14} /> Emitir nota pra este cliente
                             </Link>
                           )}
                           {!v.emissao_id && !inativo && !v.sem_nota && (

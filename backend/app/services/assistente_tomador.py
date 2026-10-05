@@ -59,6 +59,8 @@ def dados_da_nota(nota: dict) -> dict:
             "tipo_documento": toma.get("tipo"), "documento": toma.get("documento"), "razao_social": toma.get("nome"),
             "cod_municipio": toma.get("cMun"), "cep": toma.get("CEP"), "logradouro": toma.get("xLgr"),
             "numero": toma.get("nro"), "complemento": toma.get("xCpl"), "bairro": toma.get("xBairro"), "email": toma.get("email"),
+            # De fora do Brasil (documento = NIF): o país do endereço no exterior.
+            "pais": toma.get("pais"),
         },
         "cod_trib_nacional": nota.get("cTribNac"),
         "cod_trib_municipal": nota.get("cTribMun"),

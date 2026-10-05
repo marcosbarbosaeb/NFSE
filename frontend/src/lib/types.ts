@@ -137,6 +137,10 @@ export interface Tomador {
   sug_template_descricao?: string | null
   sug_dia_emissao?: number | null
   sug_dias_recebimento?: number | null
+  /** Padrão do catálogo (05/10/2026): NBS e "mês de referência" da descrição.
+   * O código municipal não é sugerido: muda de cidade pra cidade. */
+  sug_cod_nbs?: string | null
+  sug_meses_atras?: number | null
 }
 
 export interface TomadorCriarRequest {
@@ -720,6 +724,8 @@ export interface PendenciaItem {
   /** Dia combinado pra fazer (AAAA-MM-DD) e se já passou. */
   data?: string | null
   atrasada?: boolean
+  /** Linha que junta várias ("Gerar 8 notas"): cada uma, pra abrir na tela. */
+  itens?: PendenciaItem[] | null
 }
 
 export interface AgendaItem {
@@ -728,12 +734,16 @@ export interface AgendaItem {
   titulo: string
   detalhe?: string | null
   valor?: number | null
+  /** > 1 quando a linha junta vários avisos iguais do mesmo dia. */
+  quantidade?: number
 }
 
 export interface Proximos {
   pendencias: PendenciaItem[]
   total_pendencias: number
   agenda: AgendaItem[]
+  /** Quantas linhas a agenda dos próximos 30 dias tem (vêm só as primeiras). */
+  total_agenda?: number
 }
 
 export interface NotaAberta {
@@ -797,10 +807,11 @@ export interface EnviarGeralBody {
 // --- Ações em lote (29/09/2026) ---
 // POST /lotes/previa → PreviaLote; POST /lotes → Lote; GET /lotes/{id};
 // POST /lotes/{id}/cancelar | /retomar | /refazer-falhas; GET /lotes (recentes)
-export type AcaoLote = "email" | "email_geral" | "assinar" | "submeter" | "completo"
+export type AcaoLote = "email" | "email_geral" | "assinar" | "submeter" | "completo" | "drive"
 /** Passos do lote "completo": assinar -> prefeitura -> e-mail ao tomador. */
 export type PassoLote = "assinar" | "submeter" | "email"
-export type StatusLote = "fila" | "executando" | "concluido" | "cancelado" | "interrompido"
+/** "aguardando": o serviço de e-mail atingiu o limite; o lote volta sozinho. */
+export type StatusLote = "fila" | "executando" | "aguardando" | "concluido" | "cancelado" | "interrompido"
 
 export interface CriarLoteBody {
   acao: AcaoLote
@@ -809,6 +820,10 @@ export interface CriarLoteBody {
   competencia?: string
   reenviar?: boolean
   passos?: PassoLote[]
+  /** Lote "drive": o que sobe (pdf | xml | ambos). */
+  conteudo?: "pdf" | "xml" | "ambos"
+  /** Só as notas avulsas do relatório (uma por vendedor). */
+  so_avulsas?: boolean
 }
 
 export interface Lote {
@@ -825,6 +840,37 @@ export interface Lote {
   passos?: PassoLote[]
   relatorio?: Record<string, number>
   linhas_relatorio?: string[]
+  /** Falhas que ainda estão pendentes de verdade (as já corrigidas saem). */
+  pendentes?: number
+  resolvidas?: number
+  /** Não é falha: nota que não tinha como ser enviada (vendedor sem e-mail). */
+  avisos?: { emissao_id: string; nome: string; aviso: string }[]
+  /** Lote "drive": link da pasta no Google Drive. */
+  link?: string | null
+  /** Lote aguardando: o limite que estourou foi o do mês (não o do dia). */
+  cota_mensal?: boolean
+}
+
+/** GET /lotes/andamento?vinculo_id&competencia — o passo a passo do mês. */
+export interface AndamentoLote {
+  meses: { competencia: string; vinculo_id: string; notas: number }[]
+  competencia: string | null
+  vinculo_id: string | null
+  total: number
+  valor: number
+  assinadas: number
+  autorizadas: number
+  enviadas: number
+  a_assinar: number
+  a_prefeitura: number
+  a_enviar: number
+  recusadas: { emissao_id: string; nome: string; motivo: string; corrigivel: boolean }[]
+  total_recusadas: number
+  sem_email: { emissao_id: string; nome: string }[]
+  total_sem_email: number
+  etapa: "assinar" | "prefeitura" | "enviar" | "pacote"
+  regular: boolean
+  lote_ativo: Lote | null
 }
 
 export interface PreviaLote {
@@ -1214,4 +1260,171 @@ export interface PlanoAssinatura {
   valor?: number
   moeda?: string
   intervalo?: string
+}
+
+// --- Tomador de fora do Brasil / cliente de controle que vira tomador (05/10/2026) ---
+// (complementa as interfaces acima: o TypeScript junta declarações com o mesmo nome)
+
+export interface Tomador {
+  /** 'interno' = só desta conta, sem CNPJ (aí `cnpj` vem vazio). */
+  status?: string
+  /** Empresa de fora do Brasil: país (ISO, 2 letras) e identificação fiscal de lá. */
+  pais?: string | null
+  nif?: string | null
+}
+
+export interface VinculoResumo {
+  tomador_pais?: string | null
+  tomador_nif?: string | null
+}
+
+export interface IdentificarTomadorResposta {
+  vinculo: VinculoDetalhe
+  /** Algo que a pessoa precisa saber (ex.: já tem outro cliente com este CNPJ). */
+  aviso: string | null
+}
+
+// --- Conciliação: as DUAS conciliações (05/10/2026) ---
+// A) as notas foram pagas? (GET /conciliacao/notas)  B) o extrato está todo
+// classificado? (GET /conciliacao). O estado das duas: GET /conciliacao/resumo.
+
+export type StatusNotaConciliada = "paga" | "paga_a_menor" | "paga_a_maior" | "em_aberto" | "atrasada"
+
+/** Linha do extrato que pode ser o pagamento de uma nota. */
+export interface CandidatoDoExtrato {
+  lancamento_id: string
+  motivos: string[]
+  /** Valor da linha menos o da nota (0 = mesmo valor). */
+  diferenca: number
+}
+
+export interface NotaConciliada {
+  /** "nota:<id>" ou "lote:<vinculo>:<AAAA-MM>" (notas de vendedores somadas por mês). */
+  chave: string
+  tipo: "nota" | "lote"
+  vinculo_id: string
+  competencia: string
+  emissao_id: string | null
+  n_dps: number | null
+  estado: string | null
+  /** Quantas notas a linha junta (1, ou centenas no lote). */
+  quantidade: number
+  valor: number
+  /** null = paga, mas sem como saber o valor (histórico do mês, baixa sem valor, paga junto). */
+  recebido: number | null
+  diferenca: number | null
+  em_aberto: number
+  status: StatusNotaConciliada
+  /** Por onde veio a baixa. */
+  como: "extrato" | "manual" | "planilha" | "historico" | "sem_valor" | "junto" | "conciliacao" | null
+  pago_em: string | null
+  emitida_em: string
+  vencimento: string | null
+  dias_em_aberto: number
+  dias_atraso: number
+  /** O tomador não tem "dias para recebimento": vale o prazo geral. */
+  sem_prazo: boolean
+  valor_incerto: boolean
+  /** Histórico: quanto entrou do tomador no mês inteiro. */
+  recebido_mes: number | null
+  /** Diferença que a pessoa já disse que está certa. */
+  conferida: boolean
+  /** Mais antiga que o período escolhido, mas ainda sem resolver. */
+  antiga: boolean
+  pagamentos: { id: string; valor: number; data: string | null; origem: string }[]
+  sugestao: (CandidatoDoExtrato & { confianca: "alta" | "media" }) | null
+  candidatos: CandidatoDoExtrato[]
+}
+
+export interface TotaisNotasConciliadas {
+  notas: number
+  pagas: number
+  faturado: number
+  recebido: number
+  em_aberto: number
+  notas_em_aberto: number
+  atrasado: number
+  notas_atrasadas: number
+  no_prazo: number
+  notas_no_prazo: number
+  diferenca: number
+  notas_com_diferenca: number
+  diferencas_a_conferir: number
+  notas_sem_valor: number
+}
+
+export interface EstadoConciliacaoNotas {
+  ok: boolean
+  pendencias: number
+  atrasadas: number
+  diferencas: number
+  sugestoes: number
+  sem_nota: number
+  no_prazo: number
+}
+
+export interface TomadorConciliado {
+  vinculo_id: string
+  apelido: string
+  prazo_dias: number | null
+  resumo: TotaisNotasConciliadas
+  pendencias: number
+  itens: NotaConciliada[]
+}
+
+export interface EntradaDoExtrato {
+  id: string
+  data: string | null
+  descricao: string
+  valor: number
+}
+
+export interface PainelConciliacaoNotas {
+  /** "recebimentos": empresa só com o Financeiro, sem nota nenhuma pra conferir. */
+  modo: "notas" | "recebimentos"
+  emissor: boolean
+  periodo: { desde: string | null; ate: string | null; antigas: number }
+  tolerancia: number
+  resumo: TotaisNotasConciliadas
+  estado: EstadoConciliacaoNotas
+  tomadores: TomadorConciliado[]
+  /** Entradas do extrato ainda sem classificar. */
+  lancamentos: EntradaDoExtrato[]
+  recebimentos_sem_nota: RecebimentoSemNota[]
+  clientes: { vinculo_id: string; nome: string; recebido: number; recebimentos: number; ultimo: string | null }[]
+}
+
+export interface ResumoExtratoConciliacao {
+  linhas: number
+  classificadas: number
+  pendentes: number
+  pendentes_entradas: number
+  pendentes_saidas: number
+  ignoradas: number
+  de: string | null
+  ate: string | null
+  ultimo_arquivo: string | null
+  ultimo_importado_em: string | null
+  ok: boolean
+}
+
+export interface FechamentoDoMes {
+  competencia: string
+  estado: "fechado" | "aguardando" | "pendente" | "vazio"
+  em_andamento: boolean
+  notas: number
+  notas_pagas: number
+  notas_atrasadas: number
+  notas_no_prazo: number
+  diferencas: number
+  extrato_linhas: number
+  extrato_pendentes: number
+}
+
+export interface ResumoConciliacao {
+  notas: EstadoConciliacaoNotas & { aplica: boolean; notas?: number; pagas?: number; em_aberto?: number; atrasado?: number }
+  extrato: ResumoExtratoConciliacao
+  /** Soma das pendências das duas conciliações. */
+  pendencias: number
+  fechamentos: FechamentoDoMes[]
 }

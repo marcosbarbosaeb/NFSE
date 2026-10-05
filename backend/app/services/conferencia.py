@@ -30,6 +30,7 @@ from app.fiscal.dps import renderizar_descricao
 from app.models import Certificado, Emissao, Prestador, PrestadorTomador
 from app.services.envio_direto import formas_de_envio
 from app.services.municipios import municipio_por_codigo
+from app.services.paises import pais_valido
 from app.services.servicos_nacionais import normalizar_codigo, servico_por_codigo
 from app.tempo import hoje as hoje_br
 
@@ -254,6 +255,7 @@ _CORRIGIR_NO_TOMADOR = "Corrija no cadastro do tomador."
 # Nome, CNPJ e endereço são do catálogo de tomadores (compartilhado entre as
 # contas) e NÃO têm edição na tela — o remédio de verdade hoje é este.
 _TROCAR_CNPJ = "O CNPJ de um tomador já cadastrado não pode ser trocado: cadastre o tomador de novo com o CNPJ certo (Tomadores › Adicionar tomador) e exclua este."
+_DADOS_DE_FORA = "Preencha em Tomadores › abrir o tomador › “Dados do tomador”."
 _DADOS_DO_CATALOGO = "Corrija em Tomadores › abrir o tomador › “Dados do tomador” (dá pra puxar da Receita ou buscar o CEP pelo endereço)."
 
 
@@ -268,24 +270,43 @@ def _conferir_vinculo(vinculo: PrestadorTomador, ultimas: list[dict], *, demo: b
             pontos.append(_ponto("erro", "razao_social_vazia", "Este tomador está sem nome.", _DADOS_DO_CATALOGO, campo="razao_social"))
         return pontos
 
-    if interno:
-        pontos.append(_ponto(
-            "erro", "documento_vazio", "Este tomador está sem CNPJ, e sem ele a nota não pode ser emitida.",
-            "Cadastre o tomador com o CNPJ dele — ou marque “só controle de recebimento” se você não emite nota pra ele.", campo="cnpj",
-        ))
-    documento = "" if interno else tomador.cnpj
-    tipo = "CPF" if len(documento or "") == 11 and (documento or "").isdigit() else "CNPJ"
-    pontos += [
-        p for p in _checar_pessoa(
-            tipo=tipo, documento=documento, nome=tomador.razao_social,
-            endereco={"cMun": tomador.cod_municipio, "CEP": tomador.cep, "xLgr": tomador.logradouro, "nro": tomador.numero, "xBairro": tomador.bairro},
-            # Simulação: os tomadores de exemplo têm CNPJ inválido de propósito (ver app/services/demo.py).
-            onde="tomador", conferir_digitos=not demo, como_corrigir=_DADOS_DO_CATALOGO, como_documento=_TROCAR_CNPJ,
-        )
-        if not (interno and p["codigo"] == "documento_vazio")
-    ]
-    if not (tomador.cod_municipio or "").strip():
-        pontos.append(_ponto("erro", "cidade_invalida", "Falta a cidade do tomador.", _DADOS_DO_CATALOGO, campo="cod_municipio"))
+    if tomador.de_fora:
+        # Empresa de fora do Brasil: não tem CNPJ nem endereço daqui. A nota
+        # sai com a identificação fiscal de lá (NIF) e o país — precisa dos dois.
+        if not (tomador.razao_social or "").strip():
+            pontos.append(_ponto("erro", "razao_social_vazia", "Falta o nome da empresa que recebe a nota.", _DADOS_DE_FORA, campo="razao_social"))
+        pais = (tomador.pais or "").strip().upper()
+        if not pais or pais == "BR":
+            pontos.append(_ponto(
+                "erro", "pais_vazio", "Falta o país desta empresa de fora do Brasil.", _DADOS_DE_FORA, campo="pais",
+            ))
+        elif not pais_valido(pais):
+            pontos.append(_ponto("erro", "pais_invalido", f"Não reconheci o país “{pais}” desta empresa.", _DADOS_DE_FORA, campo="pais"))
+        if not (tomador.nif or "").strip():
+            pontos.append(_ponto(
+                "erro", "documento_vazio", "Falta o número fiscal desta empresa no país dela (NIF). Sem ele a nota não pode ser emitida.",
+                f"Ele aparece no contrato ou no extrato de pagamento (às vezes como “Tax ID” ou “VAT number”). {_DADOS_DE_FORA}", campo="nif",
+            ))
+    else:
+        if interno:
+            pontos.append(_ponto(
+                "erro", "documento_vazio", "Ainda não sei quem é este cliente: ele está sem CNPJ, e sem isso a nota não pode ser emitida.",
+                "Abra o tomador e responda em “Quer emitir nota pra este cliente?” (o CNPJ dele, ou os dados da empresa se ela for de fora "
+                "do Brasil) — ou marque “só controle de recebimento” se você não emite nota pra ele.", campo="cnpj",
+            ))
+        documento = "" if interno else tomador.cnpj
+        tipo = "CPF" if len(documento or "") == 11 and (documento or "").isdigit() else "CNPJ"
+        pontos += [
+            p for p in _checar_pessoa(
+                tipo=tipo, documento=documento, nome=tomador.razao_social,
+                endereco={"cMun": tomador.cod_municipio, "CEP": tomador.cep, "xLgr": tomador.logradouro, "nro": tomador.numero, "xBairro": tomador.bairro},
+                # Simulação: os tomadores de exemplo têm CNPJ inválido de propósito (ver app/services/demo.py).
+                onde="tomador", conferir_digitos=not demo, como_corrigir=_DADOS_DO_CATALOGO, como_documento=_TROCAR_CNPJ,
+            )
+            if not (interno and p["codigo"] == "documento_vazio")
+        ]
+        if not (tomador.cod_municipio or "").strip():
+            pontos.append(_ponto("erro", "cidade_invalida", "Falta a cidade do tomador.", _DADOS_DO_CATALOGO, campo="cod_municipio"))
 
     pontos += _checar_servico(
         cod_local=vinculo.cod_local_prestacao, cod_nacional=vinculo.cod_trib_nacional, cod_nbs=vinculo.cod_nbs,
@@ -621,9 +642,16 @@ def _cadastro_mudou(emissao: Emissao, snap: dict, endereco: dict, servico: dict)
         return str(a or "").strip() == str(b or "").strip()
 
     mudou = []
-    if not igual(snap.get("cnpj"), tomador.cnpj) or not igual(snap.get("razao_social"), tomador.razao_social):
-        mudou.append("os dados do tomador")
-    pares = (("cMun", tomador.cod_municipio), ("CEP", tomador.cep), ("xLgr", tomador.logradouro), ("nro", tomador.numero), ("xCpl", tomador.complemento), ("xBairro", tomador.bairro))
+    if tomador.de_fora:
+        # De fora do Brasil: o documento da nota é o NIF, e ela não leva endereço daqui.
+        if not igual(snap.get("cnpj"), tomador.nif) or not igual(str(snap.get("pais") or "").upper(), (tomador.pais or "").upper()) \
+                or not igual(snap.get("razao_social"), tomador.razao_social):
+            mudou.append("os dados do tomador")
+        pares = ()
+    else:
+        if not igual(snap.get("cnpj"), tomador.cnpj) or not igual(snap.get("razao_social"), tomador.razao_social):
+            mudou.append("os dados do tomador")
+        pares = (("cMun", tomador.cod_municipio), ("CEP", tomador.cep), ("xLgr", tomador.logradouro), ("nro", tomador.numero), ("xCpl", tomador.complemento), ("xBairro", tomador.bairro))
     if any(not igual(endereco.get(chave), atual) for chave, atual in pares):
         mudou.append("o endereço")
     codigos = (("cLocPrestacao", vinculo.cod_local_prestacao), ("cTribNac", vinculo.cod_trib_nacional), ("cTribMun", vinculo.cod_trib_municipal), ("cNBS", vinculo.cod_nbs))

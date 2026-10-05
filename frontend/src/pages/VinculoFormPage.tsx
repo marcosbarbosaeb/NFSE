@@ -6,6 +6,8 @@ import type { ValorModeloEmail } from "../components/EditorModeloEmail"
 import { CampoCodigoUsado, type CodigoUsado } from "../components/tomador/CampoCodigoUsado"
 import { DadosTomador } from "../components/tomador/DadosTomador"
 import { DescricaoNota, previaDescricao } from "../components/tomador/DescricaoNota"
+import { EmitirNotaCliente } from "../components/tomador/EmitirNotaCliente"
+import { AvisoNotaExterior } from "../components/tomador/EmpresaDeFora"
 import { EnvioTomador } from "../components/tomador/EnvioTomador"
 import { type DadosNotaAntiga, NotaAntiga, ResumoNotaAntiga } from "../components/tomador/NotaAntiga"
 import { CaixaBusca } from "../components/ui/CaixaBusca"
@@ -17,7 +19,7 @@ import { Field, FieldWrap } from "../components/ui/Field"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useModulos } from "../lib/modulos"
 import { formatarDocumento } from "../lib/documento"
-import type { ConferenciaVinculo, ConsultaCnpj, EmailExtra, FormaDeEnvio, PontoConferencia, Prestador, Tomador, VinculoCriarRequest, VinculoDetalhe, VinculoResumo } from "../lib/types"
+import type { ConferenciaVinculo, ConsultaCnpj, EmailExtra, FormaDeEnvio, IdentificarTomadorResposta, PontoConferencia, Prestador, Tomador, VinculoCriarRequest, VinculoDetalhe, VinculoResumo } from "../lib/types"
 
 // Pedido do Marcos (28/09/2026):
 // - "usar tomador existente": todos os dados com prévia de sugestão de
@@ -112,6 +114,22 @@ const METODO_POR_CNPJ: Record<string, string> = {
 
 const NOVO_TOMADOR_VAZIO = { cnpj: "", razao_social: "", cod_municipio: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "" }
 
+// Cliente criado só pra controle nasce com um código de serviço "vazio" e a
+// descrição igual ao nome dele: nada disso serve pra nota.
+const CODIGO_SEM_SERVICO = "000000"
+
+function descricaoDeVerdade(modelo: string, nomes: (string | null | undefined)[]): string {
+  const texto = modelo.trim()
+  const marcadores = ["", "-", "serviço prestado", ...nomes.map((n) => (n ?? "").trim().toLowerCase())]
+  return marcadores.includes(texto.toLowerCase()) ? "" : texto
+}
+
+/** Passo 2 de "Quer emitir nota pra este cliente?": de onde veio o que eu preenchi. */
+interface Passo2 {
+  origem: "nota" | "sugestao" | "vazio"
+  aviso: string | null
+}
+
 interface Sugestao {
   campo: keyof FormState
   rotulo: string
@@ -145,6 +163,12 @@ export function VinculoFormPage() {
   const [notaAntiga, setNotaAntiga] = useState<DadosNotaAntiga | null>(null)
   const [buscandoUltima, setBuscandoUltima] = useState(false)
   const [codigosUsados, setCodigosUsados] = useState<{ municipais: CodigoUsado[]; nbs: CodigoUsado[] }>({ municipais: [], nbs: [] })
+  // Cliente que nasceu "só controle" (05/10/2026): o cartão "Quer emitir nota
+  // pra este cliente?" (passo 1, quem é) e o que acontece depois dele (passo
+  // 2, como a nota sai — aqui mesmo, nos campos de sempre).
+  const [guiaAberto, setGuiaAberto] = useState(searchParams.get("emitir") === "1")
+  const [trocandoParaCnpj, setTrocandoParaCnpj] = useState(false)
+  const [passo2, setPasso2] = useState<Passo2 | null>(null)
   useEffect(() => {
     api.get<Prestador>("/prestador").then(setPrestadorModelo).catch(() => {})
   }, [])
@@ -229,6 +253,16 @@ export function VinculoFormPage() {
     }
   }, [tomadorExistenteId, tomadores, editando])
 
+  // Veio de "Emitir nota pra este cliente" e ele já está identificado (tem
+  // CNPJ, ou país + NIF): o que falta é o passo 2, mais abaixo.
+  const tomadorCarregadoId = tomadorSelecionado?.id
+  useEffect(() => {
+    if (!editando || carregando || !tomadorSelecionado || searchParams.get("emitir") !== "1") return
+    if (tomadorSelecionado.cnpj || (tomadorSelecionado.pais && tomadorSelecionado.nif)) irParaComoANotaSai()
+    // só quando a ficha termina de carregar
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carregando, tomadorCarregadoId])
+
   function atualizarCampo<K extends keyof FormState>(campo: K, valor: FormState[K]) {
     setForm((f) => ({ ...f, [campo]: valor }))
   }
@@ -236,7 +270,9 @@ export function VinculoFormPage() {
   // O que você mais usa nos seus outros tomadores.
   const meusCodigos = useMemo(() => {
     const contagem = new Map<string, number>()
-    meusVinculos.forEach((v) => v.cod_trib_nacional && contagem.set(v.cod_trib_nacional, (contagem.get(v.cod_trib_nacional) ?? 0) + 1))
+    meusVinculos.forEach(
+      (v) => v.cod_trib_nacional && v.cod_trib_nacional !== CODIGO_SEM_SERVICO && contagem.set(v.cod_trib_nacional, (contagem.get(v.cod_trib_nacional) ?? 0) + 1)
+    )
     return [...contagem.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c)
   }, [meusVinculos])
 
@@ -265,6 +301,7 @@ export function VinculoFormPage() {
     if (t.sug_dia_emissao) lista.push({ campo: "dia_limite_emissao", rotulo: "Dia de gerar a nota", valor: String(t.sug_dia_emissao), exibicao: `todo dia ${t.sug_dia_emissao}` })
     if (t.sug_dias_recebimento != null)
       lista.push({ campo: "dias_para_recebimento", rotulo: "Pagamento", valor: String(t.sug_dias_recebimento), exibicao: `${t.sug_dias_recebimento} dias depois da nota` })
+    if (t.sug_cod_nbs) lista.push({ campo: "cod_nbs", rotulo: "NBS", valor: mascaraNbs(t.sug_cod_nbs) })
     return lista
   }, [editando, tomadorSelecionado, meusCodigos, modelosDescricao])
 
@@ -288,6 +325,8 @@ export function VinculoFormPage() {
       sugestoes.forEach((s) => {
         if (!f[s.campo]) (novo[s.campo] as string) = s.valor
       })
+      // "Mês de referência" da descrição (mês anterior, dois meses antes...).
+      if (!f.descricao_meses_atras && tomadorSelecionado.sug_meses_atras) novo.descricao_meses_atras = tomadorSelecionado.sug_meses_atras
       return novo
     })
     // só quando troca de tomador
@@ -348,23 +387,67 @@ export function VinculoFormPage() {
     }))
   }
 
-  /** Tomador que veio de importação/controle: configura com a última nota dele. */
+  /** Liga a emissão e preenche "Como a nota sai" com o que já existe, nesta
+   * ordem: a última nota deste cliente; o que já foi usado com esta empresa
+   * (catálogo); o código que você mais usa nos outros tomadores. A descrição
+   * nunca é inventada: sem fonte, fica em branco pra pessoa escrever. */
+  async function prepararNota(t: Tomador): Promise<Passo2["origem"]> {
+    let nota: DadosNotaAntiga | null = null
+    if (id) {
+      try {
+        nota = (await api.get<{ nota: DadosNotaAntiga | null }>(`/vinculos/${id}/ultima-nota`)).nota
+      } catch {
+        nota = null // sem a última nota, segue com as sugestões
+      }
+    }
+    if (nota) {
+      aplicarNotaAntiga(nota, { comTomador: false })
+      return "nota"
+    }
+    const codigoAtual = form.cod_trib_nacional && form.cod_trib_nacional !== CODIGO_SEM_SERVICO ? form.cod_trib_nacional : ""
+    const codigo = codigoAtual || t.sug_cod_trib_nacional || meusCodigos[0] || ""
+    const descricao = descricaoDeVerdade(form.template_descricao, [form.apelido, t.razao_social]) || t.sug_template_descricao || ""
+    setForm((f) => ({
+      ...f,
+      sem_nota: false,
+      cod_trib_nacional: codigo,
+      template_descricao: descricao,
+      cod_local_prestacao: f.cod_local_prestacao || prestadorModelo?.cod_municipio || "",
+      dia_limite_emissao: f.dia_limite_emissao || (t.sug_dia_emissao ? String(t.sug_dia_emissao) : ""),
+      dias_para_recebimento: f.dias_para_recebimento || (t.sug_dias_recebimento != null ? String(t.sug_dias_recebimento) : ""),
+      cod_nbs: f.cod_nbs || (t.sug_cod_nbs ? mascaraNbs(t.sug_cod_nbs) : ""),
+      descricao_meses_atras: f.descricao_meses_atras || t.sug_meses_atras || 0,
+    }))
+    return codigo || descricao ? "sugestao" : "vazio"
+  }
+
+  function irParaComoANotaSai() {
+    // depois que a tela redesenhar com os campos da nota
+    window.setTimeout(() => document.getElementById("como-a-nota-sai")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80)
+  }
+
+  /** Tomador já identificado (CNPJ ou de fora) que ainda está só no controle. */
   async function configurarPelaUltimaNota() {
-    if (!id) return
+    if (!id || !tomadorSelecionado) return
     setBuscandoUltima(true)
     setErro(null)
     try {
-      const { nota } = await api.get<{ nota: DadosNotaAntiga | null }>(`/vinculos/${id}/ultima-nota`)
-      if (nota) aplicarNotaAntiga(nota, { comTomador: false })
-      else {
-        atualizarCampo("sem_nota", false)
-        setErro("Não achei nenhuma nota deste tomador com os dados completos. Preencha o código do serviço e a descrição abaixo.")
-      }
-    } catch (err) {
-      setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
+      setPasso2({ origem: await prepararNota(tomadorSelecionado), aviso: null })
     } finally {
       setBuscandoUltima(false)
     }
+  }
+
+  /** Passo 1 concluído (a pessoa disse quem é o cliente): segue pro passo 2. */
+  async function aoIdentificar(resposta: IdentificarTomadorResposta) {
+    const t = resposta.vinculo.tomador
+    setTomadorSelecionado(t)
+    setTrocandoParaCnpj(false)
+    setGuiaAberto(false)
+    setErro(null)
+    setConferenciaVersao((n) => n + 1)
+    setPasso2({ origem: await prepararNota(t), aviso: resposta.aviso })
+    irParaComoANotaSai()
   }
 
   async function consultarCnpj(valor: string) {
@@ -420,6 +503,16 @@ export function VinculoFormPage() {
     }
     if (!form.sem_nota && !form.cod_local_prestacao) {
       setErro("Falta a cidade onde o serviço é prestado (em “Mais opções”).")
+      return
+    }
+    if (editando && !form.sem_nota && tomadorSelecionado && !tomadorSelecionado.cnpj && !(tomadorSelecionado.pais && tomadorSelecionado.nif)) {
+      setErro(
+        tomadorSelecionado.pais || tomadorSelecionado.nif
+          ? "Pra eu gerar nota pra esta empresa de fora do Brasil faltam o país e o NIF dela: preencha em “Dados do tomador”. Se você não emite nota pra ela, ligue “Não emito nota pra este cliente por aqui”."
+          : "Pra eu gerar nota, preciso saber quem é este cliente: responda em “Quer emitir nota pra este cliente?”, no começo desta tela. Se você não emite nota pra ele, ligue “Não emito nota pra este cliente por aqui”."
+      )
+      setGuiaAberto(true)
+      window.scrollTo({ top: 0, behavior: "smooth" })
       return
     }
     const emails = form.email_contato.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean)
@@ -502,6 +595,13 @@ export function VinculoFormPage() {
 
   const destaquesCodigo = [tomadorSelecionado?.sug_cod_trib_nacional, ...meusCodigos].filter((c): c is string => Boolean(c))
 
+  // Quem é o tomador desta ficha: com CNPJ (catálogo), de fora do Brasil
+  // (país + NIF) ou ainda sem identidade (nasceu "só controle").
+  const semCnpj = editando && Boolean(tomadorSelecionado) && !tomadorSelecionado?.cnpj
+  const deFora = semCnpj && Boolean(tomadorSelecionado?.pais || tomadorSelecionado?.nif)
+  const semIdentidade = semCnpj && !deFora
+  const mostrarGuia = editando && Boolean(id) && Boolean(tomadorSelecionado) && (semIdentidade || trocandoParaCnpj)
+
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <div>
@@ -516,7 +616,8 @@ export function VinculoFormPage() {
       <form onSubmit={onSubmit} className="flex flex-col gap-6">
         {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
 
-        {editando && pontosConferencia !== undefined && !(form.sem_nota && (pontosConferencia ?? []).length === 0) && (
+        {/* No meio do caminho guiado a conferência é do que está SALVO (ainda só controle): volta depois de salvar. */}
+        {editando && !passo2 && pontosConferencia !== undefined && !(form.sem_nota && (pontosConferencia ?? []).length === 0) && (
           <Card className="p-5">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Conferência</h2>
             <Conferencia pontos={pontosConferencia} vinculoId={id} semAtalhoDoTomador />
@@ -529,6 +630,20 @@ export function VinculoFormPage() {
           </Card>
         )}
 
+        {mostrarGuia && tomadorSelecionado && id && (
+          <EmitirNotaCliente
+            key={trocandoParaCnpj ? "trocar" : "guia"}
+            vinculoId={id}
+            nome={form.apelido || tomadorSelecionado.razao_social}
+            tomador={tomadorSelecionado}
+            // Nota ligada sem eu saber quem é o cliente: sem o passo 1 não sai nota.
+            comecarAberto={guiaAberto || trocandoParaCnpj || !form.sem_nota}
+            tipoInicial={trocandoParaCnpj ? "cnpj" : null}
+            onIdentificado={aoIdentificar}
+            onFechar={trocandoParaCnpj ? () => setTrocandoParaCnpj(false) : undefined}
+          />
+        )}
+
         {editando ? (
           tomadorSelecionado && id && (
             <DadosTomador
@@ -539,6 +654,8 @@ export function VinculoFormPage() {
                 setTomadorSelecionado(t)
                 setConferenciaVersao((n) => n + 1)
               }}
+              onTrocarParaCnpj={() => setTrocandoParaCnpj(true)}
+              key={`${tomadorSelecionado.id}-${tomadorSelecionado.pais ?? ""}-${tomadorSelecionado.nif ?? ""}`}
             />
           )
         ) : (
@@ -679,17 +796,40 @@ export function VinculoFormPage() {
           </>
         )}
 
-        <Card className="p-5">
+        <Card className="scroll-mt-24 p-5" id="como-a-nota-sai">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
             {form.sem_nota ? "Cadastro" : "Como a nota sai"}
           </h2>
+
+          {editando && passo2 && !form.sem_nota && (
+            <div className="mb-4 rounded-xl border border-accent-200 bg-accent-50/70 px-4 py-3 text-sm text-slate-700 dark:border-accent-900/50 dark:bg-accent-900/20 dark:text-slate-200">
+              <p className="flex items-center gap-1.5 font-semibold text-accent-700 dark:text-accent-200">
+                <Sparkles size={15} /> Passo 2 de 2 — confira como a nota sai
+              </p>
+              <p className="mt-1">
+                {passo2.origem === "nota"
+                  ? "Preenchi o código do serviço e a descrição com a última nota deste cliente."
+                  : passo2.origem === "sugestao"
+                    ? "Preenchi o que eu sabia (o que já foi usado com esta empresa ou o código que você mais usa nos outros tomadores) — o que ficou em branco é com você."
+                    : "Não achei nota antiga nem sugestão pra este cliente: escolha o código do serviço e escreva a descrição."}{" "}
+                Confira o <strong>código do serviço</strong>, a <strong>descrição</strong> e, mais abaixo, o <strong>envio da nota</strong>.
+                Quando estiver certo, clique em <strong>Salvar alterações</strong> — só aí eu passo a gerar nota pra ele.
+              </p>
+              {passo2.aviso && <p className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">{passo2.aviso}</p>}
+            </div>
+          )}
 
           <label className={`mb-4 cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700 ${financeiro || form.sem_nota ? "flex" : "hidden"}`}>
             <input
               type="checkbox"
               role="switch"
               checked={form.sem_nota}
-              onChange={(e) => atualizarCampo("sem_nota", e.target.checked)}
+              onChange={(e) => {
+                atualizarCampo("sem_nota", e.target.checked)
+                if (e.target.checked) setPasso2(null)
+                // Desligou sem eu saber quem é o cliente: o primeiro passo é dizer quem ele é.
+                else if (semIdentidade) setGuiaAberto(true)
+              }}
               className="peer sr-only"
             />
             <span
@@ -705,7 +845,7 @@ export function VinculoFormPage() {
               </span>
             </span>
           </label>
-          {editando && form.sem_nota && tomadorSelecionado?.cnpj && (
+          {editando && form.sem_nota && (tomadorSelecionado?.cnpj || (deFora && tomadorSelecionado?.pais && tomadorSelecionado?.nif)) && (
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-accent-50 px-4 py-3 text-sm text-slate-700 dark:bg-accent-900/20 dark:text-slate-200">
               <p className="min-w-0 flex-1">
                 <strong>Falta configurar a nota deste tomador.</strong> Eu preencho o código do serviço e a descrição com base na última
@@ -717,12 +857,16 @@ export function VinculoFormPage() {
             </div>
           )}
           {editando && notaAntiga && <div className="mb-4"><ResumoNotaAntiga dados={notaAntiga} /></div>}
-          {editando && tomadorSelecionado && !tomadorSelecionado.cnpj && !form.sem_nota && (
-            <p className="mb-4 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
-              Este tomador não tem CNPJ cadastrado — sem ele a Ana não consegue gerar nota. Deixe como “só controle” ou cadastre o
-              tomador com CNPJ.
+          {semIdentidade && !form.sem_nota && (
+            <p className="mb-4 rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
+              Antes de configurar a nota, eu preciso saber quem é este cliente.{" "}
+              <a href="#emitir-nota" className="font-semibold underline underline-offset-2">
+                Responda no passo 1, lá em cima
+              </a>{" "}
+              — ou ligue a opção acima pra deixar ele só no controle.
             </p>
           )}
+          {deFora && !form.sem_nota && <AvisoNotaExterior className="mb-4" />}
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field

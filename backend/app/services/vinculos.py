@@ -93,23 +93,59 @@ def excluir_vinculo(db: Session, vinculo: PrestadorTomador) -> str:
     return "arquivado"
 
 
-def registrar_sugestoes(db: Session, vinculo: PrestadorTomador) -> None:
-    """Guarda no catálogo (tomador, sem RLS) o que acabou de ser usado com
-    este tomador — vira a "prévia de sugestão de preenchimento" pra
-    próxima pessoa que for faturar o mesmo tomador. Contas de simulação não
-    ensinam nada ao catálogo."""
+def registrar_sugestoes(db: Session, vinculo: PrestadorTomador, *, sobrescrever: bool = False) -> bool:
+    """Guarda no catálogo (tomador, sem RLS) como este tomador costuma ser
+    faturado — vira a sugestão de preenchimento pra próxima pessoa. Só
+    regras da nota (códigos, descrição, dia, prazo): nada de e-mail,
+    telefone ou destinatários, que são de cada conta.
+
+    Por padrão só PREENCHE o que o catálogo ainda não tem — a conta de um
+    cliente qualquer não troca a sugestão que já está lá. `sobrescrever`
+    é da curadoria (ver `publicar_sugestoes`). Simulação, cliente só de
+    controle e tomador interno não ensinam nada ao catálogo."""
     if db.query(Prestador.demo).filter_by(id=vinculo.prestador_id).scalar():
-        return
+        return False
     tomador = db.get(Tomador, vinculo.tomador_id)
-    if tomador is None:
-        return
-    tomador.sug_cod_trib_nacional = vinculo.cod_trib_nacional
-    tomador.sug_template_descricao = vinculo.template_descricao
-    if vinculo.dia_limite_emissao is not None:
-        tomador.sug_dia_emissao = vinculo.dia_limite_emissao
-    if vinculo.dias_para_recebimento is not None:
-        tomador.sug_dias_recebimento = vinculo.dias_para_recebimento
+    if tomador is None or vinculo.sem_nota or tomador.status != "aprovado":
+        return False
+    novos = {
+        "sug_cod_trib_nacional": vinculo.cod_trib_nacional,
+        "sug_template_descricao": vinculo.template_descricao,
+        "sug_dia_emissao": vinculo.dia_limite_emissao,
+        "sug_dias_recebimento": vinculo.dias_para_recebimento,
+        "sug_cod_trib_municipal": vinculo.cod_trib_municipal,
+        "sug_cod_nbs": vinculo.cod_nbs,
+        "sug_meses_atras": vinculo.descricao_meses_atras or 0,
+    }
+    mudou = False
+    for campo, valor in novos.items():
+        if valor is None or valor == "":
+            continue
+        if sobrescrever or getattr(tomador, campo) in (None, ""):
+            if getattr(tomador, campo) != valor:
+                setattr(tomador, campo, valor)
+                mudou = True
     db.flush()
+    return mudou
+
+
+def publicar_sugestoes(db: Session) -> int:
+    """Curadoria: as regras de TODOS os tomadores da empresa ativa viram a
+    sugestão padrão do catálogo (sobrescrevendo). Quando o mesmo tomador
+    tem mais de um cadastro (AWIN e AWIN Rchlo), vale o mais antigo."""
+    vistos: set[uuid.UUID] = set()
+    publicados = 0
+    for vinculo in (
+        db.query(PrestadorTomador)
+        .filter(PrestadorTomador.excluido_em.is_(None), PrestadorTomador.ativo.is_(True), PrestadorTomador.sem_nota.is_(False))
+        .order_by(PrestadorTomador.criado_em)
+    ):
+        if vinculo.tomador_id in vistos:
+            continue
+        vistos.add(vinculo.tomador_id)
+        registrar_sugestoes(db, vinculo, sobrescrever=True)
+        publicados += 1
+    return publicados
 
 
 def buscar_vinculo(db: Session, vinculo_id: uuid.UUID) -> PrestadorTomador | None:
@@ -173,8 +209,7 @@ def atualizar_vinculo(db: Session, vinculo: PrestadorTomador, **campos) -> Prest
     for campo, valor in campos.items():
         setattr(vinculo, campo, valor)
     db.flush()
-    if campos.keys() & {"cod_trib_nacional", "template_descricao", "dia_limite_emissao", "dias_para_recebimento"}:
-        registrar_sugestoes(db, vinculo)
+    registrar_sugestoes(db, vinculo)  # só preenche o que o catálogo ainda não tem
     return vinculo
 
 

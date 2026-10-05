@@ -125,6 +125,12 @@ class Prestador(Base):
     # as notas saem só em homologação (sem valor fiscal) e os e-mails vão só
     # pra quem testa. Pode repetir o CNPJ de uma conta real.
     modo_teste: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
+    # Google Drive conectado pela empresa (05/10/2026) pra guardar os
+    # arquivos das notas: o refresh token fica cifrado com a mesma chave
+    # mestra do certificado; `drive_pasta_id` é a pasta "Agente Ana".
+    drive_token: Mapped[bytes | None] = mapped_column(LargeBinary)
+    drive_email: Mapped[str | None] = mapped_column(String(200))
+    drive_pasta_id: Mapped[str | None] = mapped_column(String(120))
     # Produtos que a empresa usa (05/10/2026): "emissor", "financeiro" —
     # vendidos separadamente (ver app/deps.py).
     modulos: Mapped[list] = mapped_column(JSONB, nullable=False, default=lambda: ["emissor"], server_default='["emissor"]')
@@ -297,12 +303,35 @@ class Tomador(Base):
     sug_template_descricao: Mapped[str | None] = mapped_column(Text)
     sug_dia_emissao: Mapped[int | None] = mapped_column(SmallInteger)
     sug_dias_recebimento: Mapped[int | None] = mapped_column(SmallInteger)
+    # 05/10/2026: também o código municipal, o NBS e o mês de referência
+    # da descrição (0 = o da nota, 1 = o anterior...).
+    sug_cod_trib_municipal: Mapped[str | None] = mapped_column(String(5))
+    sug_cod_nbs: Mapped[str | None] = mapped_column(String(12))
+    sug_meses_atras: Mapped[int | None] = mapped_column(SmallInteger)
+
+    # Empresa de fora do Brasil (migração b6e8a0c2d435): país (ISO, 2 letras)
+    # e o número de identificação fiscal de lá. Só em tomador interno (desta
+    # conta) — com os dois, a nota sai com NIF + endereço no exterior.
+    pais: Mapped[str | None] = mapped_column(String(2))
+    nif: Mapped[str | None] = mapped_column(String(40))
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
         CheckConstraint("status IN ('pendente', 'aprovado', 'interno')", name="ck_tomador_status"),
     )
+
+    @property
+    def de_fora(self) -> bool:
+        """Marcado como empresa de fora do Brasil (mesmo que falte um dos dois dados)."""
+        pais = (self.pais or "").strip().upper()
+        return self.status == "interno" and (bool(pais and pais != "BR") or bool((self.nif or "").strip()))
+
+    @property
+    def estrangeiro(self) -> bool:
+        """De fora do Brasil e com tudo o que a nota precisa: país + NIF."""
+        pais = (self.pais or "").strip().upper()
+        return self.status == "interno" and bool(pais and pais != "BR") and bool((self.nif or "").strip())
 
 
 class PrestadorTomador(Base):
@@ -591,8 +620,9 @@ class DespesaRecorrente(Base):
 
 
 class Anotacao(Base):
-    """Aba/nota livre do Financeiro (05/10/2026): a pessoa cria pra deixar
-    registrado o que quiser — controle de recarga de telefone, lembretes..."""
+    """Aba/nota livre (05/10/2026): a pessoa cria pra deixar registrado o que
+    quiser — controle de recarga de telefone, lembretes... É da empresa (não
+    de um módulo): aparece no Financeiro e/ou na Visão geral (`telas`)."""
 
     __tablename__ = "anotacao"
 
@@ -607,6 +637,11 @@ class Anotacao(Base):
     # {"colunas": [{"nome", "tipo"}], "linhas": [[...]]}).
     formato: Mapped[str] = mapped_column(String(10), nullable=False, default="texto", server_default="texto")
     dados: Mapped[dict | None] = mapped_column(JSONB)
+    # Em que telas a nota aparece (05/10/2026): "financeiro", "visao_geral"
+    # ou as duas. As de antes ficam só no Financeiro, onde nasceram.
+    telas: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=lambda: ["financeiro"], server_default='["financeiro"]'
+    )
     ordem: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=_agora_utc)
@@ -951,4 +986,6 @@ class LoteFila(Base):
     lote_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("lote_acao.id", ondelete="CASCADE"), primary_key=True)
     prestador_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False)
     base_url: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
+    # Lote esperando a cota de e-mail voltar: só é retomado depois disto.
+    retomar_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

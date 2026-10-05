@@ -1,10 +1,26 @@
 import { ChevronDown, ChevronRight, Search, X } from "lucide-react"
 import { Fragment, useState, type ReactNode } from "react"
 import { formatBRL } from "../../lib/format"
-import { MESES_ABREV, NOMES_MESES, formatPct, formatValor } from "../../lib/financeiro"
+import { MESES_ABREV, NOMES_MESES, formatPct } from "../../lib/financeiro"
 import type { ResumoFinanceiro, SecaoMesAMes } from "../../lib/types"
 import { Card } from "../ui/Card"
-import { AvisoDetalhe, LinhasDetalhe, linhasVisiveis, palavrasDaBusca, useDetalheMesAMes, type LinhaVisivel } from "./MesAMesDetalhe"
+import {
+  AvisoDetalhe,
+  COLUNA_NOME,
+  COLUNA_TOTAL,
+  FAIXA_FORTE,
+  FUNDO_BASE,
+  FUNDO_RESULTADO,
+  FUNDO_SECAO_ABERTA,
+  GrupoDetalhe,
+  VEU_MES,
+  Valor,
+  contagem,
+  montarGrupo,
+  palavrasDaBusca,
+  useDetalheMesAMes,
+  type GrupoVisivel,
+} from "./MesAMesDetalhe"
 
 // "Resultado do ano" (28/09/2026) — a parte de cima da planilha "Controle CP"
 // dentro da Ana: lucro, margem, retiradas e o saldo que ainda dá pra
@@ -58,7 +74,10 @@ export function ResultadoAno({
   onSelecionarMes,
   semTitulo,
   comNotas = true,
+  semCategorias = false,
 }: {
+  /** A tela já mostra o "Para onde vai o dinheiro" num card próprio (gráfico). */
+  semCategorias?: boolean
   /** Módulo de notas ligado: mostra o faturado e o que falta receber. */
   comNotas?: boolean
   /** A tela já mostra o título do card (cards recolhíveis do Financeiro). */
@@ -121,7 +140,7 @@ export function ResultadoAno({
     { rotulo: "Despesas", valores: resumo.despesas, total: t.despesas, dica: "Sem as retiradas (distribuição de lucros).", secao: "despesas" },
     { rotulo: "dos quais impostos", valores: resumo.impostos, total: t.impostos, sub: true, dica: "Simples, INSS, DAS e afins." },
     { rotulo: "Lucro", valores: resumo.lucro, total: t.lucro, forte: true, vermelhoSeNegativo: true, dica: "Recebido − despesas." },
-    { rotulo: "Margem", valores: resumo.margem, total: t.margem, pct: true, vermelhoSeNegativo: true, dica: "Lucro ÷ recebido." },
+    { rotulo: "Margem", valores: resumo.margem, total: t.margem, pct: true, sub: true, vermelhoSeNegativo: true, dica: "Lucro ÷ recebido." },
     { rotulo: "Retiradas", valores: resumo.retiradas, total: t.retiradas, dica: "Distribuição de lucros (todas as contas).", secao: "retiradas" },
     {
       rotulo: "Saldo a distribuir",
@@ -137,13 +156,14 @@ export function ResultadoAno({
   const mesVazio = resumo.meses.map((_, m) => !(comNotas && resumo.faturado[m]) && !resumo.recebido[m] && !resumo.despesas[m] && !resumo.retiradas[m])
 
   // Detalhe de cada linha que abre. Com busca, abre sozinho o que bate.
-  const detalhes = new Map<SecaoMesAMes, LinhaVisivel[]>()
+  const grupos = new Map<SecaoMesAMes, GrupoVisivel>()
   if (detalhe.dados) {
     for (const l of linhas) {
-      if (l.secao && (buscando || abertas.has(l.secao))) detalhes.set(l.secao, linhasVisiveis(l.secao, detalhe.dados[l.secao], palavras, abertas))
+      if (l.secao && (buscando || abertas.has(l.secao))) grupos.set(l.secao, montarGrupo(l.secao, detalhe.dados[l.secao], palavras, abertas))
     }
   }
-  const achados = [...detalhes.values()].reduce((n, d) => n + d.length, 0)
+  const achados = [...grupos.values()].reduce((n, g) => n + g.linhas.length, 0)
+  const algoAberto = buscando || linhas.some((l) => l.secao && abertas.has(l.secao))
   const colunas = resumo.meses.length + 2
 
   // "Para onde vai o dinheiro": as maiores categorias; o resto vira "Outras".
@@ -247,16 +267,18 @@ export function ResultadoAno({
             ) : achados === 0 ? (
               `Nada encontrado com “${busca.trim()}” em ${ano}. Confira o nome ou troque o ano.`
             ) : (
-              `${achados} ${achados === 1 ? "linha encontrada" : "linhas encontradas"} com “${busca.trim()}” — os valores estão embaixo de cada total.`
+              `${achados} ${achados === 1 ? "linha encontrada" : "linhas encontradas"} com “${busca.trim()}” — estão embaixo de cada total, com o trecho pintado.`
             )}
           </p>
         )}
-        <div className="-mx-5 overflow-x-auto px-5">
-          <table className="w-full min-w-[980px] border-separate border-spacing-0 text-right text-xs tabular-nums">
+        {/* Com detalhe aberto a tabela rola dentro da própria caixa: os meses ficam presos em cima.
+            Sem margem negativa: a 1ª coluna presa precisa encostar na borda da caixa de rolagem. */}
+        <div className={`overflow-x-auto ${algoAberto ? "max-h-[78vh] overflow-y-auto overscroll-x-contain" : ""}`}>
+          <table className="w-full min-w-[940px] border-separate border-spacing-0 text-right text-xs tabular-nums">
             <caption className="sr-only">Resultado mês a mês de {ano}</caption>
             <thead>
               <tr className="text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                <th scope="col" className="sticky left-0 z-10 min-w-[8.5rem] border-b border-slate-100 bg-white py-2 pr-3 text-left font-medium dark:border-slate-700/60 dark:bg-slate-800">
+                <th scope="col" className={`sticky left-0 top-0 z-30 border-b border-b-slate-200 py-2 pr-3 text-left font-medium dark:border-b-slate-600 ${COLUNA_NOME} ${FUNDO_BASE}`}>
                   <span className="sr-only">Linha</span>
                 </th>
                 {resumo.meses.map((m, idx) => {
@@ -265,7 +287,7 @@ export function ResultadoAno({
                     <th
                       key={m}
                       scope="col"
-                      className={`border-b border-slate-100 px-1 py-1 font-medium dark:border-slate-700/60 ${ativo ? "bg-primary-50 dark:bg-primary-900/30" : ""}`}
+                      className={`sticky top-0 z-20 border-b border-b-slate-200 px-1 py-1 font-medium dark:border-b-slate-600 ${ativo ? "bg-[#eceffb] dark:bg-[#2c3857]" : FUNDO_BASE}`}
                     >
                       <button
                         type="button"
@@ -273,7 +295,7 @@ export function ResultadoAno({
                         aria-pressed={ativo}
                         title={ativo ? "Voltar pro ano inteiro" : `Ver só ${NOMES_MESES[idx].toLowerCase()}`}
                         className={`w-full rounded px-1.5 py-1 text-right uppercase hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200 ${
-                          ativo ? "font-semibold text-primary-700 dark:text-primary-300" : ""
+                          ativo ? "font-bold text-primary-700 dark:text-primary-300" : ""
                         }`}
                       >
                         {MESES_ABREV[idx]}
@@ -281,86 +303,127 @@ export function ResultadoAno({
                     </th>
                   )
                 })}
-                <th scope="col" className="border-b border-l border-slate-100 py-2 pl-3 font-semibold text-slate-500 dark:border-slate-700/60 dark:text-slate-400">
+                <th
+                  scope="col"
+                  title={`Soma de janeiro a dezembro de ${ano}`}
+                  className={`sticky top-0 z-30 border-b border-b-slate-200 py-2 font-semibold text-slate-600 dark:border-b-slate-600 dark:text-slate-300 ${COLUNA_TOTAL} ${FUNDO_BASE}`}
+                >
                   Total
                 </th>
               </tr>
             </thead>
             <tbody>
-              {linhas.map((l) => {
+              {linhas.map((l, pos) => {
+                const secao = l.secao
+                const grupo = secao ? grupos.get(secao) : undefined
+                // Com busca, a linha abre sozinha quando tem algo que bate.
+                const aberta = !!secao && (buscando ? !!grupo?.linhas.length : abertas.has(secao))
+                const Seta = aberta ? ChevronDown : ChevronRight
+                const negativo = (v: number | null) => !!l.vermelhoSeNegativo && v !== null && v < 0
                 const cor = (v: number | null) =>
-                  l.vermelhoSeNegativo && v !== null && v < 0
+                  negativo(v)
                     ? "text-danger-600 dark:text-danger-400"
                     : l.sub
-                      ? "text-slate-400 dark:text-slate-500"
-                      : "text-slate-700 dark:text-slate-200"
-                const texto = (v: number | null) => (v === null ? "—" : l.pct ? formatPct(v) : formatValor(v))
-                const bordaTopo = l.forte ? "border-t border-slate-200 dark:border-slate-600" : ""
-                const secao = l.secao
-                const visiveis = secao ? detalhes.get(secao) : undefined
-                // Com busca, a linha abre sozinha quando tem algo que bate.
-                const aberta = !!secao && (buscando ? !!visiveis?.length : abertas.has(secao))
-                const Seta = aberta ? ChevronDown : ChevronRight
+                      ? "text-slate-500 dark:text-slate-400"
+                      : l.forte
+                        ? "text-slate-900 dark:text-white"
+                        : "text-slate-800 dark:text-slate-100"
+                const texto = (v: number | null) => (v === null ? "—" : l.pct ? formatPct(v) : <Valor valor={v} />)
+                const exato = (v: number | null) => (v === null ? "" : l.pct ? formatPct(v) : formatBRL(v))
+                // Lucro e saldo: faixa colorida, letra maior e uma linha em cima — é a resposta da tabela.
+                const borda = l.forte ? "border-t-2 border-t-primary-200 dark:border-t-primary-500/50" : ""
+                const altura = l.forte ? "py-2.5" : l.sub ? "py-1" : "py-2"
+                const peso = l.forte ? "text-[13px] font-bold" : l.sub ? "text-[11px]" : "font-semibold"
+                // O bloco aberto vem depois das linhas "filhas" do total (ex.: "dos quais impostos").
+                const dona = l.sub ? linhas.slice(0, pos).reverse().find((x) => !x.sub) : l
+                const fechaBloco = pos + 1 === linhas.length || !linhas[pos + 1].sub
+                const donaSecao = fechaBloco ? dona?.secao : undefined
+                const grupoAqui = donaSecao ? grupos.get(donaSecao) : undefined
+                // A linha filha de um total aberto ("dos quais impostos") fica na mesma faixa do total.
+                const donaAberta = l.sub && !!dona?.secao && (buscando ? !!grupos.get(dona.secao)?.linhas.length : abertas.has(dona.secao))
+                const noCabecalho = aberta || donaAberta
+                const fundo = l.forte ? FUNDO_RESULTADO : noCabecalho ? FUNDO_SECAO_ABERTA : FUNDO_BASE
                 return (
                   <Fragment key={l.rotulo}>
-                  <tr>
-                    <th
-                      scope="row"
-                      title={l.dica}
-                      className={`sticky left-0 z-10 whitespace-nowrap bg-white py-2 pr-3 text-left dark:bg-slate-800 ${bordaTopo} ${
-                        l.sub ? "pl-8 font-normal italic text-slate-400 dark:text-slate-500" : l.forte ? "font-semibold text-slate-800 dark:text-slate-100" : "font-medium text-slate-600 dark:text-slate-300"
-                      } ${secao || l.sub ? "" : "pl-5"}`}
-                    >
-                      {secao ? (
-                        <button
-                          type="button"
-                          onClick={() => alternar(secao)}
-                          aria-expanded={aberta}
-                          title={aberta ? "Fechar o detalhe" : secao === "despesas" || secao === "retiradas" ? "Ver por categoria" : "Ver por cliente"}
-                          className="-my-1 flex items-center gap-1 rounded py-1 pr-1 text-left font-medium hover:text-primary-700 dark:hover:text-primary-300"
-                        >
-                          <Seta className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" aria-hidden />
-                          {l.rotulo}
-                        </button>
-                      ) : (
-                        l.rotulo
-                      )}
-                    </th>
-                    {l.valores.map((v, idx) => {
-                      const vazio = mesVazio[idx] && !l.rotulo.startsWith("Saldo")
-                      return (
-                        <td
-                          key={idx}
-                          className={`px-2 py-2 ${bordaTopo} ${idx === i ? "bg-primary-50 dark:bg-primary-900/30" : ""} ${l.forte ? "font-semibold" : ""} ${
-                            vazio || v === 0 ? "text-slate-300 dark:text-slate-600" : cor(v)
-                          }`}
-                        >
-                          {vazio || (v === 0 && !l.forte) ? "—" : texto(v)}
-                        </td>
-                      )
-                    })}
-                    <td className={`border-l border-slate-100 py-2 pl-3 font-semibold dark:border-slate-700/60 ${bordaTopo} ${cor(l.total)}`}>{texto(l.total)}</td>
-                  </tr>
-                  {secao && visiveis && visiveis.length > 0 && (
-                    <LinhasDetalhe linhas={visiveis} mesAtivo={i} destaque={destaque} onDestacar={setDestaque} onAlternar={alternar} />
-                  )}
-                  {/* Aberta no clique (sem busca): avisa enquanto carrega, se falhou ou se não tem nada. */}
-                  {secao && !buscando && abertas.has(secao) && !visiveis?.length && (
-                    <AvisoDetalhe colunas={colunas}>
-                      {detalhe.erro ? (
-                        <>
-                          {detalhe.erro}{" "}
-                          <button type="button" onClick={detalhe.tentarDeNovo} className="font-medium text-primary-700 underline dark:text-primary-300">
-                            Tentar de novo
+                    <tr className={fundo}>
+                      <th
+                        scope="row"
+                        title={l.dica}
+                        className={`sticky left-0 z-10 pr-2 text-left ${COLUNA_NOME} ${fundo} ${borda} ${altura} ${noCabecalho ? FAIXA_FORTE : ""} ${
+                          l.sub
+                            ? "pl-[1.9375rem] text-[11px] font-normal text-slate-500 dark:text-slate-400"
+                            : l.forte
+                              ? "pl-[1.9375rem] text-[13px] font-bold text-slate-900 dark:text-white"
+                              : secao
+                                ? "pl-[0.5625rem] font-semibold text-slate-800 dark:text-slate-100"
+                                : "pl-[1.9375rem] font-semibold text-slate-800 dark:text-slate-100"
+                        }`}
+                      >
+                        {secao ? (
+                          <button
+                            type="button"
+                            onClick={() => alternar(secao)}
+                            aria-expanded={aberta}
+                            title={aberta ? "Fechar o detalhe" : secao === "despesas" || secao === "retiradas" ? "Ver por categoria" : "Ver por cliente"}
+                            className="group/secao -my-1 flex w-full items-start gap-1 rounded py-1 text-left hover:text-primary-700 dark:hover:text-primary-300"
+                          >
+                            <Seta className={`h-4 w-4 shrink-0 ${aberta ? "text-primary-600 dark:text-primary-300" : "text-slate-400 dark:text-slate-500"}`} aria-hidden />
+                            <span className="min-w-0">
+                              <span className="block">{l.rotulo}</span>
+                              {aberta && grupo && (
+                                <span className="block text-[11px] font-normal leading-4 text-slate-500 dark:text-slate-400">
+                                  {buscando ? `${grupo.quantidade} ${grupo.quantidade === 1 ? "encontrado" : "encontrados"}` : contagem(secao, grupo.quantidade)}
+                                  {!buscando && (
+                                    <>
+                                      {" · "}
+                                      <span className="font-medium text-primary-700 group-hover/secao:underline dark:text-primary-300">recolher</span>
+                                    </>
+                                  )}
+                                </span>
+                              )}
+                            </span>
                           </button>
-                        </>
-                      ) : !detalhe.dados ? (
-                        "Carregando…"
-                      ) : (
-                        `${SECAO_VAZIA[secao]} em ${ano}.`
-                      )}
-                    </AvisoDetalhe>
-                  )}
+                        ) : (
+                          l.rotulo
+                        )}
+                      </th>
+                      {l.valores.map((v, idx) => {
+                        const vazio = mesVazio[idx] && !l.rotulo.startsWith("Saldo")
+                        const zero = vazio || v === 0
+                        return (
+                          <td
+                            key={idx}
+                            title={zero || v === null ? undefined : `${l.rotulo} · ${NOMES_MESES[idx]}: ${exato(v)}`}
+                            className={`px-2 ${altura} ${peso} ${borda} ${idx === i ? VEU_MES : ""} ${zero && !negativo(v) ? "text-slate-300 dark:text-slate-600" : cor(v)}`}
+                          >
+                            {vazio || (v === 0 && !l.forte) ? "—" : texto(v)}
+                          </td>
+                        )
+                      })}
+                      <td title={`${l.rotulo} · total do ano: ${exato(l.total)}`} className={`z-10 ${altura} ${peso} ${borda} ${COLUNA_TOTAL} ${fundo} ${cor(l.total)}`}>
+                        {texto(l.total)}
+                      </td>
+                    </tr>
+                    {donaSecao && grupoAqui && grupoAqui.linhas.length > 0 && (
+                      <GrupoDetalhe secao={donaSecao} grupo={grupoAqui} palavras={palavras} mesAtivo={i} destaque={destaque} onDestacar={setDestaque} onAlternar={alternar} />
+                    )}
+                    {/* Aberta no clique (sem busca): avisa enquanto carrega, se falhou ou se não tem nada. */}
+                    {donaSecao && !buscando && abertas.has(donaSecao) && !grupoAqui?.linhas.length && (
+                      <AvisoDetalhe colunas={colunas}>
+                        {detalhe.erro ? (
+                          <>
+                            {detalhe.erro}{" "}
+                            <button type="button" onClick={detalhe.tentarDeNovo} className="font-medium text-primary-700 underline dark:text-primary-300">
+                              Tentar de novo
+                            </button>
+                          </>
+                        ) : !detalhe.dados ? (
+                          "Carregando…"
+                        ) : (
+                          `${SECAO_VAZIA[donaSecao]} em ${ano}.`
+                        )}
+                      </AvisoDetalhe>
+                    )}
                   </Fragment>
                 )
               })}
@@ -369,6 +432,7 @@ export function ResultadoAno({
         </div>
       </Card>
 
+      {!semCategorias && (
       <Card className="p-5">
         <div className="mb-3 flex items-baseline justify-between gap-2">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Para onde vai o dinheiro</h3>
@@ -398,6 +462,7 @@ export function ResultadoAno({
           </ul>
         )}
       </Card>
+      )}
     </section>
   )
 }

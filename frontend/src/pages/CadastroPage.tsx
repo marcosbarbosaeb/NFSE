@@ -38,6 +38,8 @@ export function CadastroPage() {
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [enviado, setEnviado] = useState<string | null>(null)
+  // O e-mail de confirmação saiu? (05/10/2026: o serviço de e-mail tem limite diário.)
+  const [emailSaiu, setEmailSaiu] = useState(true)
   const [erroGoogle, setErroGoogle] = useState<string | null>(null)
 
   // Marco 16 — autopreenchimento via CNPJ (pedido do Marcos: "ninguém sabe
@@ -142,8 +144,9 @@ export function CadastroPage() {
         modo_teste: modoTeste,
         produto,
       }
-      const resp = await api.post<{ mensagem: string; email: string }>("/cadastro", payload)
+      const resp = await api.post<{ mensagem: string; email: string; email_enviado?: boolean }>("/cadastro", payload)
       esquecerCodigoIndicacao()
+      setEmailSaiu(resp.email_enviado !== false)
       setEnviado(resp.email)
     } catch (err) {
       setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
@@ -172,10 +175,17 @@ export function CadastroPage() {
           {enviado ? (
             <div className="flex flex-col items-center gap-3 py-4 text-center">
               <p className="text-base font-semibold text-slate-800 dark:text-slate-200">Quase lá!</p>
-              <p className="text-sm text-slate-600 dark:text-slate-300">
-                Mandamos um link de confirmação pra <span className="font-medium">{enviado}</span>. Abra sua caixa de
-                entrada e clique no link pra ativar sua conta.
-              </p>
+              {emailSaiu ? (
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Mandamos um link de confirmação pra <span className="font-medium">{enviado}</span>. Abra sua caixa de
+                  entrada e clique no link pra ativar sua conta. Se não achar, olhe no spam.
+                </p>
+              ) : (
+                <p role="alert" className="rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
+                  Sua conta foi criada, mas <strong>não consegui mandar agora o e-mail de confirmação</strong> pra{" "}
+                  <span className="font-medium">{enviado}</span>. Tente entrar daqui a pouco: na tela de login tem o botão pra reenviar o link.
+                </p>
+              )}
               <Link to="/entrar" className="mt-2 text-sm font-medium text-primary-600 hover:text-primary-700">
                 Voltar pro login
               </Link>

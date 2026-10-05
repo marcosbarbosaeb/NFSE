@@ -193,6 +193,18 @@ def criar_rascunho(
         "aliq_sn": aliq_sn,
         "tpAmb": tpAmb,
     }
+    if not tomador_avulso and vinculo.tomador.estrangeiro:
+        # Tomador de fora do Brasil (05/10/2026): sem CNPJ, a nota sai com a
+        # identificação fiscal de lá (NIF) e o país — o mesmo retrato das
+        # notas pra vendedores estrangeiros da Shopee, que a Receita já
+        # autorizou (`_montar_xml` põe o endExt só com o país e o grupo
+        # comExt). É uma nota normal do vínculo: não é avulsa.
+        snapshot.update({
+            "cnpj": vinculo.tomador.nif.strip(),
+            "tipo_documento": "NIF",
+            "pais": vinculo.tomador.pais.strip().upper(),
+            "endereco": {"cMun": None, "CEP": None, "xLgr": None, "nro": None, "xCpl": None, "xBairro": None},
+        })
     if tomador_avulso:
         # Relatório da Shopee: a nota é pro VENDEDOR da linha, não pro
         # tomador do vínculo — e ele não vai pro catálogo, só fica aqui.
@@ -306,6 +318,8 @@ def _endereco_do_cadastro_mudou(db: Session, emissao: Emissao) -> bool:
     if emissao.tomador_documento or emissao.vinculo is None or emissao.vinculo.tomador is None:
         return False
     t = emissao.vinculo.tomador
+    if t.de_fora:
+        return False  # de fora do Brasil: não tem CEP nem endereço daqui pra acertar
     do_cadastro = {"cMun": t.cod_municipio, "CEP": t.cep, "xLgr": t.logradouro, "nro": t.numero, "xCpl": t.complemento, "xBairro": t.bairro}
     snap = dict(emissao.tomador_snapshot or {})
     atual = snap.get("endereco") or {}

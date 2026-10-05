@@ -219,7 +219,11 @@ export function ImportarNacionalModal({ onClose, onConcluido }: { onClose: () =>
   // Mesmo CNPJ com mais de um tomador aqui (ex.: AWIN e AWIN Rchlo).
   const irmaosPorCnpj = useMemo(() => {
     const mapa = new Map<string, string[]>()
-    vinculos.forEach((v) => v.tomador_cnpj && mapa.set(v.tomador_cnpj, [...(mapa.get(v.tomador_cnpj) ?? []), v.apelido]))
+    vinculos.forEach((v) => {
+      // Empresa de fora do Brasil: a nota dela vem com o NIF no lugar do CNPJ.
+      const doc = v.tomador_cnpj || v.tomador_nif
+      if (doc) mapa.set(doc, [...(mapa.get(doc) ?? []), v.apelido])
+    })
     return mapa
   }, [vinculos])
 

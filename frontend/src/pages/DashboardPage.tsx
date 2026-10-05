@@ -1,5 +1,4 @@
 import {
-  EyeOff,
   ArrowLeftRight,
   ArrowRight,
   LayoutDashboard,
@@ -9,6 +8,7 @@ import {
   Clock,
   FileText,
   Plus,
+  StickyNote,
   TrendingDown,
   TrendingUp,
   UserPlus,
@@ -18,23 +18,21 @@ import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { type NotaParaAcoes, SeloAssinatura, SeloPrefeitura, SeloTomador } from "../components/AcoesNota"
 import { ComecarPeloNacional } from "../components/ComecarPeloNacional"
+import { AnotacaoCard, EscolherFormatoAnotacao, anotacaoApareceEm, useAnotacoes } from "../components/financeiro/Anotacoes"
 import { ContasDoMesPainel } from "../components/financeiro/ContasDoMesPainel"
+import { GraficoEntrouSaiu, GraficoFaturamentoMes, GraficoTomadores } from "../components/graficos/Paineis"
 import { PainelCards, type SecaoCard } from "../components/PainelCards"
+import { ProximosPassos } from "../components/ProximosPassos"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
-import { MiniBarChart } from "../components/ui/MiniBarChart"
 import { StatCard } from "../components/ui/StatCard"
+import { AlturaLimitada, useVerMais } from "../components/ui/VerMais"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { competenciaAtual, deslocarCompetencia, formatBRL, formatCompetenciaLonga } from "../lib/format"
 import { useModulos } from "../lib/modulos"
 import type { DashboardResumo, EmissaoResumoLinha, Proximos, ResumoFinanceiro } from "../lib/types"
 
-
-function formatDataCurta(iso: string): string {
-  const [ano, mes, dia] = iso.split("-").map(Number)
-  return new Date(ano, mes - 1, dia).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
-}
 
 function badgeEstadoNfse(estado: string, label: string) {
   if (["confirmado", "assinado", "submetido", "montado"].includes(estado)) return <Badge variant="success">{label}</Badge>
@@ -54,16 +52,6 @@ function notaDaLinha(l: EmissaoResumoLinha): NotaParaAcoes {
   return { id: l.emissao_id, estado: l.estado, envio_status: l.envio_status, tem_pdf: l.tem_pdf, tem_email: l.tem_email, homologacao: l.homologacao, envio_forma: l.envio_forma, vinculo_id: l.vinculo_id, erro_detalhe: l.erro_detalhe, erro_corrigivel: l.erro_corrigivel }
 }
 
-const COR_PENDENCIA: Record<string, string> = {
-  erro: "bg-danger-600",
-  prefeitura: "bg-warning-600",
-  assinar: "bg-warning-600",
-  enviar_tomador: "bg-primary-600",
-  nota_recebimento: "bg-accent-600",
-  gerar: "bg-accent-600",
-  receber: "bg-success-600",
-}
-
 /** Visão geral (05/10/2026): é da empresa, não de um módulo. Junta os
  * cards dos módulos que estão ligados, e a pessoa escolhe quais aparecem e
  * em que ordem ("Editar disposição") — fica salvo na conta dela. */
@@ -79,16 +67,38 @@ export function DashboardPage() {
   // Financeiro: resultado do ano da competência escolhida + extrato sem classificar.
   const [financeiro, setFinanceiro] = useState<ResumoFinanceiro | null>(null)
   const [pendentesExtrato, setPendentesExtrato] = useState(0)
+  // Nenhum card cresce sem limite (05/10/2026): acima disso, "ver mais".
+  const emissoesDoMes = useVerMais(resumo?.emissoes ?? [], 6)
+  const atencao = useVerMais(resumo?.atencao ?? [], 4)
 
   // "Ignorar este aviso" — atraso consciente (ex.: nota que sai depois do pagamento).
+  // Some da tela na hora (inclusive de dentro de um grupo "Gerar 8 notas") e
+  // recarrega: o grupo muda de tamanho e o "Precisa da sua atenção" também
+  // deixa de cobrar essa nota.
   function ignorarPendencia(chave: string) {
-    setProximos((p) =>
-      p ? { ...p, pendencias: p.pendencias.filter((x) => x.chave !== chave), total_pendencias: Math.max(0, p.total_pendencias - 1) } : p,
-    )
-    api.post("/painel/pendencias/ignorar", { chave }).catch(() => setRecarga((n) => n + 1))
+    setProximos((p) => {
+      if (!p) return p
+      const pendencias = p.pendencias
+        .filter((x) => x.chave !== chave)
+        .map((x) => (x.itens ? { ...x, itens: x.itens.filter((i) => i.chave !== chave) } : x))
+        .filter((x) => !x.itens || x.itens.length > 0)
+      return { ...p, pendencias, total_pendencias: Math.max(0, p.total_pendencias - (p.pendencias.length - pendencias.length)) }
+    })
+    api
+      .post("/painel/pendencias/ignorar", { chave })
+      .catch(() => undefined)
+      .finally(() => setRecarga((n) => n + 1))
   }
   const [recarga, setRecarga] = useState(0)
   const navigate = useNavigate()
+
+  // "Na visão geral, falta a opção de criar anotação" (05/10/2026): as mesmas
+  // anotações do Financeiro, só as que a pessoa quer ver aqui. A nota criada
+  // aqui nasce aqui. Empresa sem o Financeiro vê todas (é a única tela delas).
+  const { anotacoes: todasAnotacoes, erro: erroAnotacao, criar: criarAnotacao, atualizar: atualizarAnotacao, apagar: apagarAnotacao } = useAnotacoes(true, "visao_geral")
+  const anotacoes = todasAnotacoes.filter((n) => anotacaoApareceEm(n, "visao_geral", modulos.financeiro))
+  const [anotacaoNova, setAnotacaoNova] = useState<string | null>(null)
+  const [escolhendoFormatoAnotacao, setEscolhendoFormatoAnotacao] = useState(false)
 
   useEffect(() => {
     if (!modulos.emissor) return
@@ -257,7 +267,7 @@ export function DashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {resumo.emissoes.map((linha) => (
+                      {emissoesDoMes.visiveis.map((linha) => (
                         <tr
                           key={linha.emissao_id}
                           onClick={() =>
@@ -300,6 +310,7 @@ export function DashboardPage() {
                       ))}
                     </tbody>
                   </table>
+                  {emissoesDoMes.botao}
                 </div>
               )}
             </Card>
@@ -316,8 +327,9 @@ export function DashboardPage() {
               {resumo.atencao.length === 0 ? (
                 <p className="text-sm text-slate-400 dark:text-slate-500">Tudo em dia por aqui.</p>
               ) : (
+                <>
                 <ul className="flex flex-col gap-3">
-                  {resumo.atencao.map((item, i) => (
+                  {atencao.visiveis.map((item, i) => (
                     <li key={i} className="rounded-lg bg-warning-50 px-3 py-2">
                       <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{item.titulo}</p>
                       <p className="text-xs text-slate-500 dark:text-slate-400">{item.mensagem}</p>
@@ -332,6 +344,8 @@ export function DashboardPage() {
                     </li>
                   ))}
                 </ul>
+                {atencao.botao}
+                </>
               )}
             </Card>
             ),
@@ -341,119 +355,25 @@ export function DashboardPage() {
             titulo: "Próximos passos",
             grupo: "Notas",
             meia: true,
-            conteudo: (
-            <Card className="p-5">
-              <div className="mb-3 flex items-center justify-between">
-                <span />
-                <Link to="/app/calendario" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
-                  Ver agenda <ArrowRight size={14} />
-                </Link>
-              </div>
-              {proximos === null ? (
-                <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>
-              ) : proximos.pendencias.length === 0 && proximos.agenda.length === 0 ? (
-                <p className="flex items-center gap-2 text-sm text-slate-400 dark:text-slate-500">
-                  <CalendarDays size={16} /> Nada pendente nem na agenda dos próximos 30 dias.
-                </p>
-              ) : (
-                <div className="flex flex-col gap-4">
-                  {proximos.pendencias.length > 0 && (
-                    <ul className="flex flex-col gap-1.5">
-                      {proximos.pendencias.map((p, i) => (
-                        <li key={`p${i}`} className="group relative">
-                          <Link
-                            to={p.link}
-                            className={`-mx-2 flex items-start gap-2.5 rounded-lg px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-700/40 ${p.chave ? "pr-9" : ""}`}
-                          >
-                            <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${COR_PENDENCIA[p.tipo] ?? "bg-slate-400"}`} />
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">{p.titulo}</p>
-                              <p className="text-xs text-slate-400 dark:text-slate-500">
-                                {p.data && (
-                                  <span className={p.atrasada ? "font-semibold text-danger-600 dark:text-danger-300" : ""}>
-                                    {p.atrasada ? `era pra ${formatDataCurta(p.data)}` : `até ${formatDataCurta(p.data)}`}
-                                    {" · "}
-                                  </span>
-                                )}
-                                {[p.competencia ? formatCompetenciaLonga(p.competencia) : null, p.valor != null ? formatBRL(p.valor) : null]
-                                  .filter(Boolean)
-                                  .join(" · ")}
-                              </p>
-                            </div>
-                            <span className="shrink-0 text-xs font-semibold text-primary-600">{p.acao} →</span>
-                          </Link>
-                          {p.chave && (
-                            <button
-                              type="button"
-                              onClick={() => ignorarPendencia(p.chave!)}
-                              title="Ignorar este aviso (atraso consciente)"
-                              aria-label={`Ignorar o aviso: ${p.titulo}`}
-                              className="absolute right-0 top-1 rounded p-1 text-slate-300 opacity-60 hover:bg-slate-100 hover:text-slate-500 focus-visible:opacity-100 group-hover:opacity-100 dark:text-slate-500 dark:hover:bg-slate-700"
-                            >
-                              <EyeOff className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </li>
-                      ))}
-                      {proximos.total_pendencias > proximos.pendencias.length && (
-                        <li className="text-xs text-slate-400">+ {proximos.total_pendencias - proximos.pendencias.length} outras pendências</li>
-                      )}
-                    </ul>
-                  )}
-                  {proximos.agenda.length > 0 && (
-                    <div>
-                      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Depois, na agenda</p>
-                      <ul className="flex flex-col gap-2">
-                        {proximos.agenda.map((ev, i) => (
-                          <li
-                            key={`a${i}`}
-                            onClick={() => navigate("/app/calendario")}
-                            className="-mx-2 flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-700/40"
-                          >
-                            <span className="mt-0.5 w-12 shrink-0 text-xs font-semibold text-slate-500">{formatDataCurta(ev.data)}</span>
-                            <div className="min-w-0">
-                              <p className="truncate text-sm text-slate-700 dark:text-slate-200">{ev.detalhe ?? ev.titulo}</p>
-                              {ev.valor != null && <p className="text-xs text-slate-400">{formatBRL(ev.valor)}</p>}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-            </Card>
-            ),
+            conteudo: <ProximosPassos proximos={proximos} onIgnorar={ignorarPendencia} />,
           },
+          // Gráficos (05/10/2026). O "Faturamento" já existia com 6 barrinhas:
+          // continua o mesmo card (mesmo id, fica onde a pessoa deixou), agora
+          // com 12 meses, a média e o mês atual em destaque.
           {
             id: "notas_faturamento",
-            titulo: "Faturamento",
+            titulo: "Faturamento por mês",
             grupo: "Notas",
             meia: true,
             resumo: formatBRL(resumo.faturado_no_mes),
-            conteudo: (
-            <Card className="p-5">
-              <div className="mb-3 flex items-center justify-between">
-                <span />
-                <Link to="/app/nfse" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
-                  Ver notas <ArrowRight size={14} />
-                </Link>
-              </div>
-              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{formatBRL(resumo.faturado_no_mes)}</p>
-              <p className="mb-4 text-xs text-slate-400 dark:text-slate-500">em notas neste mês</p>
-              {resumo.delta_faturamento_pct !== null && (
-                <p
-                  className={`mb-3 flex items-center gap-1 text-xs font-medium ${
-                    resumo.delta_faturamento_pct >= 0 ? "text-success-600" : "text-danger-600"
-                  }`}
-                >
-                  {resumo.delta_faturamento_pct >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                  {Math.abs(Math.round(resumo.delta_faturamento_pct))}% vs. mês anterior
-                </p>
-              )}
-              <MiniBarChart dados={resumo.serie_faturamento} />
-            </Card>
-            ),
+            conteudo: <GraficoFaturamentoMes competencia={competencia} versao={recarga} resumo={resumo} />,
+          },
+          {
+            id: "notas_tomadores",
+            titulo: "Quem mais te paga",
+            grupo: "Notas",
+            meia: true,
+            conteudo: <GraficoTomadores competencia={competencia} versao={recarga} />,
           },
         ] satisfies SecaoCard[])
       : []),
@@ -518,6 +438,20 @@ export function DashboardPage() {
             ),
           },
           {
+            id: "fin_grafico",
+            titulo: "Entrou × saiu por mês",
+            grupo: "Financeiro",
+            conteudo: (
+              <GraficoEntrouSaiu
+                resumo={fin}
+                mes={competencia.slice(5, 7)}
+                onSelecionarMes={(m) => m && setCompetencia(`${anoDaCompetencia}-${m}`)}
+                rotuloEixo={modulos.emissor ? "pelo mês da nota" : "pelo mês de referência"}
+                sempreUmMes
+              />
+            ),
+          },
+          {
             id: "fin_conciliacao",
             titulo: "Extrato sem classificar",
             grupo: "Financeiro",
@@ -542,6 +476,7 @@ export function DashboardPage() {
             grupo: "Financeiro",
             meia: true,
             conteudo: (
+              <AlturaLimitada altura={360}>
               <ContasDoMesPainel
                 parte="contas"
                 competencia={competencia}
@@ -550,6 +485,7 @@ export function DashboardPage() {
                 onMudou={() => setRecarga((n) => n + 1)}
                 semTitulo
               />
+              </AlturaLimitada>
             ),
           },
           {
@@ -558,6 +494,7 @@ export function DashboardPage() {
             grupo: "Financeiro",
             meia: true,
             conteudo: (
+              <AlturaLimitada altura={360}>
               <ContasDoMesPainel
                 parte="rotina"
                 competencia={competencia}
@@ -566,10 +503,33 @@ export function DashboardPage() {
                 onMudou={() => undefined}
                 semTitulo
               />
+              </AlturaLimitada>
             ),
           },
         ] satisfies SecaoCard[])
       : []),
+    // Anotações: uma por card, como no Financeiro.
+    ...anotacoes.map(
+      (nota): SecaoCard => ({
+        id: `nota:${nota.id}`,
+        ancora: `nota-${nota.id}`,
+        titulo: nota.titulo,
+        grupo: "anotação",
+        meia: true,
+        conteudo: (
+          <AlturaLimitada key={nota.id} altura={340}>
+          <AnotacaoCard
+            nota={nota}
+            nova={nota.id === anotacaoNova}
+            tela="visao_geral"
+            podeTrocarTela={modulos.financeiro}
+            onMudou={(m) => atualizarAnotacao(nota.id, m)}
+            onApagar={() => apagarAnotacao(nota.id)}
+          />
+          </AlturaLimitada>
+        ),
+      }),
+    ),
     {
       id: "atalhos",
       titulo: "Atalhos rápidos",
@@ -607,6 +567,13 @@ export function DashboardPage() {
           <Button variant="ghost" onClick={() => setEditando((e) => !e)} aria-pressed={editando} data-tour="visao-disposicao">
             <LayoutDashboard size={16} /> {editando ? "Concluir" : "Editar disposição"}
           </Button>
+          <Button
+            variant="ghost"
+            title="Crie uma anotação pra deixar registrado o que quiser (um lembrete, uma lista, um controle)"
+            onClick={() => setEscolhendoFormatoAnotacao(true)}
+          >
+            <StickyNote size={16} /> Nova anotação
+          </Button>
           <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800">
             <button
               type="button"
@@ -631,17 +598,26 @@ export function DashboardPage() {
 
       {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
       {carregando && !resumo && <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>}
-      {editando && (
-        <p className="rounded-lg bg-primary-50 px-4 py-3 text-sm text-primary-800 dark:bg-primary-900/30 dark:text-primary-200">
-          Arraste pra mudar a ordem, desmarque “mostrar” pra tirar um card da tela e “aberto” pra ele começar recolhido. Fica salvo na
-          sua conta.
-        </p>
-      )}
+      {erroAnotacao && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erroAnotacao}</p>}
 
       {/* Empresa ainda sem tomador nem nota: começa trazendo do Emissor Nacional. */}
       {modulos.emissor && <ComecarPeloNacional />}
 
-      <PainelCards tela="visao_geral" secoes={secoes} editando={editando} permitirOcultar />
+      <PainelCards tela="visao_geral" secoes={secoes} editando={editando} permitirOcultar onConcluir={() => setEditando(false)} />
+
+      {escolhendoFormatoAnotacao && (
+        <EscolherFormatoAnotacao
+          onClose={() => setEscolhendoFormatoAnotacao(false)}
+          onEscolher={async (formato) => {
+            setEscolhendoFormatoAnotacao(false)
+            const nova = await criarAnotacao("Nova anotação", formato)
+            if (!nova) return
+            setAnotacaoNova(nova.id)
+            // Espera o card existir na tela e leva a pessoa até ele.
+            window.setTimeout(() => document.getElementById(`nota-${nova.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 150)
+          }}
+        />
+      )}
     </div>
   )
 }

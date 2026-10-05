@@ -17,6 +17,10 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
 - A Sefin compara `dhEmi` sem converter fuso: emitir em America/Sao_Paulo menos 2 min.
 - O PDF (DANFSe) é gerado aqui (`app/services/danfse.py`); a API do governo foi suspensa.
 - Lotes em segundo plano: thread no próprio processo (`app/services/lotes.py`), retomados no startup pela `lote_fila`.
+- E-mail (Resend) tem cota: 429 de cota vira `EmailCotaEsgotadaError` — o lote fica "aguardando" e volta sozinho
+  (`lotes.iniciar_relogio`), nunca conta como falha. Vendedor sem e-mail também não é falha: vira aviso.
+- Lote de e-mail nunca reenvia nota já entregue por QUALQUER canal (`lotes.CANAIS_ENTREGA`) sem `reenviar=True`.
+- Google Drive: escopo `drive.file`, callback `/api/drive/callback`, token cifrado no prestador (`app/services/drive.py`).
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.
 - Segredos (Stripe, Resend, Google) só nas variáveis do Railway — nunca no código nem em conversa.
 

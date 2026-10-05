@@ -27,6 +27,7 @@ from reportlab.pdfgen import canvas
 
 from app.models import Emissao
 from app.services.municipios import rotulo_municipio
+from app.services.paises import nome_do_pais
 
 URL_CONSULTA = "https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave={chave}"
 
@@ -113,6 +114,12 @@ def _doc(numero: str | None) -> str:
     return numero or "-"
 
 
+def _local_no_exterior(cidade: str | None, pais: str | None) -> str:
+    """'Dublin — Irlanda'; sem cidade (vai "-" na nota), só o país."""
+    partes = [p for p in ((cidade or "").strip(" -"), nome_do_pais(pais) if pais and str(pais).upper() != "BR" else None) if p]
+    return " — ".join(partes) or "-"
+
+
 def _cep(cep: str | None) -> str:
     d = "".join(c for c in (cep or "") if c.isdigit())
     return f"{d[:5]}-{d[5:]}" if len(d) == 8 else (cep or "-")
@@ -178,6 +185,9 @@ def dados_do_danfse(emissao: Emissao) -> dict:
     end_snap = snap.get("endereco") or {}
     cod_mun_prest = _t(ender_emit, "cMun") or (prestador.cod_municipio if prestador else None)
     cod_mun_toma = _t(end_nac, "cMun") or end_snap.get("cMun")
+    # Tomador de fora do Brasil: NIF e país (do XML; antes dele, do retrato da nota).
+    nif_toma = _t(toma, "NIF") or (snap.get("cnpj") if str(snap.get("tipo_documento") or "").upper() == "NIF" else None)
+    pais_toma = _t(end_toma, "endExt/cPais") or (snap.get("pais") if nif_toma else None)
 
     v_serv = _t(dps, "valores/vServPrest/vServ") or str(emissao.valor)
     v_liq = _t(inf, "valores/vLiq") or v_serv
@@ -228,14 +238,15 @@ def dados_do_danfse(emissao: Emissao) -> dict:
         ],
         "tomador": [
             ("Nome / Nome empresarial", _t(toma, "xNome") or snap.get("razao_social") or "-"),
-            ("CNPJ / CPF / NIF", _doc(_t(toma, "CNPJ") or _t(toma, "CPF") or _t(toma, "NIF") or snap.get("cnpj"))),
+            # NIF (empresa de fora) vai como é: não tem máscara de CNPJ/CPF.
+            ("CNPJ / CPF / NIF", nif_toma or _doc(_t(toma, "CNPJ") or _t(toma, "CPF") or snap.get("cnpj"))),
             ("Inscrição municipal", _t(toma, "IM") or "-"),
             ("Telefone", _t(toma, "fone") or "-"),
             ("Endereço", _endereco(
                 _t(end_toma, "xLgr") or end_snap.get("xLgr"), _t(end_toma, "nro") or end_snap.get("nro"),
                 _t(end_toma, "xCpl") or end_snap.get("xCpl"), _t(end_toma, "xBairro") or end_snap.get("xBairro"),
             )),
-            ("Município", _municipio(cod_mun_toma) if cod_mun_toma else (_t(end_toma, "endExt/xCidade") or "-")),
+            ("Município", _municipio(cod_mun_toma) if cod_mun_toma else _local_no_exterior(_t(end_toma, "endExt/xCidade"), pais_toma)),
             ("CEP", _cep(_t(end_nac, "CEP") or end_snap.get("CEP"))),
             ("E-mail", _t(toma, "email") or "-"),
         ],

@@ -106,15 +106,26 @@ def _serie_faturamento(db: Session, competencia_final: str, meses: int = 6) -> l
     return pontos
 
 
-def _avisos_dia_de_gerar(db: Session, vinculos: list, hoje: datetime.date | None = None) -> list[dict]:
+def _avisos_dia_de_gerar(
+    db: Session, vinculos: list, hoje: datetime.date | None = None, *, incluir_vespera: bool = True,
+) -> list[dict]:
     """Pedido do Marcos (28/09/2026): "no dia anterior da data de emissão e
     no dia escolhido para o tomador, coloque o aviso em Precisa da sua
     atenção". Olha o mês REAL (hoje), não o navegado; respeita a data movida
     no calendário (AjusteEvento) e some assim que a nota do mês é gerada.
-    Depois do dia, continua avisando que ficou pra trás."""
+    Depois do dia, continua avisando que ficou pra trás.
+
+    05/10/2026 ("o que entra em Precisa de sua atenção deve ser apenas
+    pendências"): a Visão geral chama com `incluir_vespera=False` — o aviso
+    da véspera é coisa marcada pra amanhã, fica nos Próximos passos/agenda.
+    E quem clicou em "ignorar este aviso" nos Próximos passos (atraso
+    consciente) também não é cobrado aqui."""
     hoje = hoje or hoje_br()
     competencia = f"{hoje.year:04d}-{hoje.month:02d}"
     ajustes = {a.chave: a for a in db.query(AjusteEvento).filter(AjusteEvento.tipo == "prazo_emissao").all()}
+    ignoradas = {
+        c for (c,) in db.query(AjusteEvento.chave).filter(AjusteEvento.tipo == "pendencia", AjusteEvento.oculto.is_(True))
+    }
     avisos = []
     for v in vinculos:
         if v.dia_limite_emissao is None:
@@ -126,7 +137,9 @@ def _avisos_dia_de_gerar(db: Session, vinculos: list, hoje: datetime.date | None
                 continue
             dia = ajuste.nova_data or dia
         faltam = (dia - hoje).days
-        if faltam > 1:
+        if faltam > (1 if incluir_vespera else 0):
+            continue
+        if f"gerar:{v.id}:{competencia}" in ignoradas:
             continue
         ja_gerou = (
             db.query(Emissao.id)
@@ -153,10 +166,37 @@ def _avisos_dia_de_gerar(db: Session, vinculos: list, hoje: datetime.date | None
     return sorted(avisos, key=lambda a: ordem[a["tipo"]])
 
 
-def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = None) -> dict:
+def _data_lembrete_aliquota(db: Session, prestador: Prestador, hoje: datetime.date) -> datetime.date | None:
+    """Dia em que a revisão da alíquota DESTE mês está marcada — a mesma
+    conta do evento 'revisar_aliquota' do calendário (app/services/
+    calendario.py): dia da regra do prestador (padrão 1), e o ajuste daquela
+    ocorrência (AjusteEvento) manda — movida vale a nova data, ocultada não
+    tem data (None)."""
+    dia = prestador.dia_lembrete_aliquota or 1
+    data = datetime.date(hoje.year, hoje.month, min(dia, monthrange(hoje.year, hoje.month)[1]))
+    ajuste = (
+        db.query(AjusteEvento)
+        .filter_by(tipo="revisar_aliquota", chave=f"{hoje.year:04d}-{hoje.month:02d}")
+        .one_or_none()
+    )
+    if ajuste is not None:
+        if ajuste.oculto:
+            return None
+        data = ajuste.nova_data or data
+    return data
+
+
+def resumo_mes(
+    db: Session, prestador_id: uuid.UUID, competencia: str | None = None, hoje: datetime.date | None = None,
+) -> dict:
     """Monta o payload completo da tela Visão geral pra uma competência
-    (padrão: mês corrente). Só leitura — não muda estado de nada."""
-    competencia = competencia or _competencia_atual()
+    (padrão: mês corrente). Só leitura — não muda estado de nada.
+
+    "Precisa da sua atenção" (`atencao`) é só o que está pendente AGORA
+    (05/10/2026): o que está marcado pra um dia que ainda não chegou fica na
+    agenda / nos Próximos passos, não aqui."""
+    hoje = hoje or hoje_br()
+    competencia = competencia or f"{hoje.year:04d}-{hoje.month:02d}"
     anterior = _somar_competencia(competencia, -1)
 
     # Clientes "só controle" (fontes de receita do financeiro) não são do emissor.
@@ -245,10 +285,12 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
     if faturado_mes_anterior:
         delta_faturamento_pct = float((faturado_no_mes - faturado_mes_anterior) / faturado_mes_anterior * 100)
 
-    atencao: list[dict] = _avisos_dia_de_gerar(db, vinculos)
+    atencao: list[dict] = _avisos_dia_de_gerar(db, vinculos, hoje, incluir_vespera=False)
     cert = db.query(Certificado).filter_by(prestador_id=prestador_id).one_or_none()
     if cert is not None and cert.validade is not None:
-        dias = (cert.validade - hoje_br()).days
+        # Fica mesmo antes de vencer: renovar um A1 leva dias e, vencido,
+        # trava a emissão — não existe "dia marcado" na agenda pra isso.
+        dias = (cert.validade - hoje).days
         if dias <= DIAS_ALERTA_CERTIFICADO:
             atencao.append({
                 "tipo": "certificado_vencido" if dias < 0 else "certificado_vencendo",
@@ -262,12 +304,16 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
     # não foi confirmada NESTE mês (ver PATCH /api/prestador/aliquota e
     # docstring de Prestador.aliquota_atualizada_em). Só avisa — nunca
     # bloqueia emissão, mesma filosofia do resto desta lista.
+    # 05/10/2026 ("joguei a revisão de alíquota — está na agenda no dia 15 —,
+    # assim ela não deveria aparecer"): só entra quando o dia marcado no
+    # calendário já chegou; antes disso é agenda, não pendência.
     prestador = db.query(Prestador).filter_by(id=prestador_id).one_or_none()
-    hoje = hoje_br()
-    if prestador is not None and (
+    nao_confirmada = prestador is not None and (
         prestador.aliquota_atualizada_em is None
         or (prestador.aliquota_atualizada_em.year, prestador.aliquota_atualizada_em.month) != (hoje.year, hoje.month)
-    ):
+    )
+    data_lembrete = _data_lembrete_aliquota(db, prestador, hoje) if nao_confirmada else None
+    if data_lembrete is not None and data_lembrete <= hoje:
         atencao.append({
             "tipo": "aliquota_pendente",
             "titulo": "Alíquota do Simples Nacional",
@@ -292,6 +338,15 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
         "emissoes": emissoes,
         "atencao": atencao,
     }
+
+
+def _da_pra_enviar(e: Emissao) -> bool:
+    """A nota autorizada ainda tem envio a fazer? Vendedor de relatório sem
+    e-mail não tem como receber — não vira pendência (05/10/2026); tomador
+    marcado como "não precisa enviar", também não."""
+    if e.tomador_documento:
+        return bool(((e.tomador_snapshot or {}).get("email") or "").strip())
+    return bool(e.vinculo and e.vinculo.envio_canal != "nenhum")
 
 
 def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = None) -> dict:
@@ -333,7 +388,7 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
             pendencias.append({**base, "tipo": "prefeitura", "titulo": f"Enviar à prefeitura a nota de {nome}", "acao": "Enviar"})
         elif e.estado == "erro":
             pendencias.append({**base, "tipo": "erro", "titulo": f"A prefeitura recusou a nota de {nome}", "acao": "Ver erro"})
-        elif e.estado == "confirmado" and (e.tomador_documento or (e.vinculo and e.vinculo.envio_canal != "nenhum")):
+        elif e.estado == "confirmado" and (_da_pra_enviar(e)):
             pendencias.append({**base, "tipo": "enviar_tomador", "titulo": f"Mandar a nota pra {nome}", "acao": "Enviar"})
 
     competencia_tem_nota = {
@@ -364,17 +419,44 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
     # "dia de gerar a nota" deste mês já é uma pendência (aparecia duas
     # vezes) e "recebido" já aconteceu — não é próximo passo (05/10/2026).
     a_gerar = {str(p["vinculo_id"]) for p in pendencias if p["tipo"] == "gerar"}
-    agenda = [
-        {"data": ev["data"], "tipo": ev.get("categoria") or ev["tipo"], "titulo": ev.get("apelido") or ev["titulo"],
-         "detalhe": ev["titulo"], "valor": ev.get("valor")}
-        for ev in eventos
+    da_agenda = [
+        ev for ev in eventos
         if ev["tipo"] != "recebimento_confirmado"
         and not (
             ev["tipo"] == "prazo_emissao" and str(ev.get("vinculo_id")) in a_gerar
             and (ev["data"].year, ev["data"].month) == (hoje.year, hoje.month)
         )
     ]
+    # Vários avisos iguais no mesmo dia viram uma linha só ("Dia de gerar 8
+    # notas") — o card ficava comprido demais (05/10/2026); o detalhe de cada
+    # um está no Calendário.
+    juntaveis = {
+        "prazo_emissao": "Dia de gerar {n} notas",
+        "recebimento_previsto": "Previsão de {n} recebimentos",
+    }
+    por_dia: dict[tuple, list[dict]] = {}
+    for ev in da_agenda:
+        if ev["tipo"] in juntaveis:
+            por_dia.setdefault((ev["data"], ev["tipo"]), []).append(ev)
+    agenda: list[dict] = []
+    for ev in da_agenda:
+        grupo = por_dia.get((ev["data"], ev["tipo"])) if ev["tipo"] in juntaveis else None
+        if grupo is not None and len(grupo) > 2:
+            if ev is not grupo[0]:
+                continue
+            titulo = juntaveis[ev["tipo"]].format(n=len(grupo))
+            valores = [g["valor"] for g in grupo if g.get("valor") is not None]
+            agenda.append({
+                "data": ev["data"], "tipo": ev["tipo"], "titulo": titulo, "detalhe": titulo,
+                "valor": round(sum(valores), 2) if valores else None, "quantidade": len(grupo),
+            })
+        else:
+            agenda.append({
+                "data": ev["data"], "tipo": ev.get("categoria") or ev["tipo"], "titulo": ev.get("apelido") or ev["titulo"],
+                "detalhe": ev["titulo"], "valor": ev.get("valor"),
+            })
     agenda.sort(key=lambda ev: ev["data"])
+    total_agenda = len(agenda)
     agenda = agenda[:8]
     # Muitas notas na mesma etapa viram uma linha só ("Assinar 8 notas").
     agrupaveis = {
@@ -393,12 +475,28 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
             })
         else:
             agrupadas += do_tipo
-    agrupadas += [p for p in pendencias if p["tipo"] not in agrupaveis]
+    # Notas a gerar: mais de duas pro MESMO dia viram "Gerar 8 notas" (o dia
+    # vai em `data`, a tela escreve "até 15/10"); cada uma continua em
+    # `itens`, com o seu link e o seu "ignorar".
+    gerar_por_dia: dict[datetime.date | None, list[dict]] = {}
+    for p in pendencias:
+        if p["tipo"] == "gerar":
+            gerar_por_dia.setdefault(p.get("data"), []).append(p)
+    for data, do_dia in gerar_por_dia.items():
+        if len(do_dia) > 2:
+            do_dia.sort(key=lambda p: p["titulo"].lower())
+            agrupadas.append({
+                "tipo": "gerar", "titulo": f"Gerar {len(do_dia)} notas", "acao": "Ver", "link": "/app/tomadores",
+                "competencia": competencia, "data": data, "atrasada": bool(data and data < hoje), "itens": do_dia,
+            })
+        else:
+            agrupadas += do_dia
+    agrupadas += [p for p in pendencias if p["tipo"] not in agrupaveis and p["tipo"] != "gerar"]
     ordem = {"erro": 0, "prefeitura": 1, "assinar": 2, "enviar_tomador": 3, "gerar": 4}
     # Primeiro o que já dá pra resolver agora; depois as notas a gerar, na
     # ordem do dia combinado (as sem dia por último).
     agrupadas.sort(key=lambda p: (ordem.get(p["tipo"], 9), p.get("data") or datetime.date.max, p["titulo"].lower()))
-    return {"pendencias": agrupadas[:10], "total_pendencias": len(agrupadas), "agenda": agenda}
+    return {"pendencias": agrupadas[:10], "total_pendencias": len(agrupadas), "agenda": agenda, "total_agenda": total_agenda}
 
 
 def proxima_nota(db: Session, atual: Emissao) -> dict:
@@ -427,7 +525,7 @@ def proxima_nota(db: Session, atual: Emissao) -> dict:
     passos = {"montado": "Assinar", "assinado": "Enviar à prefeitura", "erro": "Ver a recusa", "confirmado": "Enviar ao tomador"}
     fila = [
         e for e in candidatas
-        if e.estado != "confirmado" or e.tomador_documento or (e.vinculo and e.vinculo.envio_canal != "nenhum")
+        if e.estado != "confirmado" or _da_pra_enviar(e)
     ]
     if not fila:
         return {"proxima": None, "restantes": 0}

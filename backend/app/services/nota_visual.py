@@ -39,6 +39,7 @@ from lxml import etree
 from app.models import Emissao
 from app.services.motor_emissao import motivo_da_recusa
 from app.services.municipios import rotulo_municipio
+from app.services.paises import nome_do_pais
 
 NS = "http://www.sped.fazenda.gov.br/nfse"
 
@@ -116,6 +117,7 @@ def montar_nota_visual(emissao: Emissao) -> dict:
         return _t(inf, path) if inf is not None else None
 
     endereco_toma = snap.get("endereco") or {}
+    de_fora = str(snap.get("tipo_documento") or "").upper() == "NIF"
     servico_codigos = snap.get("codigo_servico_usado") or {}
 
     tot_trib = None
@@ -169,11 +171,13 @@ def montar_nota_visual(emissao: Emissao) -> dict:
         },
         "tomador": {
             "razao_social": snap.get("razao_social"),
-            "cnpj": _fmt_cnpj(snap.get("cnpj")),
+            # De fora do Brasil: o documento é o NIF (não tem máscara de CNPJ)
+            # e no lugar do endereço daqui vai o país.
+            "cnpj": f"NIF {snap.get('cnpj')}" if de_fora and snap.get("cnpj") else _fmt_cnpj(snap.get("cnpj")),
             "endereco": _fmt_endereco(
                 endereco_toma.get("xLgr"), endereco_toma.get("nro"), endereco_toma.get("xCpl"),
                 endereco_toma.get("xBairro"), endereco_toma.get("cMun"), endereco_toma.get("CEP"),
-            ),
+            ) or (f"Fora do Brasil — {nome_do_pais(snap.get('pais'))}" if de_fora and snap.get("pais") else None),
         },
         "servico": {
             "descricao": snap.get("descricao_renderizada"),

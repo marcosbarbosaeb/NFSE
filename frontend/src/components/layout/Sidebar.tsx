@@ -1,5 +1,7 @@
 import { ArrowLeftRight, Building2, CalendarDays, Contact, FileText, Gift, Home, Layers, UserRound, Users, Wallet } from "lucide-react"
+import { useEffect, useState } from "react"
 import { Link, NavLink, useLocation } from "react-router-dom"
+import { api } from "../../lib/api"
 import { useModulos } from "../../lib/modulos"
 import { BotaoSuporte } from "../SuporteModal"
 import { TrocaEmpresa } from "../TrocaEmpresa"
@@ -45,6 +47,25 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
     { titulo: "", itens: GERAL },
   ]
   const doisProdutos = modulos.emissor && modulos.financeiro
+  // Selo da Conciliação (05/10/2026): a soma das DUAS conciliações — notas
+  // por conferir (atrasadas, com diferença...) + linhas do extrato sem
+  // classificar. O título do selo diz quanto é de cada uma.
+  const [conciliar, setConciliar] = useState<{ notas: number; extrato: number } | null>(null)
+  const noFinanceiro = pathname.startsWith("/app/financeiro")
+  useEffect(() => {
+    if (!modulos.financeiro) return
+    api
+      .get<{ notas: { aplica: boolean; pendencias: number }; extrato: { pendentes: number } }>("/conciliacao/resumo")
+      .then((r) => setConciliar({ notas: r.notas.aplica ? r.notas.pendencias : 0, extrato: r.extrato.pendentes }))
+      .catch(() => undefined)
+  }, [modulos.financeiro, noFinanceiro, pathname === "/app/financeiro/conciliacao"])
+  useEffect(() => {
+    // A tela de Conciliação avisa quando uma baixa muda a conta.
+    const ouvir = (e: Event) => setConciliar((e as CustomEvent<{ notas: number; extrato: number }>).detail)
+    window.addEventListener("agenteana:conciliacao", ouvir)
+    return () => window.removeEventListener("agenteana:conciliacao", ouvir)
+  }, [])
+  const totalConciliar = conciliar ? conciliar.notas + conciliar.extrato : 0
   return (
     <>
       {aberto && <div className="fixed inset-0 z-40 bg-slate-900/50 lg:hidden" onClick={onFechar} aria-hidden="true" />}
@@ -83,6 +104,15 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
                 >
                   <Icon size={18} />
                   {label}
+                  {to === "/app/financeiro/conciliacao" && totalConciliar > 0 && conciliar && (
+                    <span
+                      className="ml-auto rounded-full bg-accent-500 px-1.5 text-xs font-semibold text-white"
+                      title={`Pra conferir: ${conciliar.notas} nas notas (foram pagas?) e ${conciliar.extrato} no extrato (sem classificar)`}
+                      aria-label={`${totalConciliar} pendências na conciliação: ${conciliar.notas} nas notas e ${conciliar.extrato} no extrato`}
+                    >
+                      {totalConciliar}
+                    </span>
+                  )}
                 </NavLink>
               ))}
             </div>

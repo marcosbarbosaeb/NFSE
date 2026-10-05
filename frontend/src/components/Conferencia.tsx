@@ -15,8 +15,14 @@ const ABA_DA_EMPRESA: Record<string, { aba: string; rotulo: string }> = {
 
 function atalho(ponto: PontoConferencia, vinculoId?: string | null): { para: string; rotulo: string } | null {
   if (ponto.onde === "tomador" && vinculoId) {
-    // Nome e endereço têm edição própria na ficha ("Dados do tomador").
-    const doEndereco = ["cep", "endereco", "cod_municipio", "razao_social"].includes(ponto.campo ?? "")
+    // Cliente que nasceu "só controle" e ainda não disse quem é (sem CNPJ):
+    // o conserto é o passo "Quer emitir nota pra este cliente?" da ficha.
+    if (ponto.codigo === "documento_vazio" && ponto.campo === "cnpj") {
+      return { para: `/app/tomadores/${vinculoId}?emitir=1`, rotulo: "Dizer quem é este cliente" }
+    }
+    // Nome e endereço têm edição própria na ficha ("Dados do tomador") — e,
+    // na empresa de fora do Brasil, o país e o NIF também.
+    const doEndereco = ["cep", "endereco", "cod_municipio", "razao_social", "pais", "nif"].includes(ponto.campo ?? "")
     return doEndereco
       ? { para: `/app/tomadores/${vinculoId}?editar=endereco`, rotulo: "Corrigir os dados do tomador" }
       : { para: `/app/tomadores/${vinculoId}`, rotulo: "Abrir o cadastro do tomador" }

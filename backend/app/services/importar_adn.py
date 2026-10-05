@@ -277,6 +277,9 @@ def _vinculos_por_documento(db: Session) -> dict[str, list[PrestadorTomador]]:
     mapa: dict[str, list[PrestadorTomador]] = {}
     for v in db.query(PrestadorTomador).join(Tomador).order_by(PrestadorTomador.apelido):
         mapa.setdefault(v.tomador.cnpj, []).append(v)
+        # Tomador de fora do Brasil: a nota dele vem com o NIF no lugar do CNPJ.
+        if v.tomador.de_fora and (v.tomador.nif or "").strip():
+            mapa.setdefault(v.tomador.nif.strip(), []).append(v)
     return mapa
 
 
@@ -339,6 +342,11 @@ def _novo_vinculo(db: Session, prestador: Prestador, nota: dict) -> PrestadorTom
         sem_nota = False
     else:
         tomador = criar_tomador_interno(db, toma["nome"] or "Tomador", toma["cMun"] or prestador.cod_municipio)
+        if toma["tipo"] == "NIF" and toma["documento"] and (toma.get("pais") or "BR").upper() != "BR":
+            # Empresa de fora: já fica identificada (país + NIF da nota) — a
+            # pessoa só precisa ligar a emissão pra gerar as próximas.
+            tomador.nif, tomador.pais = toma["documento"][:40], str(toma["pais"]).upper()[:2]
+            db.flush()
         sem_nota = True
     vinculo = PrestadorTomador(
         id=uuid.uuid4(), prestador_id=prestador.id, tomador_id=tomador.id,
@@ -416,7 +424,8 @@ def importar(db: Session, prestador: Prestador, mapeamento: list[dict], *, ajust
                 # Mesmo CNPJ faturado em programas diferentes (ex.: AWIN e
                 # AWIN Rchlo): vai pro vínculo livre no mês com a descrição
                 # mais parecida.
-                irmaos = por_doc.get(vinculo.tomador.cnpj, [vinculo]) if vinculo.tomador.cnpj == doc else [vinculo]
+                do_vinculo = vinculo.tomador.nif.strip() if vinculo.tomador.de_fora and vinculo.tomador.nif else vinculo.tomador.cnpj
+                irmaos = por_doc.get(do_vinculo, [vinculo]) if do_vinculo == doc else [vinculo]
                 candidatos = sorted(
                     irmaos, key=lambda v: (-round(_parecido(v.template_descricao, nota["descricao"]), 2), v.id != vinculo.id)
                 )

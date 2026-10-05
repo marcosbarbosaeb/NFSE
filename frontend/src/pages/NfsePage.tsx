@@ -20,6 +20,7 @@ import { DownloadsNota, SeloAssinatura, SeloPrefeitura, SeloTomador } from "../c
 import { CampoData } from "../components/CampoData"
 import { Conferencia } from "../components/Conferencia"
 import { ImportarNacionalModal } from "../components/ImportarNacionalModal"
+import { LoteAndamento } from "../components/LoteAndamento"
 import { ConfirmarLoteModal, LotePainel, RelatorioLoteModal } from "../components/LotePainel"
 import { ShopeeModal } from "../components/ShopeeModal"
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react"
@@ -33,7 +34,7 @@ import { Modal } from "../components/ui/Modal"
 import { StatCard } from "../components/ui/StatCard"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { dataPadraoDaCompetencia, hojeLocal } from "../lib/datas"
-import { LOTE_RODANDO, NOME_ACAO } from "../lib/lotes"
+import { LOTE_ESPERANDO, LOTE_RODANDO, NOME_ACAO, PENDENTES } from "../lib/lotes"
 import { formatBRL, formatCompetenciaLonga } from "../lib/format"
 import type {
   AcaoLote,
@@ -120,6 +121,10 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
   // Mês da competência (01..12) dentro do ano escolhido — filtro no cliente.
   const [mesFiltro, setMesFiltro] = useState("")
   const [busca, setBusca] = useState("")
+  // "Ainda não autorizadas" (05/10/2026): o cartão filtra a lista só nelas.
+  const [soPendentes, setSoPendentes] = useState(false)
+  // Muda a cada recarga da lista: o passo a passo do lote refaz a conta.
+  const [versao, setVersao] = useState(0)
   const [emissoes, setEmissoes] = useState<EmissaoListaLinha[] | null>(null)
   const [vinculos, setVinculos] = useState<VinculoResumo[]>([])
   const [carregando, setCarregando] = useState(true)
@@ -164,7 +169,7 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
         const ultimo = recentes[0]
         if (!ultimo || lotesFechados().includes(ultimo.id)) return
         const recente = !ultimo.criado_em || Date.now() - new Date(ultimo.criado_em).getTime() < 24 * 3600 * 1000
-        if (LOTE_RODANDO(ultimo) || (ultimo.status === "interrompido" && recente)) setLote(ultimo)
+        if (LOTE_RODANDO(ultimo) || LOTE_ESPERANDO(ultimo) || (ultimo.status === "interrompido" && recente)) setLote(ultimo)
       })
       .catch(() => {})
   }, [])
@@ -189,6 +194,7 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
   const pedidoAtual = useRef(0)
   function recarregar() {
     const pedido = ++pedidoAtual.current
+    setVersao((v) => v + 1)
     setCarregando(true)
     setErro(null)
     const params = new URLSearchParams()
@@ -230,10 +236,11 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
     const termo = busca.trim().toLowerCase()
     return emissoes.filter((e) => {
       if (competenciaFiltro && e.competencia !== competenciaFiltro) return false
+      if (soPendentes && (e.estado === "confirmado" || e.estado === "cancelada" || e.estado === "substituida")) return false
       if (!termo) return true
       return e.apelido.toLowerCase().includes(termo) || e.tomador_razao_social.toLowerCase().includes(termo)
     })
-  }, [emissoes, busca, competenciaFiltro])
+  }, [emissoes, busca, competenciaFiltro, soPendentes])
 
   // Resumo do filtro de ano/tomador/mês: quantas notas e quanto elas somam.
   // (Nada de pagamento aqui — isso é do módulo financeiro, 05/10/2026.)
@@ -242,7 +249,11 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
       (e) => e.estado !== "cancelada" && e.estado !== "substituida" && (!competenciaFiltro || e.competencia === competenciaFiltro),
     )
     const emitidas = ativas.filter((e) => e.estado === "confirmado")
+    const aFazer = ativas.filter((e) => e.estado !== "confirmado")
     return {
+      // Recusadas primeiro: é nelas que a pessoa precisa mexer.
+      pendentes: [...aFazer.filter((e) => e.estado === "erro"), ...aFazer.filter((e) => e.estado !== "erro")],
+      recusadas: aFazer.filter((e) => e.estado === "erro").length,
       totalEmitidas: ativas.length,
       valorTotal: ativas.reduce((soma, e) => soma + e.valor, 0),
       totalAutorizadas: emitidas.length,
@@ -299,11 +310,9 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
     setConfirmacao({
       body: { acao, emissao_ids: selecionadasVisiveis.map((e) => e.id) },
       totalSelecionadas: selecionadasVisiveis.length,
-      permitirReenviar: acao === "email" || acao === "email_geral",
+      permitirReenviar: acao === "email",
       aviso:
-        acao === "email_geral"
-          ? "É uma cópia pros e-mails que você cadastrou em Empresa › E-mails (contador, você mesmo...). Não conta como entrega ao tomador."
-          : acao === "email"
+        acao === "email"
             ? emLote
               ? "Cada nota vai pro e-mail do vendedor dela — o que veio no relatório."
               : "Cada nota vai pro e-mail cadastrado no tomador dela (só de quem recebe por e-mail)."
@@ -414,6 +423,28 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
         </Card>
       )}
 
+      {emLote && (
+        <LoteAndamento
+          vinculoId={vinculoRelatorio?.id ?? null}
+          versao={versao}
+          ambienteTeste={ambienteTeste}
+          onLote={(novo) => {
+            setLote(novo)
+            carregarLotes()
+          }}
+          onVerNotas={(comp, pendentes) => {
+            const [anoComp, mesComp] = comp.split("-")
+            if (ANOS.map(String).includes(anoComp)) {
+              trocarAno(anoComp)
+              setMesFiltro(mesComp)
+            }
+            setBusca("")
+            setSoPendentes(Boolean(pendentes))
+            document.getElementById("lista-notas")?.scrollIntoView({ behavior: "smooth", block: "start" })
+          }}
+        />
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           icon={<FileText size={18} />}
@@ -434,8 +465,34 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
           iconClassName="bg-warning-50 text-warning-600"
           label="Ainda não autorizadas"
           value={confronto.totalAFazer}
-          sublabel="falta assinar ou enviar à prefeitura"
-          sublabelClassName={confronto.totalAFazer > 0 ? "text-warning-600" : undefined}
+          sublabel={
+            confronto.totalAFazer === 0
+              ? "nenhuma pendência com a prefeitura"
+              : soPendentes
+                ? "mostrando só elas — clique pra ver todas"
+                : confronto.totalAFazer === 1
+                  ? confronto.recusadas === 1
+                    ? "a prefeitura recusou — abrir e corrigir →"
+                    : "abrir a nota →"
+                  : confronto.recusadas > 0
+                    ? `${confronto.recusadas} recusada${confronto.recusadas === 1 ? "" : "s"} pela prefeitura — ver quais →`
+                    : "falta assinar ou enviar à prefeitura — ver quais →"
+          }
+          sublabelClassName={confronto.totalAFazer > 0 ? "font-medium text-warning-600" : undefined}
+          onClick={
+            confronto.totalAFazer === 0
+              ? undefined
+              : () => {
+                  // Uma só: vai direto pra nota (é lá que se corrige e reenvia).
+                  if (confronto.totalAFazer === 1) navigate(`/app/nfse/${confronto.pendentes[0].id}`)
+                  else {
+                    setSoPendentes((v) => !v)
+                    setSelecionadas(new Set())
+                    document.getElementById("lista-notas")?.scrollIntoView({ behavior: "smooth", block: "start" })
+                  }
+                }
+          }
+          ativo={soPendentes}
         />
       </div>
 
@@ -461,11 +518,13 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
                     <Badge variant="info">
                       Rodando — {l.feitos + l.falhas} de {l.total}
                     </Badge>
-                  ) : l.status === "concluido" && l.falhas === 0 ? (
-                    <Badge variant="success">Tudo certo</Badge>
+                  ) : LOTE_ESPERANDO(l) ? (
+                    <Badge variant="info">Esperando o limite de e-mails — volta sozinho</Badge>
+                  ) : l.status === "concluido" && PENDENTES(l) === 0 ? (
+                    <Badge variant="success">{l.falhas > 0 ? "Tudo certo (pendências já resolvidas)" : "Tudo certo"}</Badge>
                   ) : l.status === "concluido" ? (
                     <Badge variant="warning">
-                      {l.falhas} com pendência
+                      {PENDENTES(l)} com pendência
                     </Badge>
                   ) : (
                     <Badge variant="neutral">{l.status === "cancelado" ? "Cancelado" : "Interrompido"}</Badge>
@@ -480,7 +539,7 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
         </Card>
       )}
 
-      <Card className="p-5">
+      <Card className="scroll-mt-4 p-5" id="lista-notas">
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <select value={ano} onChange={(e) => trocarAno(e.target.value)} aria-label="Ano" className={SELECT_FILTRO}>
             {ANOS.map((a) => (
@@ -517,16 +576,25 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
           </div>
         </div>
 
+        {soPendentes && (
+          <p className="mb-4 flex flex-wrap items-center gap-2 rounded-lg bg-warning-50 px-4 py-2.5 text-sm text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
+            Mostrando só as notas ainda não autorizadas ({filtradas.length}). Clique no nome pra abrir a nota e corrigir.
+            <button type="button" onClick={() => setSoPendentes(false)} className="ml-auto font-semibold underline">
+              Ver todas
+            </button>
+          </p>
+        )}
+
         {/* "Enviar todas" (29/09/2026) — tomador + mês filtrados: manda todas
             as notas prontas daquele mês por e-mail, num lote em segundo plano.
             Pensado pra Shopee (uma nota por vendedor, centenas por mês). */}
-        {vinculoSelecionado && !competenciaFiltro && (
+        {!emLote && vinculoSelecionado && !competenciaFiltro && (
           <p className="mb-4 flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-2.5 text-sm text-slate-600 dark:bg-slate-900/40 dark:text-slate-300">
             <Send size={15} className="shrink-0 text-primary-500" />
             Escolha um mês pra enviar todas as notas de {vinculoSelecionado.apelido} por e-mail de uma vez.
           </p>
         )}
-        {vinculoSelecionado && competenciaFiltro && resumoEnvios && (
+        {!emLote && vinculoSelecionado && competenciaFiltro && resumoEnvios && (
           <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-primary-100 bg-primary-50/60 px-4 py-3 dark:border-primary-900/40 dark:bg-primary-900/20">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
@@ -592,6 +660,10 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
             >
               <CheckCircle2 size={15} /> Fazer tudo o que falta
             </Button>
+            {/* Notas em lote: um caminho só ("Fazer tudo o que falta"); os comandos
+                separados ficam na lista de NFS-e. */}
+            {!emLote && (
+              <>
             <Button type="button" variant="outline" className="bg-white px-3 py-1.5 dark:bg-slate-800" disabled={loteRodando} onClick={() => acaoNaSelecao("assinar")}>
               <PenLine size={15} /> Assinar
             </Button>
@@ -608,18 +680,10 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
             >
               <Mail size={15} /> {emLote ? "Enviar aos vendedores (e-mail do relatório)" : "Enviar ao tomador por e-mail"}
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="bg-white px-3 py-1.5 dark:bg-slate-800"
-              disabled={loteRodando}
-              title="Uma cópia pros e-mails de Empresa › E-mails (contador, você mesmo). Não conta como entrega ao tomador."
-              onClick={() => acaoNaSelecao("email_geral")}
-            >
-              <Send size={15} /> Mandar cópia pro contador
-            </Button>
+              </>
+            )}
             <Button type="button" variant="outline" className="bg-white px-3 py-1.5 dark:bg-slate-800" disabled={baixandoZip} onClick={baixarZip}>
-              <FileArchive size={15} /> {baixandoZip ? "Gerando .zip..." : "Baixar XMLs (.zip)"}
+              <FileArchive size={15} /> {baixandoZip ? "Gerando .zip..." : "Baixar arquivos (.zip)"}
             </Button>
             <Button type="button" variant="ghost" className="px-3 py-1.5" onClick={() => setSelecionadas(new Set())}>
               <X size={15} /> Limpar

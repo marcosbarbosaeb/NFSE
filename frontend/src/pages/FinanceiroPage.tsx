@@ -4,7 +4,8 @@ import { Link, useLocation, useSearchParams } from "react-router-dom"
 import { BaixaPagamento } from "../components/BaixaPagamento"
 import { PainelCards } from "../components/PainelCards"
 import { RecebimentosSemNotaCard, linkGerarNota } from "../components/financeiro/RecebimentosSemNota"
-import { AnotacaoCard, EscolherFormatoAnotacao, useAnotacoes } from "../components/financeiro/Anotacoes"
+import { AnotacaoCard, EscolherFormatoAnotacao, anotacaoApareceEm, useAnotacoes } from "../components/financeiro/Anotacoes"
+import { GraficoEntrouSaiu, GraficoParaOndeVai, GraficoRecebidoPorCliente } from "../components/graficos/Paineis"
 import { ContasDoMesPainel } from "../components/financeiro/ContasDoMesPainel"
 import { LancamentoModal } from "../components/financeiro/LancamentoModal"
 import { ResultadoAno } from "../components/financeiro/ResultadoAno"
@@ -15,7 +16,7 @@ import { ApiError, api, formatarErro } from "../lib/api"
 import { NOMES_MESES, formatDiaMes, mensagemErro } from "../lib/financeiro"
 import { competenciaAtual, formatBRL, formatCompetenciaAbrev } from "../lib/format"
 import { useModulos } from "../lib/modulos"
-import type { Despesa, NotaAberta, Pagamento, ResumoFinanceiro, VinculoResumo } from "../lib/types"
+import type { Despesa, NotaAberta, Pagamento, ResumoConciliacao, ResumoFinanceiro, VinculoResumo } from "../lib/types"
 import { ImportarExtratoModal, RegistrarPagamentoModal } from "./RecebimentosPage"
 
 // Pedido do Marcos (28/09/2026): "coloque a confrontação de recebimentos e
@@ -103,13 +104,17 @@ export function FinanceiroPage() {
 
   const [recargaSemNota, setRecargaSemNota] = useState(0)
   const modulos = useModulos()
-  // Disposição dos cards (05/10/2026): abrir/fechar e arrastar.
+  // Disposição dos cards (05/10/2026): abrir/fechar, arrastar, largura e esconder.
   const [editando, setEditando] = useState(false)
-  const { anotacoes, erro: erroAnotacao, criar: criarAnotacao, atualizar: atualizarAnotacao, apagar: apagarAnotacao } = useAnotacoes(true)
+  const { anotacoes: todasAnotacoes, erro: erroAnotacao, criar: criarAnotacao, atualizar: atualizarAnotacao, apagar: apagarAnotacao } = useAnotacoes(true, "financeiro")
+  // Só as anotações que a pessoa quer ver aqui (as outras ficam na Visão geral).
+  const anotacoes = todasAnotacoes.filter((n) => anotacaoApareceEm(n, "financeiro", true))
   const [anotacaoNova, setAnotacaoNova] = useState<string | null>(null)
   // "Nova anotação" pergunta o formato (texto, lista ou tabela) antes de criar.
   const [escolhendoFormatoAnotacao, setEscolhendoFormatoAnotacao] = useState(false)
   const [pendentesExtrato, setPendentesExtrato] = useState(0)
+  // A outra conciliação (05/10/2026): notas atrasadas, pagas com diferença etc.
+  const [pendentesNotas, setPendentesNotas] = useState(0)
   const [semNota, setSemNota] = useState(0)
 
   function recarregar() {
@@ -123,7 +128,13 @@ export function FinanceiroPage() {
       })
       .catch((err) => setErroResumo(mensagemErro(err, "Não deu pra carregar o resultado do ano.")))
     api.get<NotaAberta[]>("/notas-a-receber").then(setAbertas).catch(() => setAbertas([]))
-    api.get<{ pendentes: number }>("/conciliacao/contagem").then((r) => setPendentesExtrato(r.pendentes)).catch(() => undefined)
+    api
+      .get<ResumoConciliacao>("/conciliacao/resumo")
+      .then((r) => {
+        setPendentesExtrato(r.extrato.pendentes)
+        setPendentesNotas(r.notas.aplica ? r.notas.pendencias : 0)
+      })
+      .catch(() => undefined)
     api.get<unknown[]>("/financeiro/recebimentos-sem-nota").then((r) => setSemNota(r.length)).catch(() => undefined)
     Promise.all([api.get<Pagamento[]>(`/pagamentos?ano=${ano}&por=recebimento`), api.get<Despesa[]>(`/despesas?ano=${ano}`)])
       .then(([p, d]) => {
@@ -161,6 +172,8 @@ export function FinanceiroPage() {
 
   const periodo = mes ? `${ano}-${mes}` : null
   const rotuloPeriodo = mes ? `${NOMES_MESES[Number(mes) - 1]} de ${ano}` : `em ${ano}`
+  // Pros gráficos: "outubro de 2026" ou "2026".
+  const periodoDosGraficos = mes ? `${NOMES_MESES[Number(mes) - 1].toLowerCase()} de ${ano}` : ano
   const pagamentosDoPeriodo = (pagamentos ?? []).filter((p) => !periodo || mesDoRecebimento(p) === periodo)
   const despesasDoPeriodo = (despesas ?? []).filter((d) => !periodo || d.competencia === periodo)
   const maior = Math.max(1, ...meses.map((m) => Math.max(m.recebido, m.gasto)))
@@ -195,8 +208,13 @@ export function FinanceiroPage() {
             className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
           >
             <ArrowLeftRight size={16} /> Conciliação
-            {pendentesExtrato > 0 && (
-              <span className="rounded-full bg-accent-500 px-1.5 text-xs font-semibold text-white">{pendentesExtrato}</span>
+            {pendentesNotas + pendentesExtrato > 0 && (
+              <span
+                className="rounded-full bg-accent-500 px-1.5 text-xs font-semibold text-white"
+                title={`Pra conferir: ${pendentesNotas} nas notas (foram pagas?) e ${pendentesExtrato} no extrato (sem classificar)`}
+              >
+                {pendentesNotas + pendentesExtrato}
+              </span>
             )}
           </Link>
           <Button variant="outline" onClick={() => setModal("extrato")} data-tour="financeiro-extrato">
@@ -232,28 +250,29 @@ export function FinanceiroPage() {
       {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
       {erroAnotacao && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erroAnotacao}</p>}
 
-      {pendentesExtrato > 0 && !editando && (
-        <Link
-          to="/app/financeiro/conciliacao"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary-100 bg-primary-50/70 px-4 py-3 text-sm text-slate-700 hover:bg-primary-50 dark:border-primary-900/40 dark:bg-primary-900/20 dark:text-slate-200"
-        >
-          <span>
-            <strong>{pendentesExtrato}</strong> {pendentesExtrato === 1 ? "lançamento do extrato está" : "lançamentos do extrato estão"} sem
-            classificar.
-          </span>
-          <span className="font-semibold text-primary-700 dark:text-primary-200">Abrir a Conciliação →</span>
-        </Link>
-      )}
-
-      {editando && (
-        <p className="rounded-lg bg-primary-50 px-4 py-3 text-sm text-primary-800 dark:bg-primary-900/30 dark:text-primary-200">
-          Arraste os cards pra mudar a ordem (ou use as setas) e escolha quais ficam abertos. Fica salvo na sua conta.
-        </p>
+      {(pendentesNotas > 0 || pendentesExtrato > 0) && !editando && (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-primary-100 bg-primary-50/70 px-4 py-3 text-sm text-slate-700 dark:border-primary-900/40 dark:bg-primary-900/20 dark:text-slate-200">
+          <span className="font-medium">Conciliação:</span>
+          {pendentesNotas > 0 && (
+            <Link to="/app/financeiro/conciliacao?parte=notas&filtro=pendentes" className="hover:underline">
+              <strong>{pendentesNotas}</strong> {pendentesNotas === 1 ? "pendência nas notas" : "pendências nas notas"} (foram pagas?){" "}
+              <span className="font-semibold text-primary-700 dark:text-primary-200">Conferir →</span>
+            </Link>
+          )}
+          {pendentesExtrato > 0 && (
+            <Link to="/app/financeiro/conciliacao?parte=extrato" className="hover:underline">
+              <strong>{pendentesExtrato}</strong> {pendentesExtrato === 1 ? "lançamento do extrato" : "lançamentos do extrato"} sem classificar{" "}
+              <span className="font-semibold text-primary-700 dark:text-primary-200">Classificar →</span>
+            </Link>
+          )}
+        </div>
       )}
 
       <PainelCards
         tela="financeiro"
         editando={editando}
+        onConcluir={() => setEditando(false)}
+        permitirOcultar
         fechadosDePadrao={["confronto"]}
         abrir={hash === "#a-receber" ? "a_receber" : null}
         secoes={[
@@ -261,8 +280,29 @@ export function FinanceiroPage() {
             id: "resultado",
             titulo: mes ? `Resultado de ${NOMES_MESES[Number(mes) - 1].toLowerCase()}` : "Resultado do ano",
             conteudo: (
-      <ResultadoAno resumo={resumo?.ano === ano ? resumo : null} erro={erroResumo} ano={ano} mes={mes} onSelecionarMes={selecionarMes} semTitulo comNotas={modulos.emissor} />
+      <ResultadoAno resumo={resumo?.ano === ano ? resumo : null} erro={erroResumo} ano={ano} mes={mes} onSelecionarMes={selecionarMes} semTitulo comNotas={modulos.emissor} semCategorias />
             ),
+          },
+          // Gráficos (05/10/2026): tudo com o que a tela já carregou.
+          {
+            id: "graf_entrou_saiu",
+            titulo: "Entrou × saiu por mês",
+            grupo: "gráfico",
+            conteudo: <GraficoEntrouSaiu resumo={resumo?.ano === ano ? resumo : null} mes={mes} onSelecionarMes={selecionarMes} rotuloEixo={modulos.emissor ? "pelo mês da nota" : "pelo mês de referência"} />,
+          },
+          {
+            id: "graf_para_onde",
+            titulo: "Para onde vai o dinheiro",
+            grupo: "gráfico",
+            meia: true,
+            conteudo: <GraficoParaOndeVai despesas={despesas === null ? null : despesasDoPeriodo} rotuloPeriodo={periodoDosGraficos} />,
+          },
+          {
+            id: "graf_clientes",
+            titulo: "Recebido por cliente",
+            grupo: "gráfico",
+            meia: true,
+            conteudo: <GraficoRecebidoPorCliente pagamentos={pagamentos === null ? null : pagamentosDoPeriodo} rotuloPeriodo={periodoDosGraficos} />,
           },
           {
             id: "contas",
@@ -307,6 +347,8 @@ export function FinanceiroPage() {
                 key={nota.id}
                 nota={nota}
                 nova={nota.id === anotacaoNova}
+                tela="financeiro"
+                podeTrocarTela
                 onMudou={(m) => atualizarAnotacao(nota.id, m)}
                 onApagar={() => apagarAnotacao(nota.id)}
               />
@@ -321,7 +363,12 @@ export function FinanceiroPage() {
             resumo: abertas ? formatBRL(abertas.reduce((s, n) => s + n.valor, 0)) : null,
             conteudo: (
       <Card className="p-5">
-        <p className="mb-3 text-xs text-slate-400 dark:text-slate-500">Notas emitidas sem pagamento registrado, de todos os meses.</p>
+        <p className="mb-3 text-xs text-slate-400 dark:text-slate-500">
+          Notas emitidas sem pagamento registrado, de todos os meses.{" "}
+          <Link to="/app/financeiro/conciliacao?parte=notas" className="font-semibold text-primary-600 hover:underline dark:text-primary-300">
+            Conferir nota por nota na Conciliação →
+          </Link>
+        </p>
         {abertas === null ? (
           <p className="py-4 text-center text-sm text-slate-400">Carregando...</p>
         ) : abertas.length === 0 ? (

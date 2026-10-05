@@ -515,7 +515,7 @@ export function ImportarExtratoModal({
                   ? "1 lançamento do extrato está sem classificar."
                   : `${resultado.pendentes} lançamentos do extrato estão sem classificar.`}
               </span>
-              <Link to="/app/financeiro/conciliacao" onClick={onClose} className="font-semibold text-primary-700 hover:underline dark:text-primary-200">
+              <Link to="/app/financeiro/conciliacao?parte=extrato" onClick={onClose} className="font-semibold text-primary-700 hover:underline dark:text-primary-200">
                 Abrir a Conciliação →
               </Link>
             </div>
