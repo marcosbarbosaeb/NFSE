@@ -58,7 +58,8 @@ from app.config import get_settings
 from app.database import definir_prestador_atual, get_db
 from app.fiscal.dps import DescricaoIncompletaError
 from app.models import (
-    AjusteEvento, Assinatura, Certificado, Despesa, DespesaRecorrente, Emissao, Envio, LoteAcao, PagamentoRecebido, Prestador, RotinaMensal, Usuario,
+    AjusteEvento, Assinatura, Certificado, Despesa, DespesaRecorrente, Emissao, Envio, LancamentoBancario, LoteAcao, PagamentoRecebido,
+    Prestador, PrestadorTomador, RotinaMensal, Usuario,
 )
 from app.schemas import (
     AjusteOcorrenciaRequest,
@@ -71,6 +72,8 @@ from app.schemas import (
     CertificadoStatus,
     CheckoutSessaoResponse,
     ConfirmarEmailRequest,
+    ConciliarDespesaRequest,
+    ConciliarReceitaRequest,
     ConfirmarExtratoRequest,
     FonteReceitaRequest,
     ConfirmarExtratoResponse,
@@ -87,6 +90,9 @@ from app.schemas import (
     EventoManualCriarRequest,
     ExtratoExtraidoResponse,
     GerarDpsRequest,
+    LigarPagamentoRequest,
+    OrdemRequest,
+    PreferenciasRequest,
     GeracaoShopeeResponse,
     OrdemAwinResponse,
     PreferenciasPrestadorRequest,
@@ -242,7 +248,7 @@ from app.services.google_oauth import (
     trocar_code_por_usuario,
 )
 from app.services.importacao_csv import CsvInvalidoError, importar_csv
-from app.services import classificar_extrato
+from app.services import classificar_extrato, conciliacao
 from app.services.importacao_extrato import ItemExtrato, confirmar_importacao_extrato
 from app.services.listagens import listar_despesas, listar_emissoes, listar_pagamentos
 from app.fiscal.cliente_sefin import ClienteSefin
@@ -1422,7 +1428,14 @@ def api_verificar_duplicata(vinculo_id: uuid.UUID, competencia: str, db: Session
     existente = buscar_emissao_ativa(db, vinculo_id, competencia)
     if existente is None:
         return VerificarDuplicataResponse(existe=False)
-    return VerificarDuplicataResponse(existe=True, emissao_id=existente.id, estado=existente.estado)
+    return VerificarDuplicataResponse(
+        existe=True, emissao_id=existente.id, estado=existente.estado, valor=float(existente.valor),
+        pode_substituir=existente.estado in ESTADOS_SUBSTITUIVEIS,
+    )
+
+
+# Nota que ainda não foi pra prefeitura: pode ser apagada ou trocada por outra.
+ESTADOS_SUBSTITUIVEIS = ("rascunho", "montado", "assinado", "erro")
 
 
 def _tp_amb_da_conta(db: Session, prestador_id: uuid.UUID) -> str:
@@ -1453,14 +1466,37 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
     competencia = req.competencia
     if req.data_competencia is not None:
         competencia = f"{req.data_competencia.year:04d}-{req.data_competencia.month:02d}"
+    pagamento = None
     if req.pagamento_id is not None:
-        # Nota de um recebimento que chegou sem nota (ML/Amazon): fica no mês
-        # do recebimento pra baterem; a data de competência da nota é a de
-        # hoje (ou a escolhida).
+        # Nota de um recebimento que chegou sem nota (ML/Amazon pagam antes):
+        # a nota sai na competência escolhida e o recebimento fica ligado a
+        # ela (05/10/2026 — antes a nota era forçada pro mês do recebimento,
+        # e a de outubro da Amazon batia na de setembro).
         pagamento = db.get(PagamentoRecebido, req.pagamento_id)
         if pagamento is None or pagamento.prestador_tomador_id != vinculo.id:
             raise HTTPException(status_code=404, detail="Recebimento não encontrado pra este tomador.")
-        competencia = pagamento.competencia
+
+    herdar: list[PagamentoRecebido] = []
+    existente = buscar_emissao_ativa(db, vinculo.id, competencia)
+    if existente is not None:
+        mes = f"{competencia[5:7]}/{competencia[:4]}"
+        valor_br = f"R$ {float(existente.valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        if existente.estado not in ESTADOS_SUBSTITUIVEIS:
+            raise HTTPException(status_code=409, detail=(
+                f"{vinculo.apelido} já tem uma nota emitida em {mes} ({valor_br}). Pra gerar outra, escolha uma data de "
+                "competência de outro mês — ou cancele a nota existente."
+            ))
+        if not req.substituir:
+            raise HTTPException(status_code=409, detail=(
+                f"{vinculo.apelido} já tem uma nota de {mes} que ainda não foi enviada ({valor_br}). "
+                "Abra essa nota pra continuar, ou gere esta no lugar dela."
+            ))
+        # Troca: a nota que não saiu é apagada e o que estava ligado a ela
+        # (recebimento) passa pra nova.
+        herdar = db.query(PagamentoRecebido).filter(PagamentoRecebido.emissao_id == existente.id).all()
+        db.query(Envio).filter(Envio.emissao_id == existente.id).delete(synchronize_session=False)
+        db.delete(existente)
+        db.flush()
     try:
         emissao = criar_rascunho(
             db, vinculo, competencia=competencia, valor=req.valor,
@@ -1472,10 +1508,45 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except DescricaoIncompletaError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if req.pagamento_id is not None and pagamento.emissao_id is None:
-        pagamento.emissao_id = emissao.id  # esse recebimento paga ESTA nota
+    for p in herdar + ([pagamento] if pagamento is not None and pagamento.emissao_id is None else []):
+        _ligar_pagamento(p, emissao)
+    db.flush()
+    resposta = _para_resposta(emissao)  # antes do commit (RLS vale só na transação)
     db.commit()
-    return _para_resposta(emissao)
+    return resposta
+
+
+def _ligar_pagamento(pagamento: PagamentoRecebido, emissao: Emissao | None) -> None:
+    """Esse recebimento paga ESTA nota — e conta no mês dela."""
+    pagamento.emissao_id = emissao.id if emissao is not None else None
+    pagamento.mes_inteiro = False
+    if emissao is not None:
+        pagamento.competencia = emissao.competencia
+
+
+@app.patch("/api/pagamentos/{pagamento_id}", response_model=PagamentoResponse, responses={404: {"model": ErroResponse}})
+def api_ligar_pagamento(pagamento_id: uuid.UUID, req: LigarPagamentoRequest, db: Session = Depends(db_sessao)):
+    """Liga um recebimento a uma nota do mesmo tomador (ou solta, com
+    `emissao_id: null` — volta a ser um recebimento sem nota)."""
+    pagamento = db.get(PagamentoRecebido, pagamento_id)
+    if pagamento is None:
+        raise HTTPException(status_code=404, detail="Recebimento não encontrado.")
+    emissao = None
+    if req.emissao_id is not None:
+        emissao = db.get(Emissao, req.emissao_id)
+        if emissao is None or emissao.prestador_tomador_id != pagamento.prestador_tomador_id:
+            raise HTTPException(status_code=404, detail="Essa nota não é do tomador deste recebimento.")
+    _ligar_pagamento(pagamento, emissao)
+    db.flush()
+    vinculo = db.get(PrestadorTomador, pagamento.prestador_tomador_id)
+    resposta = PagamentoResponse(
+        id=pagamento.id, apelido=vinculo.apelido, competencia=pagamento.competencia, valor=float(pagamento.valor),
+        data_recebimento=pagamento.data_recebimento, vinculo_id=vinculo.id, emissao_id=pagamento.emissao_id,
+        sem_nota=pagamento.emissao_id is None and not vinculo.sem_nota,
+        pode_gerar_nota=pagamento.emissao_id is None and not vinculo.sem_nota,
+    )
+    db.commit()
+    return resposta
 
 
 @app.get("/api/dps", response_model=list[EmissaoListaLinha])
@@ -2079,14 +2150,11 @@ def api_registrar_pagamento(req: RegistrarPagamentoRequest, db: Session = Depend
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     # Antes do commit: depois dele a transação nova não tem o prestador (RLS).
+    sem_nota = pagamento.emissao_id is None and not vinculo.sem_nota
     resposta = PagamentoResponse(
         id=pagamento.id, apelido=vinculo.apelido, competencia=pagamento.competencia,
         valor=float(pagamento.valor), data_recebimento=pagamento.data_recebimento,
-        sem_nota=not vinculo.sem_nota and not db.query(Emissao.id).filter(
-            Emissao.prestador_tomador_id == vinculo.id, Emissao.competencia == pagamento.competencia,
-            Emissao.estado.notin_(("cancelada", "substituida")),
-        ).first(),
-        vinculo_id=vinculo.id,
+        sem_nota=sem_nota, vinculo_id=vinculo.id, emissao_id=pagamento.emissao_id, pode_gerar_nota=sem_nota,
     )
     db.commit()
     return resposta
@@ -2182,22 +2250,114 @@ def api_confirmar_extrato(
     ]
     resultados = confirmar_importacao_extrato(db, itens) if itens else []
     sucesso = sum(1 for r in resultados if r.ok)
+    # Toda linha do extrato fica guardada (05/10/2026): as classificadas já
+    # conciliadas, as outras pendentes pra tela de conciliação.
+    linhas = (
+        [{"data": i.data_recebimento, "descricao": i.descricao, "valor": i.valor, "credito": True} for i in req.itens]
+        + [{"data": d.data, "descricao": d.descricao, "valor": d.valor, "credito": False} for d in req.despesas]
+        + [p.model_dump() for p in req.pendentes]
+    )
+    lancamentos = conciliacao.guardar(db, prestador_id, linhas, req.arquivo)
+    for r in resultados:
+        if r.ok and req.itens[r.indice].descricao:
+            conciliacao.marcar(lancamentos[r.indice], pagamento_id=r.pagamento_id)
     # Saídas do extrato viram despesas (28/09/2026: "importe as entradas da
     # forma que está e importe as saídas abaixo").
-    for d in req.despesas:
-        classificar_extrato.registrar_saida(
+    for n, d in enumerate(req.despesas):
+        despesa = classificar_extrato.registrar_saida(
             db, prestador_id, categoria=d.categoria, competencia=d.competencia, valor=d.valor,
             descricao=d.descricao, data=d.data, tipo=d.tipo,
         )
         classificar_extrato.lembrar(db, prestador_id, d.descricao, credito=False, categoria=d.categoria.strip(), tipo=d.tipo)
+        if d.descricao:
+            conciliacao.marcar(lancamentos[len(req.itens) + n], despesa_id=despesa.id)
+    db.flush()
     sem_nota = _sem_nota_dos_pagamentos(db, [r.pagamento_id for r in resultados if r.ok and r.pagamento_id])
-    if sucesso > 0 or req.despesas:
-        db.commit()
+    pendentes = conciliacao.contar_pendentes(db)
+    db.commit()
     return ConfirmarExtratoResponse(
         total=len(resultados), sucesso=sucesso, erro=len(resultados) - sucesso,
         itens=[{"indice": r.indice, "ok": r.ok, "mensagem": r.mensagem, "pagamento_id": r.pagamento_id} for r in resultados],
-        despesas_registradas=len(req.despesas), sem_nota=sem_nota,
+        despesas_registradas=len(req.despesas), sem_nota=sem_nota, pendentes=pendentes,
     )
+
+
+# --- Conciliação do extrato (05/10/2026, ver app/services/conciliacao.py) ---
+
+
+@app.get("/api/conciliacao")
+def api_conciliacao(db: Session = Depends(db_sessao)):
+    return conciliacao.painel(db)
+
+
+@app.get("/api/conciliacao/ignorados")
+def api_conciliacao_ignorados(db: Session = Depends(db_sessao)):
+    return conciliacao.listar_ignorados(db)
+
+
+@app.post("/api/conciliacao/automatico")
+def api_conciliacao_automatico(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    feitos = conciliacao.automatico(db, prestador_id, hoje_br())
+    db.commit()
+    return {"conciliados": feitos}
+
+
+@app.post("/api/conciliacao/{lancamento_id}/receita")
+def api_conciliar_receita(lancamento_id: uuid.UUID, req: ConciliarReceitaRequest, db: Session = Depends(db_sessao)):
+    vinculo = buscar_vinculo(db, req.vinculo_id)
+    if vinculo is None:
+        raise HTTPException(status_code=404, detail="Tomador não encontrado.")
+    try:
+        pagamento = conciliacao.como_receita(
+            db, lancamento_id, vinculo, hoje=hoje_br(), emissao_id=req.emissao_id, competencia=req.competencia,
+        )
+    except conciliacao.ConciliacaoError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    resposta = {
+        "pagamento_id": str(pagamento.id), "vinculo_id": str(vinculo.id), "apelido": vinculo.apelido,
+        "competencia": pagamento.competencia, "valor": float(pagamento.valor),
+        "emissao_id": str(pagamento.emissao_id) if pagamento.emissao_id else None,
+        "pode_gerar_nota": pagamento.emissao_id is None and not vinculo.sem_nota,
+    }
+    db.commit()
+    return resposta
+
+
+@app.post("/api/conciliacao/{lancamento_id}/despesa")
+def api_conciliar_despesa(
+    lancamento_id: uuid.UUID, req: ConciliarDespesaRequest, db: Session = Depends(db_sessao),
+    prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    try:
+        despesa = conciliacao.como_despesa(
+            db, lancamento_id, prestador_id, hoje=hoje_br(), despesa_id=req.despesa_id, categoria=req.categoria,
+            tipo=req.tipo, competencia=req.competencia,
+        )
+    except conciliacao.ConciliacaoError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    resposta = {"despesa_id": str(despesa.id), "categoria": despesa.categoria, "valor": float(despesa.valor)}
+    db.commit()
+    return resposta
+
+
+@app.post("/api/conciliacao/{lancamento_id}/ignorar")
+def api_conciliacao_ignorar(lancamento_id: uuid.UUID, ignorar: bool = True, db: Session = Depends(db_sessao)):
+    try:
+        conciliacao.ignorar(db, lancamento_id, ignorar)
+    except conciliacao.ConciliacaoError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/conciliacao/{lancamento_id}/tipo")
+def api_conciliacao_tipo(lancamento_id: uuid.UUID, credito: bool, db: Session = Depends(db_sessao)):
+    try:
+        conciliacao.trocar_tipo(db, lancamento_id, credito)
+    except conciliacao.ConciliacaoError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    db.commit()
+    return {"ok": True}
 
 
 @app.post("/api/vinculos/controle")
@@ -2623,6 +2783,32 @@ def _rotina_ou_404(db: Session, rotina_id: uuid.UUID) -> RotinaMensal:
     if rotina is None:
         raise HTTPException(status_code=404, detail="Item da rotina não encontrado.")
     return rotina
+
+
+@app.put("/api/financeiro/rotinas/ordem")
+def api_ordenar_rotinas(req: OrdemRequest, db: Session = Depends(db_sessao)):
+    """Nova ordem dos itens da rotina de fechamento (arrastar na tela)."""
+    por_id = {r.id: r for r in db.query(RotinaMensal)}
+    for posicao, rotina_id in enumerate(req.ids, start=1):
+        if rotina_id in por_id:
+            por_id[rotina_id].ordem = posicao
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/api/conta/preferencias")
+def api_preferencias(request: Request, db: Session = Depends(get_db)):
+    """Disposição dos cards (Financeiro, Visão geral) — da pessoa, não da empresa."""
+    return _usuario_logado(request, db).preferencias or {}
+
+
+@app.put("/api/conta/preferencias")
+def api_salvar_preferencias(req: PreferenciasRequest, request: Request, db: Session = Depends(get_db)):
+    usuario = _usuario_logado(request, db)
+    usuario.preferencias = {**(usuario.preferencias or {}), req.tela: {"ordem": req.ordem, "fechados": req.fechados}}
+    resposta = dict(usuario.preferencias)
+    db.commit()
+    return resposta
 
 
 @app.patch("/api/financeiro/rotinas/{rotina_id}", response_model=RotinaResponse, responses={404: {"model": ErroResponse}})

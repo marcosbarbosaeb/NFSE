@@ -5,6 +5,8 @@ demais suítes.
 """
 import datetime
 
+from app.tempo import data_local, hoje as hoje_br
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -47,7 +49,8 @@ def test_prazo_emissao_ajusta_dia_alto_pro_ultimo_dia_do_mes(db, prestador_teste
 def test_recebimento_previsto_soma_dias_apos_emissao(db, prestador_teste, vinculo_teste):
     atualizar_vinculo(db, vinculo_teste, dias_para_recebimento=10)
     emissao = montar(db, criar_rascunho(db, vinculo_teste, competencia="2026-08", valor=200.0))
-    data_esperada = emissao.criado_em.date() + datetime.timedelta(days=10)
+    # dia local (Brasil), como o calendário calcula — não o dia UTC do banco
+    data_esperada = data_local(emissao.criado_em) + datetime.timedelta(days=10)
 
     eventos = eventos_calendario(db, prestador_teste.id, data_esperada, data_esperada)
     assert len(eventos) == 1
@@ -80,7 +83,7 @@ def test_recebimento_confirmado_aparece_com_data_de_recebimento(db, prestador_te
 
 
 def test_revisar_aliquota_aparece_quando_nao_confirmada_no_mes(db, prestador_teste):
-    hoje = datetime.date.today()
+    hoje = hoje_br()
     eventos = eventos_calendario(db, prestador_teste.id, hoje.replace(day=1), hoje)
     revisar = [e for e in eventos if e["tipo"] == "revisar_aliquota"]
     assert len(revisar) == 1
@@ -88,7 +91,7 @@ def test_revisar_aliquota_aparece_quando_nao_confirmada_no_mes(db, prestador_tes
 
 
 def test_revisar_aliquota_some_apos_confirmar_no_mes(db, prestador_teste):
-    hoje = datetime.date.today()
+    hoje = hoje_br()
     prestador_teste.aliquota_atual = 6.0
     prestador_teste.aliquota_atualizada_em = hoje
     db.flush()
@@ -339,7 +342,7 @@ def test_ocultar_ocorrencia(db, prestador_teste, vinculo_teste):
 
 
 def test_regra_do_dia_do_lembrete_de_aliquota(db, prestador_teste):
-    hoje = datetime.date.today()
+    hoje = hoje_br()
     prestador_teste.dia_lembrete_aliquota = 10
     db.flush()
     ev = [e for e in eventos_calendario(db, prestador_teste.id, hoje.replace(day=1), hoje.replace(day=28))

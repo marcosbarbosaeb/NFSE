@@ -10,6 +10,8 @@ import uuid
 
 import pytest
 
+from app.tempo import hoje as hoje_br
+
 from app.database import definir_prestador_atual
 from app.fiscal.xmldsig import assinar_elemento, c14n
 from app.models import Certificado
@@ -85,8 +87,8 @@ def test_certificado_vencido():
     import datetime
     from unittest.mock import MagicMock
 
-    cert_ok = MagicMock(validade=datetime.date.today() + datetime.timedelta(days=30))
-    cert_vencido = MagicMock(validade=datetime.date.today() - datetime.timedelta(days=1))
+    cert_ok = MagicMock(validade=hoje_br() + datetime.timedelta(days=30))
+    cert_vencido = MagicMock(validade=hoje_br() - datetime.timedelta(days=1))
     cert_sem_validade = MagicMock(validade=None)
 
     assert certificado_vencido(cert_ok) is False

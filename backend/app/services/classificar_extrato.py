@@ -24,7 +24,9 @@ from decimal import Decimal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import Despesa, DespesaRecorrente, PagamentoRecebido, Prestador, PrestadorTomador, RegraExtrato
+from app.models import (
+    Despesa, DespesaRecorrente, LancamentoBancario, PagamentoRecebido, Prestador, PrestadorTomador, RegraExtrato,
+)
 from app.services import a_receber
 from app.services.importar_adn import _apelido_livre, criar_tomador_interno
 
@@ -107,8 +109,10 @@ def _candidatos_por_nome(descricao: str, vinculos: list[PrestadorTomador]) -> li
     return achados
 
 
-def sugerir(db: Session, transacoes: list) -> list[dict]:
-    """Uma sugestão por transação, na mesma ordem. Não grava nada."""
+def sugerir(db: Session, transacoes: list, conferir_repetidos: bool = True) -> list[dict]:
+    """Uma sugestão por transação, na mesma ordem. Não grava nada.
+    `conferir_repetidos=False`: pula o aviso de "já lançado" (a tela de
+    conciliação sugere pra lançamentos que já estão guardados)."""
     vinculos = (
         db.query(PrestadorTomador)
         .filter(PrestadorTomador.ativo.is_(True), PrestadorTomador.excluido_em.is_(None))
@@ -123,7 +127,7 @@ def sugerir(db: Session, transacoes: list) -> list[dict]:
 
     # Reimportar o mesmo extrato não deve dobrar nada: o que já existe com o
     # mesmo valor na mesma data vem desmarcado.
-    datas = [t.data for t in transacoes if t.data]
+    datas = [t.data for t in transacoes if t.data] if conferir_repetidos else []
     recebidos, pagos = set(), set()
     if datas:
         recebidos = {
@@ -133,6 +137,16 @@ def sugerir(db: Session, transacoes: list) -> list[dict]:
         pagos = {
             (d, Decimal(v)) for d, v in db.query(Despesa.pago_em, Despesa.valor)
             .filter(Despesa.origem == "extrato", Despesa.pago_em.between(min(datas), max(datas)))
+        }
+
+    guardados: set[tuple] = set()
+    if datas:
+        guardados = {
+            (d, Decimal(v), c) for d, v, c in db.query(LancamentoBancario.data, LancamentoBancario.valor, LancamentoBancario.credito)
+            .filter(
+                LancamentoBancario.data.between(min(datas), max(datas)),
+                LancamentoBancario.status.in_(("conciliado", "ignorado")),
+            )
         }
 
     saida = []
@@ -151,6 +165,20 @@ def sugerir(db: Session, transacoes: list) -> list[dict]:
                 vinculo = por_id.get(regra.prestador_tomador_id)
             elif regra.categoria:
                 categoria, tipo_despesa = regra.categoria, regra.tipo
+        if vinculo is not None:
+            # Mesmo pagador com dois programas (AWIN e AWIN Rchlo, mesmo CNPJ): a
+            # regra lembrada diz "AWIN", mas se quem tem nota em aberto desse
+            # valor é o outro, é dele (05/10/2026 — os R$ 553,74 da Rchlo
+            # tinham caído na AWIN).
+            irmaos = [v for v in vinculos if v.tomador_id == vinculo.tomador_id]
+            if len(irmaos) > 1:
+                exatos = [
+                    v for v in irmaos
+                    if any(abs(Decimal(str(g["valor"])) - valor) < Decimal("0.005") and g["emissao_id"] not in sugeridas
+                           for g in abertas_por_vinculo.get(v.id, []))
+                ]
+                if len(exatos) == 1:
+                    vinculo = exatos[0]
         if vinculo is None and credito:
             candidatos = _candidatos_por_nome(t.descricao, vinculos)
             if len(candidatos) > 1:
@@ -190,7 +218,9 @@ def sugerir(db: Session, transacoes: list) -> list[dict]:
             "tipo_despesa": tipo_despesa,
             "origem_sugestao": origem,
             "nota": nota,
-            "ja_lancado": bool(t.data) and (t.data, valor) in (recebidos if credito else pagos),
+            "ja_lancado": bool(t.data) and (
+                (t.data, valor) in (recebidos if credito else pagos) or (t.data, valor, t.credito) in guardados
+            ),
         })
     return saida
 

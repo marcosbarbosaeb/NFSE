@@ -209,20 +209,26 @@ def test_recebimento_sem_nota_e_gerar_nota_dele(client, db, prestador_teste, vin
     assert client.get("/api/financeiro/recebimentos-sem-nota").json() == []
     client.post("/api/painel/pendencias/ignorar", json={"chave": aviso["chave"], "ignorar": False})
 
-    # gerar a nota do recebimento: fica em 09/2026, data de competência hoje
+    # gerar a nota do recebimento: sai na competência escolhida (10/2026) e o
+    # recebimento passa a ser dela — a nota nasce paga (05/10/2026)
     r = client.post("/api/dps", json={
         "vinculo_id": str(vinculo_teste.id), "competencia": "2026-10", "data_competencia": "2026-10-01",
         "valor": 1234.5, "pagamento_id": pagamento_id,
     })
     assert r.status_code == 200, r.text
-    assert r.json()["competencia"] == "2026-09"
+    assert r.json()["competencia"] == "2026-10"
     assert client.get("/api/financeiro/recebimentos-sem-nota").json() == []
     from app.services import a_receber
-    assert all(g["competencia"] != "2026-09" for g in a_receber.notas_em_aberto(db, hoje))
+    assert a_receber.notas_em_aberto(db, hoje) == []
+    from app.models import PagamentoRecebido as _P
+    pago = db.get(_P, uuid.UUID(pagamento_id))
+    assert str(pago.emissao_id) == r.json()["id"] and pago.competencia == "2026-10"
 
-    # recebimento de um mês que já tem nota não avisa
-    r = client.post("/api/pagamentos", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-09", "valor": 1})
-    assert r.json()["sem_nota"] is False
+    # outro recebimento no mesmo mês, com a nota já paga: não cai nela — é um
+    # recebimento sem nota (a Amazon paga em setembro a nota de outubro)
+    r = client.post("/api/pagamentos", json={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-10", "valor": 1})
+    assert r.json()["sem_nota"] is True
+    db.query(_P).filter(_P.id == uuid.UUID(r.json()["id"])).delete()
 
     # planilha: pagamento de quem paga antes entra no mês da nota
     arquivo = {"arquivo": ("c.xlsx", planilha(), "application/octet-stream")}

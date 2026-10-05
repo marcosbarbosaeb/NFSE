@@ -131,7 +131,7 @@ def test_verificar_duplicata_sem_emissao_da_existe_false(client, vinculo_teste):
         params={"vinculo_id": str(vinculo_teste.id), "competencia": "2026-08"},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"existe": False, "emissao_id": None, "estado": None}
+    assert resp.json() == {"existe": False, "emissao_id": None, "estado": None, "valor": None, "pode_substituir": False}
 
 
 def test_verificar_duplicata_com_emissao_ativa_da_existe_true(client, vinculo_teste):

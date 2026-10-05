@@ -402,6 +402,19 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
         if sum(1 for p in pendencias if p["tipo"] == "receber") >= 5:
             break
 
+    # Linhas do extrato importadas e ainda sem classificar (05/10/2026).
+    from app.services import conciliacao
+
+    sem_classificar = conciliacao.contar_pendentes(db)
+    if sem_classificar and "conciliar" not in ignoradas:
+        pendencias.append({
+            "tipo": "conciliar", "acao": "Conciliar", "link": "/app/financeiro/conciliacao", "chave": "conciliar",
+            "titulo": (
+                "1 lançamento do extrato pra classificar" if sem_classificar == 1
+                else f"{sem_classificar} lançamentos do extrato pra classificar"
+            ),
+        })
+
     eventos = eventos_calendario(db, prestador_id, hoje, hoje + datetime.timedelta(days=30))
     agenda = [
         {"data": ev["data"], "tipo": ev.get("categoria") or ev["tipo"], "titulo": ev.get("apelido") or ev["titulo"],
@@ -426,7 +439,7 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
         else:
             agrupadas += do_tipo
     agrupadas += [p for p in pendencias if p["tipo"] not in agrupaveis]
-    ordem = {"erro": 0, "prefeitura": 1, "assinar": 2, "enviar_tomador": 3, "nota_recebimento": 4, "gerar": 5, "receber": 6}
+    ordem = {"erro": 0, "prefeitura": 1, "assinar": 2, "enviar_tomador": 3, "nota_recebimento": 4, "conciliar": 5, "gerar": 6, "receber": 7}
     agrupadas.sort(key=lambda p: ordem.get(p["tipo"], 9))
     return {"pendencias": agrupadas[:10], "total_pendencias": len(agrupadas), "agenda": agenda}
 

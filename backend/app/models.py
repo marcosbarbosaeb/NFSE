@@ -175,6 +175,8 @@ class Usuario(Base):
     # texto puro, nunca um hash sem salt.
     senha_hash: Mapped[str] = mapped_column(String(300), nullable=False)
     ativo: Mapped[bool] = mapped_column(nullable=False, server_default="true")
+    # Preferências de tela (disposição dos cards do Financeiro — 05/10/2026).
+    preferencias: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
 
     # Marco 15 — cadastro público self-service (ver app/services/cadastro.py).
     # default=False no lado Python de propósito: um cadastro novo nasce NÃO
@@ -497,6 +499,9 @@ class PagamentoRecebido(Base):
     # pagamento antigo/sem nota, que vale pro mês inteiro do tomador (ver
     # app/services/a_receber.py).
     emissao_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("emissao.id", ondelete="SET NULL"))
+    # Pagamento ANTIGO (planilha, conciliação, baixas de antes de 03/10/2026):
+    # vale pro mês inteiro do tomador. Recebimento novo nunca é.
+    mes_inteiro: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     origem: Mapped[str] = mapped_column(String(20), nullable=False, server_default="manual")
     confirmado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -572,6 +577,39 @@ class RotinaMensal(Base):
     ativa: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
     ordem: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LancamentoBancario(Base):
+    """Linha do extrato importado (05/10/2026). Fica guardada mesmo sem
+    classificar — a tela de conciliação mostra as pendentes de um lado e o
+    que está em aberto no sistema do outro. `conciliado` = virou um
+    recebimento (`pagamento_id`) ou uma despesa (`despesa_id`); se o
+    recebimento/despesa for apagado depois, o lançamento volta a pendente."""
+
+    __tablename__ = "lancamento_bancario"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False
+    )
+    data: Mapped[date | None] = mapped_column(Date)
+    descricao: Mapped[str] = mapped_column(String(300), nullable=False)
+    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    credito: Mapped[bool] = mapped_column(nullable=False)
+    chave: Mapped[str] = mapped_column(String(160), nullable=False, default="", server_default="")
+    # 2ª, 3ª... linha idêntica (mesma data, valor e texto) do mesmo extrato
+    seq: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pendente", server_default="pendente")
+    pagamento_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("pagamento_recebido.id", ondelete="SET NULL")
+    )
+    despesa_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("despesa.id", ondelete="SET NULL"))
+    arquivo: Mapped[str | None] = mapped_column(String(200))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("status IN ('pendente', 'conciliado', 'ignorado')", name="ck_lancamento_bancario_status"),
+    )
 
 
 class RegraExtrato(Base):

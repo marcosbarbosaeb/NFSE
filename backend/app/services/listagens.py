@@ -127,7 +127,7 @@ def listar_pagamentos(
     app/models.py) — join explícito com `PrestadorTomador` só pra buscar o
     apelido de exibição."""
     query = (
-        db.query(PagamentoRecebido, PrestadorTomador.apelido)
+        db.query(PagamentoRecebido, PrestadorTomador.apelido, PrestadorTomador.sem_nota)
         .join(PrestadorTomador, PagamentoRecebido.prestador_tomador_id == PrestadorTomador.id)
         # Baixa de conciliação (histórico, sem valor) não é recebimento.
         .filter(PagamentoRecebido.origem != "conciliacao")
@@ -153,8 +153,11 @@ def listar_pagamentos(
             "competencia": p.competencia,
             "valor": float(p.valor),
             "data_recebimento": p.data_recebimento,
+            "vinculo_id": p.prestador_tomador_id,
+            "emissao_id": p.emissao_id,
+            "pode_gerar_nota": p.emissao_id is None and not p.mes_inteiro and not sem_nota,
         }
-        for p, apelido in query.all()
+        for p, apelido, sem_nota in query.all()
     ]
 
 

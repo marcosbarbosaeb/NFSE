@@ -199,7 +199,7 @@ def test_notas_em_aberto_totais_e_alerta_de_dois_meses(db, prestador_teste, vinc
     montar(db, antiga)
     paga = criar_rascunho(db, vinculo_teste, competencia="2026-06", valor=50)
     montar(db, paga)
-    db.add(PagamentoRecebido(id=uuid.uuid4(), prestador_tomador_id=vinculo_teste.id, prestador_id=prestador_teste.id, competencia="2026-06", valor=50))
+    db.add(PagamentoRecebido(id=uuid.uuid4(), prestador_tomador_id=vinculo_teste.id, prestador_id=prestador_teste.id, competencia="2026-06", valor=50, mes_inteiro=True))
     db.flush()
 
     hoje = datetime.date.today()

@@ -6,6 +6,8 @@ e /api/prestador. Mesmo padrão real-Postgres-com-rollback das demais suítes
 import uuid
 
 import pytest
+
+from app.tempo import hoje as hoje_br
 from fastapi.testclient import TestClient
 
 from app.database import get_db
@@ -208,7 +210,7 @@ def test_atualizar_aliquota(client, prestador_teste):
     assert resp.status_code == 200, resp.text
     dados = resp.json()
     assert dados["aliquota_atual"] == 6.5
-    assert dados["aliquota_atualizada_em"] == datetime.date.today().isoformat()
+    assert dados["aliquota_atualizada_em"] == hoje_br().isoformat()
 
 
 def test_atualizar_aliquota_fora_do_intervalo_da_422(client, prestador_teste):

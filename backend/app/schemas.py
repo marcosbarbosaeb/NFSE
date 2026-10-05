@@ -77,9 +77,12 @@ class GerarDpsRequest(BaseModel):
     # Dia de competência escolhido no calendário (29/09/2026). Quando vem,
     # a competência (AAAA-MM) passa a ser o mês dele.
     data_competencia: date | None = None
-    # Gerar a nota de um recebimento que chegou sem nota: a nota fica no mês
-    # do recebimento (01/10/2026).
+    # Gerar a nota de um recebimento que chegou sem nota: o recebimento fica
+    # ligado a ela (e passa pro mês da nota).
     pagamento_id: uuid.UUID | None = None
+    # Já existe uma nota desse tomador no mês que ainda não foi enviada pra
+    # prefeitura: apaga ela e gera esta no lugar (05/10/2026).
+    substituir: bool = False
 
 
 class EmissaoResponse(BaseModel):
@@ -145,6 +148,9 @@ class VerificarDuplicataResponse(BaseModel):
     existe: bool
     emissao_id: uuid.UUID | None = None
     estado: str | None = None
+    valor: float | None = None
+    # Ainda não foi pra prefeitura: dá pra gerar outra no lugar.
+    pode_substituir: bool = False
 
 
 class ErroResponse(BaseModel):
@@ -245,8 +251,17 @@ class PagamentoResponse(BaseModel):
     # Caiu sem nota emitida pra esse tomador nesse mês — a tela oferece gerar.
     sem_nota: bool = False
     vinculo_id: uuid.UUID | None = None
+    # A nota que esse dinheiro paga (baixa por nota).
+    emissao_id: uuid.UUID | None = None
+    # Dá pra gerar a nota deste recebimento (tomador com nota e recebimento sem nota).
+    pode_gerar_nota: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class LigarPagamentoRequest(BaseModel):
+    """Liga um recebimento a uma nota (ou solta, com null)."""
+    emissao_id: uuid.UUID | None = None
 
 
 class RegistrarDespesaRequest(BaseModel):
@@ -920,9 +935,46 @@ class FonteReceitaRequest(BaseModel):
     nome: str = Field(min_length=2, max_length=60)
 
 
+class LinhaPendenteExtratoRequest(BaseModel):
+    """Linha do extrato que a pessoa não classificou agora: fica guardada
+    pra conciliar depois (05/10/2026)."""
+    data: date | None = None
+    descricao: str = Field(max_length=500)
+    valor: float = Field(gt=0)
+    credito: bool
+
+
 class ConfirmarExtratoRequest(BaseModel):
     itens: list[ItemConfirmarExtratoRequest] = Field(default_factory=list)
     despesas: list[DespesaExtratoRequest] = Field(default_factory=list)
+    pendentes: list[LinhaPendenteExtratoRequest] = Field(default_factory=list, max_length=5000)
+    arquivo: str | None = Field(default=None, max_length=200)
+
+
+class ConciliarReceitaRequest(BaseModel):
+    vinculo_id: uuid.UUID
+    emissao_id: uuid.UUID | None = None
+    competencia: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+class ConciliarDespesaRequest(BaseModel):
+    # Paga uma conta que já estava em aberto...
+    despesa_id: uuid.UUID | None = None
+    # ...ou vira uma despesa nova desta categoria.
+    categoria: str | None = Field(default=None, max_length=100)
+    tipo: Literal["despesa", "retirada"] = "despesa"
+    competencia: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+class PreferenciasRequest(BaseModel):
+    """Disposição dos cards de uma tela: ordem e quais estão fechados."""
+    tela: Literal["financeiro", "visao_geral"]
+    ordem: list[str] = Field(default_factory=list, max_length=40)
+    fechados: list[str] = Field(default_factory=list, max_length=40)
+
+
+class OrdemRequest(BaseModel):
+    ids: list[uuid.UUID] = Field(max_length=500)
 
 
 class ItemConfirmadoExtratoResponse(BaseModel):
@@ -950,6 +1002,8 @@ class ConfirmarExtratoResponse(BaseModel):
     despesas_registradas: int = 0
     # Recebimentos que caíram sem nota do tomador naquele mês (01/10/2026).
     sem_nota: list[RecebimentoSemNotaResponse] = []
+    # Linhas guardadas sem classificar (vão pra tela de conciliação).
+    pendentes: int = 0
 
 
 class VendedorShopeeResponse(BaseModel):

@@ -291,7 +291,7 @@ def importar(db: Session, prestador: Prestador, conteudo: bytes, ano: int, escol
                 continue
             db.add(PagamentoRecebido(
                 id=uuid.uuid4(), prestador_tomador_id=vinculo.id, prestador_id=prestador.id, competencia=competencia,
-                valor=Decimal(str(round(valor, 2))), origem="planilha",
+                valor=Decimal(str(round(valor, 2))), origem="planilha", mes_inteiro=True,
             ))
             res["pagamentos"] += 1
     db.flush()

@@ -78,7 +78,7 @@ def test_historico_sem_nota_vale_pro_mes_e_desfazer_uma_nao_abre_a_outra(client,
     b = _nota(db, vinculo_teste, "2026-03", "250.00", 9202)
     db.add(PagamentoRecebido(
         id=uuid.uuid4(), prestador_tomador_id=vinculo_teste.id, prestador_id=prestador_teste.id, competencia="2026-03",
-        valor=Decimal("350.00"), origem="planilha",
+        valor=Decimal("350.00"), origem="planilha", mes_inteiro=True,
     ))
     db.flush()
     assert _abertas(db) == {}

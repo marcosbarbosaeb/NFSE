@@ -28,9 +28,11 @@ class Baixas:
     """Quem está pago (03/10/2026, "a baixa tem que ser por nota"):
 
     - pagamento ligado a uma nota (`emissao_id`) dá baixa só nela;
-    - pagamento sem nota (histórico da planilha, conciliação, lançamentos de
-      antes da baixa por nota, ou dinheiro que caiu antes de existir nota)
-      vale pro mês inteiro daquele tomador, como sempre valeu.
+    - pagamento ANTIGO (`mes_inteiro`: planilha, conciliação, baixas de antes
+      da baixa por nota) vale pro mês inteiro daquele tomador;
+    - recebimento novo sem nota não dá baixa em nada: é um "recebimento sem
+      nota" até a pessoa gerar a nota dele ou ligá-lo a uma (05/10/2026 —
+      a Amazon paga em setembro a nota que só sai em outubro).
     """
 
     def __init__(self, db: Session):
@@ -40,14 +42,15 @@ class Baixas:
         # a Shopee paga tudo junto na nota dela)
         self.meses_com_nota_paga: set[tuple[uuid.UUID, str]] = set()
         linhas = db.query(
-            PagamentoRecebido.emissao_id, PagamentoRecebido.prestador_tomador_id, PagamentoRecebido.competencia
+            PagamentoRecebido.emissao_id, PagamentoRecebido.prestador_tomador_id, PagamentoRecebido.competencia,
+            PagamentoRecebido.mes_inteiro,
         ).distinct()
-        for emissao_id, vinculo_id, competencia in linhas:
-            if emissao_id is None:
-                self.meses.add((vinculo_id, competencia))
-            else:
+        for emissao_id, vinculo_id, competencia, mes_inteiro in linhas:
+            if emissao_id is not None:
                 self.notas.add(emissao_id)
                 self.meses_com_nota_paga.add((vinculo_id, competencia))
+            elif mes_inteiro:
+                self.meses.add((vinculo_id, competencia))
 
     def paga(self, emissao_id: uuid.UUID, vinculo_id: uuid.UUID, competencia: str) -> bool:
         return emissao_id in self.notas or (vinculo_id, competencia) in self.meses
@@ -88,24 +91,29 @@ def calcular(db: Session) -> tuple[list[dict], Baixas]:
 
 def nota_do_recebimento(db: Session, vinculo_id: uuid.UUID, competencia: str, valor) -> uuid.UUID | None:
     """Qual nota um recebimento de (tomador, mês, valor) paga, quando a
-    pessoa não escolheu: a em aberto do mesmo valor; senão a única em
-    aberto; senão a de valor mais próximo (de preferência em aberto). Sem
-    nota nenhuma no mês = None (dinheiro que caiu antes da nota)."""
+    pessoa não escolheu: entre as EM ABERTO do tomador naquele mês, a do
+    mesmo valor; senão a de valor mais próximo. Sem nota em aberto no mês =
+    None: é dinheiro que caiu antes da nota (nunca cai numa nota já paga)."""
     notas, baixas = calcular(db)
-    do_mes = [n for n in notas if n["vinculo_id"] == vinculo_id and n["competencia"] == competencia]
-    if not do_mes:
+    abertas = [
+        n for n in notas
+        if n["vinculo_id"] == vinculo_id and n["competencia"] == competencia
+        and not baixas.paga(n["emissao_id"], vinculo_id, competencia)
+    ]
+    if not abertas:
         return None
-    abertas = [n for n in do_mes if not baixas.paga(n["emissao_id"], vinculo_id, competencia)]
     alvo = Decimal(str(valor))
-    candidatas = abertas or do_mes
-    return min(candidatas, key=lambda n: abs(n["valor"] - alvo))["emissao_id"]
+    return min(abertas, key=lambda n: abs(n["valor"] - alvo))["emissao_id"]
 
 
 def recebimentos_sem_nota(db: Session, desde: str | None = None) -> list[dict]:
-    """O lado contrário do "a receber" (01/10/2026): dinheiro que caiu de um
-    tomador num mês em que não há nota dele — caso do Mercado Livre e da
-    Amazon, que pagam antes e a nota sai depois. A tela oferece gerar a nota
-    daquele recebimento (POST /api/dps com pagamento_id)."""
+    """O lado contrário do "a receber": dinheiro que caiu sem nota — caso do
+    Mercado Livre e da Amazon, que pagam antes e a nota sai depois. A tela
+    oferece gerar a nota daquele recebimento (POST /api/dps com
+    pagamento_id) ou ligá-lo a uma nota que já existe.
+
+    Recebimento novo sem nota entra sempre. Pagamento antigo (`mes_inteiro`)
+    só quando o tomador não tem nota nenhuma naquele mês."""
     com_nota = {
         (v, c) for v, c in db.query(Emissao.prestador_tomador_id, Emissao.competencia)
         .filter(Emissao.estado.notin_(("cancelada", "substituida")), Emissao.tomador_documento.is_(None)).distinct()
@@ -120,7 +128,7 @@ def recebimentos_sem_nota(db: Session, desde: str | None = None) -> list[dict]:
     grupos: dict[tuple, dict] = {}
     for p, apelido in query.order_by(PagamentoRecebido.competencia, PagamentoRecebido.criado_em):
         chave = (p.prestador_tomador_id, p.competencia)
-        if chave in com_nota:
+        if p.mes_inteiro and chave in com_nota:
             continue
         g = grupos.setdefault(chave, {
             "pagamento_id": p.id, "vinculo_id": p.prestador_tomador_id, "apelido": apelido,
@@ -216,7 +224,7 @@ def desfazer_baixa(db: Session, emissao: Emissao) -> int:
         db.query(PagamentoRecebido)
         .filter(
             PagamentoRecebido.prestador_tomador_id == vinculo_id, PagamentoRecebido.competencia == competencia,
-            PagamentoRecebido.emissao_id.is_(None),
+            PagamentoRecebido.emissao_id.is_(None), PagamentoRecebido.mes_inteiro.is_(True),
         )
         .order_by(PagamentoRecebido.criado_em)
         .all()
@@ -238,6 +246,7 @@ def desfazer_baixa(db: Session, emissao: Emissao) -> int:
     }
     for p in do_mes:
         p.emissao_id = outras[0]["emissao_id"]
+        p.mes_inteiro = False
     ja_ligadas.add(outras[0]["emissao_id"])
     for n in outras[1:]:
         if n["emissao_id"] in ja_ligadas:
