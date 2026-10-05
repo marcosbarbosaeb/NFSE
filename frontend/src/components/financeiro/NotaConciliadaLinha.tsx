@@ -74,7 +74,7 @@ export function estadoDaNota(item: NotaConciliada): { variante: "success" | "war
     const menor = item.status === "paga_a_menor"
     return {
       variante: item.conferida ? "neutral" : "warning",
-      rotulo: `${menor ? "Paga a menor" : "Paga a maior"}${item.conferida ? " · conferida" : ""}`,
+      rotulo: `${menor ? "Paga a menor" : "Paga a maior"}${item.conferida ? " · resolvida" : ""}`,
       detalhe: `recebido ${formatBRL(item.recebido ?? 0)} ${quando} · ${menor ? "faltam" : "sobram"} ${formatBRL(falta)}`.replace("  ", " "),
     }
   }
@@ -212,6 +212,25 @@ export function NotaConciliadaLinha({
         </span>
         <ChevronDown size={16} className={`hidden shrink-0 text-slate-400 transition-transform sm:block ${aberta ? "rotate-180" : ""}`} aria-hidden />
       </button>
+
+      {/* Diferença por conferir (05/10/2026: "quero poder marcar como resolvido,
+          e sumir a pendência") — o botão fica à vista, sem precisar abrir a linha. */}
+      {comDiferenca && !item.conferida && (
+        <div className="mx-4 mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-warning-100 bg-warning-50/70 px-3 py-2 dark:border-warning-900/40 dark:bg-warning-900/20">
+          <p className="min-w-0 flex-1 basis-56 text-xs text-slate-600 dark:text-slate-300">
+            Entrou {item.status === "paga_a_menor" ? "menos" : "mais"} do que o valor {lote ? "das notas" : "da nota"}. Se você já conferiu e está certo
+            (imposto retido, pagamento junto com outro mês...), marque como resolvido.
+          </p>
+          <button
+            type="button"
+            disabled={ocupado}
+            onClick={() => onAgir({ tipo: "conferir", conferida: true })}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+          >
+            <CheckCircle2 size={14} aria-hidden /> Marcar como resolvido
+          </button>
+        </div>
+      )}
 
       {/* Sugestão vinda do extrato: sempre à vista, nunca confirmada sozinha. */}
       {item.sugestao && sugerida && (
@@ -358,7 +377,7 @@ export function NotaConciliadaLinha({
                 className="font-semibold text-primary-600 hover:underline disabled:opacity-50 dark:text-primary-300"
                 title="Use quando a diferença é esperada — imposto retido pelo cliente, por exemplo"
               >
-                {item.conferida ? "Voltar a avisar dessa diferença" : "A diferença está certa (ex.: imposto retido)"}
+                {item.conferida ? "Reabrir (voltar a avisar dessa diferença)" : "Marcar como resolvido"}
               </button>
             )}
             {emAberto && !lote && (

@@ -24,7 +24,8 @@ const FILTROS: FiltroNotas[] = ["todas", "pendentes", "abertas", "atrasadas", "d
 export const ehFiltroNotas = (v: string | null): v is FiltroNotas => FILTROS.includes(v as FiltroNotas)
 
 const emAberto = (i: NotaConciliada) => i.status === "em_aberto" || i.status === "atrasada"
-const comDiferenca = (i: NotaConciliada) => i.status === "paga_a_menor" || i.status === "paga_a_maior"
+// Diferença ainda por conferir — a marcada como resolvida sai daqui (continua em "Pagas").
+const comDiferenca = (i: NotaConciliada) => (i.status === "paga_a_menor" || i.status === "paga_a_maior") && !i.conferida
 
 function passa(item: NotaConciliada, filtro: FiltroNotas): boolean {
   if (filtro === "pendentes") return precisaDeAtencao(item)
@@ -137,7 +138,7 @@ export function ConciliacaoNotas({
       const chave = item.tipo === "lote" ? `diferenca:${item.vinculo_id}:${item.competencia}` : `diferenca:${item.emissao_id}`
       void executar(async () => {
         await api.post("/painel/pendencias/ignorar", { chave, ignorar: acao.conferida })
-        return acao.conferida ? "Diferença marcada como conferida." : "Voltei a avisar dessa diferença."
+        return acao.conferida ? "Marcado como resolvido — saiu das pendências." : "Reaberto: voltei a avisar dessa diferença."
       })
     } else if (acao.tipo === "considerar") {
       const outras = grupo.itens.filter((i) => i.tipo === "nota" && emAberto(i) && i.competencia === item.competencia).length
