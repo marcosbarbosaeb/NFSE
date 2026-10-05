@@ -65,6 +65,7 @@ def criar_cadastro(
     bairro: str | None = None,
     codigo_indicacao: str | None = None,
     modo_teste: bool = False,
+    modulos: list[str] | None = None,
 ) -> Usuario:
     email_norm = email.strip().lower()
     cnpj_norm = "".join(c for c in cpf_cnpj if c.isdigit())
@@ -103,6 +104,7 @@ def criar_cadastro(
         bairro=bairro,
         modo_teste=modo_teste,
         tp_amb_padrao="2" if modo_teste else "1",
+        modulos=modulos or ["emissor"],
     )
     db.add(prestador)
     try:

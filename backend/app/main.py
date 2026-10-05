@@ -60,8 +60,8 @@ from app import eventos as integracao
 from app.database import definir_prestador_atual, get_db
 from app.fiscal.dps import DescricaoIncompletaError
 from app.models import (
-    AjusteEvento, Assinatura, Certificado, Despesa, DespesaRecorrente, Emissao, Envio, LancamentoBancario, LoteAcao, PagamentoRecebido,
-    Prestador, PrestadorTomador, RotinaMensal, Usuario,
+    AjusteEvento, Assinatura, Certificado, Emissao, Envio, LoteAcao, 
+    Prestador, Usuario,
 )
 from app.schemas import (
     AjusteOcorrenciaRequest,
@@ -74,14 +74,8 @@ from app.schemas import (
     CertificadoStatus,
     CheckoutSessaoResponse,
     ConfirmarEmailRequest,
-    ConciliarDespesaRequest,
-    ConciliarReceitaRequest,
-    ConfirmarExtratoRequest,
-    FonteReceitaRequest,
-    ConfirmarExtratoResponse,
     ConsultaCnpjResponse,
     DashboardResumoResponse,
-    DespesaResponse,
     EmissaoListaLinha,
     ExclusaoVinculoResponse,
     EmissaoResponse,
@@ -90,11 +84,9 @@ from app.schemas import (
     EventoCalendarioResponse,
     EventoManualAtualizarRequest,
     EventoManualCriarRequest,
-    ExtratoExtraidoResponse,
     GerarDpsRequest,
+    ModulosRequest,
     OrigemNotaRequest,
-    LigarPagamentoRequest,
-    OrdemRequest,
     PreferenciasRequest,
     GeracaoShopeeResponse,
     OrdemAwinResponse,
@@ -103,22 +95,9 @@ from app.schemas import (
     ModeloEmailPadraoResponse,
     PreviaShopeeResponse,
     EnviarGeralRequest,
-    ConciliarRequest,
     MoverNotaRequest,
     LimparImportadasRequest,
-    RecebimentoSemNotaResponse,
     IgnorarPendenciaRequest,
-    AtualizarDespesaRequest,
-    ContaFixaAtualizarRequest,
-    ContaFixaRequest,
-    ContaFixaResponse,
-    ContasDoMesResponse,
-    ImportarPlanilhaResponse,
-    ResumoFinanceiroResponse,
-    RotinaAtualizarRequest,
-    RotinaCheckRequest,
-    RotinaRequest,
-    RotinaResponse,
     BuscarNacionalRequest,
     ImportarNacionalRequest,
     ImportarNacionalResponse,
@@ -143,7 +122,6 @@ from app.schemas import (
     CanaisSuporteResponse,
     MensagemSuporteRequest,
     ProximosResponse,
-    NotaAbertaResponse,
     GoogleOAuthUrlResponse,
     ImportacaoCsvResponse,
     LembreteAliquotaRequest,
@@ -154,13 +132,9 @@ from app.schemas import (
     MensagemProntaResponse,
     NotaVisualResponse,
     OpcoesEnvioResponse,
-    PagamentoResponse,
-    PainelStatusResponse,
     PrestadorResponse,
     ReenviarConfirmacaoRequest,
-    RegistrarDespesaRequest,
     RegistrarEnvioRequest,
-    RegistrarPagamentoRequest,
     ServicoNacionalResponse,
     TomadorResponse,
     TrocarSenhaRequest,
@@ -205,7 +179,6 @@ from app.services.calendario import (
     remover_ajuste,
 )
 from app.services.dashboard import resumo_mes
-from app.financeiro.despesas import registrar_despesa
 from app.services.envios import (
     CanalInvalidoError,
     EmissaoSemConteudoError,
@@ -219,10 +192,8 @@ from app.services.envios import (
 )
 from app.limites import limitador, limite  # noqa: F401 — limitador: os testes zeram
 from app.services import contas, importar_adn, lotes, mensagens
-from app.financeiro import contas_mes as financeiro, importar_planilha
 from app.services.indicacao import resumo as resumo_indicacao
 from app.services.email import EmailEnvioError, get_email_sender
-from app.financeiro.a_receber import notas_em_aberto, recebimentos_sem_nota
 from app.services.dashboard import proximos as proximos_do_painel
 from app.services.envio_direto import (
     EmailIndisponivelError,
@@ -239,7 +210,6 @@ from app.services.envio_direto import (
     opcoes_envio,
 )
 from app.services.demo import criar_conta_demo, eh_email_demo
-from app.financeiro.extrato_pdf import PdfInvalidoError, extrair_extrato
 from app.services.limpeza import limpar_dados
 from app.services.ordem_awin import CNPJ_AWIN, OrdemAwinInvalidaError, ler_ordem_awin
 from app.services.relatorio_shopee import RelatorioShopeeInvalidoError, gerar_notas, ler_relatorio
@@ -252,8 +222,6 @@ from app.services.google_oauth import (
     trocar_code_por_usuario,
 )
 from app.services.importacao_csv import CsvInvalidoError, importar_csv
-from app.financeiro import classificar_extrato, conciliacao
-from app.financeiro.importacao_extrato import ItemExtrato, confirmar_importacao_extrato
 from app.services.listagens import listar_emissoes
 from app.fiscal.cliente_sefin import ClienteSefin
 from app.services.motor_emissao import (
@@ -267,8 +235,6 @@ from app.services.motor_emissao import (
     submeter as submeter_emissao,
 )
 from app.services.nota_visual import montar_nota_visual
-from app.financeiro.pagamentos import registrar_pagamento
-from app.financeiro.painel_status import painel_status_completo
 from app.services.tomadores import CnpjJaCadastradoError, buscar_tomador, criar_tomador, listar_catalogo
 from app.services.cadastro import (
     EmailJaCadastradoError as CadastroEmailJaCadastradoError,
@@ -539,6 +505,7 @@ def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
             cep=req.cep, logradouro=req.logradouro, numero=req.numero,
             complemento=req.complemento, bairro=req.bairro, codigo_indicacao=req.codigo_indicacao,
             modo_teste=req.modo_teste,
+            modulos={"emissor": ["emissor"], "financeiro": ["financeiro"], "ambos": ["emissor", "financeiro"]}[req.produto],
         )
     except CadastroEmailJaCadastradoError:
         raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")
@@ -603,7 +570,21 @@ def api_auth_me(request: Request, db: Session = Depends(get_db)):
     teste = bool(db.query(Prestador.modo_teste).filter(Prestador.id == ativa).scalar())
     return UsuarioResponse(
         email=usuario.email, prestador_id=ativa, demo=eh_email_demo(usuario.email), nome=usuario.nome, teste=teste,
+        modulos=modulos_da_empresa(db, ativa),
     )
+
+
+@app.put("/api/empresa/modulos")
+def api_definir_modulos(req: ModulosRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Liga/desliga os produtos da empresa ativa (Empresa › Módulos). Desligar
+    não apaga nada: os dados do módulo ficam guardados e voltam quando ele
+    for ligado de novo. (Enquanto não há cobrança por módulo, quem liga é a
+    própria pessoa.)"""
+    prestador = db.get(Prestador, prestador_id)
+    prestador.modulos = [m for m in MODULOS if m in req.modulos]
+    resposta = {"modulos": list(prestador.modulos)}
+    db.commit()
+    return resposta
 
 
 # --- Conta, sessões e empresas (29/09/2026, ver app/services/contas.py) ---
@@ -1419,6 +1400,9 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
     origem = req.origem or (f"fin:pagamento:{req.pagamento_id}" if req.pagamento_id else None)
 
     depois_da_troca: list = []
+    # Tudo num ponto de retorno: se o outro módulo recusar o pedido (origem
+    # que ele não reconhece), nada do que foi feito aqui fica.
+    ponto = db.begin_nested()
     existente = buscar_emissao_ativa(db, vinculo.id, competencia)
     if existente is not None:
         mes = f"{competencia[5:7]}/{competencia[:4]}"
@@ -1455,8 +1439,9 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
             passar_pra_nova(emissao)
         integracao.publicar("nota_criada", db, emissao=emissao, origem=origem)
     except integracao.RecusaDeIntegracao as exc:
-        db.rollback()
+        ponto.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    ponto.commit()
     db.flush()
     resposta = _para_resposta(emissao)  # antes do commit (RLS vale só na transação)
     db.commit()
@@ -1472,7 +1457,6 @@ def api_ligar_origem(emissao_id: uuid.UUID, req: OrigemNotaRequest, db: Session 
     try:
         integracao.publicar("nota_criada", db, emissao=emissao, origem=req.origem)
     except integracao.RecusaDeIntegracao as exc:
-        db.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     db.flush()
     resposta = _para_resposta(emissao)

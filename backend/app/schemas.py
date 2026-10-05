@@ -477,6 +477,12 @@ class UsuarioResponse(BaseModel):
     nome: str | None = None
     # Empresa ativa é conta de teste (notas só em homologação).
     teste: bool = False
+    # Produtos ligados na empresa ativa: "emissor", "financeiro" (05/10/2026).
+    modulos: list[str] = ["emissor"]
+
+
+class ModulosRequest(BaseModel):
+    modulos: list[Literal["emissor", "financeiro"]] = Field(min_length=1, max_length=2)
 
 
 class GoogleOAuthUrlResponse(BaseModel):
@@ -510,6 +516,8 @@ class CadastroRequest(BaseModel):
     bairro: str | None = Field(default=None, max_length=100)
     # Conta de teste (link /cadastro?teste=1): notas só em homologação.
     modo_teste: bool = False
+    # Qual produto a pessoa veio contratar (05/10/2026): /cadastro?produto=financeiro
+    produto: Literal["emissor", "financeiro", "ambos"] = "emissor"
 
 
 class CadastroResponse(BaseModel):

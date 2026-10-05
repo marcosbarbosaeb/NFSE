@@ -46,7 +46,6 @@ from app.models import (
     UsuarioPrestador,
 )
 from app.services.motor_emissao import criar_rascunho, montar
-from app.financeiro.pagamentos import registrar_pagamento
 from app.tempo import hoje as hoje_br
 
 DOMINIO_EMAIL_DEMO = "simulacao.agenteana.com.br"
@@ -118,6 +117,7 @@ def criar_conta_demo(db: Session) -> Usuario:
     prestador_id = uuid.uuid4()
     definir_prestador_atual(db, prestador_id)
     prestador = Prestador(
+        modulos=["emissor", "financeiro"],  # a simulação mostra os dois produtos
         id=prestador_id, cpf_cnpj=_cnpj_ficticio(), razao_social="Sua Empresa de Exemplo LTDA",
         cod_municipio=_MUNICIPIO_DEMO, logradouro="Avenida Simulação", numero="1", bairro="Centro", cep="01000000",
         op_simples_nacional="3", regime_apuracao_sn="1", regime_especial_trib="0",
@@ -169,7 +169,12 @@ def criar_conta_demo(db: Session) -> Usuario:
             if delta <= -2 or (delta == -1 and indice == 0):
                 ano, mes = (int(p) for p in competencia.split("-"))
                 recebido_em = datetime.date(ano, mes, min(28, (dados["dia"] or 1) + 3)) + datetime.timedelta(days=dados["dias_receber"] or 30)
-                registrar_pagamento(db, vinculo, competencia=competencia, valor=valor, data_recebimento=min(recebido_em, hoje))
+                # (dados de exemplo dos dois produtos, gravados direto — a
+                # simulação não depende do código de nenhum dos módulos)
+                db.add(PagamentoRecebido(
+                    id=uuid.uuid4(), prestador_tomador_id=vinculo.id, prestador_id=prestador_id, competencia=competencia,
+                    valor=valor, data_recebimento=min(recebido_em, hoje), emissao_id=emissao.id,
+                ))
 
     for delta, categoria, valor in ((-2, "Contador", 350.0), (-1, "Contador", 350.0), (-1, "Ferramentas de marketing", 189.9), (0, "Contador", 350.0)):
         db.add(Despesa(id=uuid.uuid4(), prestador_id=prestador_id, categoria=categoria, competencia=_competencia(delta, hoje), valor=valor))
