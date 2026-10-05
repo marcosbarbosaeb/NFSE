@@ -127,12 +127,16 @@ def recebimentos_sem_nota(db: Session, desde: str | None = None) -> list[dict]:
         query = query.filter(PagamentoRecebido.competencia >= desde)
     grupos: dict[tuple, dict] = {}
     for p, apelido in query.order_by(PagamentoRecebido.competencia, PagamentoRecebido.criado_em):
-        chave = (p.prestador_tomador_id, p.competencia)
-        if p.mes_inteiro and chave in com_nota:
+        mes = (p.prestador_tomador_id, p.competencia)
+        if p.mes_inteiro and mes in com_nota:
             continue
+        # Recebimento novo: uma linha por recebimento (cada um pode virar uma
+        # nota). Histórico: junto por tomador + mês, como antes.
+        chave = mes if p.mes_inteiro else (p.id,)
         g = grupos.setdefault(chave, {
             "pagamento_id": p.id, "vinculo_id": p.prestador_tomador_id, "apelido": apelido,
             "competencia": p.competencia, "valor": Decimal(0), "data_recebimento": p.data_recebimento,
+            "chave": f"semnota:{p.prestador_tomador_id}:{p.competencia}" if p.mes_inteiro else f"semnota:{p.id}",
         })
         g["valor"] += p.valor
     return [{**g, "valor": float(g["valor"])} for g in grupos.values()]

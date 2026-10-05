@@ -289,6 +289,43 @@ export interface NotaParaBaixa {
   n_dps?: number | null
 }
 
+// --- Conciliação do extrato (05/10/2026) ---
+
+export interface LancamentoPendente {
+  id: string
+  data: string | null
+  descricao: string
+  valor: number
+  credito: boolean
+  vinculo_id: string | null
+  emissao_id: string | null
+  nota_exata: boolean
+  categoria: string
+  tipo_despesa: "despesa" | "retirada"
+  origem_sugestao: "lembrado" | "nome" | "valor" | null
+  /** Conta a pagar em aberto que bate com essa saída. */
+  despesa_id: string | null
+}
+
+export interface ContaAPagar {
+  id: string
+  nome: string
+  categoria: string
+  tipo: "despesa" | "retirada"
+  competencia: string
+  vencimento: string | null
+  valor: number
+}
+
+export interface PainelConciliacao {
+  lancamentos: LancamentoPendente[]
+  ignorados: number
+  notas_abertas: (NotaParaBaixa & { apelido: string })[]
+  contas_a_pagar: ContaAPagar[]
+  categorias: string[]
+  categorias_retirada: string[]
+}
+
 export interface ExtratoExtraido {
   total_transacoes: number
   transacoes: TransacaoExtraida[]
@@ -322,6 +359,8 @@ export interface ConfirmarExtratoResultado {
   despesas_registradas?: number
   itens: ItemConfirmadoExtrato[]
   sem_nota?: RecebimentoSemNota[]
+  /** Lançamentos do extrato guardados sem classificar (Conciliação). */
+  pendentes?: number
 }
 
 // --- Marco 14: NFS-e (lista + nova emissão + detalhe), Recebimentos, Despesas, Configurações ---
@@ -356,14 +395,19 @@ export interface GerarDpsRequest {
   tpAmb?: string
   /** AAAA-MM-DD — dia de competência escolhido; sem = hoje. */
   data_competencia?: string | null
-  /** Nota de um recebimento que chegou sem nota: fica no mês do recebimento. */
+  /** Nota de um recebimento que chegou sem nota: o recebimento fica ligado a ela. */
   pagamento_id?: string | null
+  /** Trocar a nota do mês que ainda não foi enviada por esta. */
+  substituir?: boolean
 }
 
 export interface VerificarDuplicata {
   existe: boolean
   emissao_id: string | null
   estado: string | null
+  valor?: number | null
+  /** A nota existente ainda não foi pra prefeitura: dá pra gerar outra no lugar. */
+  pode_substituir?: boolean
 }
 
 export interface Municipio {
@@ -504,6 +548,10 @@ export interface Pagamento {
   /** Resposta do POST /pagamentos: caiu sem nota do tomador nesse mês. */
   sem_nota?: boolean
   vinculo_id?: string | null
+  /** A nota que esse dinheiro paga. */
+  emissao_id?: string | null
+  /** Recebimento sem nota de um tomador que recebe nota: dá pra gerar a dele. */
+  pode_gerar_nota?: boolean
 }
 
 /** GET /financeiro/recebimentos-sem-nota — dinheiro que caiu sem nota no mês

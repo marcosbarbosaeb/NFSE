@@ -21,6 +21,7 @@ const ContaPage = lazy(() => import("./pages/ContaPage").then((m) => ({ default:
 const EmpresaPage = lazy(() => import("./pages/EmpresaPage").then((m) => ({ default: m.EmpresaPage })))
 const DashboardPage = lazy(() => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardPage })))
 const EmissaoDetalhePage = lazy(() => import("./pages/EmissaoDetalhePage").then((m) => ({ default: m.EmissaoDetalhePage })))
+const ConciliacaoPage = lazy(() => import("./pages/ConciliacaoPage").then((m) => ({ default: m.ConciliacaoPage })))
 const FinanceiroPage = lazy(() => import("./pages/FinanceiroPage").then((m) => ({ default: m.FinanceiroPage })))
 const NfsePage = lazy(() => import("./pages/NfsePage").then((m) => ({ default: m.NfsePage })))
 const TomadoresPage = lazy(() => import("./pages/TomadoresPage").then((m) => ({ default: m.TomadoresPage })))
@@ -64,6 +65,7 @@ export default function App() {
             <Route path="tomadores/:id" element={<VinculoFormPage />} />
             <Route path="calendario" element={<CalendarioPage />} />
             <Route path="financeiro" element={<FinanceiroPage />} />
+            <Route path="financeiro/conciliacao" element={<ConciliacaoPage />} />
             {/* Recebimentos e Despesas viraram uma aba só (28/09/2026). */}
             <Route path="recebimentos" element={<Navigate to="/app/financeiro" replace />} />
             <Route path="despesas" element={<Navigate to="/app/financeiro?aba=despesas" replace />} />

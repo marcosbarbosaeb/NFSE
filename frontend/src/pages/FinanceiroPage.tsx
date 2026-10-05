@@ -1,10 +1,10 @@
-import { FileSpreadsheet, FileUp, Pencil, Plus, Trash2 } from "lucide-react"
+import { ArrowLeftRight, FileUp, LayoutDashboard, Pencil, Plus, Trash2 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { Link, useLocation, useSearchParams } from "react-router-dom"
 import { BaixaPagamento } from "../components/BaixaPagamento"
+import { PainelCards } from "../components/PainelCards"
 import { RecebimentosSemNotaCard } from "../components/financeiro/RecebimentosSemNota"
 import { ContasDoMesPainel } from "../components/financeiro/ContasDoMesPainel"
-import { ImportarPlanilhaModal } from "../components/financeiro/ImportarPlanilhaModal"
 import { LancamentoModal } from "../components/financeiro/LancamentoModal"
 import { ResultadoAno } from "../components/financeiro/ResultadoAno"
 import { Badge } from "../components/ui/Badge"
@@ -46,7 +46,7 @@ export function FinanceiroPage() {
   const [resumo, setResumo] = useState<ResumoFinanceiro | null>(null)
   const [erroResumo, setErroResumo] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
-  const [modal, setModal] = useState<"recebimento" | "extrato" | "despesa" | "planilha" | null>(
+  const [modal, setModal] = useState<"recebimento" | "extrato" | "despesa" | null>(
     searchParams.get("novo") === "despesa" ? "despesa" : searchParams.get("novo") === "recebimento" ? "recebimento" : null,
   )
   // Lançamento em edição (null = novo) e o mês sugerido pro novo.
@@ -100,6 +100,10 @@ export function FinanceiroPage() {
   }, [])
 
   const [recargaSemNota, setRecargaSemNota] = useState(0)
+  // Disposição dos cards (05/10/2026): abrir/fechar e arrastar.
+  const [editando, setEditando] = useState(false)
+  const [pendentesExtrato, setPendentesExtrato] = useState(0)
+  const [semNota, setSemNota] = useState(0)
 
   function recarregar() {
     setErro(null)
@@ -112,6 +116,8 @@ export function FinanceiroPage() {
       })
       .catch((err) => setErroResumo(mensagemErro(err, "Não deu pra carregar o resultado do ano.")))
     api.get<NotaAberta[]>("/notas-a-receber").then(setAbertas).catch(() => setAbertas([]))
+    api.get<{ pendentes: number }>("/conciliacao/contagem").then((r) => setPendentesExtrato(r.pendentes)).catch(() => undefined)
+    api.get<unknown[]>("/financeiro/recebimentos-sem-nota").then((r) => setSemNota(r.length)).catch(() => undefined)
     Promise.all([api.get<Pagamento[]>(`/pagamentos?ano=${ano}&por=recebimento`), api.get<Despesa[]>(`/despesas?ano=${ano}`)])
       .then(([p, d]) => {
         setPagamentos(p)
@@ -125,7 +131,10 @@ export function FinanceiroPage() {
   // Links "#a-receber" (Visão geral, Precisa da sua atenção) rolam até a lista.
   const { hash } = useLocation()
   useEffect(() => {
-    if (hash === "#a-receber" && abertas !== null) document.getElementById("a-receber")?.scrollIntoView({ behavior: "smooth" })
+    if (hash !== "#a-receber" || abertas === null) return
+    // (o card pode estar fechado: o PainelCards abre e só então dá pra rolar)
+    const t = window.setTimeout(() => document.getElementById("a-receber")?.scrollIntoView({ behavior: "smooth" }), 80)
+    return () => window.clearTimeout(t)
   }, [hash, abertas !== null])
 
   const meses = useMemo(() => {
@@ -164,9 +173,18 @@ export function FinanceiroPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">O que entrou, o que saiu e o que sobrou — mês a mês.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setModal("planilha")}>
-            <FileSpreadsheet size={16} /> Importar planilha
+          <Button variant="ghost" onClick={() => setEditando((e) => !e)} aria-pressed={editando}>
+            <LayoutDashboard size={16} /> {editando ? "Concluir" : "Editar disposição"}
           </Button>
+          <Link
+            to="/app/financeiro/conciliacao"
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            <ArrowLeftRight size={16} /> Conciliação
+            {pendentesExtrato > 0 && (
+              <span className="rounded-full bg-accent-500 px-1.5 text-xs font-semibold text-white">{pendentesExtrato}</span>
+            )}
+          </Link>
           <Button variant="outline" onClick={() => setModal("extrato")} data-tour="financeiro-extrato">
             <FileUp size={16} /> Importar extrato
           </Button>
@@ -199,78 +217,60 @@ export function FinanceiroPage() {
 
       {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
 
-      <ResultadoAno resumo={resumo?.ano === ano ? resumo : null} erro={erroResumo} ano={ano} mes={mes} onSelecionarMes={selecionarMes} />
+      {pendentesExtrato > 0 && !editando && (
+        <Link
+          to="/app/financeiro/conciliacao"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary-100 bg-primary-50/70 px-4 py-3 text-sm text-slate-700 hover:bg-primary-50 dark:border-primary-900/40 dark:bg-primary-900/20 dark:text-slate-200"
+        >
+          <span>
+            <strong>{pendentesExtrato}</strong> {pendentesExtrato === 1 ? "lançamento do extrato está" : "lançamentos do extrato estão"} sem
+            classificar.
+          </span>
+          <span className="font-semibold text-primary-700 dark:text-primary-200">Abrir a Conciliação →</span>
+        </Link>
+      )}
 
+      {editando && (
+        <p className="rounded-lg bg-primary-50 px-4 py-3 text-sm text-primary-800 dark:bg-primary-900/30 dark:text-primary-200">
+          Arraste os cards pra mudar a ordem (ou use as setas) e escolha quais ficam abertos. Fica salvo na sua conta.
+        </p>
+      )}
+
+      <PainelCards
+        tela="financeiro"
+        editando={editando}
+        fechadosDePadrao={["confronto"]}
+        abrir={hash === "#a-receber" ? "a_receber" : null}
+        secoes={[
+          {
+            id: "resultado",
+            titulo: mes ? `Resultado de ${NOMES_MESES[Number(mes) - 1].toLowerCase()}` : "Resultado do ano",
+            conteudo: (
+      <ResultadoAno resumo={resumo?.ano === ano ? resumo : null} erro={erroResumo} ano={ano} mes={mes} onSelecionarMes={selecionarMes} semTitulo />
+            ),
+          },
+          {
+            id: "contas",
+            titulo: "Contas e rotina do mês",
+            conteudo: (
       <ContasDoMesPainel
         competencia={competenciaContas}
         onCompetencia={setCompetenciaContas}
         versao={versaoMes}
         onMudou={recarregar}
         onLancar={(c) => abrirLancamento(null, c)}
+        semTitulo
       />
-
-      <Card className="p-5" data-tour="financeiro-confronto">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Recebimentos x despesas</h2>
-        <p className="mb-3 text-xs text-slate-400 dark:text-slate-500">Recebimentos pelo mês em que o dinheiro caiu; despesas pelo mês de competência.</p>
-        {carregando ? (
-          <p className="py-6 text-center text-sm text-slate-400">Carregando...</p>
-        ) : mesesComMovimento.length === 0 ? (
-          <p className="py-6 text-center text-sm text-slate-400">Nada registrado em {ano} ainda.</p>
-        ) : (
-          <div className="-mx-5 overflow-x-auto px-5">
-            <table className="w-full min-w-[560px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-700/60 dark:text-slate-500">
-                  <th className="py-2 font-medium">Mês</th>
-                  <th className="py-2 font-medium">Recebido</th>
-                  <th className="py-2 font-medium">Despesas</th>
-                  <th className="py-2 font-medium">Saldo</th>
-                  <th className="w-1/3 py-2 font-medium"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {mesesComMovimento.map((m) => (
-                  <tr
-                    key={m.competencia}
-                    onClick={() => selecionarMes(m.competencia === periodo ? "" : m.competencia.slice(5))}
-                    title="Clique pra ver só este mês"
-                    className={`cursor-pointer border-b border-slate-50 last:border-0 dark:border-slate-700/40 ${
-                      m.competencia === periodo ? "bg-primary-50/70 dark:bg-primary-900/20" : "hover:bg-slate-50 dark:hover:bg-slate-700/40"
-                    }`}
-                  >
-                    <td className="py-2.5 font-medium text-slate-700 dark:text-slate-200">{formatCompetenciaAbrev(m.competencia)}</td>
-                    <td className="py-2.5 text-success-700 dark:text-success-300">{formatBRL(m.recebido)}</td>
-                    <td className="py-2.5 text-danger-600">{formatBRL(m.gasto)}</td>
-                    <td className={`py-2.5 font-semibold ${m.saldo < 0 ? "text-danger-600" : "text-slate-800 dark:text-slate-100"}`}>{formatBRL(m.saldo)}</td>
-                    <td className="py-2.5">
-                      <div className="flex flex-col gap-1">
-                        <div className="h-1.5 rounded-full bg-success-400" style={{ width: `${(m.recebido / maior) * 100}%` }} />
-                        <div className="h-1.5 rounded-full bg-danger-400" style={{ width: `${(m.gasto / maior) * 100}%` }} />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
-
-      {/* "Nos recebimentos coloque os pagamentos também" (28/09/2026): as
-          notas que ainda não foram pagas, de todos os meses, com a baixa ali
-          mesmo (passa o mouse em "Pendente"). */}
-      <RecebimentosSemNotaCard recarga={recargaSemNota} />
-
-      <Card className="scroll-mt-20 p-5" id="a-receber">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <div>
-            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">A receber</h2>
-            <p className="text-xs text-slate-400 dark:text-slate-500">Notas emitidas sem pagamento registrado, de todos os meses.</p>
-          </div>
-          <span className="text-sm font-semibold text-warning-700 dark:text-warning-300">
-            {formatBRL((abertas ?? []).reduce((s, n) => s + n.valor, 0))}
-          </span>
-        </div>
+            ),
+          },
+          {
+            id: "a_receber",
+            titulo: "A receber",
+            ancora: "a-receber",
+            resumo: abertas ? formatBRL(abertas.reduce((s, n) => s + n.valor, 0)) : null,
+            conteudo: (
+      <Card className="p-5">
+        <p className="mb-3 text-xs text-slate-400 dark:text-slate-500">Notas emitidas sem pagamento registrado, de todos os meses.</p>
         {abertas === null ? (
           <p className="py-4 text-center text-sm text-slate-400">Carregando...</p>
         ) : abertas.length === 0 ? (
@@ -313,8 +313,19 @@ export function FinanceiroPage() {
           </div>
         )}
       </Card>
-
-      {/* Recebimentos e despesas lado a lado (28/09/2026). */}
+            ),
+          },
+          {
+            id: "sem_nota",
+            titulo: "Recebimentos sem nota",
+            oculto: semNota === 0,
+            resumo: semNota > 0 ? `${semNota}` : null,
+            conteudo: <RecebimentosSemNotaCard recarga={recargaSemNota} semTitulo />,
+          },
+          {
+            id: "lancamentos",
+            titulo: "Recebimentos e despesas",
+            conteudo: (
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card className="p-5">
           <div className="mb-3 flex items-baseline justify-between gap-2">
@@ -337,7 +348,20 @@ export function FinanceiroPage() {
                   <tr key={p.id} className="border-b border-slate-50 last:border-0 dark:border-slate-700/40">
                     <td className="py-2.5">
                       <span className="font-medium text-slate-800 dark:text-slate-200">{p.apelido}</span>
-                      <span className="block text-xs text-slate-400">nota de {p.competencia}</span>
+                      {p.emissao_id ? (
+                        <Link to={`/app/nfse/${p.emissao_id}`} className="block text-xs text-slate-400 hover:text-primary-600 hover:underline">
+                          nota de {p.competencia}
+                        </Link>
+                      ) : p.pode_gerar_nota ? (
+                        <Link
+                          to={`/app/nfse?gerar=${p.vinculo_id}&pagamento=${p.id}`}
+                          className="block text-xs font-semibold text-primary-600 hover:underline dark:text-primary-300"
+                        >
+                          sem nota · gerar nota →
+                        </Link>
+                      ) : (
+                        <span className="block text-xs text-slate-400">{p.competencia}</span>
+                      )}
                     </td>
                     <td className="py-2.5 text-slate-500 dark:text-slate-400">
                       {p.data_recebimento ? new Date(`${p.data_recebimento}T00:00:00`).toLocaleDateString("pt-BR") : <Badge variant="neutral">sem data</Badge>}
@@ -440,6 +464,61 @@ export function FinanceiroPage() {
           </div>
         </Card>
       </div>
+            ),
+          },
+          {
+            id: "confronto",
+            titulo: "Recebimentos x despesas, mês a mês",
+            conteudo: (
+      <Card className="p-5" data-tour="financeiro-confronto">
+        <p className="mb-3 text-xs text-slate-400 dark:text-slate-500">Recebimentos pelo mês em que o dinheiro caiu; despesas pelo mês de competência.</p>
+        {carregando ? (
+          <p className="py-6 text-center text-sm text-slate-400">Carregando...</p>
+        ) : mesesComMovimento.length === 0 ? (
+          <p className="py-6 text-center text-sm text-slate-400">Nada registrado em {ano} ainda.</p>
+        ) : (
+          <div className="-mx-5 overflow-x-auto px-5">
+            <table className="w-full min-w-[560px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-700/60 dark:text-slate-500">
+                  <th className="py-2 font-medium">Mês</th>
+                  <th className="py-2 font-medium">Recebido</th>
+                  <th className="py-2 font-medium">Despesas</th>
+                  <th className="py-2 font-medium">Saldo</th>
+                  <th className="w-1/3 py-2 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {mesesComMovimento.map((m) => (
+                  <tr
+                    key={m.competencia}
+                    onClick={() => selecionarMes(m.competencia === periodo ? "" : m.competencia.slice(5))}
+                    title="Clique pra ver só este mês"
+                    className={`cursor-pointer border-b border-slate-50 last:border-0 dark:border-slate-700/40 ${
+                      m.competencia === periodo ? "bg-primary-50/70 dark:bg-primary-900/20" : "hover:bg-slate-50 dark:hover:bg-slate-700/40"
+                    }`}
+                  >
+                    <td className="py-2.5 font-medium text-slate-700 dark:text-slate-200">{formatCompetenciaAbrev(m.competencia)}</td>
+                    <td className="py-2.5 text-success-700 dark:text-success-300">{formatBRL(m.recebido)}</td>
+                    <td className="py-2.5 text-danger-600">{formatBRL(m.gasto)}</td>
+                    <td className={`py-2.5 font-semibold ${m.saldo < 0 ? "text-danger-600" : "text-slate-800 dark:text-slate-100"}`}>{formatBRL(m.saldo)}</td>
+                    <td className="py-2.5">
+                      <div className="flex flex-col gap-1">
+                        <div className="h-1.5 rounded-full bg-success-400" style={{ width: `${(m.recebido / maior) * 100}%` }} />
+                        <div className="h-1.5 rounded-full bg-danger-400" style={{ width: `${(m.gasto / maior) * 100}%` }} />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+            ),
+          },
+        ]}
+      />
 
       {modal === "recebimento" && (
         <RegistrarPagamentoModal
@@ -472,16 +551,6 @@ export function FinanceiroPage() {
             fecharModal()
             recarregar()
             setVersaoMes((n) => n + 1)
-          }}
-        />
-      )}
-      {modal === "planilha" && (
-        <ImportarPlanilhaModal
-          onClose={fecharModal}
-          onImportado={() => {
-            recarregar()
-            setVersaoMes((n) => n + 1)
-            api.get<VinculoResumo[]>("/vinculos").then(setVinculos).catch(() => {})
           }}
         />
       )}

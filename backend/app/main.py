@@ -2290,6 +2290,11 @@ def api_conciliacao(db: Session = Depends(db_sessao)):
     return conciliacao.painel(db)
 
 
+@app.get("/api/conciliacao/contagem")
+def api_conciliacao_contagem(db: Session = Depends(db_sessao)):
+    return {"pendentes": conciliacao.contar_pendentes(db)}
+
+
 @app.get("/api/conciliacao/ignorados")
 def api_conciliacao_ignorados(db: Session = Depends(db_sessao)):
     return conciliacao.listar_ignorados(db)
@@ -2375,12 +2380,8 @@ def api_criar_fonte_de_receita(
 def _sem_nota_dos_pagamentos(db: Session, ids: list) -> list[dict]:
     if not ids:
         return []
-    pares = {(p.prestador_tomador_id, p.competencia) for p in db.query(PagamentoRecebido).filter(PagamentoRecebido.id.in_(ids))}
-    menor = min(c for _, c in pares)
-    return [
-        {**r, "chave": f"semnota:{r['vinculo_id']}:{r['competencia']}"}
-        for r in recebimentos_sem_nota(db, menor) if (r["vinculo_id"], r["competencia"]) in pares
-    ]
+    alvo = set(ids)
+    return [r for r in recebimentos_sem_nota(db) if r["pagamento_id"] in alvo]
 
 
 def _vinculo_shopee(db: Session, vinculo_id: uuid.UUID):
@@ -2684,9 +2685,9 @@ def api_recebimentos_sem_nota(db: Session = Depends(db_sessao)):
     desde = f"{hoje.year - 1:04d}-{hoje.month:02d}"
     ignoradas = {c for (c,) in db.query(AjusteEvento.chave).filter(AjusteEvento.tipo == "pendencia", AjusteEvento.oculto.is_(True))}
     return [
-        {**r, "chave": f"semnota:{r['vinculo_id']}:{r['competencia']}"}
-        for r in recebimentos_sem_nota(db, desde)
-        if f"semnota:{r['vinculo_id']}:{r['competencia']}" not in ignoradas
+        r for r in recebimentos_sem_nota(db, desde)
+        # (a chave antiga, por tomador + mês, continua valendo pros ignorados de antes)
+        if r["chave"] not in ignoradas and f"semnota:{r['vinculo_id']}:{r['competencia']}" not in ignoradas
     ]
 
 

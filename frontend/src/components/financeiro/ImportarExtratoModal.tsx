@@ -1,5 +1,6 @@
-import { ArrowLeftRight, Check, X } from "lucide-react"
-import { type FormEvent, useState } from "react"
+import { ArrowLeftRight, UploadCloud } from "lucide-react"
+import { type DragEvent, type FormEvent, useState } from "react"
+import { Link } from "react-router-dom"
 import { ApiError, api, formatarErro } from "../../lib/api"
 import { competenciaAtual, formatBRL, formatCompetenciaLonga } from "../../lib/format"
 import type {
@@ -11,6 +12,7 @@ import type {
   VinculoResumo,
 } from "../../lib/types"
 import { Button } from "../ui/Button"
+import { CaixaBusca, type OpcaoBusca } from "../ui/CaixaBusca"
 import { Modal } from "../ui/Modal"
 import { ListaSemNota } from "./RecebimentosSemNota"
 
@@ -40,9 +42,6 @@ interface Linha {
   // avisos
   origem: TransacaoExtraida["origem_sugestao"]
   jaLancado: boolean
-  // campo de "novo tomador"/"nova categoria" aberto nesta linha
-  criando: boolean
-  nome: string
 }
 
 interface Opcao {
@@ -51,7 +50,6 @@ interface Opcao {
   sem_nota?: boolean
 }
 
-const NOVO = "__novo__"
 const CAMPO =
   "rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
 
@@ -78,7 +76,7 @@ export function ImportarExtratoModal({
   const [tomadores, setTomadores] = useState<Opcao[]>(vinculos)
   const [categorias, setCategorias] = useState<string[]>([])
   const [retiradas, setRetiradas] = useState<string[]>([])
-  const [criandoTomador, setCriandoTomador] = useState(false)
+  const [arrastando, setArrastando] = useState(false)
   const [notas, setNotas] = useState<NotaParaBaixa[]>([])
 
   const notasDe = (vinculoId: string) => notas.filter((n) => n.vinculo_id === vinculoId)
@@ -122,8 +120,6 @@ export function ImportarExtratoModal({
             competenciaDespesa: mes,
             origem: t.origem_sugestao ?? null,
             jaLancado: Boolean(t.ja_lancado),
-            criando: false,
-            nome: "",
           }
         }),
       )
@@ -145,7 +141,7 @@ export function ImportarExtratoModal({
       (atuais) =>
         atuais?.map((l) => {
           const nota = (x: Linha) => notaPara(vinculoId, Number(x.valor) || 0, x.competenciaDespesa)
-          if (l.linha === alvo.linha) return { ...l, vinculoId, emissaoId: nota(l), criando: false, nome: "", origem: null }
+          if (l.linha === alvo.linha) return { ...l, vinculoId, emissaoId: nota(l), origem: null }
           if (alvo.chave && l.chave === alvo.chave && l.credito && !l.vinculoId) return { ...l, vinculoId, emissaoId: nota(l) }
           return l
         }) ?? null,
@@ -156,56 +152,64 @@ export function ImportarExtratoModal({
     setLinhas(
       (atuais) =>
         atuais?.map((l) => {
-          if (l.linha === alvo.linha) return { ...l, categoria, tipoDespesa, criando: false, nome: "", origem: null }
+          if (l.linha === alvo.linha) return { ...l, categoria, tipoDespesa, origem: null }
           if (alvo.chave && l.chave === alvo.chave && !l.credito) return { ...l, categoria, tipoDespesa }
           return l
         }) ?? null,
     )
   }
 
-  async function criarTomador(l: Linha) {
-    const nome = l.nome.trim()
-    if (nome.length < 2) return
+  async function criarTomador(l: Linha, nome: string) {
     setErro(null)
-    setCriandoTomador(true)
     try {
       const novo = await api.post<Opcao>("/vinculos/controle", { nome })
       setTomadores((atuais) => (atuais.some((v) => v.id === novo.id) ? atuais : [...atuais, novo]))
       escolherTomador(l, novo.id)
     } catch (err) {
       setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
-    } finally {
-      setCriandoTomador(false)
     }
   }
 
-  function criarCategoria(l: Linha) {
-    const nome = l.nome.trim()
-    if (!nome) return
+  function criarCategoria(l: Linha, nome: string) {
     const existente = [...categorias, ...retiradas].find((c) => c.toLowerCase() === nome.toLowerCase())
     if (!existente) setCategorias((atuais) => [...atuais, nome].sort((a, b) => a.localeCompare(b, "pt-BR")))
     escolherCategoria(l, existente ?? nome, existente && retiradas.includes(existente) ? "retirada" : "despesa")
   }
 
+  function soltarArquivo(e: DragEvent) {
+    e.preventDefault()
+    setArrastando(false)
+    const solto = e.dataTransfer.files?.[0]
+    if (solto) setArquivo(solto)
+  }
+
+  const opcoesTomador: OpcaoBusca[] = [
+    ...tomadores.filter((v) => !v.sem_nota).map((v) => ({ id: v.id, rotulo: v.apelido })),
+    ...tomadores.filter((v) => v.sem_nota).map((v) => ({ id: v.id, rotulo: v.apelido, grupo: "Só controle (sem nota)" })),
+  ]
+  const opcoesCategoria: OpcaoBusca[] = [
+    ...categorias.map((c) => ({ id: `despesa|${c}`, rotulo: c })),
+    ...retiradas.map((c) => ({ id: `retirada|${c}`, rotulo: c, grupo: "Retiradas (não entram como despesa)" })),
+  ]
+
   const receitas = (linhas ?? []).filter((l) => l.credito)
   const despesas = (linhas ?? []).filter((l) => !l.credito)
   const receitasMarcadas = receitas.filter((l) => l.incluir)
   const despesasMarcadas = despesas.filter((l) => l.incluir)
-  const valorOk = (l: Linha) => Number(l.valor) > 0
-  const semTomador = receitasMarcadas.filter((l) => !l.vinculoId).length
-  const semCategoria = despesasMarcadas.filter((l) => !l.categoria.trim()).length
-  const pronto =
-    receitasMarcadas.length + despesasMarcadas.length > 0 &&
-    semTomador === 0 &&
-    semCategoria === 0 &&
-    [...receitasMarcadas, ...despesasMarcadas].every(valorOk)
+  // Vai ser lançada agora: marcada e classificada. O resto (desmarcada ou
+  // sem tomador/categoria) fica guardado pra Conciliação — menos o que já
+  // tinha sido lançado numa importação anterior.
+  const pronta = (l: Linha) => l.incluir && Number(l.valor) > 0 && (l.credito ? !!l.vinculoId : !!l.categoria.trim())
+  const receitasAgora = receitas.filter(pronta)
+  const despesasAgora = despesas.filter(pronta)
+  const paraDepois = (linhas ?? []).filter((l) => !pronta(l) && !l.jaLancado && Number(l.valor) > 0)
   const soma = (lista: Linha[]) => lista.reduce((s, l) => s + (Number(l.valor) || 0), 0)
 
   async function confirmar() {
     setEnviando(true)
     setErro(null)
     try {
-      const itens: ItemConfirmarExtrato[] = receitasMarcadas.map((l) => ({
+      const itens: ItemConfirmarExtrato[] = receitasAgora.map((l) => ({
         vinculo_id: l.vinculoId,
         emissao_id: l.emissaoId || null,
         competencia: notas.find((n) => n.emissao_id === l.emissaoId)?.competencia ?? l.competenciaReceita,
@@ -213,7 +217,7 @@ export function ImportarExtratoModal({
         data_recebimento: l.data || null,
         descricao: l.descricao,
       }))
-      const saidas = despesasMarcadas.map((l) => ({
+      const saidas = despesasAgora.map((l) => ({
         categoria: l.categoria.trim(),
         tipo: l.tipoDespesa,
         competencia: l.competenciaDespesa,
@@ -221,9 +225,15 @@ export function ImportarExtratoModal({
         data: l.data || null,
         descricao: l.descricao,
       }))
-      const resp = await api.post<ConfirmarExtratoResultado>("/recebimentos/extrato/confirmar", { itens, despesas: saidas })
+      const pendentes = paraDepois.map((l) => ({ data: l.data || null, descricao: l.descricao, valor: Number(l.valor), credito: l.credito }))
+      const resp = await api.post<ConfirmarExtratoResultado>("/recebimentos/extrato/confirmar", {
+        itens,
+        despesas: saidas,
+        pendentes,
+        arquivo: arquivo?.name ?? null,
+      })
       setResultado(resp)
-      if (resp.sucesso > 0 || (resp.despesas_registradas ?? 0) > 0) onImportado()
+      onImportado()
     } catch (err) {
       setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
     } finally {
@@ -232,8 +242,6 @@ export function ImportarExtratoModal({
   }
 
   function linhaDaLista(l: Linha) {
-    const comNota = tomadores.filter((v) => !v.sem_nota)
-    const soControle = tomadores.filter((v) => v.sem_nota)
     const notasDoTomador = l.credito && l.vinculoId ? notasDe(l.vinculoId) : []
     const notaEscolhida = notasDoTomador.find((n) => n.emissao_id === l.emissaoId)
     const rotuloNota = (n: NotaParaBaixa) =>
@@ -288,100 +296,40 @@ export function ImportarExtratoModal({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {l.criando ? (
-              <form
-                className="flex min-w-[220px] flex-1 items-center gap-1.5"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  if (l.credito) criarTomador(l)
-                  else criarCategoria(l)
-                }}
-              >
-                <input
-                  autoFocus
-                  value={l.nome}
-                  maxLength={60}
-                  onChange={(e) => mudar(l.linha, { nome: e.target.value })}
-                  placeholder={l.credito ? "Nome do novo tomador" : "Nome da nova categoria"}
-                  className={`${CAMPO} min-w-0 flex-1`}
-                />
-                <button
-                  type="submit"
-                  disabled={criandoTomador || l.nome.trim().length < 2}
-                  title="Criar"
-                  aria-label="Criar"
-                  className="rounded-lg bg-primary-600 p-2 text-white hover:bg-primary-700 disabled:opacity-50"
-                >
-                  <Check className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => mudar(l.linha, { criando: false, nome: "" })}
-                  title="Cancelar"
-                  aria-label="Cancelar"
-                  className="rounded-lg border border-slate-300 p-2 text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </form>
-            ) : l.credito ? (
-              <select
-                value={l.vinculoId}
-                onChange={(e) => (e.target.value === NOVO ? mudar(l.linha, { criando: true }) : escolherTomador(l, e.target.value))}
+            {l.credito ? (
+              <CaixaBusca
+                valor={l.vinculoId}
+                opcoes={opcoesTomador}
+                onEscolher={(id) => escolherTomador(l, id)}
+                onCriar={(nome) => criarTomador(l, nome)}
+                rotuloCriar="Novo tomador"
+                placeholder="De qual tomador? (digite pra buscar)"
                 disabled={!l.incluir}
-                aria-label="Tomador"
-                className={`${CAMPO} min-w-[200px] flex-1 ${l.incluir && !l.vinculoId ? "border-warning-400" : ""}`}
-              >
-                <option value="">De qual tomador?</option>
-                {comNota.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.apelido}
-                  </option>
-                ))}
-                {soControle.length > 0 && (
-                  <optgroup label="Só controle (sem nota)">
-                    {soControle.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.apelido}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                <option value={NOVO}>+ Novo tomador…</option>
-              </select>
+                alerta={l.incluir && !l.vinculoId}
+                ariaLabel="Tomador"
+                className="min-w-[200px] flex-1"
+              />
             ) : (
-              <select
-                value={`${l.tipoDespesa}|${l.categoria}`}
-                onChange={(e) => {
-                  if (e.target.value === NOVO) return mudar(l.linha, { criando: true })
-                  const [tipo, ...resto] = e.target.value.split("|")
+              <CaixaBusca
+                valor={`${l.tipoDespesa}|${l.categoria}`}
+                opcoes={
+                  opcoesCategoria.some((o) => o.id === `${l.tipoDespesa}|${l.categoria}`)
+                    ? opcoesCategoria
+                    : [{ id: `${l.tipoDespesa}|${l.categoria}`, rotulo: l.categoria }, ...opcoesCategoria]
+                }
+                onEscolher={(id) => {
+                  const [tipo, ...resto] = id.split("|")
                   escolherCategoria(l, resto.join("|"), tipo === "retirada" ? "retirada" : "despesa")
                 }}
+                onCriar={(nome) => criarCategoria(l, nome)}
+                rotuloCriar="Nova categoria"
+                placeholder="Categoria (digite pra buscar)"
                 disabled={!l.incluir}
-                aria-label="Categoria"
-                className={`${CAMPO} min-w-[220px] flex-1`}
-              >
-                {!categorias.includes(l.categoria) && !retiradas.includes(l.categoria) && (
-                  <option value={`${l.tipoDespesa}|${l.categoria}`}>{l.categoria}</option>
-                )}
-                {categorias.map((c) => (
-                  <option key={c} value={`despesa|${c}`}>
-                    {c}
-                  </option>
-                ))}
-                {retiradas.length > 0 && (
-                  <optgroup label="Retiradas (não entram como despesa)">
-                    {retiradas.map((c) => (
-                      <option key={c} value={`retirada|${c}`}>
-                        {c}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                <option value={NOVO}>+ Nova categoria…</option>
-              </select>
+                ariaLabel="Categoria"
+                className="min-w-[220px] flex-1"
+              />
             )}
-            {notasDoTomador.length > 0 && !l.criando && (
+            {notasDoTomador.length > 0 && (
               <select
                 value={l.emissaoId}
                 onChange={(e) => mudar(l.linha, { emissaoId: e.target.value })}
@@ -411,7 +359,7 @@ export function ImportarExtratoModal({
             )}
             <button
               type="button"
-              onClick={() => mudar(l.linha, { credito: !l.credito, criando: false, nome: "" })}
+              onClick={() => mudar(l.linha, { credito: !l.credito })}
               className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700"
             >
               <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
@@ -457,14 +405,30 @@ export function ImportarExtratoModal({
             você confere cada uma antes de gravar. Dica: no app do banco, a opção “exportar OFX” é a que funciona melhor.
           </p>
           {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Arquivo do extrato</span>
+          <label
+            onDragOver={(e) => {
+              e.preventDefault()
+              setArrastando(true)
+            }}
+            onDragLeave={() => setArrastando(false)}
+            onDrop={soltarArquivo}
+            className={`flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors ${arrastando ? "border-primary-500 bg-primary-50 dark:bg-primary-900/20" : "border-slate-300 hover:border-primary-400 dark:border-slate-600"}`}
+          >
+            <UploadCloud className="h-8 w-8 text-slate-400" aria-hidden />
+            {arquivo ? (
+              <span className="text-sm font-medium text-slate-800 dark:text-slate-100">{arquivo.name}</span>
+            ) : (
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Arraste o extrato pra cá</span>
+            )}
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {arquivo ? "Clique ou arraste outro arquivo pra trocar" : "ou clique pra escolher o arquivo (PDF, OFX ou CSV)"}
+            </span>
             <input
               type="file"
               accept=".pdf,.ofx,.csv,.txt,application/pdf,text/csv"
-              required
               onChange={(e) => setArquivo(e.target.files?.[0] ?? null)}
-              className="text-sm"
+              className="sr-only"
+              aria-label="Arquivo do extrato"
             />
           </label>
           <div className="flex justify-end gap-3 pt-2">
@@ -489,7 +453,8 @@ export function ImportarExtratoModal({
           ) : (
             <>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Confira cada linha. O que você escolher aqui fica lembrado: no próximo extrato, o mesmo pagador já vem classificado.
+                Classifique o que quiser agora — o que ficar sem classificar (ou desmarcado) fica guardado na Conciliação pra
+                resolver depois. Suas escolhas ficam lembradas: no próximo extrato, o mesmo pagador já vem classificado.
               </p>
               {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
               <div className="flex max-h-[62vh] flex-col gap-4 overflow-y-auto pr-1">
@@ -511,21 +476,26 @@ export function ImportarExtratoModal({
             </>
           )}
           <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
-            {linhas.length > 0 && semTomador + semCategoria > 0 && (
-              <p className="mr-auto text-sm text-warning-700">
-                {semTomador > 0 && `${semTomador} receita${semTomador === 1 ? "" : "s"} sem tomador`}
-                {semTomador > 0 && semCategoria > 0 && " · "}
-                {semCategoria > 0 && `${semCategoria} despesa${semCategoria === 1 ? "" : "s"} sem categoria`}
+            {linhas.length > 0 && paraDepois.length > 0 && (
+              <p className="mr-auto text-sm text-slate-500 dark:text-slate-400">
+                {paraDepois.length === 1 ? "1 linha fica" : `${paraDepois.length} linhas ficam`} pra classificar depois, na Conciliação.
               </p>
             )}
             <Button type="button" variant="outline" onClick={onClose}>
               Cancelar
             </Button>
             {linhas.length > 0 && (
-              <Button type="button" variant="accent" disabled={enviando || !pronto} onClick={confirmar}>
+              <Button
+                type="button"
+                variant="accent"
+                disabled={enviando || receitasAgora.length + despesasAgora.length + paraDepois.length === 0}
+                onClick={confirmar}
+              >
                 {enviando
                   ? "Importando..."
-                  : `Importar ${receitasMarcadas.length} receita${receitasMarcadas.length === 1 ? "" : "s"} e ${despesasMarcadas.length} despesa${despesasMarcadas.length === 1 ? "" : "s"}`}
+                  : receitasAgora.length + despesasAgora.length === 0
+                    ? "Guardar pra classificar depois"
+                    : `Importar ${receitasAgora.length} receita${receitasAgora.length === 1 ? "" : "s"} e ${despesasAgora.length} despesa${despesasAgora.length === 1 ? "" : "s"}`}
               </Button>
             )}
           </div>
@@ -540,6 +510,18 @@ export function ImportarExtratoModal({
             {(resultado.despesas_registradas ?? 0) > 0 && ` e ${resultado.despesas_registradas} despesa(s) registrada(s)`}.
           </p>
           <ListaSemNota itens={resultado.sem_nota ?? []} />
+          {(resultado.pendentes ?? 0) > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-100 bg-primary-50/60 px-4 py-3 text-sm text-slate-700 dark:border-primary-900/40 dark:bg-primary-900/20 dark:text-slate-200">
+              <span>
+                {resultado.pendentes === 1
+                  ? "1 lançamento do extrato está sem classificar."
+                  : `${resultado.pendentes} lançamentos do extrato estão sem classificar.`}
+              </span>
+              <Link to="/app/financeiro/conciliacao" onClick={onClose} className="font-semibold text-primary-700 hover:underline dark:text-primary-200">
+                Abrir a Conciliação →
+              </Link>
+            </div>
+          )}
           {resultado.erro > 0 && (
             <ul className="flex flex-col gap-1 text-sm text-danger-700">
               {resultado.itens

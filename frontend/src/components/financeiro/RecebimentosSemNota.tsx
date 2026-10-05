@@ -39,7 +39,7 @@ export function ListaSemNota({ itens }: { itens: RecebimentoSemNota[] }) {
 }
 
 /** Card do Financeiro: recebimentos dos últimos 12 meses sem nota no mês. */
-export function RecebimentosSemNotaCard({ recarga }: { recarga?: number }) {
+export function RecebimentosSemNotaCard({ recarga, semTitulo }: { recarga?: number; semTitulo?: boolean }) {
   const [itens, setItens] = useState<RecebimentoSemNota[] | null>(null)
 
   useEffect(() => {
@@ -64,15 +64,15 @@ export function RecebimentosSemNotaCard({ recarga }: { recarga?: number }) {
   return (
     <Card className="p-5">
       <div className="mb-1 flex items-baseline justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-slate-800 dark:text-slate-200">
+        <h2 className={semTitulo ? "sr-only" : "flex items-center gap-2 text-base font-semibold text-slate-800 dark:text-slate-200"}>
           <FilePlus2 className="h-4 w-4 text-accent-600" aria-hidden />
           Recebimentos sem nota
         </h2>
         <span className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">{formatBRL(total)}</span>
       </div>
       <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-        Dinheiro que caiu sem nota do tomador naquele mês — comum em quem paga antes, como Mercado Livre e Amazon. Gere a nota do valor
-        que caiu, ou ignore se não precisa.
+        Dinheiro que caiu sem estar ligado a uma nota — comum em quem paga antes, como Mercado Livre e Amazon. Gere a nota do valor que
+        caiu, ou ignore se não precisa.
       </p>
       <ul className="divide-y divide-slate-100 dark:divide-slate-700/60">
         {itens.map((r) => (

@@ -1,4 +1,4 @@
-import { AlertCircle, ListChecks, Plus, Repeat } from "lucide-react"
+import { AlertCircle, GripVertical, ListChecks, Plus, Repeat } from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
 import { api } from "../../lib/api"
 import { hojeLocal } from "../../lib/datas"
@@ -29,13 +29,17 @@ export function ContasDoMesPainel({
   versao,
   onMudou,
   onLancar,
+  semTitulo,
 }: {
+  /** A tela já mostra o título do card. */
+  semTitulo?: boolean
   competencia: string
   onCompetencia: (c: string) => void
   /** Muda quando algo de fora (lançamento, importação) mexeu no mês. */
   versao: number
   onMudou: () => void
-  onLancar: (competencia: string) => void
+  /** Sem isso (Visão geral), o botão "Lançar" não aparece. */
+  onLancar?: (competencia: string) => void
 }) {
   const [dados, setDados] = useState<ContasDoMes | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -43,6 +47,28 @@ export function ContasDoMesPainel({
   const [salvando, setSalvando] = useState<Record<string, boolean>>({})
   const [edicao, setEdicao] = useState<Edicao | null>(null)
   const [modal, setModal] = useState<"contas" | "rotinas" | null>(null)
+  // Arrastar um item da rotina pra mudar a ordem (05/10/2026).
+  const [arrastando, setArrastando] = useState<string | null>(null)
+
+  function passarSobre(alvoId: string) {
+    if (!arrastando || arrastando === alvoId) return
+    setDados((d) => {
+      if (!d) return d
+      const lista = [...d.rotinas]
+      const de = lista.findIndex((r) => r.id === arrastando)
+      const para = lista.findIndex((r) => r.id === alvoId)
+      if (de === -1 || para === -1) return d
+      const [item] = lista.splice(de, 1)
+      lista.splice(para, 0, item)
+      return { ...d, rotinas: lista }
+    })
+  }
+
+  function soltar() {
+    setArrastando(null)
+    const ids = (dados?.rotinas ?? []).map((r) => r.id)
+    api.put("/financeiro/rotinas/ordem", { ids }).catch((err) => setErro(`Não deu pra salvar a ordem: ${mensagemErro(err)}`))
+  }
 
   useEffect(() => {
     let cancelado = false
@@ -239,7 +265,7 @@ export function ContasDoMesPainel({
     <Card className="p-5" aria-labelledby="titulo-contas-mes">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 id="titulo-contas-mes" className="text-base font-semibold text-slate-800 dark:text-slate-200">
+          <h2 id="titulo-contas-mes" className={semTitulo ? "sr-only" : "text-base font-semibold text-slate-800 dark:text-slate-200"}>
             Contas e rotina do mês
           </h2>
           <p className="text-xs text-slate-400 dark:text-slate-500">Tique o que já foi pago e o que já foi conferido.</p>
@@ -289,9 +315,11 @@ export function ContasDoMesPainel({
               <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => setModal("contas")}>
                 <Repeat size={14} /> Contas fixas
               </Button>
-              <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => onLancar(competencia)}>
-                <Plus size={14} /> Lançar
-              </Button>
+              {onLancar && (
+                <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => onLancar(competencia)}>
+                  <Plus size={14} /> Lançar
+                </Button>
+              )}
             </div>
           </div>
 
@@ -384,8 +412,27 @@ export function ContasDoMesPainel({
               </div>
               <ul className="divide-y divide-slate-100 dark:divide-slate-700/60">
                 {rotinas.map((r) => (
-                  <li key={r.id}>
-                    <label className="flex cursor-pointer items-center gap-3 py-2.5">
+                  <li
+                    key={r.id}
+                    draggable
+                    onDragStart={(e) => {
+                      setArrastando(r.id)
+                      e.dataTransfer.effectAllowed = "move"
+                      e.dataTransfer.setData("text/plain", r.id)
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      passarSobre(r.id)
+                    }}
+                    onDrop={(e) => e.preventDefault()}
+                    onDragEnd={soltar}
+                    className={`group flex items-center gap-1 ${arrastando === r.id ? "opacity-50" : ""}`}
+                  >
+                    <GripVertical
+                      className="h-4 w-4 shrink-0 cursor-grab text-slate-300 opacity-0 group-hover:opacity-100 dark:text-slate-600"
+                      aria-hidden
+                    />
+                    <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-2.5">
                       <input
                         type="checkbox"
                         checked={r.feita}

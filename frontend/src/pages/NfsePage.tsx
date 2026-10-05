@@ -829,7 +829,8 @@ function NovaEmissaoModal({
   // do recebimento pra baterem; a data de competência da nota segue a escolhida.
   const [recebimento, setRecebimento] = useState<RecebimentoSemNota | null>(null)
   const doRecebimento = recebimento && recebimento.vinculo_id === vinculoId ? recebimento : null
-  const competencia = doRecebimento ? doRecebimento.competencia : dataEfetiva.slice(0, 7)
+  // A nota sai no mês da data escolhida; o recebimento passa a ser dela.
+  const competencia = dataEfetiva.slice(0, 7)
   const [valor, setValor] = useState(() => {
     const n = Number(valorInicial)
     return valorInicial && Number.isFinite(n) && n > 0 ? n.toFixed(2) : ""
@@ -863,6 +864,9 @@ function NovaEmissaoModal({
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [duplicata, setDuplicata] = useState<VerificarDuplicata | null>(null)
+  // Já existe uma nota do mês ainda não enviada: a pessoa marca pra trocar.
+  const [substituir, setSubstituir] = useState(false)
+  const [ligando, setLigando] = useState(false)
 
   const vinculo = vinculos.find((v) => v.id === vinculoId)
   // Shopee (01/10/2026): a nota da própria Shopee (valor que ela informa)
@@ -880,6 +884,7 @@ function NovaEmissaoModal({
   // avisar com antecedência.
   useEffect(() => {
     setDuplicata(null)
+    setSubstituir(false)
     if (!vinculoId || !competencia) return
     const controlador = new AbortController()
     const tempo = setTimeout(() => {
@@ -923,6 +928,7 @@ function NovaEmissaoModal({
         competencia,
         data_competencia: dataEfetiva,
         pagamento_id: doRecebimento?.pagamento_id ?? null,
+        substituir: substituir && !!duplicata?.pode_substituir,
         valor: Number(valor),
         ordem: ordem || null,
         aliq_sn: aliqSn,
@@ -948,6 +954,22 @@ function NovaEmissaoModal({
       setEnviando(false)
     }
   }
+
+  /** O recebimento paga a nota que já existe no mês (em vez de gerar outra). */
+  async function usarNotaExistente() {
+    if (!doRecebimento || !duplicata?.emissao_id) return
+    setErro(null)
+    setLigando(true)
+    try {
+      await api.patch(`/pagamentos/${doRecebimento.pagamento_id}`, { emissao_id: duplicata.emissao_id })
+      onCriada(await api.get<Emissao>(`/dps/${duplicata.emissao_id}`))
+    } catch (err) {
+      setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
+    } finally {
+      setLigando(false)
+    }
+  }
+  const bloqueadoPorDuplicata = !!duplicata?.existe && !(duplicata.pode_substituir && substituir)
 
   return (
     <Modal titulo="Nova emissão" onClose={onClose}>
@@ -1012,8 +1034,8 @@ function NovaEmissaoModal({
           <>
         {doRecebimento && (
           <p className="rounded-lg bg-primary-50 px-4 py-3 text-sm text-primary-800 dark:bg-primary-900/30 dark:text-primary-200">
-            Nota do recebimento de {formatBRL(doRecebimento.valor)} em {formatCompetenciaLonga(doRecebimento.competencia)}. Ela fica junto
-            desse recebimento no financeiro; a data de competência da nota é a escolhida abaixo.
+            Nota do recebimento de {formatBRL(doRecebimento.valor)}. O recebimento fica ligado a esta nota (ela já nasce paga); a
+            competência da nota é a data escolhida abaixo.
           </p>
         )}
         <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
@@ -1030,11 +1052,39 @@ function NovaEmissaoModal({
         </div>
 
         {duplicata?.existe && (
-          <p className="rounded-lg bg-warning-50 px-4 py-3 text-sm text-warning-700">
-            Já existe uma nota <strong>{ESTADOS[duplicata.estado ?? ""]?.label.toLowerCase() ?? duplicata.estado}</strong>{" "}
-            pra {vinculo?.apelido} nessa competência. Gerar outra vai dar erro — cancele a existente primeiro se for
-            substituí-la.
-          </p>
+          <div className="flex flex-col gap-2 rounded-lg bg-warning-50 px-4 py-3 text-sm text-warning-700">
+            {duplicata.pode_substituir ? (
+              <p>
+                {vinculo?.apelido} já tem uma nota de {formatCompetenciaLonga(competencia).toLowerCase()} que{" "}
+                <strong>ainda não foi enviada</strong>
+                {duplicata.valor != null && <> ({formatBRL(duplicata.valor)})</>}. Você pode continuar por ela ou gerar esta no lugar.
+              </p>
+            ) : (
+              <p>
+                {vinculo?.apelido} já tem uma nota <strong>emitida</strong> em {formatCompetenciaLonga(competencia).toLowerCase()}
+                {duplicata.valor != null && <> ({formatBRL(duplicata.valor)})</>}. Pra gerar outra, escolha uma data de competência de
+                outro mês.
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              {duplicata.emissao_id && (
+                <Link to={`/app/nfse/${duplicata.emissao_id}`} className="font-semibold underline">
+                  Abrir a nota que já existe
+                </Link>
+              )}
+              {doRecebimento && duplicata.emissao_id && (
+                <button type="button" disabled={ligando} onClick={usarNotaExistente} className="font-semibold underline disabled:opacity-50">
+                  {ligando ? "Ligando..." : "Usar essa nota pra este recebimento"}
+                </button>
+              )}
+              {duplicata.pode_substituir && (
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input type="checkbox" checked={substituir} onChange={(e) => setSubstituir(e.target.checked)} />
+                  Apagar a que não foi enviada e gerar esta no lugar
+                </label>
+              )}
+            </div>
+          </div>
         )}
 
         {mostrarOrdem && (
@@ -1081,7 +1131,7 @@ function NovaEmissaoModal({
                   name="acao"
                   value="assinar"
                   variant="accent"
-                  disabled={enviando || !vinculoId}
+                  disabled={enviando || !vinculoId || bloqueadoPorDuplicata}
                   onClick={() => (acaoRef.current = "assinar")}
                 >
                   {enviando ? "Gerando..." : "Gerar e assinar"}
@@ -1091,7 +1141,7 @@ function NovaEmissaoModal({
                   name="acao"
                   value="rascunho"
                   variant="outline"
-                  disabled={enviando || !vinculoId}
+                  disabled={enviando || !vinculoId || bloqueadoPorDuplicata}
                   onClick={() => (acaoRef.current = "rascunho")}
                 >
                   Gerar rascunho

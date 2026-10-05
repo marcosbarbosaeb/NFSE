@@ -16,6 +16,7 @@ import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { type NotaParaAcoes, SeloAssinatura, SeloPrefeitura, SeloTomador } from "../components/AcoesNota"
 import { BaixaPagamento } from "../components/BaixaPagamento"
+import { ContasDoMesPainel } from "../components/financeiro/ContasDoMesPainel"
 import { Badge } from "../components/ui/Badge"
 import { Card } from "../components/ui/Card"
 import { MiniBarChart } from "../components/ui/MiniBarChart"
@@ -65,6 +66,7 @@ export function DashboardPage() {
   const [carregando, setCarregando] = useState(true)
 
   const [proximos, setProximos] = useState<Proximos | null>(null)
+  const [competenciaContas, setCompetenciaContas] = useState(competenciaAtual())
 
   // "Ignorar este aviso" — atraso consciente (ex.: nota que sai depois do pagamento).
   function ignorarPendencia(chave: string) {
@@ -441,6 +443,10 @@ export function DashboardPage() {
               </div>
             </Card>
           </div>
+
+          {/* Contas e rotina do mês também aqui (05/10/2026): é o que a pessoa
+              tica no dia a dia. */}
+          <ContasDoMesPainel competencia={competenciaContas} onCompetencia={setCompetenciaContas} versao={0} onMudou={() => undefined} />
         </>
       )}
     </div>

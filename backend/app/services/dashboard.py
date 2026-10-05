@@ -380,8 +380,8 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
     # daquele valor. Só os últimos meses, pra não virar lista de histórico.
     desde = _mes_anterior(_mes_anterior(_mes_anterior(competencia)))
     for r in notas_abertas.recebimentos_sem_nota(db, desde):
-        chave = f"semnota:{r['vinculo_id']}:{r['competencia']}"
-        if chave in ignoradas:
+        chave = r["chave"]
+        if chave in ignoradas or f"semnota:{r['vinculo_id']}:{r['competencia']}" in ignoradas:
             continue
         pendencias.append({
             "tipo": "nota_recebimento", "titulo": f"Recebimento de {r['apelido']} sem nota", "acao": "Gerar nota",

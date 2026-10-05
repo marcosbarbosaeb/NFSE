@@ -43,7 +43,10 @@ export function ResultadoAno({
   ano,
   mes,
   onSelecionarMes,
+  semTitulo,
 }: {
+  /** A tela já mostra o título do card (cards recolhíveis do Financeiro). */
+  semTitulo?: boolean
   resumo: ResumoFinanceiro | null
   erro?: string | null
   ano: string
@@ -55,7 +58,7 @@ export function ResultadoAno({
   if (!resumo) {
     return (
       <Card className="p-5">
-        <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Resultado do ano</h2>
+        {!semTitulo && <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Resultado do ano</h2>}
         <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">{erro ?? "Carregando..."}</p>
       </Card>
     )
@@ -110,7 +113,7 @@ export function ResultadoAno({
   return (
     <section className="flex flex-col gap-4" aria-labelledby="titulo-resultado-ano">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="titulo-resultado-ano" className="text-base font-semibold text-slate-800 dark:text-slate-200">
+        <h2 id="titulo-resultado-ano" className={semTitulo ? "sr-only" : "text-base font-semibold text-slate-800 dark:text-slate-200"}>
           Resultado {i >= 0 ? `de ${NOMES_MESES[i].toLowerCase()}` : "do ano"}
         </h2>
         <p className="text-xs text-slate-400 dark:text-slate-500">

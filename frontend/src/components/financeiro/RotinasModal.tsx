@@ -1,4 +1,4 @@
-import { Check, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react"
+import { ArrowDown, ArrowUp, Check, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
 import { api } from "../../lib/api"
 import { classeCampo, classeCampoPequeno, mensagemErro } from "../../lib/financeiro"
@@ -59,6 +59,17 @@ export function RotinasModal({ onClose, onMudou }: { onClose: () => void; onMudo
   }
 
   const ativas = (lista ?? []).filter((r) => r.ativa)
+
+  /** Sobe/desce um item (05/10/2026) — na tela dá pra arrastar também. */
+  function mover(id: string, passo: -1 | 1) {
+    const ids = ativas.map((r) => r.id)
+    const de = ids.indexOf(id)
+    const para = de + passo
+    if (de === -1 || para < 0 || para >= ids.length) return
+    ids.splice(de, 1)
+    ids.splice(para, 0, id)
+    void executar(() => api.put("/financeiro/rotinas/ordem", { ids }))
+  }
   const inativas = (lista ?? []).filter((r) => !r.ativa)
   const botaoIcone =
     "rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50 dark:hover:bg-slate-700 dark:hover:text-slate-200"
@@ -85,7 +96,7 @@ export function RotinasModal({ onClose, onMudou }: { onClose: () => void; onMudo
           <p className="py-4 text-center text-sm text-slate-400 dark:text-slate-500">Nenhum item ainda.</p>
         ) : (
           <ul className="divide-y divide-slate-100 dark:divide-slate-700/60">
-            {ativas.map((r) =>
+            {ativas.map((r, indice) =>
               editando?.id === r.id ? (
                 <li key={r.id} className="py-2">
                   <form onSubmit={renomear} className="flex items-center gap-2">
@@ -116,6 +127,19 @@ export function RotinasModal({ onClose, onMudou }: { onClose: () => void; onMudo
               ) : (
                 <li key={r.id} className="flex items-center gap-2 py-2">
                   <span className="min-w-0 flex-1 truncate text-sm text-slate-800 dark:text-slate-200">{r.nome}</span>
+                  <button type="button" aria-label={`Subir ${r.nome}`} title="Subir" className={botaoIcone} disabled={enviando || indice === 0} onClick={() => mover(r.id, -1)}>
+                    <ArrowUp size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Descer ${r.nome}`}
+                    title="Descer"
+                    className={botaoIcone}
+                    disabled={enviando || indice === ativas.length - 1}
+                    onClick={() => mover(r.id, 1)}
+                  >
+                    <ArrowDown size={15} />
+                  </button>
                   <button type="button" aria-label={`Renomear ${r.nome}`} className={botaoIcone} onClick={() => setEditando({ id: r.id, nome: r.nome })}>
                     <Pencil size={15} />
                   </button>
