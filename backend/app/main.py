@@ -232,6 +232,7 @@ from app.services.motor_emissao import (
     cancelar as cancelar_emissao,
     criar_rascunho,
     montar as montar_emissao,
+    motivo_da_recusa,
     submeter as submeter_emissao,
 )
 from app.services.nota_visual import montar_nota_visual
@@ -1346,7 +1347,7 @@ def _para_resposta(emissao: Emissao) -> EmissaoResponse:
         apelido=snap.get("apelido", ""), tomador=snap.get("razao_social", ""),
         descricao=snap.get("descricao_renderizada", ""),
         xml=emissao.xml_assinado or emissao.xml_dps,
-        chave_acesso=emissao.chave_acesso, erro_detalhe=emissao.erro_detalhe,
+        chave_acesso=emissao.chave_acesso, erro_detalhe=motivo_da_recusa(emissao.erro_detalhe),
         atualizado_em=emissao.atualizado_em, origem=emissao.origem or "ana", vinculo_id=emissao.prestador_tomador_id,
         avulsa=bool(emissao.tomador_documento),
     )
@@ -2281,7 +2282,7 @@ def api_preferencias(request: Request, db: Session = Depends(get_db)):
 @app.put("/api/conta/preferencias")
 def api_salvar_preferencias(req: PreferenciasRequest, request: Request, db: Session = Depends(get_db)):
     usuario = _usuario_logado(request, db)
-    usuario.preferencias = {**(usuario.preferencias or {}), req.tela: {"ordem": req.ordem, "fechados": req.fechados}}
+    usuario.preferencias = {**(usuario.preferencias or {}), req.tela: {"ordem": req.ordem, "fechados": req.fechados, "ocultos": req.ocultos}}
     resposta = dict(usuario.preferencias)
     db.commit()
     return resposta

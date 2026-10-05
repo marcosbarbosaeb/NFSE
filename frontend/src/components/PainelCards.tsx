@@ -16,11 +16,23 @@ export interface SecaoCard {
   ancora?: string
   /** Não aparece (ex.: card que só existe quando há algo a mostrar). */
   oculto?: boolean
+  /** Ocupa meia largura em tela grande (dois cards lado a lado). */
+  meia?: boolean
+  /** Rótulo do grupo na lista de edição (ex.: "Notas", "Financeiro"). */
+  grupo?: string
 }
 
 interface Disposicao {
   ordem: string[]
   fechados: string[]
+  /** Composição: cards que a pessoa tirou da tela. */
+  ocultos: string[]
+}
+
+function normalizar(d: unknown, fechadosDePadrao: string[] = []): Disposicao | null {
+  const o = d as Partial<Disposicao> | null
+  if (!o || !Array.isArray(o.ordem) || !Array.isArray(o.fechados)) return null
+  return { ordem: o.ordem, fechados: o.fechados ?? fechadosDePadrao, ocultos: Array.isArray(o.ocultos) ? o.ocultos : [] }
 }
 
 const chaveLocal = (tela: string) => `ana:disposicao:${tela}`
@@ -28,8 +40,7 @@ const chaveLocal = (tela: string) => `ana:disposicao:${tela}`
 function lerLocal(tela: string): Disposicao | null {
   try {
     const bruto = localStorage.getItem(chaveLocal(tela))
-    const d = bruto ? JSON.parse(bruto) : null
-    return d && Array.isArray(d.ordem) && Array.isArray(d.fechados) ? d : null
+    return normalizar(bruto ? JSON.parse(bruto) : null)
   } catch {
     return null
   }
@@ -41,7 +52,10 @@ export function PainelCards({
   editando,
   fechadosDePadrao = [],
   abrir,
+  permitirOcultar = false,
 }: {
+  /** Deixa a pessoa escolher quais cards aparecem (composição da tela). */
+  permitirOcultar?: boolean
   tela: "financeiro" | "visao_geral"
   secoes: SecaoCard[]
   editando: boolean
@@ -49,17 +63,17 @@ export function PainelCards({
   /** Id de um card que precisa estar aberto agora (veio de um link). */
   abrir?: string | null
 }) {
-  const [disposicao, setDisposicao] = useState<Disposicao>(() => lerLocal(tela) ?? { ordem: [], fechados: fechadosDePadrao })
+  const [disposicao, setDisposicao] = useState<Disposicao>(() => lerLocal(tela) ?? { ordem: [], fechados: fechadosDePadrao, ocultos: [] })
   const [arrastando, setArrastando] = useState<string | null>(null)
   const salvar = useRef<number | undefined>(undefined)
 
   useEffect(() => {
     let vivo = true
     api
-      .get<Record<string, Disposicao | undefined>>("/conta/preferencias")
+      .get<Record<string, unknown>>("/conta/preferencias")
       .then((p) => {
-        const d = p?.[tela]
-        if (vivo && d && Array.isArray(d.ordem) && Array.isArray(d.fechados)) setDisposicao({ ordem: d.ordem, fechados: d.fechados })
+        const d = normalizar(p?.[tela])
+        if (vivo && d) setDisposicao(d)
       })
       .catch(() => undefined)
     return () => {
@@ -76,7 +90,7 @@ export function PainelCards({
     }
     window.clearTimeout(salvar.current)
     salvar.current = window.setTimeout(() => {
-      api.put("/conta/preferencias", { tela, ordem: nova.ordem, fechados: nova.fechados }).catch(() => undefined)
+      api.put("/conta/preferencias", { tela, ordem: nova.ordem, fechados: nova.fechados, ocultos: nova.ocultos }).catch(() => undefined)
     }, 600)
   }
 
@@ -92,12 +106,18 @@ export function PainelCards({
 
   // Link pra um card fechado: abre.
   useEffect(() => {
-    if (abrir && disposicao.fechados.includes(abrir)) mudar({ ...disposicao, fechados: disposicao.fechados.filter((f) => f !== abrir) })
+    if (abrir && (disposicao.fechados.includes(abrir) || disposicao.ocultos.includes(abrir)))
+      mudar({ ...disposicao, fechados: disposicao.fechados.filter((f) => f !== abrir), ocultos: disposicao.ocultos.filter((f) => f !== abrir) })
   }, [abrir]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function alternar(id: string) {
     const fechados = disposicao.fechados.includes(id) ? disposicao.fechados.filter((f) => f !== id) : [...disposicao.fechados, id]
-    mudar({ ordem: disposicao.ordem, fechados })
+    mudar({ ...disposicao, fechados })
+  }
+
+  function alternarVisivel(id: string) {
+    const ocultos = disposicao.ocultos.includes(id) ? disposicao.ocultos.filter((f) => f !== id) : [...disposicao.ocultos, id]
+    mudar({ ...disposicao, ocultos })
   }
 
   function mover(id: string, para: number) {
@@ -106,7 +126,7 @@ export function PainelCards({
     const nova = [...ids]
     nova.splice(de, 1)
     nova.splice(para, 0, id)
-    mudar({ ordem: nova, fechados: disposicao.fechados })
+    mudar({ ...disposicao, ordem: nova })
   }
 
   if (editando) {
@@ -127,10 +147,19 @@ export function PainelCards({
             }}
             onDragEnd={() => setArrastando(null)}
             onDrop={(e) => e.preventDefault()}
-            className={`flex cursor-grab items-center gap-3 rounded-xl border bg-white px-3 py-3 shadow-sm active:cursor-grabbing dark:bg-slate-800 ${arrastando === s.id ? "border-primary-500 opacity-60" : "border-slate-200 dark:border-slate-700"}`}
+            className={`flex cursor-grab items-center gap-3 rounded-xl border bg-white px-3 py-3 shadow-sm active:cursor-grabbing dark:bg-slate-800 ${arrastando === s.id ? "border-primary-500 opacity-60" : "border-slate-200 dark:border-slate-700"} ${disposicao.ocultos.includes(s.id) ? "opacity-60" : ""}`}
           >
             <GripVertical className="h-5 w-5 shrink-0 text-slate-400" aria-hidden />
-            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{s.titulo}</span>
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+              {s.titulo}
+              {s.grupo && <span className="ml-2 text-xs font-normal text-slate-400">{s.grupo}</span>}
+            </span>
+            {permitirOcultar && (
+              <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                <input type="checkbox" checked={!disposicao.ocultos.includes(s.id)} onChange={() => alternarVisivel(s.id)} />
+                mostrar
+              </label>
+            )}
             <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
               <input type="checkbox" checked={!disposicao.fechados.includes(s.id)} onChange={() => alternar(s.id)} />
               aberto
@@ -164,11 +193,13 @@ export function PainelCards({
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      {ordenadas.map((s) => {
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      {ordenadas
+        .filter((s) => !disposicao.ocultos.includes(s.id))
+        .map((s) => {
         const fechado = disposicao.fechados.includes(s.id)
         return (
-          <section key={s.id} id={s.ancora} className="scroll-mt-20">
+          <section key={s.id} id={s.ancora} className={`min-w-0 scroll-mt-20 ${s.meia ? "" : "xl:col-span-2"}`}>
             <button
               type="button"
               onClick={() => alternar(s.id)}

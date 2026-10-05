@@ -1,3 +1,4 @@
+import { MoedaField } from "../ui/CampoMoeda"
 import { Pencil, Plus, RotateCcw, Trash2 } from "lucide-react"
 import { type FormEvent, useEffect, useId, useState } from "react"
 import { api } from "../../lib/api"
@@ -194,11 +195,11 @@ export function ContasFixasModal({ onClose, onMudou }: { onClose: () => void; on
               </select>
             </label>
             <div className="grid grid-cols-2 gap-3">
-              <Field
-                label="Valor padrão (R$)"
-                inputMode="decimal"
-                value={form.valor}
-                onChange={(e) => setForm({ ...form, valor: e.target.value })}
+              <MoedaField
+                label="Valor padrão"
+                saida="br"
+                valor={form.valor}
+                onChange={(valor) => setForm({ ...form, valor })}
                 placeholder="vazio = varia"
                 hint="Vazio = varia todo mês."
               />

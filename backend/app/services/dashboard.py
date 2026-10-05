@@ -40,6 +40,7 @@ from sqlalchemy.orm import Session
 
 from app.models import AjusteEvento, Certificado, Emissao, Envio, Prestador
 from app.services.envios import listar_envios
+from app.services.motor_emissao import motivo_da_recusa
 from app.services.vinculos import listar_vinculos_ativos
 from app.tempo import hoje as hoje_br
 
@@ -230,10 +231,11 @@ def resumo_mes(db: Session, prestador_id: uuid.UUID, competencia: str | None = N
                 "estado": emissao.estado,
                 "estado_label": ESTADO_NFSE_LABEL.get(emissao.estado, emissao.estado),
                 "envio_status": ultimo_envio.get(emissao.id),
-                "tem_pdf": emissao.estado == "confirmado",
+                "tem_pdf": emissao.estado == "confirmado" and bool(emissao.chave_acesso),
                 "tem_email": bool(vinculo.email_para or vinculo.email_contato),
                 "homologacao": (emissao.tomador_snapshot or {}).get("tpAmb") == "2",
                 "envio_forma": vinculo.envio_canal,
+                "erro_detalhe": motivo_da_recusa(emissao.erro_detalhe) if emissao.estado == "erro" else None,
             })
 
     faturado_no_mes = _faturado(db, competencia)

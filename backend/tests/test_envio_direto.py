@@ -147,7 +147,9 @@ def test_vinculo_guarda_contatos(client, vinculo_teste):
     assert r.json()["whatsapp_contato"] == "92999990000"
 
 
-def test_nota_confirmada_anexa_pdf_oficial_e_guarda_em_cache(client, db, vinculo_teste, certificado_teste, monkeypatch):
+def test_nota_confirmada_anexa_o_danfse_gerado_aqui(client, db, vinculo_teste, certificado_teste, monkeypatch):
+    """A API do governo que devolvia o PDF foi suspensa (NT 008, 03/08/2026):
+    o DANFSe sai do XML da nota, sem rede."""
     from app.fiscal.cliente_sefin import ClienteSefin
     from app.models import Emissao
 
@@ -155,17 +157,15 @@ def test_nota_confirmada_anexa_pdf_oficial_e_guarda_em_cache(client, db, vinculo
         client.post("/api/certificado", files={"pfx": ("cert.pfx", f, "application/x-pkcs12")}, data={"senha": certificado_teste["senha"]})
     eid = _nova_emissao(client, vinculo_teste)
     emissao = db.get(Emissao, eid)
+    assert client.get(f"/api/dps/{eid}/pdf").status_code == 404  # ainda não confirmada
     emissao.estado = "confirmado"
     emissao.chave_acesso = "1" * 50
     db.flush()
 
-    chamadas = []
+    def _sem_rede(self, chave):
+        raise AssertionError("o DANFSe não pode depender da API do governo")
 
-    def _danfse_fake(self, chave):
-        chamadas.append(chave)
-        return b"%PDF-1.4 fake"
-
-    monkeypatch.setattr(ClienteSefin, "baixar_danfse", _danfse_fake)
+    monkeypatch.setattr(ClienteSefin, "baixar_danfse", _sem_rede)
     sender = _SenderFake()
     _ligar_email(monkeypatch, sender)
     atualizar_vinculo(db, vinculo_teste, email_contato="financeiro@fornecedor.com")
@@ -175,8 +175,27 @@ def test_nota_confirmada_anexa_pdf_oficial_e_guarda_em_cache(client, db, vinculo
     assert nomes[0].endswith(".pdf") and nomes[1].endswith(".xml")
 
     r = client.get(f"/api/dps/{eid}/pdf")
-    assert r.status_code == 200 and r.content.startswith(b"%PDF")
-    assert len(chamadas) == 1  # segunda vez veio do cache
+    assert r.status_code == 200 and r.content.startswith(b"%PDF") and len(r.content) > 2000
+
+    import io
+
+    import pdfplumber
+
+    with pdfplumber.open(io.BytesIO(r.content)) as pdf:
+        assert len(pdf.pages) == 1
+        texto = pdf.pages[0].extract_text()
+    assert "DANFSe v2.0" in texto and "1" * 50 in texto
+    assert "VALOR LÍQUIDO DA NFS-e" in texto and "Tomador do serviço".upper() in texto.upper()
+
+    # Cancelada: sai com a marca d'água.
+    emissao.estado = "cancelada"
+    db.flush()
+    r = client.get(f"/api/dps/{eid}/pdf")
+    assert r.status_code == 200
+    from app.services.danfse import dados_do_danfse
+
+    assert dados_do_danfse(emissao)["situacao"] == "CANCELADA"
+    open("/tmp/claude-0/-home-claude/7595ebdd-5ec0-5d9d-a9c5-702f07b6b77f/scratchpad/danfse_teste.pdf", "wb").write(r.content) if __import__("os").environ.get("SALVAR_DANFSE") else None
 
 
 def test_remetente_da_nota_leva_o_nome_de_quem_emitiu(monkeypatch):

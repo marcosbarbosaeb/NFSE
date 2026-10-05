@@ -1,7 +1,9 @@
 import {
   EyeOff,
-  AlertTriangle,
+  ArrowLeftRight,
   ArrowRight,
+  LayoutDashboard,
+  Wallet,
   CalendarDays,
   CheckCircle2,
   Clock,
@@ -15,13 +17,17 @@ import {
 import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { type NotaParaAcoes, SeloAssinatura, SeloPrefeitura, SeloTomador } from "../components/AcoesNota"
+import { ContasDoMesPainel } from "../components/financeiro/ContasDoMesPainel"
+import { PainelCards, type SecaoCard } from "../components/PainelCards"
 import { Badge } from "../components/ui/Badge"
+import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { MiniBarChart } from "../components/ui/MiniBarChart"
 import { StatCard } from "../components/ui/StatCard"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { competenciaAtual, deslocarCompetencia, formatBRL, formatCompetenciaLonga } from "../lib/format"
-import type { DashboardResumo, EmissaoResumoLinha, Proximos } from "../lib/types"
+import { useModulos } from "../lib/modulos"
+import type { DashboardResumo, EmissaoResumoLinha, Proximos, ResumoFinanceiro } from "../lib/types"
 
 
 function formatDataCurta(iso: string): string {
@@ -44,7 +50,7 @@ function badgeEnvio(status: string | null) {
 
 
 function notaDaLinha(l: EmissaoResumoLinha): NotaParaAcoes {
-  return { id: l.emissao_id, estado: l.estado, envio_status: l.envio_status, tem_pdf: l.tem_pdf, tem_email: l.tem_email, homologacao: l.homologacao, envio_forma: l.envio_forma, vinculo_id: l.vinculo_id }
+  return { id: l.emissao_id, estado: l.estado, envio_status: l.envio_status, tem_pdf: l.tem_pdf, tem_email: l.tem_email, homologacao: l.homologacao, envio_forma: l.envio_forma, vinculo_id: l.vinculo_id, erro_detalhe: l.erro_detalhe }
 }
 
 const COR_PENDENCIA: Record<string, string> = {
@@ -57,13 +63,21 @@ const COR_PENDENCIA: Record<string, string> = {
   receber: "bg-success-600",
 }
 
+/** Visão geral (05/10/2026): é da empresa, não de um módulo. Junta os
+ * cards dos módulos que estão ligados, e a pessoa escolhe quais aparecem e
+ * em que ordem ("Editar disposição") — fica salvo na conta dela. */
 export function DashboardPage() {
+  const modulos = useModulos()
   const [competencia, setCompetencia] = useState(competenciaAtual())
   const [resumo, setResumo] = useState<DashboardResumo | null>(null)
   const [erro, setErro] = useState<string | null>(null)
-  const [carregando, setCarregando] = useState(true)
+  const [carregando, setCarregando] = useState(modulos.emissor)
+  const [editando, setEditando] = useState(false)
 
   const [proximos, setProximos] = useState<Proximos | null>(null)
+  // Financeiro: resultado do ano da competência escolhida + extrato sem classificar.
+  const [financeiro, setFinanceiro] = useState<ResumoFinanceiro | null>(null)
+  const [pendentesExtrato, setPendentesExtrato] = useState(0)
 
   // "Ignorar este aviso" — atraso consciente (ex.: nota que sai depois do pagamento).
   function ignorarPendencia(chave: string) {
@@ -76,6 +90,7 @@ export function DashboardPage() {
   const navigate = useNavigate()
 
   useEffect(() => {
+    if (!modulos.emissor) return
     let cancelado = false
     setCarregando(true)
     setErro(null)
@@ -93,11 +108,12 @@ export function DashboardPage() {
     return () => {
       cancelado = true
     }
-  }, [competencia, recarga])
+  }, [competencia, recarga, modulos.emissor])
 
   // "Próximos eventos não está aparecendo, pode aparecer além de somente
   // eventos" (28/09/2026): o que tem pra fazer agora + agenda de 30 dias.
   useEffect(() => {
+    if (!modulos.emissor) return
     let cancelado = false
     api
       .get<Proximos>("/painel/proximos")
@@ -110,45 +126,59 @@ export function DashboardPage() {
     return () => {
       cancelado = true
     }
-  }, [recarga])
+  }, [recarga, modulos.emissor])
+
+  const anoDaCompetencia = competencia.slice(0, 4)
+  useEffect(() => {
+    if (!modulos.financeiro) return
+    let cancelado = false
+    api
+      .get<ResumoFinanceiro>(`/financeiro/resumo?ano=${anoDaCompetencia}`)
+      .then((dados) => {
+        if (!cancelado) setFinanceiro(dados)
+      })
+      .catch(() => undefined)
+    api
+      .get<{ pendentes: number }>("/conciliacao/contagem")
+      .then((r) => {
+        if (!cancelado) setPendentesExtrato(r.pendentes)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelado = true
+    }
+  }, [anoDaCompetencia, recarga, modulos.financeiro])
 
   const pctEmitidas = resumo && resumo.total_vinculos > 0 ? Math.round((resumo.emitidas / resumo.total_vinculos) * 100) : 0
   const pctAguardando = resumo && resumo.total_vinculos > 0 ? Math.round((resumo.aguardando / resumo.total_vinculos) * 100) : 0
+  const mesIndice = Number(competencia.slice(5, 7)) - 1
+  const fin = financeiro?.ano === anoDaCompetencia ? financeiro : null
+  const doisModulos = modulos.emissor && modulos.financeiro
 
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Bom dia! 👋</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Aqui está o resumo das suas notas deste mês.</p>
-        </div>
-        <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800">
-          <button
-            type="button"
-            onClick={() => setCompetencia((c) => deslocarCompetencia(c, -1))}
-            className="rounded px-2 py-0.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
-          >
-            ‹
-          </button>
-          <span className="min-w-[9rem] text-center font-medium text-slate-700 dark:text-slate-300">{formatCompetenciaLonga(competencia)}</span>
-          <button
-            type="button"
-            onClick={() => setCompetencia((c) => deslocarCompetencia(c, 1))}
-            className="rounded px-2 py-0.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
-          >
-            ›
-          </button>
-        </div>
-      </div>
+  const atalhos = [
+    ...(modulos.emissor
+      ? [
+          { to: "/app/nfse?nova=1", label: "Nova emissão", icon: FileText },
+          { to: "/app/tomadores/novo", label: "Adicionar tomador", icon: UserPlus },
+          { to: "/app/calendario", label: "Ver calendário", icon: CalendarDays },
+        ]
+      : []),
+    ...(modulos.financeiro
+      ? [
+          { to: "/app/financeiro?novo=recebimento", label: "Registrar recebimento", icon: Wallet },
+          { to: "/app/financeiro/conciliacao", label: "Conciliar o extrato", icon: ArrowLeftRight },
+        ]
+      : []),
+  ]
 
-      {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
-
-      {carregando && !resumo && <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>}
-
-      {resumo && (
-        <>
-          {/* "Ligar a visão geral com as abas" (28/09/2026): cada número leva
-              pra tela onde ele é resolvido. */}
+  const secoes: SecaoCard[] = [
+    ...(modulos.emissor && resumo
+      ? ([
+          {
+            id: "notas_resumo",
+            titulo: "Notas do mês",
+            grupo: "Notas",
+            conteudo: (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Link to="/app/tomadores" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
               <StatCard
@@ -187,11 +217,17 @@ export function DashboardPage() {
               />
             </Link>
           </div>
-
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-            <Card className="p-5 xl:col-span-2">
+            ),
+          },
+          {
+            id: "notas_emissoes",
+            titulo: "Emissões deste mês",
+            grupo: "Notas",
+            resumo: `${resumo.emissoes.length} ${resumo.emissoes.length === 1 ? "nota" : "notas"}`,
+            conteudo: (
+            <Card className="p-5">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Emissões deste mês</h2>
+                <span />
                 <div className="flex items-center gap-3">
                   <Link to="/app/nfse" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
                     Ver todas <ArrowRight size={14} />
@@ -226,7 +262,7 @@ export function DashboardPage() {
                           onClick={() =>
                             navigate(
                               linha.vendedores
-                                ? "/app/nfse?aba=vendedores"
+                                ? "/app/nfse/lote"
                                 : (linha.quantidade ?? 1) > 1
                                   ? "/app/nfse"
                                   : `/app/nfse/${linha.emissao_id}`,
@@ -266,13 +302,16 @@ export function DashboardPage() {
                 </div>
               )}
             </Card>
-
+            ),
+          },
+          {
+            id: "notas_atencao",
+            titulo: "Precisa da sua atenção",
+            grupo: "Notas",
+            meia: true,
+            resumo: resumo.atencao.length > 0 ? <Badge variant="warning">{resumo.atencao.length}</Badge> : "tudo em dia",
+            conteudo: (
             <Card className="p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <AlertTriangle size={16} className="text-warning-600" />
-                <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Precisa da sua atenção</h2>
-                {resumo.atencao.length > 0 && <Badge variant="warning">{resumo.atencao.length}</Badge>}
-              </div>
               {resumo.atencao.length === 0 ? (
                 <p className="text-sm text-slate-400 dark:text-slate-500">Tudo em dia por aqui.</p>
               ) : (
@@ -294,12 +333,17 @@ export function DashboardPage() {
                 </ul>
               )}
             </Card>
-          </div>
-
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            ),
+          },
+          {
+            id: "notas_proximos",
+            titulo: "Próximos passos",
+            grupo: "Notas",
+            meia: true,
+            conteudo: (
             <Card className="p-5">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Próximos passos</h2>
+                <span />
                 <Link to="/app/calendario" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
                   Ver agenda <ArrowRight size={14} />
                 </Link>
@@ -372,10 +416,18 @@ export function DashboardPage() {
                 </div>
               )}
             </Card>
-
+            ),
+          },
+          {
+            id: "notas_faturamento",
+            titulo: "Faturamento",
+            grupo: "Notas",
+            meia: true,
+            resumo: formatBRL(resumo.faturado_no_mes),
+            conteudo: (
             <Card className="p-5">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">Faturamento</h2>
+                <span />
                 <Link to="/app/nfse" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
                   Ver notas <ArrowRight size={14} />
                 </Link>
@@ -394,29 +446,174 @@ export function DashboardPage() {
               )}
               <MiniBarChart dados={resumo.serie_faturamento} />
             </Card>
-
-            <Card className="p-5">
-              <h2 className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-200">Atalhos rápidos</h2>
-              <div className="flex flex-col divide-y divide-slate-100 dark:divide-slate-700">
-                {[
-                  { to: "/app/nfse?nova=1", label: "Nova emissão", icon: FileText },
-                  { to: "/app/tomadores/novo", label: "Adicionar tomador", icon: UserPlus },
-                  { to: "/app/calendario", label: "Ver calendário", icon: CalendarDays },
-                ].map(({ to, label, icon: Icon }) => (
-                  <Link key={to} to={to} className="flex items-center justify-between py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:text-primary-600">
-                    <span className="flex items-center gap-2">
-                      <Icon size={16} className="text-slate-400 dark:text-slate-500" />
-                      {label}
-                    </span>
-                    <ArrowRight size={14} className="text-slate-300" />
+            ),
+          },
+        ] satisfies SecaoCard[])
+      : []),
+    ...(modulos.financeiro
+      ? ([
+          {
+            id: "fin_mes",
+            titulo: "Dinheiro do mês",
+            grupo: "Financeiro",
+            resumo: fin ? `lucro ${formatBRL(fin.lucro[mesIndice] ?? 0)}` : undefined,
+            conteudo: (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <Link to="/app/financeiro" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
+                  <StatCard
+                    icon={<TrendingUp size={18} />}
+                    iconClassName="bg-success-50 text-success-600"
+                    label="Recebido no mês"
+                    value={fin ? formatBRL(fin.recebido[mesIndice] ?? 0) : "…"}
+                    sublabel={formatCompetenciaLonga(competencia)}
+                  />
+                </Link>
+                <Link to="/app/financeiro" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
+                  <StatCard
+                    icon={<TrendingDown size={18} />}
+                    iconClassName="bg-danger-50 text-danger-600"
+                    label="Despesas do mês"
+                    value={fin ? formatBRL(fin.despesas[mesIndice] ?? 0) : "…"}
+                    sublabel="sem as retiradas"
+                  />
+                </Link>
+                <Link to="/app/financeiro" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
+                  <StatCard
+                    icon={<Wallet size={18} />}
+                    iconClassName="bg-primary-50 text-primary-600"
+                    label="Lucro do mês"
+                    value={fin ? formatBRL(fin.lucro[mesIndice] ?? 0) : "…"}
+                    sublabel="recebido − despesas"
+                  />
+                </Link>
+                {modulos.emissor ? (
+                  <Link to="/app/financeiro#a-receber" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
+                    <StatCard
+                      icon={<Clock size={18} />}
+                      iconClassName="bg-warning-50 text-warning-600"
+                      label="A receber"
+                      value={fin ? formatBRL(fin.totais.a_receber) : "…"}
+                      sublabel="notas ainda não pagas"
+                    />
                   </Link>
-                ))}
+                ) : (
+                  <Link to="/app/financeiro" className="rounded-2xl transition hover:-translate-y-0.5 hover:shadow-md">
+                    <StatCard
+                      icon={<Clock size={18} />}
+                      iconClassName="bg-warning-50 text-warning-600"
+                      label="Saldo a distribuir"
+                      value={fin ? formatBRL(fin.saldo_a_distribuir[mesIndice] ?? 0) : "…"}
+                      sublabel="acumulado no ano"
+                    />
+                  </Link>
+                )}
               </div>
-            </Card>
+            ),
+          },
+          {
+            id: "fin_conciliacao",
+            titulo: "Extrato sem classificar",
+            grupo: "Financeiro",
+            oculto: pendentesExtrato === 0,
+            resumo: <Badge variant="warning">{pendentesExtrato}</Badge>,
+            conteudo: (
+              <Card className="flex flex-wrap items-center justify-between gap-3 p-5 text-sm text-slate-600 dark:text-slate-300">
+                <p>
+                  <strong>{pendentesExtrato}</strong>{" "}
+                  {pendentesExtrato === 1 ? "lançamento do extrato está" : "lançamentos do extrato estão"} esperando você dizer de quem é
+                  (ou de que conta é).
+                </p>
+                <Link to="/app/financeiro/conciliacao" className="inline-flex items-center gap-1 font-semibold text-primary-600 hover:text-primary-700">
+                  Abrir a Conciliação <ArrowRight size={14} />
+                </Link>
+              </Card>
+            ),
+          },
+          {
+            id: "fin_contas",
+            titulo: "Contas e rotina do mês",
+            grupo: "Financeiro",
+            conteudo: (
+              <ContasDoMesPainel
+                competencia={competencia}
+                onCompetencia={setCompetencia}
+                versao={recarga}
+                onMudou={() => setRecarga((n) => n + 1)}
+                semTitulo
+              />
+            ),
+          },
+        ] satisfies SecaoCard[])
+      : []),
+    {
+      id: "atalhos",
+      titulo: "Atalhos rápidos",
+      meia: true,
+      oculto: atalhos.length === 0,
+      conteudo: (
+        <Card className="p-5">
+          <div className="flex flex-col divide-y divide-slate-100 dark:divide-slate-700">
+            {atalhos.map(({ to, label, icon: Icon }) => (
+              <Link key={to} to={to} className="flex items-center justify-between py-2.5 text-sm text-slate-700 hover:text-primary-600 dark:text-slate-300">
+                <span className="flex items-center gap-2">
+                  <Icon size={16} className="text-slate-400 dark:text-slate-500" />
+                  {label}
+                </span>
+                <ArrowRight size={14} className="text-slate-300" />
+              </Link>
+            ))}
           </div>
+        </Card>
+      ),
+    },
+  ]
 
-        </>
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Visão geral</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {doisModulos ? "Suas notas e o seu dinheiro" : modulos.financeiro ? "O seu dinheiro" : "Suas notas"} em{" "}
+            {formatCompetenciaLonga(competencia).toLowerCase()}.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" onClick={() => setEditando((e) => !e)} aria-pressed={editando} data-tour="visao-disposicao">
+            <LayoutDashboard size={16} /> {editando ? "Concluir" : "Editar disposição"}
+          </Button>
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800">
+            <button
+              type="button"
+              aria-label="Mês anterior"
+              onClick={() => setCompetencia((c) => deslocarCompetencia(c, -1))}
+              className="rounded px-2 py-0.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+            >
+              ‹
+            </button>
+            <span className="min-w-[9rem] text-center font-medium text-slate-700 dark:text-slate-300">{formatCompetenciaLonga(competencia)}</span>
+            <button
+              type="button"
+              aria-label="Próximo mês"
+              onClick={() => setCompetencia((c) => deslocarCompetencia(c, 1))}
+              className="rounded px-2 py-0.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+            >
+              ›
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
+      {carregando && !resumo && <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>}
+      {editando && (
+        <p className="rounded-lg bg-primary-50 px-4 py-3 text-sm text-primary-800 dark:bg-primary-900/30 dark:text-primary-200">
+          Arraste pra mudar a ordem, desmarque “mostrar” pra tirar um card da tela e “aberto” pra ele começar recolhido. Fica salvo na
+          sua conta.
+        </p>
       )}
+
+      <PainelCards tela="visao_geral" secoes={secoes} editando={editando} permitirOcultar />
     </div>
   )
 }

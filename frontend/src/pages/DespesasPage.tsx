@@ -1,3 +1,4 @@
+import { MoedaField } from "../components/ui/CampoMoeda"
 import { Plus } from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
 import { Button } from "../components/ui/Button"
@@ -155,7 +156,7 @@ export function RegistrarDespesaModal({ onClose, onRegistrada }: { onClose: () =
               className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
             />
           </label>
-          <Field label="Valor (R$)" required type="number" step="0.01" min="0.01" value={valor} onChange={(e) => setValor(e.target.value)} />
+          <MoedaField label="Valor" required valor={valor} onChange={setValor} />
         </div>
 
         <div className="flex justify-end gap-3 pt-2">

@@ -1,3 +1,4 @@
+import { MoedaField } from "../components/ui/CampoMoeda"
 import {
   CheckCircle2,
   Clock,
@@ -39,9 +40,11 @@ import type {
   EmissaoListaLinha,
   Lote,
   Emissao,
+  Envio,
   GerarDpsRequest,
   ImportacaoCsvResultado,
   OrdemAwin,
+  PreviaEmail,
   Prestador,
   VerificarDuplicata,
   VinculoResumo,
@@ -103,14 +106,14 @@ function badgeEstado(estado: string, label: string) {
   return <Badge variant={info?.variant ?? "neutral"}>{label}</Badge>
 }
 
-export function NfsePage() {
+/** `modo="lote"`: a tela "Notas em lote" (05/10/2026) — as notas geradas
+ * em massa por relatório (Shopee: uma por vendedor, centenas por mês) têm
+ * tela própria no menu, pra não poluírem a lista de NFS-e nem o painel. */
+export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
+  const emLote = modo === "lote"
   const [ano, setAno] = useState<string>(String(ANO_ATUAL))
   const [vinculoFiltro, setVinculoFiltro] = useState("")
-  // Notas dos vendedores da Shopee numa aba própria (01/10/2026): são
-  // centenas de notas pequenas — não se misturam com as demais.
-  const [grupo, setGrupo] = useState<"notas" | "vendedores">(() =>
-    new URLSearchParams(window.location.search).get("aba") === "vendedores" ? "vendedores" : "notas",
-  )
+  const grupo: "notas" | "vendedores" = emLote ? "vendedores" : "notas"
   // Mês da competência (01..12) dentro do ano escolhido — filtro no cliente.
   const [mesFiltro, setMesFiltro] = useState("")
   const [busca, setBusca] = useState("")
@@ -184,11 +187,11 @@ export function NfsePage() {
   }
 
   useEffect(recarregar, [ano, vinculoFiltro, grupo])
-  const temShopee = vinculos.some((v) => v.metodo_captura_valor === "csv")
-  function trocarGrupo(g: "notas" | "vendedores") {
-    setGrupo(g)
-    setSelecionadas(new Set())
-  }
+  const vinculoRelatorio = vinculos.find((v) => v.metodo_captura_valor === "csv") ?? null
+  // Link antigo (/app/nfse?aba=vendedores) cai na tela nova.
+  useEffect(() => {
+    if (!emLote && searchParams.get("aba") === "vendedores") navigate("/app/nfse/lote", { replace: true })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Trocar ano/tomador recarrega a lista — a seleção anterior não vale mais.
   function trocarAno(valor: string) {
@@ -346,34 +349,51 @@ export function NfsePage() {
     <div className={`flex flex-col gap-6 ${lote ? "pb-56 sm:pb-40" : ""}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">NFS-e</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Todas as notas emitidas, por competência.</p>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{emLote ? "Notas em lote" : "NFS-e"}</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {emLote
+              ? "Notas geradas em massa por relatório (Shopee: uma por vendedor). Ficam aqui, fora da lista de NFS-e e da visão geral."
+              : "Todas as notas emitidas, por competência."}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setModalNacional(true)} title="Trazer as notas já emitidas no Emissor Nacional">
-            <DownloadCloud size={16} /> Importar do Emissor Nacional
-          </Button>
-          {/* CSV só pra quem usa relatório em planilha (Shopee) — ver
-              "Como o valor chega" no cadastro do tomador (28/09/2026). */}
-          {vinculos.some((v) => v.metodo_captura_valor === "csv") && (
-            <Button
-              variant="outline"
-              onClick={() => setShopee(vinculos.find((v) => v.metodo_captura_valor === "csv") ?? null)}
-              data-tour="nfse-csv"
-            >
-              <FileUp size={16} /> Relatório da Shopee
-            </Button>
+          {emLote ? (
+            vinculoRelatorio && (
+              <Button variant="accent" onClick={() => setShopee(vinculoRelatorio)} data-tour="nfse-csv">
+                <FileUp size={16} /> Enviar relatório da Shopee
+              </Button>
+            )
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => setModalNacional(true)} title="Trazer as notas já emitidas no Emissor Nacional">
+                <DownloadCloud size={16} /> Importar do Emissor Nacional
+              </Button>
+              <Button
+                variant="accent"
+                onClick={() => (emissiveis.length > 0 ? setModalNova(true) : navigate("/app/tomadores/novo"))}
+                data-tour="nfse-nova"
+                title={emissiveis.length > 0 ? undefined : "Cadastre um tomador primeiro"}
+              >
+                <Plus size={16} /> Nova emissão
+              </Button>
+            </>
           )}
-          <Button
-            variant="accent"
-            onClick={() => (emissiveis.length > 0 ? setModalNova(true) : navigate("/app/tomadores/novo"))}
-            data-tour="nfse-nova"
-            title={emissiveis.length > 0 ? undefined : "Cadastre um tomador primeiro"}
-          >
-            <Plus size={16} /> Nova emissão
-          </Button>
         </div>
       </div>
+
+      {emLote && !vinculoRelatorio && emissoes !== null && emissoes.length === 0 && (
+        <Card className="p-6 text-sm text-slate-600 dark:text-slate-300">
+          <p className="font-semibold text-slate-800 dark:text-slate-100">Nenhuma nota em lote por aqui.</p>
+          <p className="mt-1">
+            Esta tela é pra quem emite muitas notas de uma vez a partir de um relatório — como as comissões da Shopee, uma nota pra
+            cada vendedor. Pra usar, cadastre o tomador com “o valor chega por relatório em planilha” em{" "}
+            <Link to="/app/tomadores" className="font-semibold text-primary-600 hover:underline">
+              Tomadores
+            </Link>
+            .
+          </p>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
@@ -401,26 +421,6 @@ export function NfsePage() {
       </div>
 
       <Card className="p-5">
-        {(temShopee || grupo === "vendedores") && (
-          <div role="tablist" aria-label="Tipo de nota" className="mb-4 flex gap-1 border-b border-slate-200 dark:border-slate-700">
-            {([["notas", "Notas"], ["vendedores", "Vendedores Shopee"]] as const).map(([id, rotulo]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={grupo === id}
-                onClick={() => trocarGrupo(id)}
-                className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
-                  grupo === id
-                    ? "border-primary-600 text-primary-700 dark:text-primary-300"
-                    : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                }`}
-              >
-                {rotulo}
-              </button>
-            ))}
-          </div>
-        )}
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <select value={ano} onChange={(e) => trocarAno(e.target.value)} aria-label="Ano" className={SELECT_FILTRO}>
             {ANOS.map((a) => (
@@ -659,9 +659,9 @@ export function NfsePage() {
             setModalNova(false)
             setShopee(v)
           }}
-          onCriada={(emissao) => {
+          onCriada={(emissao, opcoes) => {
             setModalNova(false)
-            if (searchParams.get("gerar")) navigate(`/app/nfse/${emissao.id}`)
+            if (opcoes?.abrir || searchParams.get("gerar")) navigate(`/app/nfse/${emissao.id}`)
             else recarregar()
           }}
         />
@@ -682,10 +682,10 @@ export function NfsePage() {
               setMesFiltro(mesComp)
             }
             trocarVinculo(shopee.id)
-            trocarGrupo("vendedores")
             setBusca("")
             setShopee(null)
-            if (searchParams.get("gerar")) navigate("/app/nfse", { replace: true })
+            // As notas dos vendedores moram na tela "Notas em lote".
+            if (!emLote) navigate("/app/nfse/lote", { replace: true })
           }}
         />
       )}
@@ -730,6 +730,26 @@ export function NfsePage() {
   )
 }
 
+interface AoGerar {
+  assinar: boolean
+  prefeitura: boolean
+  tomador: boolean
+}
+const CHAVE_AO_GERAR = "ana:nfse:ao-gerar"
+function lerAoGerar(): AoGerar {
+  try {
+    const d = JSON.parse(localStorage.getItem(CHAVE_AO_GERAR) ?? "null")
+    if (d && typeof d.assinar === "boolean") {
+      const assinar = d.assinar
+      const prefeitura = assinar && d.prefeitura === true
+      return { assinar, prefeitura, tomador: prefeitura && d.tomador === true }
+    }
+  } catch {
+    // sem storage ou valor estragado: padrão
+  }
+  return { assinar: true, prefeitura: false, tomador: false }
+}
+
 function NovaEmissaoModal({
   vinculos,
   aliquotaReferencia,
@@ -754,7 +774,8 @@ function NovaEmissaoModal({
   origem?: string | null
   onClose: () => void
   onEscolherShopee: (vinculo: VinculoResumo) => void
-  onCriada: (emissao: Emissao) => void
+  /** `abrir`: leva pra página da nota (falta um passo que é feito lá). */
+  onCriada: (emissao: Emissao, opcoes?: { abrir?: boolean }) => void
 }) {
   const [vinculoId, setVinculoId] = useState(
     vinculoInicial && vinculos.some((v) => v.id === vinculoInicial) ? vinculoInicial : (vinculos[0]?.id ?? ""),
@@ -823,22 +844,41 @@ function NovaEmissaoModal({
     }
   }, [vinculoId, competencia])
 
-  // Nota criada mas a assinatura falhou: os botões de gerar somem (gerar de
+  // "Processo completo" (05/10/2026): ao gerar, a Ana já assina, envia à
+  // prefeitura e manda pro tomador — o que estiver marcado. A escolha fica
+  // guardada neste navegador pra próxima nota.
+  const [aoGerar, setAoGerar] = useState<AoGerar>(lerAoGerar)
+  function mudarAoGerar(passo: keyof AoGerar, ligado: boolean) {
+    // Cada passo depende do anterior: marcar um marca os de antes; desmarcar, os de depois.
+    const nova: AoGerar = ligado
+      ? { assinar: true, prefeitura: passo !== "assinar" ? true : aoGerar.prefeitura, tomador: passo === "tomador" ? true : aoGerar.tomador }
+      : {
+          assinar: passo === "assinar" ? false : aoGerar.assinar,
+          prefeitura: passo === "tomador" ? aoGerar.prefeitura : false,
+          tomador: false,
+        }
+    setAoGerar(nova)
+    try {
+      localStorage.setItem(CHAVE_AO_GERAR, JSON.stringify(nova))
+    } catch {
+      // sem storage: vale só nesta vez
+    }
+  }
+  // O que já foi feito nesta geração, passo a passo.
+  const [andamento, setAndamento] = useState<string[]>([])
+  // A nota existe mas um passo parou: os botões de gerar somem (gerar de
   // novo daria "já existe") e fica o "Ver a nota".
-  const [notaSemAssinar, setNotaSemAssinar] = useState<Emissao | null>(null)
-  const acaoRef = useRef<"assinar" | "rascunho">("assinar")
+  const [notaParada, setNotaParada] = useState<Emissao | null>(null)
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
-    // Botão clicado: "Gerar rascunho" ou "Gerar e assinar" (28/09/2026). O
-    // Enter aciona o primeiro botão de envio do formulário — "Gerar e
-    // assinar" (vem primeiro no código; a ordem na tela é invertida).
-    const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null | undefined
-    const assinarJunto = (submitter?.value ?? acaoRef.current) === "assinar"
-    if (notaSemAssinar) return
+    if (notaParada) return
     setErro(null)
+    setAndamento([])
     setEnviando(true)
     let criada: Emissao | null = null
+    const feito = (texto: string) => setAndamento((a) => [...a, texto])
+    const motivo = (err: unknown) => (err instanceof ApiError ? formatarErro(err.detail) : "falha de conexão")
     try {
       const payload: GerarDpsRequest = {
         vinculo_id: vinculoId,
@@ -851,20 +891,53 @@ function NovaEmissaoModal({
         aliq_sn: aliqSn,
       }
       criada = await api.post<Emissao>("/dps", payload)
-      if (assinarJunto) {
-        // "Gerar e assinar": se a assinatura falhar (sem certificado, p.ex.),
-        // a nota fica gerada e a pessoa vê o motivo na página dela.
-        try {
-          criada = await api.post<Emissao>(`/dps/${criada.id}/assinar`, {})
-        } catch (err) {
-          setErro(
-            `Nota gerada, mas não deu pra assinar: ${err instanceof ApiError ? formatarErro(err.detail) : "falha de conexão"}.`,
-          )
-          setNotaSemAssinar(criada)
-          return
-        }
+      feito("Nota gerada")
+      if (!aoGerar.assinar) return onCriada(criada)
+
+      try {
+        criada = await api.post<Emissao>(`/dps/${criada.id}/assinar`, {})
+        feito("Assinada com o certificado")
+      } catch (err) {
+        setErro(`Nota gerada, mas não deu pra assinar: ${motivo(err)}.`)
+        return setNotaParada(criada)
       }
-      onCriada(criada)
+      if (!aoGerar.prefeitura) return onCriada(criada)
+
+      try {
+        criada = await api.post<Emissao>(`/dps/${criada.id}/submeter`, {})
+      } catch (err) {
+        setErro(`Nota assinada, mas não deu pra enviar à prefeitura: ${motivo(err)}.`)
+        return setNotaParada(criada)
+      }
+      if (criada.estado !== "confirmado") {
+        // Recusa da prefeitura volta com 200 + estado "erro": mostra o motivo.
+        setErro(criada.erro_detalhe ?? "A prefeitura não autorizou a nota agora. Veja o motivo na página da nota.")
+        return setNotaParada(criada)
+      }
+      feito("Autorizada pela prefeitura")
+      if (!aoGerar.tomador) return onCriada(criada)
+
+      // Tomador: do jeito que ficou gravado pra ele (e-mail, WhatsApp, portal...).
+      try {
+        const previa = await api.get<PreviaEmail>(`/dps/${criada.id}/email-previa`)
+        const canal = previa.canal_preferido ?? "email"
+        if (canal === "nenhum") return onCriada(criada)
+        if (canal !== "email" || previa.destinos.length === 0) {
+          // WhatsApp e portal têm um passo manual (abrir a conversa, subir no
+          // sistema dele): a página da nota já abre nesse envio.
+          return onCriada(criada, { abrir: true })
+        }
+        const envio = await api.post<Envio>(`/dps/${criada.id}/enviar-email`, {})
+        if (envio.status === "falha") {
+          setErro("Nota autorizada, mas o e-mail pro tomador falhou. Tente de novo na página da nota.")
+          return setNotaParada(criada)
+        }
+        feito("Enviada por e-mail ao tomador")
+        onCriada(criada)
+      } catch (err) {
+        setErro(`Nota autorizada, mas não deu pra enviar ao tomador: ${motivo(err)}.`)
+        setNotaParada(criada)
+      }
     } catch (err) {
       setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
     } finally {
@@ -956,15 +1029,7 @@ function NovaEmissaoModal({
         )}
         <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
           <CampoData valor={dataCompetencia} onChange={setDataCompetencia} />
-          <Field
-            label="Valor (R$)"
-            required
-            type="number"
-            step="0.01"
-            min="0.01"
-            value={valor}
-            onChange={(e) => setValor(e.target.value)}
-          />
+          <MoedaField label="Valor" required valor={valor} onChange={setValor} />
         </div>
 
         {duplicata?.existe && (
@@ -1024,6 +1089,43 @@ function NovaEmissaoModal({
           </>
         )}
 
+        {!ehRelatorio && !notaParada && (
+          <fieldset className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-700" data-tour="nfse-ao-gerar">
+            <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Ao gerar, a Ana também</legend>
+            <div className="flex flex-col gap-2 text-sm text-slate-700 dark:text-slate-200">
+              {(
+                [
+                  ["assinar", "Assina com o certificado"],
+                  ["prefeitura", ambienteTeste ? "Envia à prefeitura (ambiente de teste)" : "Envia à prefeitura"],
+                  ["tomador", "Envia ao tomador, do jeito que ficou gravado pra ele (e-mail, WhatsApp, portal...)"],
+                ] as const
+              ).map(([passo, rotulo]) => (
+                <label key={passo} className="flex cursor-pointer items-start gap-2">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={aoGerar[passo]}
+                    disabled={enviando}
+                    onChange={(e) => mudarAoGerar(passo, e.target.checked)}
+                  />
+                  {rotulo}
+                </label>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+              Sua escolha fica guardada pra próxima nota. Se um passo falhar, eu paro ali e mostro o motivo.
+            </p>
+          </fieldset>
+        )}
+
+        {andamento.length > 0 && (
+          <ul className="flex flex-col gap-1 rounded-lg bg-success-50 px-4 py-3 text-sm text-success-700 dark:bg-success-900/30 dark:text-success-200" aria-live="polite">
+            {andamento.map((passo) => (
+              <li key={passo}>✓ {passo}</li>
+            ))}
+          </ul>
+        )}
+
         {ambienteTeste && !ehRelatorio && (
           <p className="rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
             Sua conta está gerando notas de <strong>teste</strong> (homologação). Pra emitir de verdade, desligue em
@@ -1035,34 +1137,23 @@ function NovaEmissaoModal({
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
-          {notaSemAssinar ? (
-            <Button type="button" variant="accent" onClick={() => onCriada(notaSemAssinar)}>
+          {notaParada ? (
+            <Button type="button" variant="accent" onClick={() => onCriada(notaParada, { abrir: true })}>
               Ver a nota
             </Button>
           ) : (
             !ehRelatorio && (
-              <div className="flex flex-row-reverse flex-wrap gap-3">
-                <Button
-                  type="submit"
-                  name="acao"
-                  value="assinar"
-                  variant="accent"
-                  disabled={enviando || !vinculoId || bloqueadoPorDuplicata}
-                  onClick={() => (acaoRef.current = "assinar")}
-                >
-                  {enviando ? "Gerando..." : "Gerar e assinar"}
-                </Button>
-                <Button
-                  type="submit"
-                  name="acao"
-                  value="rascunho"
-                  variant="outline"
-                  disabled={enviando || !vinculoId || bloqueadoPorDuplicata}
-                  onClick={() => (acaoRef.current = "rascunho")}
-                >
-                  Gerar rascunho
-                </Button>
-              </div>
+              <Button type="submit" variant="accent" disabled={enviando || !vinculoId || bloqueadoPorDuplicata}>
+                {enviando
+                  ? "Trabalhando..."
+                  : aoGerar.tomador
+                    ? "Gerar e fazer tudo"
+                    : aoGerar.prefeitura
+                      ? "Gerar, assinar e enviar à prefeitura"
+                      : aoGerar.assinar
+                        ? "Gerar e assinar"
+                        : "Gerar rascunho"}
+              </Button>
             )
           )}
         </div>

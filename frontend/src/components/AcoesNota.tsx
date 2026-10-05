@@ -27,6 +27,8 @@ export interface NotaParaAcoes {
   envio_forma?: FormaEnvio | null
   /** Tomador da nota — pro atalho "cadastrar o link do portal". */
   vinculo_id?: string | null
+  /** Motivo da recusa da prefeitura (estado "erro"). */
+  erro_detalhe?: string | null
 }
 
 /** Selo com confirmação em popover (position:fixed — tabelas com overflow cortariam um popover comum). */
@@ -214,17 +216,26 @@ export function SeloPrefeitura({ nota, onMudou }: { nota: NotaParaAcoes; onMudou
   const [resultado, setResultado] = useState<string | null>(null)
   if (nota.estado === "assinado" || nota.estado === "erro") {
     const erro = nota.estado === "erro"
+    const motivo = erro ? nota.erro_detalhe : null
     return (
+      <span className="inline-flex max-w-[15rem] flex-col items-start gap-1">
       <SeloAcao
         rotulo={erro ? "Recusada" : "A enviar"}
         rotuloHover={erro ? "Tentar de novo" : "Enviar"}
         variante={erro ? "danger" : "warning"}
-        titulo={erro ? "A prefeitura recusou — clique pra tentar de novo" : "Assinada — clique pra enviar à prefeitura"}
+        titulo={erro ? (motivo ?? "A prefeitura recusou — clique pra tentar de novo") : "Assinada — clique pra enviar à prefeitura"}
+        larguraPainel={motivo ? 340 : 272}
       >
         {(fechar) => (
           <Confirmar
             texto={
               <>
+                {motivo && (
+                  <span className="mb-2 block rounded-lg bg-danger-50 px-2.5 py-2 text-xs text-danger-700 dark:bg-danger-900/30 dark:text-danger-200">
+                    <strong className="block">Por que foi recusada</strong>
+                    {motivo}
+                  </span>
+                )}
                 {erro ? "Enviar de novo à prefeitura" : "Enviar esta nota à prefeitura"}
                 {nota.homologacao ? " (ambiente de teste)" : ""}? {erro && "Se o erro foi nos dados, corrija antes na página da nota."}
               </>
@@ -241,6 +252,12 @@ export function SeloPrefeitura({ nota, onMudou }: { nota: NotaParaAcoes; onMudou
           />
         )}
       </SeloAcao>
+      {motivo && (
+        <span title={motivo} className="line-clamp-2 text-[11px] leading-snug text-danger-600 dark:text-danger-300">
+          {motivo.replace(/^A Receita recusou a nota:\s*/, "")}
+        </span>
+      )}
+      </span>
     )
   }
   if (nota.estado === "submetido") return <SeloAcao rotulo="Aguardando" variante="info" desabilitado titulo="Enviada, esperando a resposta da prefeitura" />
@@ -317,7 +334,7 @@ export function DownloadsNota({ nota }: { nota: NotaParaAcoes }) {
           <FileDown size={14} />
         </a>
       ) : (
-        <span className={desligado} title="O PDF oficial sai depois que a prefeitura autoriza a nota">
+        <span className={desligado} title="O PDF (DANFSe) sai depois que a prefeitura autoriza a nota">
           <FileDown size={14} />
         </span>
       )}

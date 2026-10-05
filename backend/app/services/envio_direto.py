@@ -37,6 +37,7 @@ from urllib.parse import quote
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy.orm import Session
 
+from app.services.danfse import DanfseIndisponivelError, gerar_danfse
 from app.config import get_settings
 from app.fiscal.cliente_sefin import ClienteSefin
 from app.models import Emissao, Envio, Prestador, PrestadorTomador
@@ -104,32 +105,20 @@ def link_publico(emissao: Emissao, base: str) -> str:
 
 
 def obter_danfse(db: Session, emissao: Emissao, prestador_id: uuid.UUID) -> bytes | None:
-    """PDF oficial, do cache ou baixado agora (só nota confirmada, com
-    certificado carregado). Qualquer falha -> None, nunca exceção: o PDF é
-    um extra, não pode travar o envio."""
+    """PDF da nota confirmada (DANFSe). Gerado AQUI a partir do XML da
+    NFS-e: a API do governo que devolvia o PDF foi suspensa em 03/08/2026
+    (NT 008) — ver app/services/danfse.py. Um PDF oficial já guardado de
+    antes continua valendo. Qualquer falha -> None, nunca exceção: o PDF
+    não pode travar o envio da nota."""
     if emissao.danfse_pdf:
         return emissao.danfse_pdf
-    if emissao.estado != "confirmado" or not emissao.chave_acesso:
-        return None
-    if time.monotonic() - _FALHA_DANFSE.get(emissao.id, -1e9) < _ESPERA_DANFSE_S:
-        return None
     try:
-        private_key, cert = carregar_certificado(db, prestador_id, get_settings().cert_master_key)
-        tp_amb = (emissao.tomador_snapshot or {}).get("tpAmb", "2")
-        pdf = ClienteSefin(private_key, cert, tp_amb, timeout=8).baixar_danfse(emissao.chave_acesso)
-    except CertificadoNaoEncontradoError:
+        return gerar_danfse(emissao)
+    except DanfseIndisponivelError:
         return None
-    except Exception:  # noqa: BLE001 — extra opcional, só registra
-        logger.exception("Falha ao baixar DANFSe da emissão %s", emissao.id)
-        _FALHA_DANFSE[emissao.id] = time.monotonic()
+    except Exception:  # noqa: BLE001
+        logger.exception("Falha ao gerar o DANFSe da emissão %s", emissao.id)
         return None
-    if pdf:
-        emissao.danfse_pdf = pdf
-        db.flush()
-        _FALHA_DANFSE.pop(emissao.id, None)
-    else:
-        _FALHA_DANFSE[emissao.id] = time.monotonic()
-    return pdf
 
 
 def nome_pdf(emissao: Emissao) -> str:
@@ -254,11 +243,6 @@ LIMITE_EMAILS_DIA = 150
 # contador, não contam).
 CANAIS_FORNECEDOR = ("email", "whatsapp", "direto_fornecedor")
 FORMAS_ENVIO = ("email", "whatsapp", "portal", "nenhum")
-# PDF oficial que falhou há pouco não é tentado de novo por uns minutos:
-# cada tentativa passa por 5 endereços com timeout e segurava o pedido por
-# até um minuto (inclusive no link público).
-_FALHA_DANFSE: dict[uuid.UUID, float] = {}
-_ESPERA_DANFSE_S = 600
 
 
 def _novo_envio(db: Session, emissao: Emissao, canal: str, destino: str | None) -> Envio:

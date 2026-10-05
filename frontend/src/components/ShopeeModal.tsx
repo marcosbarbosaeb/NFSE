@@ -1,3 +1,4 @@
+import { MoedaField } from "./ui/CampoMoeda"
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Globe2 } from "lucide-react"
 import { type FormEvent, useEffect, useMemo, useState } from "react"
 import { ApiError, api, formatarErro } from "../lib/api"
@@ -7,7 +8,6 @@ import { hojeLocal } from "../lib/datas"
 import { CampoData } from "./CampoData"
 import { Button } from "./ui/Button"
 import { CampoPercentual } from "./ui/CampoPercentual"
-import { Field } from "./ui/Field"
 import { Modal } from "./ui/Modal"
 
 // Relatório mensal da Shopee (28/09/2026). Na Shopee a nota vai pra cada
@@ -157,11 +157,11 @@ export function ShopeeModal({
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field
-              label="Não gerar notas abaixo de (R$)"
-              inputMode="decimal"
-              value={valorMinimo}
-              onChange={(e) => setValorMinimo(e.target.value)}
+            <MoedaField
+              label="Não gerar notas abaixo de"
+              saida="br"
+              valor={valorMinimo}
+              onChange={setValorMinimo}
               hint={abaixoMinimo ? `${abaixoMinimo} vendedor(es) ficam de fora` : "0 = gera todas"}
             />
             <CampoPercentual label="Alíquota do Simples (%)" valor={aliqSn} onChange={setAliqSn} />

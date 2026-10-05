@@ -59,8 +59,10 @@ export default function App() {
               </SoNoEmissor>
             }
           >
-            <Route index element={<SoModulo modulo="emissor"><DashboardPage /></SoModulo>} />
+            {/* Visão geral: da empresa, com os cards dos módulos ligados (05/10/2026). */}
+            <Route index element={<DashboardPage />} />
             <Route path="nfse" element={<SoModulo modulo="emissor"><NfsePage /></SoModulo>} />
+            <Route path="nfse/lote" element={<SoModulo modulo="emissor"><NfsePage modo="lote" /></SoModulo>} />
             <Route path="nfse/:id" element={<SoModulo modulo="emissor"><EmissaoDetalhePage /></SoModulo>} />
             <Route path="tomadores" element={<SoModulo modulo="emissor"><TomadoresPage /></SoModulo>} />
             <Route path="tomadores/novo" element={<SoModulo modulo="emissor"><VinculoFormPage /></SoModulo>} />

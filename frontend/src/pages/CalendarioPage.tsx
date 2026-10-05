@@ -1,3 +1,4 @@
+import { MoedaField } from "../components/ui/CampoMoeda"
 import { Plus, RotateCcw } from "lucide-react"
 import { type FormEvent, useEffect, useMemo, useState } from "react"
 import { Button } from "../components/ui/Button"
@@ -363,13 +364,7 @@ function EventoModal({
           </FieldWrap>
         )}
         {categoria === "recebimento_previsto" && (
-          <Field
-            label="Valor previsto (R$)"
-            inputMode="decimal"
-            value={valor}
-            onChange={(e) => setValor(e.target.value.replace(/[^\d,.]/g, ""))}
-            placeholder="0,00"
-          />
+          <MoedaField label="Valor previsto" saida="br" valor={valor} onChange={setValor} />
         )}
         <Field
           label="Título"

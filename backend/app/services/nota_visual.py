@@ -37,6 +37,7 @@ isso é proposital, não uma lacuna:
 from lxml import etree
 
 from app.models import Emissao
+from app.services.motor_emissao import motivo_da_recusa
 from app.services.municipios import rotulo_municipio
 
 NS = "http://www.sped.fazenda.gov.br/nfse"
@@ -154,7 +155,7 @@ def montar_nota_visual(emissao: Emissao) -> dict:
         # que explica NA TELA por que ficou em erro, em vez da pessoa só
         # ver o badge vermelho sem saber o motivo pra corrigir e tentar de
         # novo.
-        "erro_detalhe": emissao.erro_detalhe,
+        "erro_detalhe": motivo_da_recusa(emissao.erro_detalhe),
         "prestador": {
             "razao_social": prestador.razao_social,
             "cnpj": _fmt_cnpj(prestador.cpf_cnpj),

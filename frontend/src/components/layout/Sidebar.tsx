@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Building2, CalendarDays, Contact, FileText, Gift, Home, UserRound, Users, Wallet } from "lucide-react"
+import { ArrowLeftRight, Building2, CalendarDays, Contact, FileText, Gift, Home, Layers, UserRound, Users, Wallet } from "lucide-react"
 import { Link, NavLink, useLocation } from "react-router-dom"
 import { useModulos } from "../../lib/modulos"
 import { BotaoSuporte } from "../SuporteModal"
@@ -7,17 +7,22 @@ import { AnaAvatar, Marca } from "../brand/Marca"
 
 // Emissor e financeiro são produtos separados (05/10/2026): o menu mostra
 // um grupo pra cada módulo que a empresa tem ligado.
+// A Visão geral é da empresa, não de um módulo (05/10/2026): fica no topo,
+// logo abaixo da empresa, e junta os cards dos módulos que estão ligados.
+const INICIO_ITEM = { to: "/app", label: "Visão geral", icon: Home, end: true }
 const NOTAS = [
-  { to: "/app", label: "Visão geral", icon: Home, end: true },
-  { to: "/app/nfse", label: "NFS-e", icon: FileText },
+  { to: "/app/nfse", label: "NFS-e", icon: FileText, exceto: "/app/nfse/lote" },
+  { to: "/app/nfse/lote", label: "Notas em lote", icon: Layers },
   { to: "/app/tomadores", label: "Tomadores", icon: Users },
   { to: "/app/calendario", label: "Calendário", icon: CalendarDays },
 ]
 const FINANCEIRO = [
   { to: "/app/financeiro", label: "Painel", icon: Wallet, end: true },
   { to: "/app/financeiro/conciliacao", label: "Conciliação", icon: ArrowLeftRight },
-  { to: "/app/financeiro/clientes", label: "Clientes", icon: Contact },
 ]
+// Só pra quem tem o Financeiro sozinho: com o módulo de notas, os clientes
+// já estão na tela Tomadores.
+const CLIENTES = { to: "/app/financeiro/clientes", label: "Clientes", icon: Contact }
 // "Configurações" virou "Empresa" (dados do CNPJ ativo) + "Minha conta"
 // (no pé da barra e no menu do usuário) — 29/09/2026.
 const GERAL = [{ to: "/app/empresa", label: "Empresa", icon: Building2 }]
@@ -36,7 +41,7 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
   const modulos = useModulos()
   const grupos = [
     ...(modulos.emissor ? [{ titulo: "Notas", itens: NOTAS }] : []),
-    ...(modulos.financeiro ? [{ titulo: "Financeiro", itens: FINANCEIRO }] : []),
+    ...(modulos.financeiro ? [{ titulo: "Financeiro", itens: modulos.emissor ? FINANCEIRO : [...FINANCEIRO, CLIENTES] }] : []),
     { titulo: "", itens: GERAL },
   ]
   const doisProdutos = modulos.emissor && modulos.financeiro
@@ -58,14 +63,24 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
         </div>
 
         <nav className="flex flex-col gap-1" data-tour="menu">
+          <NavLink to={INICIO_ITEM.to} end onClick={onFechar} className={({ isActive }) => classeItem(isActive)}>
+            <Home size={18} />
+            {INICIO_ITEM.label}
+          </NavLink>
           {grupos.map((grupo) => (
             <div key={grupo.titulo || "geral"} className="flex flex-col gap-1">
-              {doisProdutos && grupo.titulo && (
+              {grupo.titulo && (
                 <p className="mt-3 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500 first:mt-0">{grupo.titulo}</p>
               )}
               {!grupo.titulo && <div className="my-2 border-t border-brand-800" />}
-              {grupo.itens.map(({ to, label, icon: Icon, end }: { to: string; label: string; icon: typeof Home; end?: boolean }) => (
-                <NavLink key={to} to={to} end={end} onClick={onFechar} className={({ isActive }) => classeItem(isActive)}>
+              {grupo.itens.map(({ to, label, icon: Icon, end, exceto }: { to: string; label: string; icon: typeof Home; end?: boolean; exceto?: string }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={end}
+                  onClick={onFechar}
+                  className={({ isActive }) => classeItem(isActive && !(exceto && pathname.startsWith(exceto)))}
+                >
                   <Icon size={18} />
                   {label}
                 </NavLink>

@@ -23,7 +23,7 @@ já com as correções que entraram nas revisões (ChatGPT, Gemini, Opus):
   não depender de subquery/join.
 """
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -49,6 +49,15 @@ from app.database import Base
 
 def _uuid_pk() -> Mapped[uuid.UUID]:
     return mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+
+
+def _agora_utc() -> datetime:
+    """`atualizado_em` calculado AQUI, não no banco (05/10/2026): com
+    onupdate=func.now() o valor ficava "a recarregar" depois de cada UPDATE,
+    e a rota que respondia depois do commit (sem a RLS da transação) quebrava
+    com erro 500 — foi o que escondeu a recusa da prefeitura no envio."""
+    return datetime.now(timezone.utc)
 
 
 class Prestador(Base):
@@ -131,7 +140,7 @@ class Prestador(Base):
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=_agora_utc
     )
 
     certificado: Mapped["Certificado | None"] = relationship(back_populates="prestador", uselist=False)
@@ -210,7 +219,7 @@ class Usuario(Base):
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=_agora_utc
     )
 
     prestador: Mapped["Prestador"] = relationship(back_populates="usuarios")
@@ -242,7 +251,7 @@ class Certificado(Base):
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=_agora_utc
     )
 
     prestador: Mapped["Prestador"] = relationship(back_populates="certificado")
@@ -369,7 +378,7 @@ class PrestadorTomador(Base):
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=_agora_utc
     )
 
     prestador: Mapped["Prestador"] = relationship(back_populates="vinculos")
@@ -447,7 +456,7 @@ class Emissao(Base):
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=_agora_utc
     )
 
     vinculo: Mapped["PrestadorTomador"] = relationship(back_populates="emissoes")
@@ -750,7 +759,7 @@ class Assinatura(Base):
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=_agora_utc
     )
 
     __table_args__ = (
@@ -825,7 +834,7 @@ class Indicacao(Base):
     indicado_nome: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="trial", server_default="trial")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=_agora_utc)
 
     __table_args__ = (Index("ix_indicacao_indicador", "indicador_id"),)
 
@@ -883,7 +892,7 @@ class LoteAcao(Base):
     emissao_ids: Mapped[list] = mapped_column(JSONB, nullable=False)
     erros: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=_agora_utc)
     concluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (Index("ix_lote_acao_prestador", "prestador_id", "criado_em"),)

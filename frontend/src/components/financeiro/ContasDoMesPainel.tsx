@@ -1,3 +1,4 @@
+import { CampoMoeda } from "../ui/CampoMoeda"
 import { AlertCircle, GripVertical, ListChecks, Plus, Repeat } from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
 import { api } from "../../lib/api"
@@ -234,12 +235,11 @@ export function ContasDoMesPainel({
           <form onSubmit={(e) => confirmarEdicao(e, c)} className="mt-2 flex flex-wrap items-center justify-end gap-2 pl-7">
             <label className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
               {edicao.modo === "pagar" ? "Quanto foi pago?" : "Valor"}
-              <input
+              <CampoMoeda
                 autoFocus
-                inputMode="decimal"
-                placeholder="0,00"
-                value={edicao.texto}
-                onChange={(e) => setEdicao({ ...edicao, texto: e.target.value })}
+                saida="br"
+                valor={edicao.texto}
+                onChange={(texto) => setEdicao({ ...edicao, texto })}
                 onKeyDown={(e) => {
                   if (e.key === "Escape") {
                     e.stopPropagation()

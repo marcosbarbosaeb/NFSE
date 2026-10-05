@@ -25,7 +25,7 @@ import re
 from lxml import etree
 
 from app.fiscal.xmldsig import assinar_elemento
-from app.tempo import hoje as hoje_br
+from app.tempo import agora as agora_br, hoje as hoje_br
 
 NS = "http://www.sped.fazenda.gov.br/nfse"
 NSMAP = {None: NS}
@@ -158,7 +158,12 @@ def montar_dps_xml(
     dCompet = dcompet or hoje_br().isoformat()
     cnpj_prest = prest["CNPJ"]
 
-    now = datetime.datetime.now().astimezone()
+    # Hora de Brasília (-03:00), nunca a do servidor (UTC): a Sefin compara o
+    # dhEmi com o relógio dela SEM converter o fuso — "12:15+00:00" era lido
+    # como 12:15 de Brasília e a nota enviada na hora era recusada (E0008,
+    # "data de emissão posterior à do processamento", 05/10/2026). Dois
+    # minutos de folga cobrem diferença de relógio entre os servidores.
+    now = agora_br() - datetime.timedelta(minutes=2)
     dhEmi = now.strftime("%Y-%m-%dT%H:%M:%S%z")
     dhEmi = dhEmi[:-2] + ":" + dhEmi[-2:]
 

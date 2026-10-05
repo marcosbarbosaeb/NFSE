@@ -1,3 +1,4 @@
+import { CampoMoeda } from "../ui/CampoMoeda"
 import { ArrowLeftRight, UploadCloud } from "lucide-react"
 import { type DragEvent, type FormEvent, useState } from "react"
 import { Link } from "react-router-dom"
@@ -283,15 +284,12 @@ export function ImportarExtratoModal({
                 )}
               </p>
             </div>
-            <input
-              type="number"
-              step="0.01"
-              min="0.01"
-              value={l.valor}
-              onChange={(e) => mudar(l.linha, { valor: e.target.value })}
+            <CampoMoeda
+              valor={l.valor}
+              onChange={(valor) => mudar(l.linha, { valor })}
               disabled={!l.incluir}
               aria-label="Valor em reais"
-              className={`${CAMPO} w-28 shrink-0 text-right tabular-nums`}
+              className={`${CAMPO} w-32 shrink-0 text-right tabular-nums`}
             />
           </div>
 

@@ -102,6 +102,8 @@ export interface EmissaoResumoLinha {
   envio_forma?: FormaEnvio | null
   /** Linha das notas de vendedores da Shopee (pagamento junto com a nota da Shopee). */
   vendedores?: boolean
+  /** Motivo da recusa da prefeitura (só no estado "erro"). */
+  erro_detalhe?: string | null
 }
 
 export interface AtencaoItem {
@@ -386,6 +388,8 @@ export interface EmissaoListaLinha {
   homologacao?: boolean
   avulsa?: boolean
   envio_forma?: FormaEnvio | null
+  /** Motivo da recusa da prefeitura (só no estado "erro"). */
+  erro_detalhe?: string | null
 }
 
 export interface GerarDpsRequest {

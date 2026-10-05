@@ -1,3 +1,4 @@
+import { CampoMoeda } from "./ui/CampoMoeda"
 import { useEffect, useRef, useState } from "react"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { formatBRL, parseBRL } from "../lib/format"
@@ -123,11 +124,9 @@ export function BaixaPagamento({
               <p className="font-medium text-slate-800 dark:text-slate-100">Registrar que o pagamento caiu</p>
               <label className="text-xs text-slate-500">
                 Valor recebido
-                <input
-                  type="number"
-                  step="0.01"
-                  value={valorTexto}
-                  onChange={(e) => setValorTexto(e.target.value)}
+                <CampoMoeda
+                  valor={valorTexto}
+                  onChange={setValorTexto}
                   className="mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                 />
               </label>

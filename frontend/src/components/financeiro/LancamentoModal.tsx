@@ -1,3 +1,4 @@
+import { MoedaField } from "../ui/CampoMoeda"
 import { type FormEvent, useId, useState } from "react"
 import { api } from "../../lib/api"
 import { CATEGORIA_RETIRADA, classeCampo, classeCheckbox, mensagemErro, valorParaCampo } from "../../lib/financeiro"
@@ -147,7 +148,7 @@ export function LancamentoModal({
             <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Competência</span>
             <input required type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)} className={classeCampo} />
           </label>
-          <Field label="Valor (R$)" required inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="0,00" />
+          <MoedaField label="Valor" required saida="br" valor={valor} onChange={setValor} />
         </div>
 
         <Field

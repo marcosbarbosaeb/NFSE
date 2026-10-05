@@ -225,3 +225,28 @@ def test_queda_de_rede_no_envio_vira_erro_e_recupera_a_nota_na_retentativa(db, v
     submeter(db, rascunho, cliente_fake)
     assert rascunho.estado == "confirmado" and rascunho.chave_acesso == "9" * 50
     cliente_fake.submeter_dps.assert_not_called()
+
+
+def test_recusa_da_sefin_vira_texto_legivel():
+    from app.fiscal.cliente_sefin import RespostaSefin
+    from app.services.motor_emissao import erro_legivel
+
+    recusa = RespostaSefin(status_code=400, dados={"erros": [{"Codigo": "E0008", "Descricao": "A data de emissão da DPS não pode ser posterior à data do seu processamento."}]})
+    texto = erro_legivel(recusa)
+    assert texto.startswith("A Receita recusou a nota: E0008 — A data de emissão")
+    assert "Gere a nota de novo" in texto
+    assert erro_legivel(RespostaSefin(status_code=502, dados=None, texto_bruto="Bad Gateway")) == "Bad Gateway"
+
+
+def test_dhemi_sai_na_hora_de_brasilia_e_nunca_no_futuro():
+    """A Sefin compara o dhEmi sem converter fuso: tem que ir em -03:00."""
+    import datetime
+    import re
+
+    from app.fiscal import dps
+    from app.tempo import agora
+
+    fonte = open(dps.__file__, encoding="utf-8").read()
+    assert "agora_br() - datetime.timedelta(minutes=2)" in fonte
+    carimbo = (agora() - datetime.timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M:%S%z")
+    assert re.search(r"-03:?00$", carimbo)

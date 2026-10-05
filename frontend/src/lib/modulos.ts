@@ -9,6 +9,3 @@ export function useModulos(): { emissor: boolean; financeiro: boolean; lista: Mo
   const lista = (usuario?.modulos?.length ? usuario.modulos : ["emissor"]) as Modulo[]
   return { emissor: lista.includes("emissor"), financeiro: lista.includes("financeiro"), lista }
 }
-
-/** Primeira tela de cada módulo. */
-export const INICIO: Record<Modulo, string> = { emissor: "/app", financeiro: "/app/financeiro" }

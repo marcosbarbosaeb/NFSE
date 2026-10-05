@@ -302,6 +302,53 @@ def _confirmar_com_resposta(db: Session, emissao: Emissao, resposta, cliente: Cl
     return emissao
 
 
+_DICAS_DE_RECUSA = {
+    "E0008": "A hora da nota ficou à frente do relógio da Receita. Gere a nota de novo (marcando pra substituir esta) e envie.",
+}
+
+
+def erro_legivel(resposta) -> str:
+    """Recusa da Sefin em texto de gente: "E0008 — descrição", e o que
+    fazer quando a gente sabe. Antes ia o dicionário cru da resposta."""
+    dados = resposta.dados if isinstance(resposta.dados, dict) else None
+    erros = (dados or {}).get("erros") or (dados or {}).get("Erros") or []
+    linhas = []
+    for erro in erros if isinstance(erros, list) else []:
+        if not isinstance(erro, dict):
+            continue
+        codigo = str(erro.get("Codigo") or erro.get("codigo") or "").strip()
+        descricao = str(erro.get("Descricao") or erro.get("descricao") or "").strip()
+        complemento = str(erro.get("Complemento") or erro.get("complemento") or "").strip()
+        texto = " — ".join(p for p in (codigo, descricao) if p)
+        if complemento:
+            texto += f" ({complemento})"
+        if codigo in _DICAS_DE_RECUSA:
+            texto += f" {_DICAS_DE_RECUSA[codigo]}"
+        if texto:
+            linhas.append(texto)
+    if linhas:
+        return "A Receita recusou a nota: " + " | ".join(linhas)
+    return str(resposta.dados or resposta.texto_bruto or f"HTTP {resposta.status_code}")
+
+
+def motivo_da_recusa(texto: str | None) -> str | None:
+    """`erro_detalhe` pronto pra tela. As recusas gravadas antes de
+    05/10/2026 ficaram como o dicionário cru da resposta — viram frase."""
+    if not texto:
+        return None
+    if texto.lstrip().startswith("{"):
+        import ast
+        from types import SimpleNamespace
+
+        try:
+            dados = ast.literal_eval(texto)
+        except (ValueError, SyntaxError):
+            return texto
+        if isinstance(dados, dict):
+            return erro_legivel(SimpleNamespace(dados=dados, texto_bruto=texto, status_code=0))
+    return texto
+
+
 def submeter(db: Session, emissao: Emissao, cliente: ClienteSefin) -> Emissao:
     """assinado -> submetido -> confirmado, ou -> erro (retentável: chamar
     de novo a partir de 'erro' tenta de novo, não precisa remontar/reassinar
@@ -333,7 +380,7 @@ def submeter(db: Session, emissao: Emissao, cliente: ClienteSefin) -> Emissao:
 
     if not resposta.ok:
         emissao.estado = "erro"
-        emissao.erro_detalhe = str(resposta.dados or resposta.texto_bruto or f"HTTP {resposta.status_code}")
+        emissao.erro_detalhe = erro_legivel(resposta)
         db.flush()
         return emissao
 

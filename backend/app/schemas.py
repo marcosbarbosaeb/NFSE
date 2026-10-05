@@ -346,6 +346,7 @@ class EmissaoResumoLinha(BaseModel):
     tem_email: bool = False
     homologacao: bool = False
     envio_forma: str | None = None
+    erro_detalhe: str | None = None
     # Linha das notas de vendedores da Shopee (pagamento indireto).
     vendedores: bool = False
 
@@ -804,6 +805,7 @@ class EmissaoListaLinha(BaseModel):
     homologacao: bool = False
     avulsa: bool = False  # nota de vendedor da Shopee (destinatário fixo)
     envio_forma: str | None = None  # como o tomador recebe: email|whatsapp|portal|nenhum
+    erro_detalhe: str | None = None  # motivo da recusa da prefeitura (estado "erro")
 
 
 class EventoCalendarioResponse(BaseModel):
@@ -978,6 +980,8 @@ class PreferenciasRequest(BaseModel):
     tela: Literal["financeiro", "visao_geral"]
     ordem: list[str] = Field(default_factory=list, max_length=40)
     fechados: list[str] = Field(default_factory=list, max_length=40)
+    # Composição: cards que a pessoa tirou da tela (05/10/2026).
+    ocultos: list[str] = Field(default_factory=list, max_length=40)
 
 
 class OrdemRequest(BaseModel):

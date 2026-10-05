@@ -19,6 +19,7 @@ export function tourDoCaminho(caminho: string): TourDaTela | null {
   if (c === "/app/tomadores") return { tela: "tomadores", passos: TOMADORES }
   if (c === "/app/tomadores/novo") return { tela: "tomador-novo", passos: TOMADOR_NOVO }
   if (c === "/app/nfse") return { tela: "nfse", passos: NFSE }
+  if (c === "/app/nfse/lote") return { tela: "nfse-lote", passos: NFSE_LOTE }
   if (c === "/app/calendario") return { tela: "calendario", passos: CALENDARIO }
   if (c === "/app/financeiro") return { tela: "financeiro", passos: FINANCEIRO }
   if (c === "/app/empresa") return { tela: "empresa", passos: EMPRESA }
@@ -36,11 +37,16 @@ const VISAO_GERAL: PassoTour[] = [
     alvo: "menu",
     titulo: "Suas abas",
     texto:
-      "Cada módulo tem o seu grupo: em Notas ficam a visão geral, as NFS-e, os tomadores e o calendário; em Financeiro, o painel, a conciliação e os clientes. Em Empresa ficam os dados comuns e os módulos ligados.",
+      "A Visão geral fica no topo. Depois, cada módulo tem o seu grupo: em Notas ficam as NFS-e, as notas em lote, os tomadores e o calendário; em Financeiro, o painel e a conciliação. Em Empresa ficam os dados comuns e os módulos ligados.",
   },
   {
     titulo: "Visão geral",
-    texto: "Aqui você vê o mês de relance: o que já foi emitido, o que falta gerar, quanto você faturou e o que precisa da sua atenção.",
+    texto: "O mês de relance, com um card pra cada assunto dos módulos que você tem ligados: notas emitidas e a gerar, o que precisa de atenção, o dinheiro do mês.",
+  },
+  {
+    alvo: "visao-disposicao",
+    titulo: "Do seu jeito",
+    texto: "Em “Editar disposição” você arrasta os cards pra mudar a ordem e escolhe quais aparecem. Fica salvo na sua conta.",
   },
   {
     alvo: "ajuda",
@@ -99,16 +105,23 @@ const NFSE: PassoTour[] = [
   {
     alvo: "nfse-nova",
     titulo: "Gerar uma nota",
-    texto: "Escolha o tomador, confira o mês e o valor. Na hora você decide como informar o valor: digitando ou por planilha.",
-  },
-  {
-    alvo: "nfse-csv",
-    titulo: "Várias notas de uma vez",
-    texto: "Tem muitos tomadores? Importe uma planilha CSV e eu gero todas as notas do mês de uma vez.",
+    texto: "Escolha o tomador, confira o mês e o valor. Se quiser, eu já assino, envio à prefeitura e mando pro tomador na sequência.",
   },
   {
     titulo: "Depois de gerar",
     texto: "Clique em uma nota da lista pra revisar, assinar, enviar à Receita e mandar pro tomador por e-mail ou WhatsApp.",
+  },
+]
+
+const NFSE_LOTE: PassoTour[] = [
+  {
+    alvo: "nfse-csv",
+    titulo: "Várias notas de uma vez",
+    texto: "Mande o relatório mensal (como o da Shopee) e eu gero uma nota pra cada vendedor. Elas ficam nesta tela, separadas das suas outras notas.",
+  },
+  {
+    titulo: "Enviar todas",
+    texto: "Filtre o tomador e o mês pra assinar, enviar à prefeitura e mandar todas por e-mail de uma vez.",
   },
 ]
 

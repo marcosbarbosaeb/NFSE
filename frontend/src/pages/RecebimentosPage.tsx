@@ -1,3 +1,4 @@
+import { MoedaField } from "../components/ui/CampoMoeda"
 import { FileUp, Plus } from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
 import { Badge } from "../components/ui/Badge"
@@ -297,7 +298,7 @@ export function RegistrarPagamentoModal({
               />
             </FieldWrap>
           )}
-          <Field label="Valor (R$)" required type="number" step="0.01" min="0.01" value={valor} onChange={(e) => setValor(e.target.value)} />
+          <MoedaField label="Valor" required valor={valor} onChange={setValor} />
         </div>
 
         <Field
