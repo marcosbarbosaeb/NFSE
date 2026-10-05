@@ -248,7 +248,7 @@ export function FinanceiroPage() {
             id: "resultado",
             titulo: mes ? `Resultado de ${NOMES_MESES[Number(mes) - 1].toLowerCase()}` : "Resultado do ano",
             conteudo: (
-      <ResultadoAno resumo={resumo?.ano === ano ? resumo : null} erro={erroResumo} ano={ano} mes={mes} onSelecionarMes={selecionarMes} semTitulo />
+      <ResultadoAno resumo={resumo?.ano === ano ? resumo : null} erro={erroResumo} ano={ano} mes={mes} onSelecionarMes={selecionarMes} semTitulo comNotas={modulos.emissor} />
             ),
           },
           {

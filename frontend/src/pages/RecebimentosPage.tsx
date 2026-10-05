@@ -5,6 +5,8 @@ import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { Field, FieldWrap } from "../components/ui/Field"
 import { Modal } from "../components/ui/Modal"
+import { CaixaBusca } from "../components/ui/CaixaBusca"
+import { useModulos } from "../lib/modulos"
 import { ImportarExtratoModal } from "../components/financeiro/ImportarExtratoModal"
 import { ListaSemNota } from "../components/financeiro/RecebimentosSemNota"
 import { ApiError, api, formatarErro } from "../lib/api"
@@ -150,7 +152,11 @@ export function RegistrarPagamentoModal({
   onClose: () => void
   onRegistrado: () => void
 }) {
-  const [vinculoId, setVinculoId] = useState(vinculos[0]?.id ?? "")
+  const modulos = useModulos()
+  // Clientes criados aqui mesmo (só o nome) entram na lista na hora.
+  const [criados, setCriados] = useState<{ id: string; apelido: string }[]>([])
+  const clientes = [...vinculos.map((v) => ({ id: v.id, apelido: v.apelido })), ...criados.filter((c) => !vinculos.some((v) => v.id === c.id))]
+  const [vinculoId, setVinculoId] = useState("")
   const [competencia, setCompetencia] = useState(competenciaAtual())
   const [valor, setValor] = useState("")
   const [dataRecebimento, setDataRecebimento] = useState("")
@@ -164,8 +170,21 @@ export function RegistrarPagamentoModal({
   const [notaTocada, setNotaTocada] = useState(false)
 
   useEffect(() => {
+    if (!modulos.emissor) return
     api.get<NotaAberta[]>("/notas-a-receber").then(setAbertas).catch(() => setAbertas([]))
-  }, [])
+  }, [modulos.emissor])
+
+  async function criarCliente(nome: string) {
+    setErro(null)
+    try {
+      const novo = await api.post<{ id: string; apelido: string }>("/vinculos/controle", { nome })
+      setCriados((atuais) => (atuais.some((c) => c.id === novo.id) ? atuais : [...atuais, novo]))
+      setVinculoId(novo.id)
+      setNotaTocada(false)
+    } catch (err) {
+      setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
+    }
+  }
 
   const notasDoTomador = abertas.filter((n) => n.vinculo_id === vinculoId)
   const nota = notasDoTomador.find((n) => n.emissao_id === emissaoId)
@@ -192,7 +211,7 @@ export function RegistrarPagamentoModal({
         emissao_id: nota?.emissao_id ?? null,
       }
       const resp = await api.post<Pagamento>("/pagamentos", payload)
-      if (resp.sem_nota && resp.vinculo_id) setSemNota(resp)
+      if (modulos.emissor && resp.sem_nota && resp.vinculo_id) setSemNota(resp)
       else onRegistrado()
     } catch (err) {
       setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
@@ -223,24 +242,18 @@ export function RegistrarPagamentoModal({
         {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
 
         <FieldWrap label="Cliente">
-          <select
-            required
-            value={vinculoId}
-            onChange={(e) => {
-              setVinculoId(e.target.value)
+          <CaixaBusca
+            valor={vinculoId}
+            opcoes={clientes.map((c) => ({ id: c.id, rotulo: c.apelido }))}
+            onEscolher={(id) => {
+              setVinculoId(id)
               setNotaTocada(false)
             }}
-            className="w-full rounded-lg border border-slate-300 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-          >
-            <option value="" disabled>
-              Selecione...
-            </option>
-            {vinculos.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.apelido}
-              </option>
-            ))}
-          </select>
+            onCriar={criarCliente}
+            rotuloCriar="Novo cliente"
+            placeholder="De quem veio? (digite pra buscar ou criar)"
+            ariaLabel="Cliente"
+          />
         </FieldWrap>
 
         {notasDoTomador.length > 0 && (
@@ -274,7 +287,7 @@ export function RegistrarPagamentoModal({
               </p>
             </FieldWrap>
           ) : (
-            <FieldWrap label="Competência">
+            <FieldWrap label={modulos.emissor ? "Competência" : "Mês de referência"}>
               <input
                 required
                 type="month"

@@ -44,7 +44,10 @@ export function ResultadoAno({
   mes,
   onSelecionarMes,
   semTitulo,
+  comNotas = true,
 }: {
+  /** Módulo de notas ligado: mostra o faturado e o que falta receber. */
+  comNotas?: boolean
   /** A tela já mostra o título do card (cards recolhíveis do Financeiro). */
   semTitulo?: boolean
   resumo: ResumoFinanceiro | null
@@ -78,8 +81,15 @@ export function ResultadoAno({
   const rotuloPeriodo = i >= 0 ? `${NOMES_MESES[i]} de ${ano}` : `em ${ano}`
 
   const linhas: LinhaTabela[] = [
-    { rotulo: "Faturado (notas)", valores: resumo.faturado, total: t.faturado, dica: "Notas confirmadas, pelo mês de competência." },
-    { rotulo: "Recebido", valores: resumo.recebido, total: t.recebido, dica: "Pagamentos registrados, pelo mês da nota." },
+    ...(comNotas
+      ? [{ rotulo: "Faturado (notas)", valores: resumo.faturado, total: t.faturado, dica: "Notas confirmadas, pelo mês de competência." }]
+      : []),
+    {
+      rotulo: "Recebido",
+      valores: resumo.recebido,
+      total: t.recebido,
+      dica: comNotas ? "Pagamentos registrados, pelo mês da nota." : "Recebimentos registrados, pelo mês de referência.",
+    },
     { rotulo: "Despesas", valores: resumo.despesas, total: t.despesas, dica: "Sem as retiradas (distribuição de lucros)." },
     { rotulo: "dos quais impostos", valores: resumo.impostos, total: t.impostos, sub: true, dica: "Simples, INSS, DAS e afins." },
     { rotulo: "Lucro", valores: resumo.lucro, total: t.lucro, forte: true, vermelhoSeNegativo: true, dica: "Recebido − despesas." },
@@ -96,7 +106,7 @@ export function ResultadoAno({
   ]
 
   // Meses sem nenhum movimento ficam com "—" (deixa a tabela respirar).
-  const mesVazio = resumo.meses.map((_, m) => !resumo.faturado[m] && !resumo.recebido[m] && !resumo.despesas[m] && !resumo.retiradas[m])
+  const mesVazio = resumo.meses.map((_, m) => !(comNotas && resumo.faturado[m]) && !resumo.recebido[m] && !resumo.despesas[m] && !resumo.retiradas[m])
 
   // "Para onde vai o dinheiro": as maiores categorias; o resto vira "Outras".
   const MAX_CATEGORIAS = 7
@@ -117,7 +127,7 @@ export function ResultadoAno({
           Resultado {i >= 0 ? `de ${NOMES_MESES[i].toLowerCase()}` : "do ano"}
         </h2>
         <p className="text-xs text-slate-400 dark:text-slate-500">
-          {i >= 0 ? `${NOMES_MESES[i]} de ${ano}` : `Janeiro a dezembro de ${ano}`} · recebimentos pelo mês da nota
+          {i >= 0 ? `${NOMES_MESES[i]} de ${ano}` : `Janeiro a dezembro de ${ano}`} · recebimentos pelo mês {comNotas ? "da nota" : "de referência"}
         </p>
       </div>
 
@@ -133,7 +143,7 @@ export function ResultadoAno({
           negativo={saldo < 0}
           detalhe={i >= 0 ? `acumulado até ${MESES_ABREV[i].toLowerCase()}` : "acumulado no ano"}
         />
-        <Kpi label="A receber" valor={formatBRL(t.a_receber)} detalhe="todos os meses" />
+        {comNotas && <Kpi label="A receber" valor={formatBRL(t.a_receber)} detalhe="todos os meses" />}
       </div>
 
       <p className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500 dark:text-slate-400">

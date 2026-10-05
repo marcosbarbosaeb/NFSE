@@ -229,6 +229,7 @@ def adicionar_empresa(
     db: Session, usuario: Usuario, *, cpf_cnpj: str, razao_social: str, cod_municipio: str,
     nome_fantasia: str | None = None, cep: str | None = None, logradouro: str | None = None,
     numero: str | None = None, complemento: str | None = None, bairro: str | None = None,
+    modulos: list[str] | None = None,
 ) -> Prestador:
     """Mais um CNPJ no mesmo login (com teste grátis próprio)."""
     from app.services.billing import criar_assinatura_trial
@@ -239,6 +240,7 @@ def adicionar_empresa(
         id=prestador_id, cpf_cnpj="".join(c for c in cpf_cnpj if c.isdigit()), razao_social=razao_social.strip()[:200],
         nome_fantasia=(nome_fantasia or "").strip()[:200] or None, cod_municipio=cod_municipio,
         cep=cep, logradouro=logradouro, numero=numero, complemento=complemento, bairro=bairro,
+        modulos=list(modulos) if modulos else ["emissor"],
     )
     db.add(prestador)
     try:

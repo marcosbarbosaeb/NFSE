@@ -157,3 +157,23 @@ def test_so_financeiro_fecha_o_emissor_e_funciona_sozinho(client, db, prestador_
     assert r.status_code == 200 and r.json()["pendentes"] == 1
     painel = client.get("/api/conciliacao").json()
     assert painel["notas_abertas"] == [] and painel["lancamentos"][0]["vinculo_id"] == cliente["id"]
+
+
+def test_empresa_nova_herda_os_modulos_da_empresa_aberta(db, prestador_teste):
+    """Quem usa só o Financeiro e adiciona outro CNPJ continua no Financeiro."""
+    from app.models import Usuario
+    from app.services import contas
+
+    prestador_teste.modulos = ["financeiro"]
+    usuario = Usuario(email="herda@example.com", senha_hash="x", prestador_id=prestador_teste.id)
+    db.add(usuario)
+    db.flush()
+    nova = contas.adicionar_empresa(
+        db, usuario, cpf_cnpj="45.723.174/0001-10", razao_social="Outra LTDA", cod_municipio="3550308",
+        modulos=["financeiro"],
+    )
+    assert nova.modulos == ["financeiro"]
+    padrao = contas.adicionar_empresa(
+        db, usuario, cpf_cnpj="60.701.190/0001-04", razao_social="Mais Uma LTDA", cod_municipio="3550308",
+    )
+    assert padrao.modulos == ["emissor"]

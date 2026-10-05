@@ -36,11 +36,11 @@ const VISAO_GERAL: PassoTour[] = [
     alvo: "menu",
     titulo: "Suas abas",
     texto:
-      "NFS-e (suas notas), Tomadores (quem você fatura), Calendário (dias de gerar e de receber), Financeiro (o que entrou e saiu) e Empresa (dados, e-mails e certificado).",
+      "Cada módulo tem o seu grupo: em Notas ficam a visão geral, as NFS-e, os tomadores e o calendário; em Financeiro, o painel e a conciliação. Em Empresa ficam os dados comuns e os módulos ligados.",
   },
   {
     titulo: "Visão geral",
-    texto: "Aqui você vê o mês de relance: o que já foi emitido, o que falta gerar, o que ainda não foi pago e o que precisa da sua atenção.",
+    texto: "Aqui você vê o mês de relance: o que já foi emitido, o que falta gerar, quanto você faturou e o que precisa da sua atenção.",
   },
   {
     alvo: "ajuda",
@@ -145,7 +145,7 @@ const EMPRESA: PassoTour[] = [
   {
     titulo: "Empresa",
     texto:
-      "Tudo da empresa que emite as notas: dados do emitente, e-mails das notas (inclusive os gerais, pro seu contador), alíquota, ambiente e certificado digital. Tem mais de uma empresa? Troque ou adicione no topo do menu.",
+      "O cadastro geral da empresa (vale pra todos os módulos) e, em Módulos, o que está ligado. Com o módulo de notas: e-mails das notas, alíquota, ambiente e certificado digital. Tem mais de uma empresa? Troque ou adicione no topo do menu.",
   },
 ]
 

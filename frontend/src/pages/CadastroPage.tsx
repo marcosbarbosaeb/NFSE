@@ -144,7 +144,10 @@ export function CadastroPage() {
           <p className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">
             <span className="font-normal opacity-80">Agente</span> <span className="text-accent-500">Ana</span>
           </p>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Crie sua conta gratuita</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Crie sua conta gratuita
+            {produto === "financeiro" ? " · Financeiro" : produto === "ambos" ? " · Notas e Financeiro" : ""}
+          </p>
         </div>
 
         <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-6 shadow-sm">

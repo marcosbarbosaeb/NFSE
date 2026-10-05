@@ -128,7 +128,8 @@ export function CaixaBusca({
         disabled={disabled}
         value={aberto ? texto : (escolhida?.rotulo ?? "")}
         placeholder={aberto && escolhida ? escolhida.rotulo : placeholder}
-        onFocus={abrir}
+        // Abre no clique ou ao digitar — não no foco: num modal, o primeiro
+        // campo recebe o foco sozinho e a lista abriria sem ninguém pedir.
         onClick={() => !aberto && abrir()}
         onChange={(e) => {
           setTexto(e.target.value)
@@ -163,6 +164,9 @@ export function CaixaBusca({
           ref={lista}
           id={idLista}
           role="listbox"
+          // Dentro de um <label>, o clique numa opção seria repassado pro
+          // campo (e reabriria a lista): aqui ele para.
+          onClick={(e) => e.preventDefault()}
           style={{
             left: pos.left,
             width: pos.width,

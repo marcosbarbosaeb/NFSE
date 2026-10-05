@@ -707,8 +707,12 @@ def api_empresas(request: Request, db: Session = Depends(get_db)):
 def api_adicionar_empresa(req: EmpresaCriarRequest, request: Request, db: Session = Depends(get_db)):
     """Mais um CNPJ no mesmo login — já entra ativo."""
     u = _usuario_logado(request, db)
+    # A empresa nova começa com os mesmos módulos da que está aberta.
+    ativa = contas.empresa_ativa(db, request, u)
+    definir_prestador_atual(db, ativa)
+    herdados = modulos_da_empresa(db, ativa)
     try:
-        prestador = contas.adicionar_empresa(db, u, **req.model_dump())
+        prestador = contas.adicionar_empresa(db, u, modulos=herdados, **req.model_dump())
     except contas.ContaError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     db.commit()
