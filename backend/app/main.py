@@ -1190,6 +1190,15 @@ def _validar_codigo_servico(codigo: str | None) -> str | None:
     return servico["codigo"]
 
 
+@app.get("/api/nbs")
+def api_nbs(q: str | None = None, limite: int = 1000):
+    """Nomenclatura Brasileira de Serviços (NBS 2.0), com busca por código ou
+    palavra. Pública: é tabela do governo, não dado de conta."""
+    from app.services.nbs import buscar_nbs
+
+    return buscar_nbs(q, limite=max(1, min(limite, 1000)))
+
+
 @app.get("/api/servicos-nacionais", response_model=list[ServicoNacionalResponse])
 def api_servicos_nacionais(q: str | None = None, limite: int = 400):
     """Lista oficial de códigos de tributação nacional (cTribNac), com busca

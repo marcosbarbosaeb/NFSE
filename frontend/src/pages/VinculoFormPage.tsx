@@ -14,6 +14,7 @@ import { CaixaBusca } from "../components/ui/CaixaBusca"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { CampoCidade } from "../components/ui/CampoCidade"
+import { CampoNbs } from "../components/ui/CampoNbs"
 import { CampoServico, formatarCodigoServico } from "../components/ui/CampoServico"
 import { Field, FieldWrap } from "../components/ui/Field"
 import { ApiError, api, formatarErro } from "../lib/api"
@@ -912,16 +913,15 @@ export function VinculoFormPage() {
                     : "Só se a sua prefeitura exigir — escolha “Nenhum” se não souber."
                 }
               />
-              <CampoCodigoUsado
+              <CampoNbs
                 label="Item da NBS"
                 valor={form.cod_nbs}
                 onChange={(c) => atualizarCampo("cod_nbs", mascaraNbs(c))}
-                opcoes={codigosUsados.nbs}
-                formatar={mascaraNbs}
+                usados={codigosUsados.nbs.map((c) => c.codigo)}
                 hint={
                   codigosUsados.nbs.length
-                    ? "Nomenclatura Brasileira de Serviços — os que já saíram nas suas notas com esse serviço."
-                    : "Nomenclatura Brasileira de Serviços (9 dígitos). Opcional."
+                    ? "Nomenclatura Brasileira de Serviços. Busque por palavra ou número; os que já saíram nas suas notas com esse serviço aparecem primeiro. Opcional."
+                    : "Nomenclatura Brasileira de Serviços. Busque por palavra ou número. Opcional."
                 }
               />
               </>

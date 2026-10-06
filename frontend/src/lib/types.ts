@@ -1601,3 +1601,12 @@ export interface PainelGestao {
   ferramentas: FerramentaGestao[]
   contas: ContaGestao[]
 }
+
+/** GET /nbs — item da Nomenclatura Brasileira de Serviços (NBS 2.0). */
+export interface ItemNbs {
+  codigo: string
+  descricao: string
+  grupo: string
+  /** 1.1406.11.00 */
+  formatado: string
+}
