@@ -84,6 +84,14 @@ class ReenvioPrecisaConferirError(TransicaoInvalidaError):
         self.esperado, self.atual = "erro", "erro"
 
 
+class SoHomologacaoError(TransicaoInvalidaError):
+    """Ambiente de teste da plataforma: nota de produção não é enviada."""
+
+    def __init__(self):
+        Exception.__init__(self, "Este é o ambiente de teste: só saem notas de homologação (sem valor fiscal).")
+        self.esperado, self.atual = "homologação", "produção"
+
+
 class EmissaoJaExisteError(Exception):
     """Já existe uma emissão ativa (não cancelada) pra esse vínculo+competência
     — mesma regra do índice único parcial `uq_emissao_vinculo_competencia_ativa`."""
@@ -507,6 +515,11 @@ def submeter(db: Session, emissao: Emissao, cliente: ClienteSefin) -> Emissao:
     a nota vai pra 'erro' com MARCA_FALHA_COMUNICACAO, e a próxima tentativa
     primeiro pergunta à Receita se a DPS já virou nota (recupera a chave)."""
     _exigir_estado(emissao, "assinado", "erro")
+    # Última trava do ambiente de teste da plataforma: nota de produção não sai daqui.
+    from app.config import get_settings
+
+    if get_settings().ambiente_teste and str((emissao.tomador_snapshot or {}).get("tpAmb") or "1") != "2":
+        raise SoHomologacaoError()
     tentativa_apos_queda = emissao.estado == "erro" and (emissao.erro_detalhe or "").startswith(MARCA_FALHA_COMUNICACAO)
     emissao.estado = "submetido"
     emissao.erro_detalhe = None

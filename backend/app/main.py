@@ -642,7 +642,7 @@ def api_auth_me(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Sessão encerrada neste aparelho.")
     ativa = contas.empresa_ativa(db, request, usuario)
     definir_prestador_atual(db, ativa)
-    teste = bool(db.query(Prestador.modo_teste).filter(Prestador.id == ativa).scalar())
+    teste = get_settings().ambiente_teste or bool(db.query(Prestador.modo_teste).filter(Prestador.id == ativa).scalar())
     return UsuarioResponse(
         email=usuario.email, prestador_id=ativa, demo=eh_email_demo(usuario.email), nome=usuario.nome, teste=teste,
         modulos=modulos_da_empresa(db, ativa),
@@ -1869,15 +1869,15 @@ ESTADOS_SUBSTITUIVEIS = ("rascunho", "montado", "assinado", "erro")
 
 def _tp_amb_da_conta(db: Session, prestador_id: uuid.UUID) -> str:
     prestador = db.get(Prestador, prestador_id)
-    if prestador is not None and prestador.modo_teste:
-        return "2"  # conta de teste: sempre homologação
+    if get_settings().ambiente_teste or (prestador is not None and prestador.modo_teste):
+        return "2"  # conta de teste (ou ambiente de teste da plataforma): sempre homologação
     return (prestador.tp_amb_padrao if prestador else None) or "1"
 
 
 def _tp_amb_da_nota(db: Session, prestador_id: uuid.UUID, pedido: str | None) -> str:
     """Conta de teste é sempre homologação, mesmo se pedirem produção."""
     prestador = db.get(Prestador, prestador_id)
-    if prestador is not None and prestador.modo_teste:
+    if get_settings().ambiente_teste or (prestador is not None and prestador.modo_teste):
         return "2"
     return pedido or _tp_amb_da_conta(db, prestador_id)
 

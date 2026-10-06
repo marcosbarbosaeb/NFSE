@@ -33,6 +33,8 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
   `ADMIN_EMAILS` (sem a variável ninguém entra). Passa empresa por empresa trocando o contexto da RLS e devolve o
   contexto no fim. Nunca expor conteúdo de nota/financeiro ali. O guia da ajuda (`app/data/guia-agente-ana.md`)
   não é público: só a Gestão baixa.
+- Ambiente de teste da plataforma: `AMBIENTE_TESTE=true` no serviço de teste. Toda conta vira conta de teste,
+  só sai nota de homologação (trava final em `motor_emissao.submeter`) e e-mail de nota vai só pro login de quem testa.
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.
 - Segredos (Stripe, Resend, Google) só nas variáveis do Railway — nunca no código nem em conversa.
 

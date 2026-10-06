@@ -67,6 +67,10 @@ def criar_cadastro(
     modo_teste: bool = False,
     modulos: list[str] | None = None,
 ) -> Usuario:
+    # No ambiente de teste da plataforma toda conta é conta de teste.
+    from app.config import get_settings
+
+    modo_teste = modo_teste or get_settings().ambiente_teste
     email_norm = email.strip().lower()
     cnpj_norm = "".join(c for c in cpf_cnpj if c.isdigit())
 

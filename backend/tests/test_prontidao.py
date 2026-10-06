@@ -66,3 +66,23 @@ def test_simulacao_nao_precisa_de_certificado(db, prestador_teste):
     db.flush()
     assert prontidao.motivo_que_trava(db, prestador_teste.id) is None
     assert prontidao.prontidao(db, prestador_teste.id)["aplica"] is False
+
+
+def test_ambiente_de_teste_da_plataforma_nunca_emite_de_verdade(db, prestador_teste, vinculo_teste, monkeypatch):
+    """AMBIENTE_TESTE=true (o serviço de teste no Railway): só homologação e
+    e-mail de nota só pro login de quem testa."""
+    from app.config import get_settings
+    from app.main import _tp_amb_da_conta, _tp_amb_da_nota
+    from app.services import envio_direto, motor_emissao
+
+    assert _tp_amb_da_conta(db, prestador_teste.id) == "1"
+    assert envio_direto.email_da_conta_teste(db, prestador_teste) is None
+    monkeypatch.setattr(get_settings(), "ambiente_teste", True)
+    assert _tp_amb_da_conta(db, prestador_teste.id) == "2" and _tp_amb_da_nota(db, prestador_teste.id, "1") == "2"
+    # uma nota de produção que já existisse não passa do envio
+    nota = motor_emissao.criar_rascunho(db, vinculo_teste, competencia="2026-10", valor=10, tpAmb="1")
+    nota.estado = "assinado"
+    db.flush()
+    with pytest.raises(motor_emissao.TransicaoInvalidaError, match="ambiente de teste"):
+        motor_emissao.submeter(db, nota, cliente=None)
+    assert nota.estado == "assinado"

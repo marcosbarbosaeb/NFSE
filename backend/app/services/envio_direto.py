@@ -700,7 +700,9 @@ def marcar_enviada(db: Session, emissao: Emissao, forma: str) -> Envio:
 def email_da_conta_teste(db: Session, prestador: Prestador | None) -> str | None:
     """Conta de teste (01/10/2026): o e-mail de login de quem testa — os
     e-mails de nota vão só pra ele, nunca pros tomadores de verdade."""
-    if prestador is None or not prestador.modo_teste:
+    from app.config import get_settings
+
+    if prestador is None or not (prestador.modo_teste or get_settings().ambiente_teste):
         return None
     from app.models import Usuario, UsuarioPrestador
 

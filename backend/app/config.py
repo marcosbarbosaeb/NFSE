@@ -115,6 +115,11 @@ class Settings(BaseSettings):
     # de login separados por vírgula (ADMIN_EMAILS). Vazio = vale a regra
     # antiga, a conta com assinatura "cortesia".
     admin_emails: str = ""
+    # Ambiente de TESTE da plataforma (AMBIENTE_TESTE=true no serviço de teste
+    # do Railway): toda conta nasce como conta de teste, nenhuma nota sai com
+    # valor fiscal (só homologação) e os e-mails de nota vão só pro login de
+    # quem está testando — nunca pra tomador de verdade.
+    ambiente_teste: bool = False
 
     # Marco 16, item 1 — "integre o login/cadastro ao Google". Mesmo
     # padrão do resend_api_key/stripe_secret_key acima: Marcos confirmou
