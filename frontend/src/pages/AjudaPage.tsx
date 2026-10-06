@@ -1,4 +1,4 @@
-import { ArrowRight, ChevronDown, Download, LifeBuoy, MessageCircleQuestion, Search, Sparkles, X } from "lucide-react"
+import { ArrowRight, ChevronDown, LifeBuoy, MessageCircleQuestion, Search, Sparkles, X } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { BotaoSuporte } from "../components/SuporteModal"
@@ -17,25 +17,23 @@ import type { AjudaInfo } from "../lib/types"
 //
 // Três camadas, da mais rápida pra mais lenta:
 //   1. as perguntas daqui (src/lib/faq.ts), com busca;
-//   2. o guia completo (public/guia-agente-ana.md) — pra baixar e, se a
-//      variável AJUDA_IA_URL estiver configurada, já carregado numa IA
-//      gratuita de terceiros (GET /api/ajuda devolve o endereço);
+//   2. se a variável AJUDA_IA_URL estiver configurada, uma IA gratuita de
+//      terceiros carregada com o guia (GET /api/ajuda devolve o endereço).
+//      O guia em si (backend/app/data/guia-agente-ana.md) não é público:
+//      só a administração baixa, na Gestão;
 //   3. o suporte de verdade (o mesmo formulário do menu).
 // A tela vale pra qualquer módulo: só some a pergunta de um módulo que a
 // empresa não tem.
-
-const GUIA = "/guia-agente-ana.md"
 
 /** "Conciliação" → "conciliacao": a busca ignora acento e maiúscula. */
 function semAcento(texto: string): string {
   return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
 }
 
-// Mesma cara do <Button> (components/ui/Button) em links: <a> de baixar o
-// guia e de abrir a IA não podem ser <button>.
+// Mesma cara do <Button> (components/ui/Button) em link: o <a> de abrir a IA
+// não pode ser <button>.
 const LINK_BOTAO = "inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
 const LINK_ACCENT = `${LINK_BOTAO} bg-accent-500 text-white hover:bg-accent-600`
-const LINK_OUTLINE = `${LINK_BOTAO} border border-slate-300 text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700`
 
 function Pergunta({ item, aberta, onAlternar }: { item: PerguntaFaq; aberta: boolean; onAlternar: () => void }) {
   const idResposta = `faq-resposta-${item.id}`
@@ -216,45 +214,32 @@ export function AjudaPage() {
         </section>
       ))}
 
-      <section aria-labelledby="ajuda-ia">
-        <Card className="p-4 sm:p-6">
-          <h2 id="ajuda-ia" className="flex items-center gap-2 text-base font-semibold text-slate-800 dark:text-slate-100">
-            <Sparkles size={18} aria-hidden="true" className="text-accent-500" /> Não achou? Pergunte pra uma IA (grátis)
-          </h2>
-          {iaUrl ? (
-            <>
-              <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-                Deixei o meu guia completo carregado numa ferramenta de IA gratuita, de terceiros (ela não é da Agente Ana). Você escreve a
-                dúvida do seu jeito e ela responde com base no guia.
-              </p>
-              <p className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
-                Ela pode errar — na dúvida, vale o que está aqui na Ajuda ou a resposta do suporte.{" "}
-                <strong>Não cole lá a sua senha, o seu certificado digital nem dados dos seus clientes.</strong>
-              </p>
-            </>
-          ) : (
+      {/* IA gratuita: só quando há um endereço configurado (AJUDA_IA_URL). O guia
+          completo NÃO fica à disposição do usuário (06/10/2026: "o usuário comum
+          não deve ter acesso a isso") — quem baixa é a administração, na Gestão. */}
+      {iaUrl && (
+        <section aria-labelledby="ajuda-ia">
+          <Card className="p-4 sm:p-6">
+            <h2 id="ajuda-ia" className="flex items-center gap-2 text-base font-semibold text-slate-800 dark:text-slate-100">
+              <Sparkles size={18} aria-hidden="true" className="text-accent-500" /> Não achou? Pergunte pra uma IA (grátis)
+            </h2>
             <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-              O meu guia completo explica cada tela, passo a passo — o mesmo assunto destas perguntas, com mais detalhe.
+              Deixei as minhas explicações carregadas numa ferramenta de IA gratuita, de terceiros (ela não é da Agente Ana). Você escreve a
+              dúvida do seu jeito e ela responde com base nelas.
             </p>
-          )}
-          <div className="mt-4 flex flex-wrap gap-2">
-            {iaUrl && (
+            <p className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
+              Ela pode errar — na dúvida, vale o que está aqui na Ajuda ou a resposta do suporte.{" "}
+              <strong>Não cole lá a sua senha, o seu certificado digital nem dados dos seus clientes.</strong>
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
               <a href={iaUrl} target="_blank" rel="noreferrer" className={LINK_ACCENT}>
                 <MessageCircleQuestion size={16} aria-hidden="true" /> Perguntar pra IA
                 <span className="sr-only"> (abre em outra aba)</span>
               </a>
-            )}
-            <a href={GUIA} download="guia-agente-ana.md" className={iaUrl ? LINK_OUTLINE : LINK_ACCENT}>
-              <Download size={16} aria-hidden="true" /> Baixar o guia completo
-            </a>
-          </div>
-          <p className="mt-3 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-            {iaUrl
-              ? "Dá pra enviar esse arquivo pra qualquer IA de sua preferência e perguntar por lá também."
-              : "Dá pra enviar esse arquivo pra qualquer IA de sua preferência e perguntar. Ela pode errar, e não cole lá a sua senha, o seu certificado digital nem dados dos seus clientes."}
-          </p>
-        </Card>
-      </section>
+            </div>
+          </Card>
+        </section>
+      )}
 
       <section aria-labelledby="ajuda-suporte">
         <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6">

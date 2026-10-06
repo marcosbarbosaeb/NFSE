@@ -1,7 +1,7 @@
 // Perguntas frequentes da tela de Ajuda (05/10/2026) — "vamos fazer uma
-// sessão de FAQ". Mesmo conteúdo, em formato curto, do guia completo que a
-// pessoa baixa (public/guia-agente-ana.md): mudou um botão ou uma tela,
-// acerte nos dois lugares.
+// sessão de FAQ". Mesmo conteúdo, em formato curto, do guia interno
+// (backend/app/data/guia-agente-ana.md, que NÃO é público): mudou um botão ou
+// uma tela, acerte nos dois lugares.
 //
 // Regras da casa: português simples, a Ana fala em primeira pessoa, 2 a 5
 // frases por resposta, e todo botão citado entre aspas existe na tela com

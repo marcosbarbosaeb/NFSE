@@ -3,7 +3,6 @@ import {
   CreditCard,
   Gift,
   GraduationCap,
-  Handshake,
   KeyRound,
   LaptopMinimal,
   LogOut,
@@ -19,7 +18,6 @@ import {
 import { type FormEvent, useCallback, useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { PaginaAbas, TituloSecao } from "../components/PaginaAbas"
-import { ParceirasAdmin } from "../components/ParceirasAdmin"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
@@ -46,19 +44,12 @@ export function ContaPage() {
   const { usuario } = useAuth()
   const [conta, setConta] = useState<Conta | null>(null)
   const [erro, setErro] = useState<string | null>(null)
-  // Aba "Parceiras" (06/10/2026): só pra administração da plataforma. Enquanto
-  // a resposta não chega — ou se a consulta falhar — a aba não aparece.
-  const [admin, setAdmin] = useState(false)
 
   useEffect(() => {
     api
       .get<Conta>("/conta")
       .then(setConta)
       .catch((err) => setErro(erroDe(err)))
-    api
-      .get<{ admin: boolean }>("/parceiros/acesso")
-      .then((r) => setAdmin(r.admin === true))
-      .catch(() => setAdmin(false))
   }, [])
 
   const demo = conta?.demo ?? usuario?.demo ?? false
@@ -76,7 +67,6 @@ export function ContaPage() {
         { id: "preferencias", rotulo: "Preferências", icone: Palette, conteudo: () => <AbaPreferencias /> },
         { id: "assinatura", rotulo: "Assinatura", icone: CreditCard, conteudo: () => <AbaAssinatura demo={demo} /> },
         { id: "indique", rotulo: "Indique e ganhe", icone: Gift, conteudo: () => <IndiqueConteudo /> },
-        ...(admin ? [{ id: "parceiras", rotulo: "Parceiras", icone: Handshake, conteudo: () => <ParceirasAdmin /> }] : []),
       ]}
     />
   )

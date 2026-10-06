@@ -29,6 +29,10 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
 - Parceiras de indicação (`app/services/parceiros.py`): comissão = % de cada fatura paga (`invoice.paid` do Stripe),
   sem login (painel por link secreto `/parceira/<token>`), repasse por fora. Administração = `ADMIN_EMAILS`
   (ou, sem a variável, a conta "cortesia").
+- Gestão (`/app/gestao`, `app/services/gestao.py`): números de uso de TODAS as contas, só pra quem está em
+  `ADMIN_EMAILS` (sem a variável ninguém entra). Passa empresa por empresa trocando o contexto da RLS e devolve o
+  contexto no fim. Nunca expor conteúdo de nota/financeiro ali. O guia da ajuda (`app/data/guia-agente-ana.md`)
+  não é público: só a Gestão baixa.
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.
 - Segredos (Stripe, Resend, Google) só nas variáveis do Railway — nunca no código nem em conversa.
 

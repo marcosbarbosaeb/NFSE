@@ -31,6 +31,7 @@ export function BarrasHorizontais({
   maximo = 6,
   rotuloOutros,
   total,
+  formatar = formatBRL,
 }: {
   /** Nome do gráfico pra leitor de tela. */
   titulo: string
@@ -39,6 +40,8 @@ export function BarrasHorizontais({
   rotuloOutros?: string
   /** Base da porcentagem (padrão: a soma dos itens). */
   total?: number
+  /** Como escrever o valor (padrão: em reais). Ex.: contagens na Gestão. */
+  formatar?: (valor: number) => string
 }) {
   const linhas = juntarOutros(itens, maximo, rotuloOutros)
   const soma = total ?? linhas.reduce((s, i) => s + i.valor, 0)
@@ -55,7 +58,7 @@ export function BarrasHorizontais({
                 {item.detalhe && <span className="ml-1.5 hidden text-xs text-slate-400 sm:inline dark:text-slate-500">{item.detalhe}</span>}
               </span>
               <span className="shrink-0 tabular-nums">
-                <span className="font-semibold text-slate-800 dark:text-slate-100">{formatBRL(item.valor)}</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-100">{formatar(item.valor)}</span>
                 <span className="ml-1.5 inline-block w-9 text-right text-xs text-slate-500 dark:text-slate-400">{fatia}%</span>
               </span>
             </div>

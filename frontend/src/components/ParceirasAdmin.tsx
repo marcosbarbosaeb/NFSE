@@ -13,7 +13,7 @@ import { Modal } from "./ui/Modal"
 import { StatCard } from "./ui/StatCard"
 
 // Parceiras de indicação (06/10/2026) — área da administração da plataforma
-// (Minha conta › Parceiras). A parceira recebe uma % do que cada indicado
+// (Gestão › Parceiras). A parceira recebe uma % do que cada indicado
 // paga; o repasse é feito por fora (Pix) e aqui só se controla.
 // Backend: app/services/parceiros.py.
 

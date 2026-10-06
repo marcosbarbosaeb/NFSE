@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Building2, CalendarDays, CircleHelp, Contact, FileText, Gift, Home, Layers, UserRound, Users, Wallet } from "lucide-react"
+import { ArrowLeftRight, Building2, CalendarDays, CircleHelp, Contact, FileText, Gift, Home, Layers, ShieldCheck, UserRound, Users, Wallet } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link, NavLink, useLocation } from "react-router-dom"
 import { api } from "../../lib/api"
@@ -66,6 +66,15 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
     return () => window.removeEventListener("agenteana:conciliacao", ouvir)
   }, [])
   const totalConciliar = conciliar ? conciliar.notas + conciliar.extrato : 0
+  // "Gestão" (06/10/2026): só pra administração da plataforma. Enquanto a
+  // resposta não chega — ou se a consulta falhar — o item não aparece.
+  const [gestor, setGestor] = useState(false)
+  useEffect(() => {
+    api
+      .get<{ gestor: boolean }>("/gestao/acesso")
+      .then((r) => setGestor(r.gestor === true))
+      .catch(() => setGestor(false))
+  }, [])
   return (
     <>
       {aberto && <div className="fixed inset-0 z-40 bg-slate-900/50 lg:hidden" onClick={onFechar} aria-hidden="true" />}
@@ -126,6 +135,12 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
             <UserRound size={18} aria-hidden="true" />
             Minha conta
           </Link>
+          {gestor && (
+            <NavLink to="/app/gestao" onClick={onFechar} className={({ isActive }) => `mt-1 ${classeItem(isActive)}`}>
+              <ShieldCheck size={18} aria-hidden="true" />
+              Gestão
+            </NavLink>
+          )}
           {/* Ajuda / FAQ (05/10/2026): perguntas frequentes e o guia completo. */}
           <NavLink to="/app/ajuda" onClick={onFechar} className={({ isActive }) => `mt-1 ${classeItem(isActive)}`}>
             <CircleHelp size={18} aria-hidden="true" />

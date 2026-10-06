@@ -21,12 +21,15 @@ export function PaginaAbas({
   subtitulo,
   abas,
   cabecalho,
+  largo = false,
 }: {
   titulo: string
   subtitulo?: ReactNode
   abas: Aba[]
   /** Algo extra ao lado do título (ex.: CNPJ da empresa). */
   cabecalho?: ReactNode
+  /** Página com tabela larga (ex.: Gestão): ocupa mais da tela. */
+  largo?: boolean
 }) {
   const [params, setParams] = useSearchParams()
   const pedida = params.get("aba")
@@ -56,7 +59,7 @@ export function PaginaAbas({
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6">
+    <div className={`mx-auto flex flex-col gap-6 ${largo ? "max-w-7xl" : "max-w-5xl"}`}>
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{titulo}</h1>

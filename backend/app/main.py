@@ -2641,6 +2641,41 @@ def exigir_admin(request: Request, db: Session = Depends(db_sessao), prestador_i
         raise HTTPException(status_code=403, detail="Só a administração da plataforma acessa esta área.")
 
 
+def exigir_gestor(request: Request, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)) -> None:
+    """A Gestão mostra números de TODAS as contas: só entra quem está em
+    ADMIN_EMAILS. Sem essa variável configurada, ninguém entra (aqui não vale
+    o atalho da conta "cortesia")."""
+    if not get_settings().admin_emails.strip() or not _eh_admin(request, db, prestador_id):
+        raise HTTPException(status_code=403, detail="Só a administração da plataforma acessa esta área.")
+
+
+@app.get("/api/gestao/acesso")
+def api_gestao_acesso(request: Request, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """A tela usa pra saber se mostra a Gestão (e por que não, quando falta configurar)."""
+    configurado = bool(get_settings().admin_emails.strip())
+    return {"gestor": configurado and _eh_admin(request, db, prestador_id), "configurado": configurado}
+
+
+@app.get("/api/gestao", dependencies=[Depends(exigir_gestor)])
+def api_gestao(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Painel de gestão: contas, assinaturas, uso das ferramentas e e-mails.
+    Só números — nunca o conteúdo das notas ou do financeiro de ninguém."""
+    from app.services import gestao
+
+    return gestao.painel(db, prestador_id)
+
+
+@app.get("/api/gestao/guia", dependencies=[Depends(exigir_gestor)])
+def api_gestao_guia():
+    """O guia completo (o texto que alimenta a IA de ajuda). Não é público:
+    só a administração baixa, pra carregar na ferramenta de IA."""
+    caminho = Path(__file__).resolve().parent / "data" / "guia-agente-ana.md"
+    return Response(
+        content=caminho.read_bytes(), media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="guia-agente-ana.md"'},
+    )
+
+
 def _parceiro_ou_404(db: Session, parceiro_id: uuid.UUID):
     from app.models import Parceiro
 

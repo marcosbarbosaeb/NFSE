@@ -1503,3 +1503,101 @@ export interface ParceiroAdmin extends ParceiroResumo {
   painel: string
   criado_em: string
 }
+
+// --- Painel de gestão da plataforma (06/10/2026) — backend/app/services/gestao.py ---
+/** GET /gestao/acesso. `configurado=false`: falta definir ADMIN_EMAILS no servidor. */
+export interface AcessoGestao {
+  gestor: boolean
+  configurado: boolean
+}
+
+export type AssinaturaGestao = "trial" | "ativa" | "inadimplente" | "cancelada" | "cortesia"
+
+export interface LoginGestao {
+  email: string
+  nome: string | null
+  confirmado: boolean
+  ativo: boolean
+  ultimo_acesso: string | null
+}
+
+/** Uma ferramenta e quantas contas reais usam. */
+export interface FerramentaGestao {
+  id: string
+  nome: string
+  /** Quantas contas usam. */
+  contas: number
+  volume: number
+  /** true = o volume é do mês; false = é o total desde o começo. */
+  do_mes: boolean
+}
+
+/** Uma empresa na Gestão: só números de uso, nunca o conteúdo. */
+export interface ContaGestao {
+  id: string
+  razao_social: string | null
+  cnpj: string | null
+  cod_municipio: string | null
+  criada_em: string | null
+  /** Conta de simulação (apagada em 24h). */
+  demo: boolean
+  modo_teste: boolean
+  modulos: string[]
+  assinatura: AssinaturaGestao | null
+  plano: string | null
+  trial_termina_em: string | null
+  certificado: "ok" | "falta" | "vencido"
+  logins: LoginGestao[]
+  /** Pelo menos um login confirmou o e-mail. */
+  email_confirmado: boolean
+  ultimo_acesso: string | null
+  dias_sem_acesso: number | null
+  ultima_nota: string | null
+  tomadores: number
+  notas_total: number
+  /** Notas avulsas (uma a uma) no mês — as de lote vêm em `notas_lote_mes`. */
+  notas_mes: number
+  notas_lote_mes: number
+  notas_importadas: number
+  emails_mes: number
+  emails_total: number
+  emails_lote_mes: number
+  emails_falha_mes: number
+  lancamentos_financeiros_mes: number
+  linhas_extrato_mes: number
+  anotacoes: number
+  lotes_mes: number
+  drive: 0 | 1
+  indicou: number
+  indicou_ativos: number
+  veio_por: string | null
+}
+
+export interface ResumoGestao {
+  /** Contas reais (sem as de simulação). */
+  contas: number
+  contas_simulacao: number
+  contas_teste: number
+  email_confirmado: number
+  com_certificado: number
+  ativas_30_dias: number
+  emitiram_no_mes: number
+  /** Situação da assinatura -> quantas contas ("sem assinatura" quando não há). */
+  assinaturas: Record<string, number>
+  /** Avulsas + lote. */
+  notas_mes: number
+  notas_total: number
+  emails_mes: number
+  emails_lote_mes: number
+  emails_falha_mes: number
+}
+
+/** GET /gestao */
+export interface PainelGestao {
+  gerado_em: string
+  /** "AAAA-MM" */
+  competencia: string
+  resumo: ResumoGestao
+  ferramentas: FerramentaGestao[]
+  contas: ContaGestao[]
+}
