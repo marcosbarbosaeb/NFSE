@@ -5,6 +5,12 @@
 # dá pra fixar 8000 sozinho).
 set -e
 
+# Ambiente novo (ex.: "teste"): com DATABASE_ADMIN_URL definida, cria o usuário e
+# o banco da aplicação se ainda não existirem. Em produção a variável não existe.
+if [ -n "$DATABASE_ADMIN_URL" ]; then
+  python3 scripts/provisionar_ambiente.py
+fi
+
 echo "[entrypoint] Rodando migrações (alembic upgrade head)..."
 python3 -m alembic upgrade head
 
