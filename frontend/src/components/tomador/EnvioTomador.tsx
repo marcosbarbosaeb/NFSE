@@ -1,4 +1,4 @@
-import { ExternalLink, FileDown, FolderUp, Mail, MessageCircle, Plus, Trash2 } from "lucide-react"
+import { Ban, ExternalLink, FileDown, FolderUp, Mail, MessageCircle, Plus, Trash2 } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { api } from "../../lib/api"
 import type { EmailExtra, FormaDeEnvio, Prestador, StatusDrive } from "../../lib/types"
@@ -70,9 +70,38 @@ export function EnvioTomador({ valor, onChange, prestador }: { valor: ValorEnvio
     <>
       <fieldset className="mb-5">
         <legend className="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-300">
-          Como este tomador recebe a nota <span className="font-normal text-slate-400">— pode marcar mais de uma</span>
+          Como este tomador recebe a nota <span className="font-normal text-slate-400">— pode marcar mais de uma forma</span>
         </legend>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {/* "Não é necessário enviar" (06/10/2026): opção à vista, em vez de
+              depender de a pessoa descobrir que é só desmarcar tudo. Marcar
+              limpa as outras formas; marcar qualquer outra desmarca esta. */}
+          <label className="relative cursor-pointer sm:col-span-2">
+            <input
+              type="checkbox"
+              checked={valor.formas.length === 0}
+              onChange={() => mudar({ formas: valor.formas.length === 0 ? ["email"] : [] })}
+              className="peer sr-only"
+            />
+            <span className="flex h-full items-start gap-2.5 rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-600 transition-colors hover:border-primary-300 peer-checked:border-slate-500 peer-checked:bg-slate-100 peer-checked:text-slate-900 peer-focus-visible:ring-2 peer-focus-visible:ring-primary-300 dark:border-slate-600 dark:text-slate-300 dark:peer-checked:bg-slate-700/60 dark:peer-checked:text-slate-100">
+              <span
+                aria-hidden
+                className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold ${
+                  valor.formas.length === 0 ? "border-slate-600 bg-slate-600 text-white" : "border-slate-300 dark:border-slate-500"
+                }`}
+              >
+                {valor.formas.length === 0 ? "✓" : ""}
+              </span>
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <Ban size={14} className="shrink-0" aria-hidden /> Não é necessário enviar
+                </span>
+                <span className="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400">
+                  Este tomador não precisa receber a nota. Ela não aparece como pendente de envio.
+                </span>
+              </span>
+            </span>
+          </label>
           {formasVisiveis.map((f) => {
             const Icone = f.icone
             return (
@@ -115,11 +144,6 @@ export function EnvioTomador({ valor, onChange, prestador }: { valor: ValorEnvio
             ) : (
               <>O Google Drive ainda não está disponível por aqui.</>
             )}
-          </p>
-        )}
-        {valor.formas.length === 0 && (
-          <p className="mt-2 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600 dark:bg-slate-700/60 dark:text-slate-300">
-            Nada marcado = este tomador <strong>não precisa receber a nota</strong>. Ela não aparece como pendente de envio.
           </p>
         )}
       </fieldset>

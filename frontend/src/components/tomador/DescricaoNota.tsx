@@ -92,6 +92,11 @@ export function DescricaoNota({
   const [ano, mes] = mesDeReferencia(competenciaAtual(), mesesAtras)
   const p = partes ?? { texto: modelo, periodo: "nenhum" as Periodo, ordem: false }
   const mudar = (novo: Partial<Partes>) => onChange(montar({ ...p, ...novo }))
+  // O modelo guardado nunca tem espaço sobrando no fim — então o campo mostra
+  // o que a pessoa está digitando (com o espaço), e não o texto já aparado.
+  // Sem isso a barra de espaço "não funcionava": o espaço sumia a cada tecla.
+  const [digitando, setDigitando] = useState(p.texto)
+  const textoDoCampo = digitando.trim() === p.texto ? digitando : p.texto
   const usaMes = /\{(mes_nome_upper|competencia_mm_aaaa|mes|ano)\}/.test(modelo)
 
   function inserir(codigo: string) {
@@ -168,8 +173,11 @@ export function DescricaoNota({
           <input
             required
             aria-label="Texto da descrição"
-            value={p.texto}
-            onChange={(e) => mudar({ texto: e.target.value })}
+            value={textoDoCampo}
+            onChange={(e) => {
+              setDigitando(e.target.value)
+              mudar({ texto: e.target.value })
+            }}
             placeholder="Ex.: Comissão de vendas"
             className={classeInput}
           />
