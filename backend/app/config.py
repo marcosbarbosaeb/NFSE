@@ -120,6 +120,12 @@ class Settings(BaseSettings):
     # valor fiscal (só homologação) e os e-mails de nota vão só pro login de
     # quem está testando — nunca pra tomador de verdade.
     ambiente_teste: bool = False
+    # Bloqueio de quem não tem assinatura (06/10/2026): com isto ligado, a
+    # empresa cujo teste grátis acabou (ou que cancelou) fica só pra consulta
+    # — nada de gerar/enviar/lançar — até assinar ou a Gestão liberar.
+    # Desligado por padrão: só ligar em produção quando o Stripe estiver
+    # recebendo, senão a pessoa fica travada sem ter como pagar.
+    bloqueio_ativo: bool = False
 
     # Marco 16, item 1 — "integre o login/cadastro ao Google". Mesmo
     # padrão do resend_api_key/stripe_secret_key acima: Marcos confirmou

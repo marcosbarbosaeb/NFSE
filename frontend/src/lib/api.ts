@@ -35,8 +35,13 @@ export function formatarErro(detail: unknown): string {
 // avisa o AuthProvider, que manda pra tela de login em vez de deixar cada
 // página mostrando erro.
 export const EVENTO_SESSAO_EXPIRADA = "agenteana:sessao-expirada"
-function avisarSeExpirou(status: number, path: string) {
+// Empresa sem assinatura tentou gerar/enviar/lançar (402, ver
+// backend/app/services/acesso.py): o AppShell abre o aviso com o caminho
+// pra assinar, além do erro que a própria tela mostra.
+export const EVENTO_SEM_ASSINATURA = "agenteana:sem-assinatura"
+function avisarSeExpirou(status: number, path: string, detail?: unknown) {
   if (status === 401 && !path.startsWith("/auth/")) window.dispatchEvent(new Event(EVENTO_SESSAO_EXPIRADA))
+  if (status === 402) window.dispatchEvent(new CustomEvent(EVENTO_SEM_ASSINATURA, { detail: typeof detail === "string" ? detail : null }))
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -47,7 +52,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const isJson = resp.headers.get("content-type")?.includes("application/json")
   const body = isJson ? await resp.json() : await resp.text()
   if (!resp.ok) {
-    avisarSeExpirou(resp.status, path)
+    avisarSeExpirou(resp.status, path, isJson ? body.detail : undefined)
     throw new ApiError(resp.status, isJson ? body.detail : body)
   }
   return body as T
@@ -60,7 +65,7 @@ async function postForm<T>(path: string, form: FormData): Promise<T> {
   const isJson = resp.headers.get("content-type")?.includes("application/json")
   const body = isJson ? await resp.json() : await resp.text()
   if (!resp.ok) {
-    avisarSeExpirou(resp.status, path)
+    avisarSeExpirou(resp.status, path, isJson ? body.detail : undefined)
     throw new ApiError(resp.status, isJson ? body.detail : body)
   }
   return body as T

@@ -1,0 +1,353 @@
+"""Quem pode fazer o quê numa empresa (06/10/2026).
+
+Duas travas, conferidas no mesmo lugar (`conferir`, chamada por
+`deps.prestador_atual_id` — toda rota de empresa passa por lá):
+
+1. **Contador.** "O contador deve fazer tudo pelo cliente... a conta
+   cliente autoriza o que quer que o contador faça... só ver, conciliar,
+   emitir nota e por aí vai." O dono convida pelo e-mail e marca as
+   permissões (`PERMISSOES`). Ver é sempre liberado; o resto, só o que foi
+   marcado. Cada rota que muda algo está em `REGRAS` — rota nova que não
+   estiver lá é RECUSADA pro contador (e `tests/test_contador.py` acusa).
+   O que o contador faz fica registrado (`RegistroContador`, só o título).
+
+2. **Sem assinatura.** Com `BLOQUEIO_ATIVO`, empresa cujo teste acabou fica
+   só pra consulta: ver e baixar o que é dela, assinar, apagar os dados.
+
+O dono continua em `usuario_prestador`; o contador fica em `acesso_contador`
+— nada do que trata "dono" (apagar empresa/conta, assinatura) enxerga ele.
+"""
+from __future__ import annotations
+
+import datetime
+import re
+import uuid
+
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+
+from app.config import get_settings
+from app.database import definir_prestador_atual
+from app.models import AcessoContador, Assinatura, Prestador, RegistroContador, Usuario, UsuarioPrestador
+
+# id -> (nome na tela, explicação)
+PERMISSOES: dict[str, tuple[str, str]] = {
+    "emitir": ("Gerar e cancelar notas", "Criar, assinar, enviar à prefeitura e cancelar notas — uma a uma ou em lote."),
+    "enviar": ("Enviar notas aos clientes", "Mandar as notas por e-mail, WhatsApp ou Google Drive e marcar como enviadas."),
+    "tomadores": ("Cadastrar e editar tomadores", "Incluir, alterar e arquivar os clientes para quem a empresa emite."),
+    "financeiro": ("Lançar e conciliar no Financeiro", "Registrar recebimentos e despesas, importar extrato, conciliar e fechar o mês."),
+    "empresa": ("Alterar dados da empresa", "Dados cadastrais, alíquota, certificado A1 e preferências de emissão."),
+}
+
+LIVRE = "livre"  # não muda nada (prévia, busca): qualquer contador
+NUNCA = "nunca"  # só o dono
+
+_MUDA = "POST|PUT|PATCH|DELETE"
+# (métodos, caminho, permissão, o que fica no registro). A primeira que casar vale.
+_REGRAS_BRUTAS: list[tuple[str, str, str, str]] = [
+    # só o dono
+    ("GET|" + _MUDA, r"/api/contador/(acessos|historico)(/.*)?", NUNCA, ""),
+    (_MUDA, r"/api/assinatura/.*", NUNCA, ""),
+    ("DELETE", r"/api/empresa", NUNCA, ""),
+    (_MUDA, r"/api/dados/limpar", NUNCA, ""),
+    (_MUDA, r"/api/importar/nacional/limpar", NUNCA, ""),
+    (_MUDA, r"/api/parceiros(/.*)?", NUNCA, ""),
+    (_MUDA, r"/api/gestao/.*", NUNCA, ""),
+    (_MUDA, r"/api/vinculos/publicar-sugestoes", NUNCA, ""),
+    ("PUT", r"/api/empresa/modulos", NUNCA, ""),
+    # não mudam nada
+    ("POST", r"/api/cep/buscar", LIVRE, ""),
+    ("POST", r"/api/dps/conferir", LIVRE, ""),
+    ("POST", r"/api/lotes/previa", LIVRE, ""),
+    ("POST", r"/api/shopee/previa", LIVRE, ""),
+    ("POST", r"/api/importar/planilha/previa", LIVRE, ""),
+    ("POST", r"/api/recebimentos/extrato", LIVRE, ""),
+    ("POST", r"/api/tomadores/ler-nota", LIVRE, ""),
+    ("POST", r"/api/vinculos/[^/]+/identificar", LIVRE, ""),
+    # enviar notas
+    ("POST", r"/api/dps/[^/]+/enviar-email", "enviar", "Enviou uma nota por e-mail"),
+    ("POST", r"/api/dps/[^/]+/enviar-geral", "enviar", "Enviou uma nota por e-mail"),
+    ("POST", r"/api/dps/[^/]+/whatsapp", "enviar", "Preparou o envio de uma nota por WhatsApp"),
+    ("POST", r"/api/dps/[^/]+/drive", "enviar", "Guardou uma nota no Google Drive"),
+    ("POST", r"/api/dps/[^/]+/envios", "enviar", "Registrou o envio de uma nota"),
+    ("POST", r"/api/dps/[^/]+/marcar-enviada", "enviar", "Marcou uma nota como enviada"),
+    ("POST", r"/api/envios/[^/]+/marcar-(enviado|falha)", "enviar", "Atualizou o envio de uma nota"),
+    ("POST", r"/api/pacote/email", "enviar", "Enviou um pacote de notas por e-mail"),
+    # gerar / cancelar notas
+    ("POST", r"/api/dps", "emitir", "Criou uma nota"),
+    ("POST", r"/api/dps/importar-csv", "emitir", "Criou notas a partir de uma planilha"),
+    ("POST", r"/api/dps/[^/]+/assinar", "emitir", "Assinou uma nota"),
+    ("POST", r"/api/dps/[^/]+/submeter", "emitir", "Enviou uma nota à prefeitura"),
+    ("POST", r"/api/dps/[^/]+/corrigir-reenviar", "emitir", "Corrigiu e reenviou uma nota"),
+    ("POST", r"/api/dps/[^/]+/cancelar", "emitir", "Cancelou uma nota"),
+    ("POST", r"/api/dps/[^/]+/origem", "emitir", "Alterou a origem de uma nota"),
+    ("PATCH", r"/api/dps/[^/]+/tomador", "emitir", "Alterou o tomador de uma nota"),
+    ("DELETE", r"/api/dps/[^/]+", "emitir", "Apagou um rascunho de nota"),
+    ("POST", r"/api/shopee/gerar", "emitir", "Gerou notas em lote (relatório)"),
+    ("POST", r"/api/awin/ordem", "emitir", "Leu uma ordem de faturamento"),
+    ("POST", r"/api/lotes", "emitir", "Iniciou uma ação em lote"),
+    ("POST", r"/api/lotes/[^/]+/(cancelar|refazer-falhas|retomar)", "emitir", "Mexeu numa ação em lote"),
+    ("POST", r"/api/importar/nacional(/buscar)?", "emitir", "Importou notas do Emissor Nacional"),
+    # tomadores
+    ("POST", r"/api/vinculos", "tomadores", "Cadastrou um tomador"),
+    ("PATCH|DELETE", r"/api/vinculos/[^/]+(/tomador)?", "tomadores", "Alterou um tomador"),
+    ("POST", r"/api/vinculos/controle", "tomadores", "Alterou o controle de um cliente"),
+    ("POST|PATCH", r"/api/financeiro/clientes(/[^/]+)?", "tomadores", "Alterou um cliente"),
+    # financeiro
+    (_MUDA, r"/api/pagamentos(/[^/]+)?", "financeiro", "Alterou um recebimento"),
+    ("POST", r"/api/recebimentos/extrato/confirmar", "financeiro", "Importou um extrato"),
+    ("POST", r"/api/conciliacao/.*", "financeiro", "Conciliou lançamentos"),
+    (_MUDA, r"/api/despesas(/[^/]+)?", "financeiro", "Alterou uma despesa"),
+    ("POST", r"/api/financeiro/conciliar", "financeiro", "Conciliou notas e recebimentos"),
+    (_MUDA, r"/api/financeiro/contas-fixas(/[^/]+)?", "financeiro", "Alterou uma conta fixa"),
+    (_MUDA, r"/api/financeiro/rotinas(/.*)?", "financeiro", "Alterou as rotinas do mês"),
+    (_MUDA, r"/api/financeiro/anotacoes(/[^/]+)?", "financeiro", "Alterou uma anotação"),
+    ("POST", r"/api/importar/planilha", "financeiro", "Importou uma planilha de controle"),
+    (_MUDA, r"/api/calendario/.*", "financeiro", "Alterou a agenda"),
+    ("POST", r"/api/painel/pendencias/ignorar", "financeiro", "Marcou uma pendência como resolvida"),
+    # dados da empresa
+    ("PATCH", r"/api/prestador(/.*)?", "empresa", "Alterou os dados da empresa"),
+    ("POST", r"/api/certificado", "empresa", "Trocou o certificado A1"),
+    ("POST|DELETE", r"/api/drive(/conectar)?", "empresa", "Alterou a ligação com o Google Drive"),
+]
+REGRAS = [(set(m.split("|")), re.compile(c + r"/?"), p, r) for m, c, p, r in _REGRAS_BRUTAS]
+
+# Com a empresa sem assinatura, isto continua funcionando (além de ver tudo).
+_LIVRE_SEM_ASSINATURA = re.compile(
+    r"/api/(assinatura/.*|empresa|dados/limpar|cep/buscar|contador/acessos(/.*)?|drive)/?"
+)
+
+MENSAGEM_BLOQUEIO = {
+    "teste_acabou": "O teste grátis desta empresa terminou. Pra continuar gerando notas e lançando, assine um plano em Minha conta › Assinatura.",
+    "cancelada": "A assinatura desta empresa foi encerrada. Pra voltar a usar, assine de novo em Minha conta › Assinatura.",
+    "sem_assinatura": "Esta empresa está sem assinatura. Assine um plano em Minha conta › Assinatura.",
+}
+
+
+class AcessoError(Exception):
+    pass
+
+
+def classificar(metodo: str, caminho: str) -> tuple[str, str]:
+    """(permissão exigida do contador, título pro registro). GET sem regra
+    é livre; qualquer outra coisa sem regra é só do dono."""
+    metodo = metodo.upper()
+    for metodos, padrao, permissao, rotulo in REGRAS:
+        if metodo in metodos and padrao.fullmatch(caminho):
+            return permissao, rotulo
+    return (LIVRE, "") if metodo in ("GET", "HEAD", "OPTIONS") else (NUNCA, "")
+
+
+# --- papel de quem está logado ----------------------------------------------
+
+
+def eh_dono(db: Session, usuario: Usuario, prestador_id: uuid.UUID) -> bool:
+    return usuario.prestador_id == prestador_id or db.get(UsuarioPrestador, (usuario.id, prestador_id)) is not None
+
+
+def acesso_de_contador(db: Session, usuario_id: uuid.UUID, prestador_id: uuid.UUID) -> AcessoContador | None:
+    return db.query(AcessoContador).filter_by(usuario_id=usuario_id, prestador_id=prestador_id, status="ativo").one_or_none()
+
+
+def papel(db: Session, usuario: Usuario, prestador_id: uuid.UUID) -> tuple[str, list[str]]:
+    """("dono", todas) ou ("contador", as que o dono marcou)."""
+    if eh_dono(db, usuario, prestador_id):
+        return "dono", list(PERMISSOES)
+    acesso = acesso_de_contador(db, usuario.id, prestador_id)
+    if acesso is None:
+        return "dono", list(PERMISSOES)  # não deveria acontecer: empresa_ativa já conferiu
+    return "contador", [p for p in PERMISSOES if p in (acesso.permissoes or [])]
+
+
+def situacao(db: Session, prestador_id: uuid.UUID) -> dict:
+    """Situação da assinatura da empresa + se o bloqueio está valendo."""
+    from app.services.billing import situacao_do_acesso
+
+    definir_prestador_atual(db, prestador_id)
+    assinatura = db.query(Assinatura).filter_by(prestador_id=prestador_id).one_or_none()
+    s = situacao_do_acesso(assinatura)
+    ligado = get_settings().bloqueio_ativo
+    return {
+        **s, "ate": s["ate"].isoformat() if s["ate"] else None,
+        "bloqueio_ativo": ligado,
+        "bloqueado": ligado and not s["liberado"],
+        "mensagem": MENSAGEM_BLOQUEIO.get(s["motivo"]) if ligado and not s["liberado"] else None,
+    }
+
+
+def conferir(db: Session, request, usuario: Usuario, prestador_id: uuid.UUID) -> None:
+    """Recusa (403) o que o contador não pode e (402) o que a empresa sem
+    assinatura não pode. Chamada em toda rota de empresa."""
+    from app.services.demo import eh_email_demo
+
+    metodo, caminho = request.method.upper(), request.url.path
+    if not eh_dono(db, usuario, prestador_id):
+        acesso = acesso_de_contador(db, usuario.id, prestador_id)
+        permissao, rotulo = classificar(metodo, caminho)
+        if acesso is None or permissao == NUNCA:
+            raise HTTPException(status_code=403, detail="Isso só quem é dono da empresa pode fazer. Você está nela como contador(a).")
+        if permissao != LIVRE:
+            if permissao not in (acesso.permissoes or []):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"A empresa não liberou isso pra você: “{PERMISSOES[permissao][0]}”. Peça a quem te convidou pra marcar essa permissão.",
+                )
+            if rotulo:
+                # Entra na mesma transação da rota: só fica se ela der commit.
+                db.add(RegistroContador(id=uuid.uuid4(), prestador_id=prestador_id, usuario_id=usuario.id, email=usuario.email, acao=rotulo))
+    if metodo in ("GET", "HEAD", "OPTIONS") or not get_settings().bloqueio_ativo:
+        return
+    if _LIVRE_SEM_ASSINATURA.fullmatch(caminho) or eh_email_demo(usuario.email):
+        return
+    s = situacao(db, prestador_id)
+    if s["bloqueado"]:
+        raise HTTPException(status_code=402, detail=s["mensagem"])
+
+
+# --- o dono administra quem entra -------------------------------------------
+
+
+def _limpar_permissoes(permissoes: list[str]) -> list[str]:
+    return [p for p in PERMISSOES if p in set(permissoes or [])]
+
+
+def _para_dono(db: Session, a: AcessoContador) -> dict:
+    usuario = db.get(Usuario, a.usuario_id) if a.usuario_id else None
+    return {
+        "id": a.id, "email": a.email, "nome": usuario.nome if usuario else None, "status": a.status,
+        "permissoes": _limpar_permissoes(a.permissoes), "criado_em": a.criado_em, "aceito_em": a.aceito_em,
+    }
+
+
+def listar_da_empresa(db: Session, prestador_id: uuid.UUID) -> list[dict]:
+    linhas = db.query(AcessoContador).filter_by(prestador_id=prestador_id).order_by(AcessoContador.criado_em).all()
+    return [_para_dono(db, a) for a in linhas]
+
+
+def convidar(db: Session, prestador_id: uuid.UUID, quem: Usuario, email: str, permissoes: list[str]) -> AcessoContador:
+    email = (email or "").strip().lower()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise AcessoError("Confira o e-mail do contador.")
+    if email == (quem.email or "").lower():
+        raise AcessoError("Esse é o seu próprio e-mail — você já tem acesso total à empresa.")
+    existente_usuario = db.query(Usuario).filter_by(email=email).one_or_none()
+    if existente_usuario is not None and eh_dono(db, existente_usuario, prestador_id):
+        raise AcessoError("Essa pessoa já é dona desta empresa aqui na Ana.")
+    if db.query(AcessoContador).filter_by(prestador_id=prestador_id, email=email).one_or_none() is not None:
+        raise AcessoError("Esse e-mail já foi convidado. Você pode mudar as permissões dele na lista.")
+    acesso = AcessoContador(
+        id=uuid.uuid4(), prestador_id=prestador_id, email=email, permissoes=_limpar_permissoes(permissoes),
+        status="pendente", convidado_por=quem.email,
+    )
+    db.add(acesso)
+    db.flush()
+    return acesso
+
+
+def _da_empresa(db: Session, prestador_id: uuid.UUID, acesso_id: uuid.UUID) -> AcessoContador:
+    acesso = db.get(AcessoContador, acesso_id)
+    if acesso is None or acesso.prestador_id != prestador_id:
+        raise AcessoError("Acesso não encontrado.")
+    return acesso
+
+
+def mudar_permissoes(db: Session, prestador_id: uuid.UUID, acesso_id: uuid.UUID, permissoes: list[str]) -> AcessoContador:
+    acesso = _da_empresa(db, prestador_id, acesso_id)
+    acesso.permissoes = _limpar_permissoes(permissoes)
+    db.flush()
+    return acesso
+
+
+def remover(db: Session, prestador_id: uuid.UUID, acesso_id: uuid.UUID) -> None:
+    db.delete(_da_empresa(db, prestador_id, acesso_id))
+    db.flush()
+
+
+def historico(db: Session, prestador_id: uuid.UUID, limite: int = 100) -> list[dict]:
+    linhas = (
+        db.query(RegistroContador).filter_by(prestador_id=prestador_id)
+        .order_by(RegistroContador.quando.desc()).limit(limite).all()
+    )
+    return [{"id": r.id, "email": r.email, "acao": r.acao, "quando": r.quando} for r in linhas]
+
+
+# --- o contador -------------------------------------------------------------
+
+
+def _empresa(db: Session, prestador_id: uuid.UUID) -> Prestador | None:
+    definir_prestador_atual(db, prestador_id)
+    return db.get(Prestador, prestador_id)
+
+
+def tem_algo(db: Session, usuario: Usuario) -> bool:
+    """Mostra "Empresas que atendo" no menu? (atende alguém ou tem convite)."""
+    return db.query(AcessoContador.id).filter(
+        (AcessoContador.usuario_id == usuario.id) | ((AcessoContador.email == usuario.email) & (AcessoContador.status == "pendente"))
+    ).first() is not None
+
+
+def do_contador(db: Session, usuario: Usuario, voltar_para: uuid.UUID) -> dict:
+    """Convites esperando resposta e empresas que este login atende. Lê o
+    nome de cada empresa trocando o contexto e devolve o contexto no fim."""
+    from app.services.prontidao import prontidao
+
+    convites, clientes = [], []
+    try:
+        pendentes = db.query(AcessoContador).filter_by(email=usuario.email, status="pendente").order_by(AcessoContador.criado_em).all()
+        ativos = db.query(AcessoContador).filter_by(usuario_id=usuario.id, status="ativo").order_by(AcessoContador.aceito_em).all()
+        for a in pendentes:
+            p = _empresa(db, a.prestador_id)
+            if p is not None:
+                convites.append({
+                    "id": a.id, "empresa": p.razao_social, "cnpj": p.cpf_cnpj, "convidado_por": a.convidado_por,
+                    "permissoes": _limpar_permissoes(a.permissoes), "criado_em": a.criado_em,
+                })
+        for a in ativos:
+            p = _empresa(db, a.prestador_id)
+            if p is None:
+                continue
+            pronta = prontidao(db, a.prestador_id)
+            clientes.append({
+                "id": a.id, "prestador_id": a.prestador_id, "empresa": p.razao_social, "nome_fantasia": p.nome_fantasia, "cnpj": p.cpf_cnpj,
+                "permissoes": _limpar_permissoes(a.permissoes), "desde": a.aceito_em, "modulos": list(p.modulos or []),
+                "pode_emitir": bool(pronta.get("pode_emitir")), "aviso": pronta.get("motivo"),
+                "situacao": situacao(db, a.prestador_id),
+            })
+    finally:
+        definir_prestador_atual(db, voltar_para)
+    return {"convites": convites, "clientes": clientes}
+
+
+def _convite_do_usuario(db: Session, usuario: Usuario, acesso_id: uuid.UUID) -> AcessoContador:
+    acesso = db.get(AcessoContador, acesso_id)
+    if acesso is None or acesso.status != "pendente" or acesso.email != usuario.email:
+        raise AcessoError("Convite não encontrado. Ele pode ter sido cancelado.")
+    return acesso
+
+
+def aceitar(db: Session, usuario: Usuario, acesso_id: uuid.UUID) -> AcessoContador:
+    """Só o dono do e-mail convidado (com e-mail confirmado) aceita."""
+    if not usuario.email_confirmado:
+        raise AcessoError("Confirme o seu e-mail antes de aceitar o convite.")
+    acesso = _convite_do_usuario(db, usuario, acesso_id)
+    acesso.usuario_id = usuario.id
+    acesso.status = "ativo"
+    acesso.aceito_em = datetime.datetime.now(datetime.timezone.utc)
+    db.flush()
+    return acesso
+
+
+def recusar(db: Session, usuario: Usuario, acesso_id: uuid.UUID) -> None:
+    db.delete(_convite_do_usuario(db, usuario, acesso_id))
+    db.flush()
+
+
+def sair(db: Session, usuario: Usuario, acesso_id: uuid.UUID) -> uuid.UUID:
+    """O contador deixa de atender a empresa. Devolve o id da empresa."""
+    acesso = db.get(AcessoContador, acesso_id)
+    if acesso is None or acesso.usuario_id != usuario.id:
+        raise AcessoError("Acesso não encontrado.")
+    prestador_id = acesso.prestador_id
+    db.delete(acesso)
+    db.flush()
+    return prestador_id

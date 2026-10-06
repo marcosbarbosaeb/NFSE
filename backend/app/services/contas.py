@@ -115,7 +115,16 @@ def empresa_ativa(db: Session, request, usuario: Usuario) -> uuid.UUID:
 
 
 def tem_acesso(db: Session, usuario_id: uuid.UUID, prestador_id: uuid.UUID) -> bool:
-    return db.get(UsuarioPrestador, (usuario_id, prestador_id)) is not None
+    """Dono (usuario_prestador) ou contador autorizado (acesso_contador)."""
+    if db.get(UsuarioPrestador, (usuario_id, prestador_id)) is not None:
+        return True
+    from app.services.acesso import acesso_de_contador
+
+    return acesso_de_contador(db, usuario_id, prestador_id) is not None
+
+
+def eh_dono(db: Session, usuario: Usuario, prestador_id: uuid.UUID) -> bool:
+    return usuario.prestador_id == prestador_id or db.get(UsuarioPrestador, (usuario.id, prestador_id)) is not None
 
 
 def listar_sessoes(db: Session, usuario_id: uuid.UUID, atual: str | None) -> list[dict]:
@@ -221,7 +230,23 @@ def listar_empresas(db: Session, usuario: Usuario) -> list[dict]:
         definir_prestador_atual(db, prestador_id)
         p = db.get(Prestador, prestador_id)
         if p is not None:
-            empresas.append({"id": p.id, "razao_social": p.razao_social, "nome_fantasia": p.nome_fantasia, "cnpj": p.cpf_cnpj})
+            empresas.append({"id": p.id, "razao_social": p.razao_social, "nome_fantasia": p.nome_fantasia, "cnpj": p.cpf_cnpj, "papel": "dono"})
+    return empresas
+
+
+def listar_empresas_atendidas(db: Session, usuario: Usuario) -> list[dict]:
+    """Empresas em que este login entra como contador (pro seletor de empresa)."""
+    from app.models import AcessoContador
+
+    proprias = {p for (p,) in db.query(UsuarioPrestador.prestador_id).filter_by(usuario_id=usuario.id)} | {usuario.prestador_id}
+    empresas = []
+    for (prestador_id,) in db.query(AcessoContador.prestador_id).filter_by(usuario_id=usuario.id, status="ativo").order_by(AcessoContador.aceito_em):
+        if prestador_id in proprias:
+            continue
+        definir_prestador_atual(db, prestador_id)
+        p = db.get(Prestador, prestador_id)
+        if p is not None:
+            empresas.append({"id": p.id, "razao_social": p.razao_social, "nome_fantasia": p.nome_fantasia, "cnpj": p.cpf_cnpj, "papel": "contador"})
     return empresas
 
 

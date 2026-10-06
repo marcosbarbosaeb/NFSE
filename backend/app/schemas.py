@@ -497,6 +497,14 @@ class UsuarioResponse(BaseModel):
     teste: bool = False
     # Produtos ligados na empresa ativa: "emissor", "financeiro" (05/10/2026).
     modulos: list[str] = ["emissor"]
+    # Na empresa ativa: "dono" ou "contador" (06/10/2026) e, pro contador, o
+    # que o dono liberou (ver app/services/acesso.py).
+    papel: str = "dono"
+    permissoes: list[str] = []
+    # Este login atende empresas como contador (ou tem convite esperando).
+    atende_empresas: bool = False
+    # Assinatura da empresa ativa: liberado/motivo/dias_restantes/bloqueado.
+    acesso: dict = {}
 
 
 class ModulosRequest(BaseModel):
@@ -968,6 +976,11 @@ class AssinaturaResponse(BaseModel):
     ativa: bool
     trial_termina_em: datetime | None = None
     tem_assinatura_stripe: bool
+    # cortesia | assinatura | pagamento_pendente | liberacao | teste | teste_acabou | cancelada | sem_assinatura
+    situacao: str = "teste"
+    liberado_ate: datetime | None = None
+    # Se o bloqueio de quem não tem assinatura está valendo (BLOQUEIO_ATIVO).
+    bloqueio_ativo: bool = False
     # Planos por módulo (05/10/2026): o contratado, os que dá pra assinar e
     # se os módulos da empresa estão presos ao plano.
     plano: str | None = None
@@ -1366,6 +1379,8 @@ class EmpresaResponse(BaseModel):
     nome_fantasia: str | None = None
     cnpj: str
     ativa: bool = False
+    # "dono" ou "contador" (empresa de cliente que este login atende)
+    papel: str = "dono"
 
 
 class EmpresaCriarRequest(BaseModel):

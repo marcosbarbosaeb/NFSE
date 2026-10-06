@@ -629,7 +629,13 @@ Cada anotação vira um card. Tudo salva sozinho. Dá pra mudar o nome, trocar o
 
 ### Período de teste
 
-A conta nova começa num período de teste gratuito de 14 dias, sem cartão. Em "Minha conta", aba "Assinatura", aparece quantos dias restam. Quando o teste acabar, a tela pede pra assinar pra continuar usando a Ana sem interrupção.
+A conta nova começa num período de teste gratuito de 14 dias, sem cartão. Em "Minha conta", aba "Assinatura", aparece quantos dias restam (e, nos últimos 5 dias, um aviso no topo da tela).
+
+### Quando o teste acaba
+
+Nada é apagado. A empresa fica **só pra consulta**: você continua entrando, vendo e baixando notas, tomadores e lançamentos, mas não consegue gerar ou enviar notas nem fazer lançamentos novos. No topo aparece a faixa "O teste grátis desta empresa terminou" com o botão "Assinar agora". Assinando um plano, tudo volta na hora. O mesmo vale se a assinatura for cancelada.
+
+Se o pagamento de um mês falhar, a conta não trava na hora: o cartão é cobrado de novo nos dias seguintes. Atualize a forma de pagamento em "Assinatura" pra não perder o acesso.
 
 ### Planos
 
@@ -701,6 +707,23 @@ Em "Empresa", aba "Limpar e excluir", o bloco "Limpar dados" apaga dados da empr
 - **"Excluir minha conta"** ("Minha conta" › "Perfil"): apaga o seu login e as empresas em que você é o único usuário. A Ana pede pra digitar EXCLUIR. Se tiver assinatura ativa, cancele antes em "Assinatura" pra não ser cobrado de novo.
 
 Nos dois casos não tem como desfazer, e as notas já emitidas continuam válidas na Receita.
+
+### Dar acesso ao contador
+
+Em "Empresa" › "Contador" você convida o seu contador pelo e-mail dele e marca o que ele pode fazer:
+
+- **Ver as notas e o financeiro** — sempre liberado.
+- **Gerar e cancelar notas** — criar, assinar, enviar à prefeitura e cancelar, uma a uma ou em lote.
+- **Enviar notas aos clientes** — e-mail, WhatsApp, Google Drive e marcar como enviada.
+- **Cadastrar e editar tomadores**.
+- **Lançar e conciliar no Financeiro** — recebimentos, despesas, extrato, conciliação.
+- **Alterar dados da empresa** — cadastro, alíquota, certificado A1 e preferências.
+
+Clique em "Enviar convite". O contador entra com o login dele (você não passa a sua senha). Dá pra mudar as permissões a qualquer momento (vale na hora) ou tirar o acesso pela lixeira. A lista "O que o contador fez" mostra as últimas ações dele. Ficam sempre só com o dono: a assinatura, convidar ou tirar pessoas, ligar e desligar módulos e apagar a empresa ou os dados.
+
+### Para contadores: "Empresas que atendo"
+
+O contador precisa ter a própria conta na Ana, com o mesmo e-mail que o cliente convidou. O convite aparece em "Empresas que atendo" (no menu): "Aceitar" e depois "Abrir empresa". Dentro da empresa do cliente aparece uma faixa azul no topo dizendo o que ele pode fazer ali. As empresas dos clientes ficam também no seletor de empresas, no topo do menu, no grupo "Empresas que atendo". Se o contador tentar algo que o cliente não liberou, a Ana avisa qual permissão falta. "Deixar de atender" tira a empresa da lista.
 
 ### Falar com o suporte
 

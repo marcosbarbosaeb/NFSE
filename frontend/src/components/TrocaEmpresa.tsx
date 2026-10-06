@@ -103,7 +103,9 @@ export function TrocaEmpresa() {
           <Building2 size={16} aria-hidden="true" />
         </span>
         <span className="min-w-0 flex-1 leading-tight">
-          <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">Empresa</span>
+          <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
+            {ativa.papel === "contador" ? "Cliente (contador)" : "Empresa"}
+          </span>
           <span className="block truncate text-sm font-medium text-white" title={nomeEmpresa(ativa)}>
             {nomeEmpresa(ativa)}
           </span>
@@ -117,10 +119,15 @@ export function TrocaEmpresa() {
           id={idLista}
           className="absolute inset-x-0 z-30 mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-slate-700 shadow-xl dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
         >
-          <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Suas empresas</p>
-          <ul className="max-h-72 overflow-y-auto">
-            {empresas.map((e) => (
+          <ul className="max-h-80 overflow-y-auto">
+            {empresas.map((e, i) => (
               <li key={e.id}>
+                {/* Primeiro as próprias, depois as dos clientes (contador). */}
+                {(i === 0 || (e.papel ?? "dono") !== (empresas[i - 1].papel ?? "dono")) && (
+                  <p className={`px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 ${i > 0 ? "mt-1 border-t border-slate-100 dark:border-slate-700" : ""}`}>
+                    {e.papel === "contador" ? "Empresas que atendo" : "Suas empresas"}
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={() => ativar(e)}

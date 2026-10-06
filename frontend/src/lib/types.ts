@@ -7,6 +7,90 @@ export interface Usuario {
   teste?: boolean
   /** Produtos ligados na empresa ativa (emissor, financeiro). */
   modulos?: ("emissor" | "financeiro")[]
+  /** Na empresa ativa: dono ou contador convidado (06/10/2026). */
+  papel?: "dono" | "contador"
+  /** O que o contador pode fazer nela (o dono pode tudo). */
+  permissoes?: PermissaoContador[]
+  /** Este login atende empresas como contador, ou tem convite esperando. */
+  atende_empresas?: boolean
+  /** Assinatura da empresa ativa. */
+  acesso?: SituacaoAcesso
+}
+
+// --- Contador com permissões e bloqueio sem assinatura (06/10/2026) ---
+
+export type PermissaoContador = "emitir" | "enviar" | "tomadores" | "financeiro" | "empresa"
+
+export interface SituacaoAcesso {
+  liberado: boolean
+  /** cortesia | assinatura | pagamento_pendente | liberacao | teste | teste_acabou | cancelada | sem_assinatura */
+  motivo: string
+  ate: string | null
+  dias_restantes: number | null
+  /** O bloqueio de quem não tem assinatura está valendo na plataforma. */
+  bloqueio_ativo?: boolean
+  /** Empresa só pra consulta: não gera, não envia, não lança. */
+  bloqueado?: boolean
+  mensagem?: string | null
+}
+
+export interface PermissaoInfo {
+  id: PermissaoContador
+  nome: string
+  descricao: string
+}
+
+export interface AcessoContador {
+  id: string
+  email: string
+  nome: string | null
+  status: "pendente" | "ativo"
+  permissoes: PermissaoContador[]
+  criado_em: string | null
+  aceito_em: string | null
+}
+
+export interface RegistroContador {
+  id: string
+  email: string
+  acao: string
+  quando: string
+}
+
+export interface AcessosDaEmpresa {
+  permissoes: PermissaoInfo[]
+  acessos: AcessoContador[]
+  historico: RegistroContador[]
+}
+
+export interface ConviteContador {
+  id: string
+  empresa: string
+  cnpj: string
+  convidado_por: string | null
+  permissoes: PermissaoContador[]
+  criado_em: string | null
+}
+
+export interface ClienteAtendido {
+  id: string
+  prestador_id: string
+  empresa: string
+  nome_fantasia: string | null
+  cnpj: string
+  permissoes: PermissaoContador[]
+  desde: string | null
+  modulos: string[]
+  pode_emitir: boolean
+  aviso: string | null
+  situacao: SituacaoAcesso
+}
+
+export interface Atendimentos {
+  permissoes: PermissaoInfo[]
+  ativa: string
+  convites: ConviteContador[]
+  clientes: ClienteAtendido[]
 }
 
 export interface CadastroRequest {
@@ -278,6 +362,9 @@ export interface Assinatura {
   ativa: boolean
   trial_termina_em: string | null
   tem_assinatura_stripe: boolean
+  situacao?: string
+  liberado_ate?: string | null
+  bloqueio_ativo?: boolean
   plano?: "emissor" | "financeiro" | "ambos" | null
   planos?: PlanoAssinatura[]
   modulos_pelo_plano?: boolean
@@ -914,6 +1001,8 @@ export interface Empresa {
   nome_fantasia: string | null
   cnpj: string
   ativa: boolean
+  /** "contador" = empresa de um cliente que este login atende. */
+  papel?: "dono" | "contador"
 }
 
 export interface EmpresaCriarRequest {
@@ -1571,6 +1660,11 @@ export interface ContaGestao {
   indicou: number
   indicou_ativos: number
   veio_por: string | null
+  /** Pode usar tudo? (teste, assinatura, liberação da Gestão...) */
+  acesso: SituacaoAcesso
+  liberado_obs: string | null
+  /** Contadores com acesso ativo a esta empresa. */
+  contadores: number
 }
 
 export interface ResumoGestao {
@@ -1584,6 +1678,10 @@ export interface ResumoGestao {
   emitiram_no_mes: number
   /** Situação da assinatura -> quantas contas ("sem assinatura" quando não há). */
   assinaturas: Record<string, number>
+  /** Sem assinatura e sem liberação: quem o bloqueio trava. */
+  sem_acesso: number
+  liberadas_na_mao: number
+  bloqueio_ativo: boolean
   /** Avulsas + lote. */
   notas_mes: number
   notas_total: number

@@ -836,6 +836,12 @@ class Assinatura(Base):
     plano: Mapped[str | None] = mapped_column(String(12))
     # Programa de indicação: % de desconto aplicado hoje no Stripe.
     desconto_indicacao_pct: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
+    # Liberação feita pela Gestão da plataforma (06/10/2026): a empresa usa
+    # tudo mesmo sem assinatura — até uma data, ou sem prazo. Não mexe em
+    # `status` (que continua espelhando o Stripe / o teste grátis).
+    liberado_ate: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    liberado_sempre: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
+    liberado_obs: Mapped[str | None] = mapped_column(String(200))
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
@@ -1067,3 +1073,52 @@ class ComissaoParceiro(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (Index("ix_comissao_parceiro_parceiro", "parceiro_id", "competencia"),)
+
+
+# --- Contador: acesso de terceiros à empresa, com permissões (06/10/2026) ---
+
+class AcessoContador(Base):
+    """A empresa autoriza um contador (pelo e-mail) a entrar nela e escolhe
+    o que ele pode fazer (`permissoes`, ver app/services/acesso.py). Nasce
+    "pendente" (convite) e vira "ativo" quando o dono daquele e-mail aceita.
+
+    Fica FORA de `usuario_prestador` de propósito: lá é quem é DONO da
+    empresa (apagar empresa/conta, assinatura, Gestão contam com isso).
+    Sem RLS: é consultada antes de saber qual empresa está ativa e o
+    contador lista as empresas que atende."""
+
+    __tablename__ = "acesso_contador"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False)
+    email: Mapped[str] = mapped_column(String(200), nullable=False)
+    usuario_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("usuario.id", ondelete="CASCADE"))
+    permissoes: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pendente", server_default="pendente")
+    convidado_por: Mapped[str | None] = mapped_column(String(200))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    aceito_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("prestador_id", "email", name="uq_acesso_contador_empresa_email"),
+        CheckConstraint("status IN ('pendente', 'ativo')", name="ck_acesso_contador_status"),
+        Index("ix_acesso_contador_usuario", "usuario_id"),
+        Index("ix_acesso_contador_email", "email"),
+    )
+
+
+class RegistroContador(Base):
+    """O que o contador fez na empresa (só o título da ação, nunca o
+    conteúdo). O dono vê em Empresa › Contador. Sem RLS; sempre filtrada
+    por `prestador_id` no código."""
+
+    __tablename__ = "registro_contador"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False)
+    usuario_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("usuario.id", ondelete="SET NULL"))
+    email: Mapped[str] = mapped_column(String(200), nullable=False)
+    acao: Mapped[str] = mapped_column(String(200), nullable=False)
+    quando: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("ix_registro_contador_empresa", "prestador_id", "quando"),)

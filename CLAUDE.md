@@ -35,6 +35,16 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
   não é público: só a Gestão baixa.
 - Ambiente de teste da plataforma: `AMBIENTE_TESTE=true` no serviço de teste. Toda conta vira conta de teste,
   só sai nota de homologação (trava final em `motor_emissao.submeter`) e e-mail de nota vai só pro login de quem testa.
+- Contador (`app/services/acesso.py`, `app/contador.py`): o dono convida por e-mail e marca permissões; o contador fica em
+  `acesso_contador` — NUNCA em `usuario_prestador` (lá é dono: apagar empresa/conta contam com isso). A trava mora em
+  `deps.prestador_atual_id` → `acesso.conferir`. **Rota nova que muda algo tem que entrar em `acesso.REGRAS`**
+  (permissão, LIVRE ou NUNCA); sem regra ela é recusada pro contador e `tests/test_contador.py` acusa.
+  Empresa de cliente nunca vira `usuario.prestador_id` (fica só na sessão).
+- Bloqueio sem assinatura: `BLOQUEIO_ATIVO=true` deixa a empresa com teste vencido/cancelada só pra consulta (402 em
+  tudo que muda, menos assinar/apagar). Desligado em produção até o Stripe estar recebendo. A Gestão libera na mão
+  (`assinatura.liberado_ate/liberado_sempre`); a regra única é `billing.situacao_do_acesso`.
+- Fluxo de publicação: tudo vai primeiro pra branch `teste` (ambiente `teste` do Railway, app-teste.up.railway.app);
+  só depois de conferido lá entra na `main`.
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.
 - Segredos (Stripe, Resend, Google) só nas variáveis do Railway — nunca no código nem em conversa.
 

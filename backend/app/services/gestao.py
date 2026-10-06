@@ -21,6 +21,7 @@ import uuid
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import definir_prestador_atual
 from app.tempo import hoje as hoje_br
 
@@ -60,6 +61,20 @@ def _data(valor) -> str | None:
     return valor.isoformat() if valor is not None else None
 
 
+def _acesso(empresa, agora: datetime.datetime) -> dict:
+    """Mesma regra de billing.situacao_do_acesso, a partir da linha lida aqui."""
+    from types import SimpleNamespace
+
+    from app.services.billing import situacao_do_acesso
+
+    assinatura = None if empresa["assinatura"] is None else SimpleNamespace(
+        status=empresa["assinatura"], trial_termina_em=empresa["trial_termina_em"],
+        liberado_ate=empresa["liberado_ate"], liberado_sempre=bool(empresa["liberado_sempre"]),
+    )
+    s = situacao_do_acesso(assinatura, agora)
+    return {**s, "ate": _data(s["ate"])}
+
+
 def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | None = None) -> dict:
     hoje = hoje or hoje_br()
     # O mês começa à meia-noite de Brasília (UTC-3), não à meia-noite UTC.
@@ -87,6 +102,11 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
         )).all()
     }
 
+    contadores = dict(db.execute(text(
+        "SELECT prestador_id, count(*) FROM acesso_contador WHERE status = 'ativo' GROUP BY prestador_id"
+    )).all())
+    agora = datetime.datetime.now(datetime.timezone.utc)
+
     contas: list[dict] = []
     try:
         for prestador_id, pessoas in logins.items():
@@ -94,7 +114,7 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
             empresa = db.execute(text("""
                 SELECT p.razao_social, p.cpf_cnpj, p.cod_municipio, p.criado_em, p.demo, p.modo_teste, p.modulos,
                        (p.drive_token IS NOT NULL) AS drive,
-                       a.status AS assinatura, a.plano, a.trial_termina_em,
+                       a.status AS assinatura, a.plano, a.trial_termina_em, a.liberado_ate, a.liberado_sempre, a.liberado_obs,
                        c.validade AS certificado_validade, (c.id IS NOT NULL) AS tem_certificado,
                        (SELECT count(*) FROM indicacao i WHERE i.indicador_id = p.id) AS indicou,
                        (SELECT count(*) FROM indicacao i WHERE i.indicador_id = p.id AND i.status = 'ativa') AS indicou_ativos,
@@ -107,6 +127,7 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
             if empresa is None:
                 continue
             n = db.execute(_CONTAGENS, {"mes": inicio_mes}).mappings().one()
+            acesso = _acesso(empresa, agora)
             acessos = [u["ultimo_acesso"] for u in pessoas if u["ultimo_acesso"] is not None]
             ultimo_acesso = max(acessos) if acessos else None
             validade = empresa["certificado_validade"]
@@ -116,6 +137,9 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
                 "criada_em": _data(empresa["criado_em"]), "demo": bool(empresa["demo"]), "modo_teste": bool(empresa["modo_teste"]),
                 "modulos": list(empresa["modulos"] or []),
                 "assinatura": empresa["assinatura"], "plano": empresa["plano"], "trial_termina_em": _data(empresa["trial_termina_em"]),
+                # liberado? por quê? (teste, assinatura, liberação da gestão...)
+                "acesso": acesso, "liberado_obs": empresa["liberado_obs"],
+                "contadores": contadores.get(prestador_id, 0),
                 "certificado": "falta" if not empresa["tem_certificado"] else ("vencido" if validade is not None and validade < hoje else "ok"),
                 "logins": [
                     {"email": u["email"], "nome": u["nome"], "confirmado": bool(u["email_confirmado"]), "ativo": bool(u["ativo"]), "ultimo_acesso": _data(u["ultimo_acesso"])}
@@ -164,6 +188,10 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
             "ativas_30_dias": sum(1 for c in reais if c["dias_sem_acesso"] is not None and c["dias_sem_acesso"] <= 30),
             "emitiram_no_mes": sum(1 for c in reais if c["notas_mes"] + c["notas_lote_mes"] > 0),
             "assinaturas": por_assinatura,
+            # sem assinatura e sem liberação: é quem o bloqueio trava
+            "sem_acesso": sum(1 for c in reais if not c["acesso"]["liberado"]),
+            "liberadas_na_mao": sum(1 for c in reais if c["acesso"]["motivo"] == "liberacao"),
+            "bloqueio_ativo": get_settings().bloqueio_ativo,
             "notas_mes": sum(c["notas_mes"] + c["notas_lote_mes"] for c in reais),
             "notas_total": sum(c["notas_total"] for c in reais),
             "emails_mes": sum(c["emails_mes"] for c in reais),

@@ -99,7 +99,7 @@ export function GestaoPage() {
       }
       abas={[
         { id: "visao", rotulo: "Visão geral", icone: LayoutDashboard, conteudo: comPainel((p) => <VisaoGeralGestao painel={p} />) },
-        { id: "contas", rotulo: "Contas", icone: Building2, conteudo: comPainel((p) => <ContasGestao painel={p} />) },
+        { id: "contas", rotulo: "Contas", icone: Building2, conteudo: comPainel((p) => <ContasGestao painel={p} aoMudar={carregar} />) },
         { id: "emails", rotulo: "E-mails", icone: Mail, conteudo: comPainel((p) => <EmailsGestao painel={p} />) },
         {
           id: "parceiras",

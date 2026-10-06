@@ -1,4 +1,4 @@
-import {
+import { BriefcaseBusiness,
   Building2,
   CheckCircle2,
   DownloadCloud,
@@ -18,6 +18,7 @@ import { type FormEvent, type ReactNode, type SelectHTMLAttributes, useEffect, u
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom"
 import { CHAMADA_NACIONAL, useEmpresaVazia } from "../components/ComecarPeloNacional"
 import { EditorModeloEmail, type ValorModeloEmail } from "../components/EditorModeloEmail"
+import { ContadorCard } from "../components/ContadorCard"
 import { ImportarEmissorModal } from "../components/ImportarEmissorModal"
 import { PaginaAbas, TituloSecao } from "../components/PaginaAbas"
 import { avisarEmpresaAtualizada } from "../components/TrocaEmpresa"
@@ -30,6 +31,7 @@ import { Field } from "../components/ui/Field"
 import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useAuth } from "../lib/auth"
+import { ehContador } from "../lib/contador"
 import { formatarDocumento, mascararCep, soDigitos } from "../lib/documento"
 import { type Modulo, useModulos } from "../lib/modulos"
 import { excluirComConfirmacao, mensagemDeErro } from "../lib/excluir"
@@ -64,6 +66,7 @@ export function EmpresaPage() {
   const navigate = useNavigate()
 
   const modulos = useModulos()
+  const { usuario } = useAuth()
   useEffect(() => {
     api
       .get<Prestador>("/prestador")
@@ -102,6 +105,7 @@ export function EmpresaPage() {
   // Abas do emissor (e-mails da nota, alíquotas, ambiente, certificado) só
   // pra quem tem o módulo de notas.
   const soEmissor = <T,>(aba: T): T[] => (modulos.emissor ? [aba] : [])
+  const contador = ehContador(usuario)
 
   return (
     <PaginaAbas
@@ -132,8 +136,13 @@ export function EmpresaPage() {
             </div>
           ) }),
         ...soEmissor({ id: "certificado", rotulo: "Certificado", icone: FileBadge, conteudo: () => <CertificadoCard /> }),
-        { id: "modulos", rotulo: "Módulos", icone: LayoutGrid, conteudo: () => <ModulosCard /> },
-        { id: "dados", rotulo: "Limpar e excluir", icone: Trash2, perigo: true, conteudo: () => <AbaDados prestador={prestador} /> },
+        // Contador (06/10/2026): quem mais entra na empresa e o que pode fazer.
+        { id: "contador", rotulo: "Contador", icone: BriefcaseBusiness, conteudo: () => <ContadorCard /> },
+        // Módulos e exclusão são só do dono: o contador nem vê as abas.
+        ...(contador ? [] : [
+          { id: "modulos", rotulo: "Módulos", icone: LayoutGrid, conteudo: () => <ModulosCard /> },
+          { id: "dados", rotulo: "Limpar e excluir", icone: Trash2, perigo: true, conteudo: () => <AbaDados prestador={prestador} /> },
+        ]),
       ]}
     />
   )

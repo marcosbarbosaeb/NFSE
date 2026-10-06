@@ -25,6 +25,7 @@ navegador do prestador não é uma fonte confiável de "paguei" — só o
 webhook, assinado pela Stripe, é).
 """
 import datetime
+import math
 import logging
 import uuid
 
@@ -231,23 +232,58 @@ def criar_assinatura_trial(db: Session, prestador_id: uuid.UUID) -> Assinatura:
     return assinatura
 
 
-def assinatura_esta_ativa(assinatura: Assinatura | None) -> bool:
-    """"Tem acesso liberado?" — cortesia e assinatura Stripe ativa sempre
-    sim; trial só até a data expirar. NÃO usada hoje pra bloquear rota
-    nenhuma do painel (ver docstring de Assinatura em app/models.py: ligar
-    esse bloqueio de verdade fica pra quando houver conta Stripe real pra
-    validar contra ela) — existe já pronta pra quando isso acontecer, e
-    pro card de Configurações mostrar o status certo."""
+def _dias_ate(fim: datetime.datetime, agora: datetime.datetime) -> int:
+    """Dias que faltam, arredondando pra cima (falta 1h = "1 dia", igual à tela de Assinatura)."""
+    return max(0, math.ceil((fim - agora).total_seconds() / 86400))
+
+
+def situacao_do_acesso(assinatura: Assinatura | None, agora: datetime.datetime | None = None) -> dict:
+    """"Esta empresa pode usar tudo?" e por quê. `motivo`:
+    cortesia | assinatura | pagamento_pendente | liberacao | teste (liberados)
+    teste_acabou | cancelada | sem_assinatura (não liberados).
+
+    - "pagamento_pendente": o cartão falhou e o Stripe ainda está tentando;
+      não trava (quando ele desiste, a assinatura vira "cancelada").
+    - "liberacao": a Gestão liberou na mão (`liberado_sempre`/`liberado_ate`).
+    Quem decide se o "não liberado" trava de fato é `BLOQUEIO_ATIVO`
+    (ver app/services/acesso.py)."""
+    agora = agora or datetime.datetime.now(datetime.timezone.utc)
     if assinatura is None:
-        return False
-    if assinatura.status in ("cortesia", "ativa"):
-        return True
+        return {"liberado": False, "motivo": "sem_assinatura", "ate": None, "dias_restantes": None}
+    if assinatura.status == "cortesia":
+        return {"liberado": True, "motivo": "cortesia", "ate": None, "dias_restantes": None}
+    if assinatura.status == "ativa":
+        return {"liberado": True, "motivo": "assinatura", "ate": None, "dias_restantes": None}
+    if assinatura.status == "inadimplente":
+        return {"liberado": True, "motivo": "pagamento_pendente", "ate": None, "dias_restantes": None}
+    if assinatura.liberado_sempre:
+        return {"liberado": True, "motivo": "liberacao", "ate": None, "dias_restantes": None}
+    if assinatura.liberado_ate is not None and assinatura.liberado_ate > agora:
+        return {"liberado": True, "motivo": "liberacao", "ate": assinatura.liberado_ate, "dias_restantes": _dias_ate(assinatura.liberado_ate, agora)}
     if assinatura.status == "trial":
-        if assinatura.trial_termina_em is None:
-            return False
-        agora = datetime.datetime.now(datetime.timezone.utc)
-        return assinatura.trial_termina_em > agora
-    return False
+        fim = assinatura.trial_termina_em
+        if fim is not None and fim > agora:
+            return {"liberado": True, "motivo": "teste", "ate": fim, "dias_restantes": _dias_ate(fim, agora)}
+        return {"liberado": False, "motivo": "teste_acabou", "ate": fim, "dias_restantes": None}
+    return {"liberado": False, "motivo": "cancelada", "ate": None, "dias_restantes": None}
+
+
+def assinatura_esta_ativa(assinatura: Assinatura | None) -> bool:
+    """"Tem acesso liberado?" — ver `situacao_do_acesso`."""
+    return situacao_do_acesso(assinatura)["liberado"]
+
+
+def liberar_acesso(assinatura: Assinatura, *, dias: int | None, sempre: bool, obs: str | None) -> None:
+    """Gestão: libera a empresa sem assinatura. `dias` conta de agora."""
+    assinatura.liberado_sempre = bool(sempre)
+    assinatura.liberado_ate = None if sempre or not dias else datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=dias)
+    assinatura.liberado_obs = (obs or "").strip()[:200] or None
+
+
+def tirar_liberacao(assinatura: Assinatura) -> None:
+    assinatura.liberado_sempre = False
+    assinatura.liberado_ate = None
+    assinatura.liberado_obs = None
 
 
 def _obter_ou_criar_customer(assinatura: Assinatura, prestador: Prestador, email: str) -> str:

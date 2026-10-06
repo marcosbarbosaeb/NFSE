@@ -578,6 +578,8 @@ function badgeVariante(assinatura: Assinatura): "success" | "warning" | "danger"
 }
 
 function AbaAssinatura({ demo }: { demo: boolean }) {
+  const { usuario } = useAuth()
+  const contador = usuario?.papel === "contador"
   const [params] = useSearchParams()
   const retorno = params.get("assinatura") // volta do Stripe (?assinatura=sucesso|cancelado)
   const [assinatura, setAssinatura] = useState<Assinatura | null>(null)
@@ -590,6 +592,18 @@ function AbaAssinatura({ demo }: { demo: boolean }) {
       .then(setAssinatura)
       .catch((err) => setErro(erroDe(err)))
   }, [demo])
+
+  if (contador) {
+    return (
+      <Card className="p-5">
+        <TituloSecao icone={CreditCard}>Assinatura</TituloSecao>
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Você está na empresa de um cliente, como contador(a). A assinatura dela é assunto do dono. Pra ver a assinatura da sua própria
+          empresa, troque de empresa no topo do menu.
+        </p>
+      </Card>
+    )
+  }
 
   if (demo) {
     return (
@@ -685,21 +699,33 @@ function AssinaturaCard({ assinatura, aoMudar }: { assinatura: Assinatura; aoMud
       ? Math.max(0, Math.ceil((new Date(assinatura.trial_termina_em).getTime() - Date.now()) / 86_400_000))
       : null
 
+  // Liberação feita pela Gestão da plataforma (vale mesmo com o teste vencido).
+  const liberadaNaMao = assinatura.situacao === "liberacao"
+
   return (
     <Card className="p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <TituloSecao icone={CreditCard}>Assinatura</TituloSecao>
-        <Badge variant={assinatura.status === "trial" && !assinatura.ativa ? "danger" : badgeVariante(assinatura)}>
-          {STATUS_LABEL[assinatura.status]}
+        <Badge variant={liberadaNaMao ? "success" : assinatura.status === "trial" && !assinatura.ativa ? "danger" : badgeVariante(assinatura)}>
+          {liberadaNaMao ? "Acesso liberado" : STATUS_LABEL[assinatura.status]}
         </Badge>
       </div>
 
       <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
         {assinatura.status === "cortesia" && "Sua conta tem acesso liberado — nada pra fazer aqui."}
+        {liberadaNaMao &&
+          (assinatura.liberado_ate
+            ? `A equipe da Agente Ana liberou o uso desta empresa até ${new Date(assinatura.liberado_ate).toLocaleDateString("pt-BR")}. `
+            : "A equipe da Agente Ana liberou o uso desta empresa, sem prazo. ")}
         {assinatura.status === "trial" &&
+          !liberadaNaMao &&
           (diasRestantesTrial !== null && diasRestantesTrial > 0
-            ? `Você está no período de teste gratuito — ${diasRestantesTrial} dia${diasRestantesTrial === 1 ? "" : "s"} restante${diasRestantesTrial === 1 ? "" : "s"}.`
-            : "Seu período de teste acabou. Assine pra continuar usando a Agente Ana sem interrupção.")}
+            ? `Você está no período de teste gratuito — ${diasRestantesTrial} dia${diasRestantesTrial === 1 ? "" : "s"} restante${diasRestantesTrial === 1 ? "" : "s"}.${
+                assinatura.bloqueio_ativo ? " Quando ele acabar, a empresa fica só pra consulta até você assinar." : ""
+              }`
+            : assinatura.bloqueio_ativo
+              ? "Seu período de teste acabou. A empresa está só pra consulta: assine pra voltar a gerar notas e lançar."
+              : "Seu período de teste acabou. Assine pra continuar usando a Agente Ana sem interrupção.")}
         {assinatura.status === "ativa" && "Sua assinatura está em dia."}
         {assinatura.status === "inadimplente" && "O último pagamento não foi confirmado — atualize a forma de pagamento pra evitar interrupção."}
         {assinatura.status === "cancelada" && "Sua assinatura foi cancelada. Assine de novo pra recuperar o acesso completo."}

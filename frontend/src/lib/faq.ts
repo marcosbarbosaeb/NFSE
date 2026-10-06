@@ -527,7 +527,15 @@ export const FAQ: PerguntaFaq[] = [
     tema: "assinatura",
     pergunta: "Como funciona o período de teste?",
     resposta:
-      "A conta nova começa com um período de teste gratuito, sem precisar cadastrar cartão. Em Minha conta, aba “Assinatura”, eu mostro quantos dias restam. Quando o teste acabar, é só escolher um plano ali mesmo pra continuar usando sem interrupção.",
+      "A conta nova começa com um período de teste gratuito, sem precisar cadastrar cartão. Em Minha conta, aba “Assinatura”, eu mostro quantos dias restam. Quando o teste acabar, é só escolher um plano ali mesmo pra continuar gerando notas e lançando.",
+    link: "/app/conta?aba=assinatura",
+  },
+  {
+    id: "teste-acabou",
+    tema: "assinatura",
+    pergunta: "Meu teste acabou. Perdi minhas notas e meus dados?",
+    resposta:
+      "Não. Nada é apagado: você continua entrando, vendo e baixando tudo o que já está na conta. O que para é gerar e enviar notas e fazer lançamentos novos. Pra voltar a usar tudo, escolha um plano em Minha conta, aba “Assinatura”.",
     link: "/app/conta?aba=assinatura",
   },
   {
@@ -564,6 +572,30 @@ export const FAQ: PerguntaFaq[] = [
   },
 
   // --- Conta, segurança e suporte --------------------------------------------
+  {
+    id: "contador-convidar",
+    tema: "conta",
+    pergunta: "Como dou acesso ao meu contador?",
+    resposta:
+      "Em Empresa, aba “Contador”. Digite o e-mail dele, marque o que ele pode fazer e clique em “Enviar convite”. Ele entra com o login dele — você não passa a sua senha pra ninguém. Ver as notas e o financeiro é sempre liberado; gerar notas, enviar, cuidar dos tomadores, lançar no financeiro e mexer nos dados da empresa, só o que você marcar.",
+    link: "/app/empresa?aba=contador",
+  },
+  {
+    id: "contador-mudar",
+    tema: "conta",
+    pergunta: "Posso mudar o que o contador faz ou tirar o acesso dele?",
+    resposta:
+      "Pode, quando quiser, em Empresa, aba “Contador”: marque ou desmarque as permissões (vale na hora) ou clique na lixeira pra tirar o acesso. Ali também fica a lista “O que o contador fez”. A assinatura, os módulos e apagar a empresa ficam sempre só com você.",
+    link: "/app/empresa?aba=contador",
+  },
+  {
+    id: "contador-atender",
+    tema: "conta",
+    pergunta: "Sou contador. Como entro na empresa de um cliente?",
+    resposta:
+      "Peça pro cliente te convidar pelo seu e-mail em Empresa, aba “Contador”. O convite aparece em “Empresas que atendo”, no menu: clique em “Aceitar” e depois em “Abrir empresa”. As empresas dos clientes também ficam no seletor de empresas, no topo do menu, separadas das suas.",
+    link: "/app/atendimentos",
+  },
   {
     id: "esqueci-a-senha",
     tema: "conta",

@@ -1,7 +1,8 @@
-import { ArrowLeftRight, Building2, CalendarDays, CircleHelp, Contact, FileText, Gift, Home, Layers, ShieldCheck, UserRound, Users, Wallet } from "lucide-react"
+import { ArrowLeftRight, BriefcaseBusiness, Building2, CalendarDays, CircleHelp, Contact, FileText, Gift, Home, Layers, ShieldCheck, UserRound, Users, Wallet } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link, NavLink, useLocation } from "react-router-dom"
 import { api } from "../../lib/api"
+import { useAuth } from "../../lib/auth"
 import { useModulos } from "../../lib/modulos"
 import { BotaoSuporte } from "../SuporteModal"
 import { TrocaEmpresa } from "../TrocaEmpresa"
@@ -41,6 +42,7 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
   const naConta = pathname.replace(/\/+$/, "") === "/app/conta"
   const naIndicacao = naConta && new URLSearchParams(search).get("aba") === "indique"
   const modulos = useModulos()
+  const { usuario } = useAuth()
   const grupos = [
     ...(modulos.emissor ? [{ titulo: "Notas", itens: NOTAS }] : []),
     ...(modulos.financeiro ? [{ titulo: "Financeiro", itens: modulos.emissor ? FINANCEIRO : [...FINANCEIRO, CLIENTES] }] : []),
@@ -135,6 +137,13 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
             <UserRound size={18} aria-hidden="true" />
             Minha conta
           </Link>
+          {/* Contador (06/10/2026): só pra quem atende empresas ou tem convite. */}
+          {usuario?.atende_empresas && (
+            <NavLink to="/app/atendimentos" onClick={onFechar} className={({ isActive }) => `mt-1 ${classeItem(isActive)}`}>
+              <BriefcaseBusiness size={18} aria-hidden="true" />
+              Empresas que atendo
+            </NavLink>
+          )}
           {gestor && (
             <NavLink to="/app/gestao" onClick={onFechar} className={({ isActive }) => `mt-1 ${classeItem(isActive)}`}>
               <ShieldCheck size={18} aria-hidden="true" />

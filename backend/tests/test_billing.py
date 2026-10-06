@@ -64,12 +64,23 @@ def test_assinatura_esta_ativa_trial_expirado_e_falso(db, prestador_teste):
     assert assinatura_esta_ativa(assinatura) is False
 
 
-@pytest.mark.parametrize("status", ["inadimplente", "cancelada"])
-def test_assinatura_esta_ativa_status_inativo(db, prestador_teste, status):
+def test_assinatura_cancelada_nao_esta_ativa(db, prestador_teste):
     assinatura = criar_assinatura_cortesia(db, prestador_teste.id)
-    assinatura.status = status
+    assinatura.status = "cancelada"
     db.flush()
     assert assinatura_esta_ativa(assinatura) is False
+
+
+def test_pagamento_pendente_nao_trava_enquanto_o_stripe_tenta(db, prestador_teste):
+    """Cartão recusado: o Stripe tenta de novo por uns dias. Só trava quando
+    ele desiste e a assinatura vira "cancelada"."""
+    from app.services.billing import situacao_do_acesso
+
+    assinatura = criar_assinatura_cortesia(db, prestador_teste.id)
+    assinatura.status = "inadimplente"
+    db.flush()
+    assert situacao_do_acesso(assinatura)["motivo"] == "pagamento_pendente"
+    assert assinatura_esta_ativa(assinatura) is True
 
 
 def test_criar_sessao_checkout_sem_stripe_configurado_da_erro(db, prestador_teste):

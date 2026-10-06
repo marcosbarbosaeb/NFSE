@@ -3,6 +3,7 @@ import { Suspense, useState } from "react"
 import { Outlet, useNavigate } from "react-router-dom"
 import { useAuth } from "../../lib/auth"
 import { TourDaPagina } from "../tour/Tour"
+import { AvisoSemAssinatura, FaixaAssinatura, FaixaContador } from "./FaixasAcesso"
 import { Sidebar } from "./Sidebar"
 import { Topbar } from "./Topbar"
 
@@ -55,6 +56,8 @@ export function AppShell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <FaixaSimulacao />
         <FaixaContaTeste />
+        <FaixaContador />
+        <FaixaAssinatura />
         <Topbar onAbrirMenu={() => setMenuAberto(true)} />
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <Suspense fallback={<p className="py-10 text-center text-sm text-slate-400">Carregando...</p>}>
@@ -62,6 +65,7 @@ export function AppShell() {
           </Suspense>
         </main>
         <TourDaPagina />
+        <AvisoSemAssinatura />
       </div>
     </div>
   )

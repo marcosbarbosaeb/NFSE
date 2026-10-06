@@ -70,6 +70,19 @@ export function VisaoGeralGestao({ painel }: { painel: PainelGestao }) {
       <Card className="p-5">
         <TituloSecao icone={CreditCard}>Assinaturas</TituloSecao>
         <Assinaturas assinaturas={r.assinaturas} />
+        {/* Bloqueio de quem não tem assinatura (06/10/2026). */}
+        <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-600 dark:bg-slate-900/40 dark:text-slate-300">
+          <strong className={r.bloqueio_ativo ? "text-danger-700 dark:text-danger-300" : "text-slate-800 dark:text-slate-100"}>
+            Bloqueio de quem não tem assinatura: {r.bloqueio_ativo ? "ligado" : "desligado"}.
+          </strong>{" "}
+          {r.sem_acesso === 0
+            ? "Nenhuma conta com teste vencido ou assinatura encerrada."
+            : r.bloqueio_ativo
+              ? `${plural(r.sem_acesso, "conta está", "contas estão")} só pra consulta (teste vencido ou assinatura encerrada).`
+              : `${plural(r.sem_acesso, "conta ficaria", "contas ficariam")} só pra consulta se você ligasse hoje (teste vencido ou assinatura encerrada).`}{" "}
+          {r.liberadas_na_mao > 0 && `${plural(r.liberadas_na_mao, "liberada", "liberadas")} por você. `}
+          Pra liberar alguém, abra a conta na aba Contas.
+        </p>
       </Card>
 
       <section className="flex flex-col gap-2">

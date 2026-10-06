@@ -204,6 +204,7 @@ from app.services.envios import (
     registrar_envio,
 )
 from app.limites import limitador, limite  # noqa: F401 — limitador: os testes zeram
+from app.services import acesso as acesso_servico
 from app.services import contas, importar_adn, lotes, mensagens
 from app.services.indicacao import resumo as resumo_indicacao
 from app.services.email import EmailEnvioError, get_email_sender
@@ -643,9 +644,14 @@ def api_auth_me(request: Request, db: Session = Depends(get_db)):
     ativa = contas.empresa_ativa(db, request, usuario)
     definir_prestador_atual(db, ativa)
     teste = get_settings().ambiente_teste or bool(db.query(Prestador.modo_teste).filter(Prestador.id == ativa).scalar())
+    from app.services import acesso
+
+    papel, permissoes = acesso.papel(db, usuario, ativa)
     return UsuarioResponse(
         email=usuario.email, prestador_id=ativa, demo=eh_email_demo(usuario.email), nome=usuario.nome, teste=teste,
         modulos=modulos_da_empresa(db, ativa),
+        papel=papel, permissoes=permissoes, atende_empresas=acesso.tem_algo(db, usuario),
+        acesso=acesso.situacao(db, ativa),
     )
 
 
@@ -775,7 +781,7 @@ def api_excluir_conta(req: ExcluirRequest, request: Request, db: Session = Depen
 def api_empresas(request: Request, db: Session = Depends(get_db)):
     u = _usuario_logado(request, db)
     ativa = contas.empresa_ativa(db, request, u)
-    return [{**e, "ativa": e["id"] == ativa} for e in contas.listar_empresas(db, u)]
+    return [{**e, "ativa": e["id"] == ativa} for e in contas.listar_empresas(db, u) + contas.listar_empresas_atendidas(db, u)]
 
 
 @app.post("/api/empresas", response_model=EmpresaResponse, responses={409: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
@@ -907,11 +913,16 @@ def api_ativar_empresa(prestador_id: uuid.UUID, request: Request, db: Session = 
     if prestador_id != u.prestador_id and not contas.tem_acesso(db, u.id, prestador_id):
         raise HTTPException(status_code=404, detail="Empresa não encontrada.")
     request.session["prestador_id"] = str(prestador_id)
-    u.prestador_id = prestador_id  # abre nela da próxima vez
+    dono = contas.eh_dono(db, u, prestador_id)
+    if dono:
+        # Só empresa PRÓPRIA vira a "de casa" (abre nela da próxima vez). A de
+        # um cliente do contador fica só na sessão: se o cliente tirar o
+        # acesso, o login volta sozinho pra empresa dele.
+        u.prestador_id = prestador_id
     db.commit()
     definir_prestador_atual(db, prestador_id)
     p = db.get(Prestador, prestador_id)
-    return {"id": p.id, "razao_social": p.razao_social, "nome_fantasia": p.nome_fantasia, "cnpj": p.cpf_cnpj, "ativa": True}
+    return {"id": p.id, "razao_social": p.razao_social, "nome_fantasia": p.nome_fantasia, "cnpj": p.cpf_cnpj, "ativa": True, "papel": "dono" if dono else "contador"}
 
 
 @app.delete("/api/empresa", dependencies=[Depends(exigir_conta_real)])
@@ -1045,6 +1056,9 @@ def api_ver_assinatura(prestador_id: uuid.UUID = Depends(prestador_atual_id), db
     return AssinaturaResponse(
         status=assinatura.status if assinatura else "trial",
         ativa=assinatura_esta_ativa(assinatura),
+        situacao=billing.situacao_do_acesso(assinatura)["motivo"],
+        liberado_ate=assinatura.liberado_ate if assinatura else None,
+        bloqueio_ativo=get_settings().bloqueio_ativo,
         trial_termina_em=assinatura.trial_termina_em if assinatura else None,
         tem_assinatura_stripe=bool(assinatura and assinatura.stripe_subscription_id),
         plano=assinatura.plano if assinatura else None,
@@ -2674,6 +2688,54 @@ def api_gestao(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depen
     return gestao.painel(db, prestador_id)
 
 
+class LiberarAcessoRequest(BaseModel):
+    # dias a partir de hoje; `sempre` = sem prazo
+    dias: int | None = Field(default=None, ge=1, le=3650)
+    sempre: bool = False
+    obs: str | None = Field(default=None, max_length=200)
+
+
+def _assinatura_de(db: Session, alvo: uuid.UUID) -> Assinatura:
+    definir_prestador_atual(db, alvo)
+    if db.get(Prestador, alvo) is None:
+        raise HTTPException(status_code=404, detail="Conta não encontrada.")
+    assinatura = db.query(Assinatura).filter_by(prestador_id=alvo).one_or_none()
+    if assinatura is None:
+        assinatura = Assinatura(id=uuid.uuid4(), prestador_id=alvo, status="trial", trial_termina_em=datetime.datetime.now(datetime.timezone.utc))
+        db.add(assinatura)
+    return assinatura
+
+
+@app.post("/api/gestao/contas/{alvo}/liberar", dependencies=[Depends(exigir_gestor)])
+def api_gestao_liberar(alvo: uuid.UUID, req: LiberarAcessoRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """A administração libera o uso de uma empresa sem assinatura — por um
+    prazo ou sem prazo (parceira, amiga testando, cortesia)."""
+    if not req.sempre and not req.dias:
+        raise HTTPException(status_code=422, detail="Escolha um prazo ou marque sem prazo.")
+    try:
+        assinatura = _assinatura_de(db, alvo)
+        billing.liberar_acesso(assinatura, dias=req.dias, sempre=req.sempre, obs=req.obs)
+        db.flush()
+        resposta = {"acesso": acesso_servico.situacao(db, alvo), "liberado_obs": assinatura.liberado_obs}
+    finally:
+        definir_prestador_atual(db, prestador_id)
+    db.commit()
+    return resposta
+
+
+@app.delete("/api/gestao/contas/{alvo}/liberar", dependencies=[Depends(exigir_gestor)])
+def api_gestao_tirar_liberacao(alvo: uuid.UUID, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    try:
+        assinatura = _assinatura_de(db, alvo)
+        billing.tirar_liberacao(assinatura)
+        db.flush()
+        resposta = {"acesso": acesso_servico.situacao(db, alvo), "liberado_obs": None}
+    finally:
+        definir_prestador_atual(db, prestador_id)
+    db.commit()
+    return resposta
+
+
 @app.get("/api/gestao/guia", dependencies=[Depends(exigir_gestor)])
 def api_gestao_guia():
     """O guia completo (o texto que alimenta a IA de ajuda). Não é público:
@@ -3218,6 +3280,11 @@ app.include_router(_rotas_anotacoes)
 from app.ajuda import rotas as _rotas_ajuda  # noqa: E402
 
 app.include_router(_rotas_ajuda)
+
+# Contador: quem a empresa autoriza a entrar e o que o contador atende.
+from app.contador import rotas as _rotas_contador  # noqa: E402
+
+app.include_router(_rotas_contador)
 
 
 @app.get("/", include_in_schema=False)

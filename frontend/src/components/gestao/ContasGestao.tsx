@@ -8,6 +8,7 @@ import {
   baixarCsv,
   dia,
   diaHora,
+  erroDe,
   diasDoTeste,
   haDias,
   nomeDaConta,
@@ -19,6 +20,7 @@ import {
   semCertificado,
   situacaoAssinatura,
 } from "../../lib/gestao"
+import { api } from "../../lib/api"
 import type { ContaGestao, PainelGestao } from "../../lib/types"
 import { Badge } from "../ui/Badge"
 import { Button } from "../ui/Button"
@@ -27,7 +29,7 @@ import { Card } from "../ui/Card"
 // Gestão › Contas (06/10/2026): quem tem conta, quem está ativo e quanto usa.
 // Só números de uso — o conteúdo das notas e do financeiro não chega aqui.
 
-type Filtro = "todas" | "ativas" | "sem-acesso" | "nao-confirmou" | "sem-certificado" | "teste"
+type Filtro = "todas" | "ativas" | "sem-acesso" | "nao-confirmou" | "sem-certificado" | "teste" | "sem-assinatura" | "liberadas"
 const FILTROS: { id: Filtro; rotulo: string; vale: (c: ContaGestao) => boolean }[] = [
   { id: "todas", rotulo: "Todas", vale: () => true },
   { id: "ativas", rotulo: "Ativas 30 dias", vale: ativa30 },
@@ -35,6 +37,9 @@ const FILTROS: { id: Filtro; rotulo: string; vale: (c: ContaGestao) => boolean }
   { id: "nao-confirmou", rotulo: "E-mail não confirmado", vale: (c) => !c.email_confirmado },
   { id: "sem-certificado", rotulo: "Sem certificado", vale: semCertificado },
   { id: "teste", rotulo: "Contas de teste", vale: (c) => c.modo_teste },
+  // Quem o bloqueio trava (teste vencido, cancelada) e quem você liberou na mão.
+  { id: "sem-assinatura", rotulo: "Teste vencido / sem assinatura", vale: (c) => !c.demo && c.acesso?.liberado === false },
+  { id: "liberadas", rotulo: "Liberadas por você", vale: (c) => c.acesso?.motivo === "liberacao" },
 ]
 
 type Campo = "criada_em" | "ultimo_acesso" | "notas" | "emails"
@@ -67,7 +72,7 @@ const classeTd = "px-3 py-3 align-top text-slate-700 dark:text-slate-200"
 const classeCampo =
   "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
 
-export function ContasGestao({ painel }: { painel: PainelGestao }) {
+export function ContasGestao({ painel, aoMudar }: { painel: PainelGestao; aoMudar?: () => void }) {
   const [busca, setBusca] = useState("")
   const [filtro, setFiltro] = useState<Filtro>("todas")
   const [assinatura, setAssinatura] = useState("")
@@ -321,7 +326,7 @@ export function ContasGestao({ painel }: { painel: PainelGestao }) {
                       {aberta && (
                         <tr className="border-b border-slate-100 bg-slate-50/70 dark:border-slate-700/60 dark:bg-slate-900/30">
                           <td colSpan={8} className="px-3 py-4 sm:px-9">
-                            <Detalhes conta={c} />
+                            <Detalhes conta={c} aoMudar={aoMudar} />
                           </td>
                         </tr>
                       )}
@@ -362,7 +367,7 @@ export function ContasGestao({ painel }: { painel: PainelGestao }) {
                   </button>
                   {aberta && (
                     <div className="border-t border-slate-200 p-3.5 dark:border-slate-700">
-                      <Detalhes conta={c} />
+                      <Detalhes conta={c} aoMudar={aoMudar} />
                     </div>
                   )}
                 </li>
@@ -434,12 +439,98 @@ function Assinatura({ conta: c, emLinha = false }: { conta: ContaGestao; emLinha
   const s = situacaoAssinatura(c.assinatura)
   const teste = diasDoTeste(c)
   const plano = nomeDoPlano(c.plano)
-  const extra = [plano, teste === null ? "" : teste <= 0 ? "teste vencido" : `teste até ${dia(c.trial_termina_em)}`].filter(Boolean).join(" · ")
+  const liberada = c.acesso?.motivo === "liberacao"
+  const extra = [
+    plano,
+    liberada ? "" : teste === null ? "" : teste <= 0 ? "teste vencido" : `teste até ${dia(c.trial_termina_em)}`,
+    liberada ? (c.acesso.ate ? `até ${dia(c.acesso.ate)}` : "sem prazo") : "",
+  ].filter(Boolean).join(" · ")
   return (
     <span className={emLinha ? "inline-flex flex-wrap items-center gap-x-2 gap-y-1" : "block"}>
-      <Badge variant={teste !== null && teste <= 0 ? "danger" : s.variante}>{s.rotulo}</Badge>
+      {liberada ? (
+        <Badge variant="success">Liberada por você</Badge>
+      ) : (
+        <Badge variant={teste !== null && teste <= 0 ? "danger" : s.variante}>{s.rotulo}</Badge>
+      )}
       {extra && <span className={emLinha ? "text-xs text-slate-400 dark:text-slate-500" : `${classeSub} mt-1`}>{extra}</span>}
     </span>
+  )
+}
+
+// Liberar o uso de uma empresa sem assinatura (06/10/2026): amiga testando,
+// parceira, cortesia. Por um prazo ou sem prazo; dá pra tirar depois.
+const PRAZOS = [
+  { rotulo: "30 dias", dias: 30 },
+  { rotulo: "90 dias", dias: 90 },
+  { rotulo: "1 ano", dias: 365 },
+]
+
+function LiberarAcesso({ conta: c, aoMudar }: { conta: ContaGestao; aoMudar?: () => void }) {
+  const [obs, setObs] = useState(c.liberado_obs ?? "")
+  const [fazendo, setFazendo] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const a = c.acesso
+  const liberada = a?.motivo === "liberacao"
+  // Quem paga ou é cortesia não precisa de liberação.
+  const precisa = !a || !["assinatura", "cortesia", "pagamento_pendente"].includes(a.motivo)
+
+  async function pedir(acao: () => Promise<unknown>) {
+    setFazendo(true)
+    setErro(null)
+    try {
+      await acao()
+      aoMudar?.()
+    } catch (err) {
+      setErro(erroDe(err))
+    } finally {
+      setFazendo(false)
+    }
+  }
+  const liberar = (corpo: { dias?: number; sempre?: boolean }) =>
+    pedir(() => api.post(`/gestao/contas/${c.id}/liberar`, { ...corpo, obs: obs.trim() || null }))
+
+  if (c.demo) return null
+  return (
+    <div className="max-w-2xl rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Acesso sem assinatura</p>
+      <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">
+        {!precisa && "Esta conta já tem acesso (paga ou é cortesia). Não precisa liberar."}
+        {precisa && liberada && (a.ate ? `Liberada por você até ${dia(a.ate)}.` : "Liberada por você, sem prazo.")}
+        {precisa && !liberada && a?.motivo === "teste" && `Em teste grátis até ${dia(a.ate)}. Você pode liberar por mais tempo.`}
+        {precisa && !liberada && a && !a.liberado && "Sem acesso: o teste acabou ou a assinatura foi encerrada. Com o bloqueio ligado, ela só consulta."}
+      </p>
+      {precisa && (
+        <>
+          <label className="mt-3 block">
+            <span className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Anotação (só você vê)</span>
+            <input
+              value={obs}
+              maxLength={200}
+              onChange={(e) => setObs(e.target.value)}
+              placeholder="Ex.: amiga testando, parceira, combinado até dezembro"
+              className={`${classeCampo} w-full`}
+            />
+          </label>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-slate-500 dark:text-slate-400">Liberar por:</span>
+            {PRAZOS.map((p) => (
+              <Button key={p.dias} type="button" variant="outline" className="!px-3 !py-1.5" disabled={fazendo} onClick={() => liberar({ dias: p.dias })}>
+                {p.rotulo}
+              </Button>
+            ))}
+            <Button type="button" variant="outline" className="!px-3 !py-1.5" disabled={fazendo} onClick={() => liberar({ sempre: true })}>
+              Sem prazo
+            </Button>
+            {liberada && (
+              <Button type="button" variant="ghost" className="!px-3 !py-1.5 !text-danger-600" disabled={fazendo} onClick={() => pedir(() => api.delete(`/gestao/contas/${c.id}/liberar`))}>
+                Tirar a liberação
+              </Button>
+            )}
+          </div>
+        </>
+      )}
+      {erro && <p className="mt-2 text-sm text-danger-700 dark:text-danger-300">{erro}</p>}
+    </div>
   )
 }
 
@@ -504,9 +595,10 @@ function Item({ rotulo, children }: { rotulo: string; children: ReactNode }) {
   )
 }
 
-function Detalhes({ conta: c }: { conta: ContaGestao }) {
+function Detalhes({ conta: c, aoMudar }: { conta: ContaGestao; aoMudar?: () => void }) {
   return (
     <div className="flex flex-col gap-4">
+      <LiberarAcesso conta={c} aoMudar={aoMudar} />
       <div>
         <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
           {c.logins.length === 1 ? "Login" : `Logins (${c.logins.length})`}
@@ -560,6 +652,7 @@ function Detalhes({ conta: c }: { conta: ContaGestao }) {
           {c.indicou === 0 ? "não indicou ninguém" : `indicou ${numero(c.indicou)} (${plural(c.indicou_ativos, "ativo", "ativos")})`}
         </Item>
         <Item rotulo="Como chegou">{c.veio_por ?? "por conta própria"}</Item>
+        <Item rotulo="Contador">{c.contadores ? plural(c.contadores, "com acesso", "com acesso") : "nenhum"}</Item>
         {c.assinatura === "trial" && c.trial_termina_em && <Item rotulo="Teste termina em">{dia(c.trial_termina_em)}</Item>}
       </dl>
     </div>

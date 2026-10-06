@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.database import definir_prestador_atual, get_db
 from app.models import Prestador, Usuario
-from app.services import contas
+from app.services import acesso, contas
 from app.services.demo import eh_email_demo
 
 MODULOS = ("emissor", "financeiro")
@@ -39,7 +39,22 @@ def prestador_atual_id(request: Request, db: Session = Depends(get_db)) -> uuid.
         raise HTTPException(status_code=401, detail="Sessão inválida — faça login novamente.")
     # Vários CNPJs no mesmo login (29/09/2026): a empresa ativa vem da
     # sessão, sempre conferida contra as empresas a que o usuário tem acesso.
-    return contas.empresa_ativa(db, request, usuario)
+    ativa = contas.empresa_ativa(db, request, usuario)
+    # Contador só faz o que o dono marcou; empresa sem assinatura fica só
+    # pra consulta (06/10/2026, ver app/services/acesso.py).
+    acesso.conferir(db, request, usuario, ativa)
+    return ativa
+
+
+def usuario_logado(request: Request, db: Session = Depends(get_db)) -> Usuario:
+    """Quem está logado, sem depender de empresa (rotas da conta e do
+    contador, que valem pra qualquer empresa ativa)."""
+    usuario_id = request.session.get("usuario_id")
+    usuario = db.get(Usuario, uuid.UUID(usuario_id)) if usuario_id else None
+    if usuario is None or not usuario.ativo or not contas.validar_sessao(db, request, usuario):
+        request.session.clear()
+        raise HTTPException(status_code=401, detail="Não autenticado — faça login.")
+    return usuario
 
 
 def db_sessao(db: Session = Depends(get_db), prestador_id: uuid.UUID = Depends(prestador_atual_id)) -> Session:
