@@ -995,3 +995,75 @@ class LoteFila(Base):
     # Lote esperando a cota de e-mail voltar: só é retomado depois disto.
     retomar_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# --- Parceiras de indicação com comissão (06/10/2026) ---
+
+class Parceiro(Base):
+    """Quem indica clientes e recebe uma porcentagem de cada assinatura ativa
+    que indicou (contadora, economista...). Não é cliente: não tem empresa
+    nem login — acompanha tudo por um link secreto (`token_painel`).
+    Sem RLS: é cadastro da plataforma, não de uma empresa."""
+
+    __tablename__ = "parceiro"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(200))
+    codigo: Mapped[str] = mapped_column(String(20), nullable=False, unique=True)
+    token_painel: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    # % do que cada indicado paga, enquanto a assinatura dele estiver ativa.
+    comissao_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    # Desconto do indicado na primeira mensalidade (0 = sem desconto).
+    desconto_1_mes_pct: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
+    ativo: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("comissao_pct >= 0 AND comissao_pct <= 100", name="ck_parceiro_comissao"),
+        CheckConstraint("desconto_1_mes_pct >= 0 AND desconto_1_mes_pct <= 100", name="ck_parceiro_desconto"),
+    )
+
+
+class IndicacaoParceiro(Base):
+    """Empresa que se cadastrou pelo link de uma parceira. `status` espelha
+    a assinatura da empresa (trial/ativa/inadimplente/cancelada). Sem RLS."""
+
+    __tablename__ = "indicacao_parceiro"
+
+    indicado_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), primary_key=True
+    )
+    parceiro_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("parceiro.id", ondelete="CASCADE"), nullable=False
+    )
+    indicado_nome: Mapped[str | None] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="trial", server_default="trial")
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=_agora_utc)
+
+    __table_args__ = (Index("ix_indicacao_parceiro_parceiro", "parceiro_id"),)
+
+
+class ComissaoParceiro(Base):
+    """Uma comissão: nasce de cada mensalidade PAGA por um indicado (fatura
+    do Stripe). `pago_em` = quando a plataforma repassou à parceira. A
+    empresa pode ser apagada depois; a comissão fica (nome guardado aqui)."""
+
+    __tablename__ = "comissao_parceiro"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    parceiro_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("parceiro.id", ondelete="CASCADE"), nullable=False
+    )
+    indicado_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="SET NULL"))
+    indicado_nome: Mapped[str | None] = mapped_column(String(200))
+    stripe_invoice_id: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    competencia: Mapped[str] = mapped_column(String(7), nullable=False)  # AAAA-MM do pagamento
+    valor_pago: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    comissao_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    valor: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    pago_em: Mapped[date | None] = mapped_column(Date)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("ix_comissao_parceiro_parceiro", "parceiro_id", "competencia"),)

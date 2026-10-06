@@ -1206,6 +1206,27 @@ class IndicadoResponse(BaseModel):
     desde: date
 
 
+class ParceiroRequest(BaseModel):
+    """Cadastro de uma parceira de indicação (só a administração)."""
+    nome: str = Field(min_length=2, max_length=120)
+    email: str | None = Field(default=None, max_length=200)
+    comissao_pct: float = Field(ge=0, le=100)
+    desconto_1_mes_pct: int = Field(default=0, ge=0, le=100)
+
+
+class ParceiroAtualizarRequest(BaseModel):
+    nome: str | None = Field(default=None, min_length=2, max_length=120)
+    email: str | None = Field(default=None, max_length=200)
+    comissao_pct: float | None = Field(default=None, ge=0, le=100)
+    desconto_1_mes_pct: int | None = Field(default=None, ge=0, le=100)
+    ativo: bool | None = None
+
+
+class ParceiroPagarRequest(BaseModel):
+    competencia: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    pago: bool = True
+
+
 class IndicacaoResponse(BaseModel):
     codigo: str
     link: str

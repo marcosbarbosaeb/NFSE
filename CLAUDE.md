@@ -26,6 +26,9 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
 - Sem certificado A1 válido não se gera nota: dependência `exigir_certificado` nas rotas de geração
   (`app/services/prontidao.py`). O conftest desliga a trava; `tests/test_prontidao.py` liga de volta.
 - Importar do Emissor Nacional é opt-in: só tomador que a pessoa já tem ou pré-cadastrado vem marcado.
+- Parceiras de indicação (`app/services/parceiros.py`): comissão = % de cada fatura paga (`invoice.paid` do Stripe),
+  sem login (painel por link secreto `/parceira/<token>`), repasse por fora. Administração = `ADMIN_EMAILS`
+  (ou, sem a variável, a conta "cortesia").
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.
 - Segredos (Stripe, Resend, Google) só nas variáveis do Railway — nunca no código nem em conversa.
 

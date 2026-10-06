@@ -111,6 +111,10 @@ class Settings(BaseSettings):
     # público (contas administrativas, criadas via scripts/criar_usuario.py,
     # não passam por trial — ver app/services/billing.py).
     stripe_dias_trial: int = 14
+    # Quem administra a plataforma (cadastra parceiras, vê comissões): e-mails
+    # de login separados por vírgula (ADMIN_EMAILS). Vazio = vale a regra
+    # antiga, a conta com assinatura "cortesia".
+    admin_emails: str = ""
 
     # Marco 16, item 1 — "integre o login/cadastro ao Google". Mesmo
     # padrão do resend_api_key/stripe_secret_key acima: Marcos confirmou

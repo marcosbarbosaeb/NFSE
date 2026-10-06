@@ -124,6 +124,9 @@ from app.schemas import (
     WhatsappRequest,
     EnviarEmailRequest,
     IndicacaoResponse,
+    ParceiroAtualizarRequest,
+    ParceiroPagarRequest,
+    ParceiroRequest,
     CanaisSuporteResponse,
     MensagemSuporteRequest,
     ProximosResponse,
@@ -2614,6 +2617,112 @@ def api_baixar_pdf(
         raise HTTPException(status_code=404, detail="O PDF oficial só fica disponível depois que a prefeitura confirma a nota.")
     db.commit()
     return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{nome_pdf(emissao)}"'})
+
+
+# --- Parceiras de indicação com comissão (06/10/2026) — app/services/parceiros.py ---
+
+def _eh_admin(request: Request, db: Session, prestador_id: uuid.UUID) -> bool:
+    """Administração da plataforma: e-mail de login em ADMIN_EMAILS; sem
+    essa variável, a conta com assinatura "cortesia" (regra antiga)."""
+    permitidos = {e.strip().lower() for e in get_settings().admin_emails.split(",") if e.strip()}
+    if permitidos:
+        bruto = request.session.get("usuario_id")
+        try:
+            usuario = db.get(Usuario, uuid.UUID(bruto)) if bruto else None
+        except ValueError:
+            usuario = None
+        return usuario is not None and (usuario.email or "").lower() in permitidos
+    assinatura = db.query(Assinatura).filter_by(prestador_id=prestador_id).one_or_none()
+    return assinatura is not None and assinatura.status == "cortesia"
+
+
+def exigir_admin(request: Request, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)) -> None:
+    if not _eh_admin(request, db, prestador_id):
+        raise HTTPException(status_code=403, detail="Só a administração da plataforma acessa esta área.")
+
+
+def _parceiro_ou_404(db: Session, parceiro_id: uuid.UUID):
+    from app.models import Parceiro
+
+    parceiro = db.get(Parceiro, parceiro_id)
+    if parceiro is None:
+        raise HTTPException(status_code=404, detail="Parceira não encontrada.")
+    return parceiro
+
+
+@app.get("/api/parceiros/acesso")
+def api_parceiros_acesso(request: Request, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """A tela usa pra saber se mostra a aba de parceiras."""
+    return {"admin": _eh_admin(request, db, prestador_id)}
+
+
+@app.get("/api/parceiros", dependencies=[Depends(exigir_admin)])
+def api_parceiros(db: Session = Depends(db_sessao)):
+    from app.services import parceiros
+
+    return parceiros.listar(db)
+
+
+@app.post("/api/parceiros", dependencies=[Depends(exigir_admin), Depends(exigir_conta_real)])
+def api_criar_parceiro(req: ParceiroRequest, db: Session = Depends(db_sessao)):
+    from app.services import parceiros
+
+    try:
+        novo = parceiros.criar(db, req.nome, req.email, req.comissao_pct, req.desconto_1_mes_pct)
+    except parceiros.ParceiroInvalidoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    resposta = next(p for p in parceiros.listar(db) if p["id"] == novo.id)
+    db.commit()
+    return resposta
+
+
+@app.patch("/api/parceiros/{parceiro_id}", dependencies=[Depends(exigir_admin), Depends(exigir_conta_real)])
+def api_atualizar_parceiro(parceiro_id: uuid.UUID, req: ParceiroAtualizarRequest, db: Session = Depends(db_sessao)):
+    from app.services import parceiros
+
+    parceiro = _parceiro_ou_404(db, parceiro_id)
+    try:
+        parceiros.atualizar(db, parceiro, req.model_dump(exclude_unset=True))
+    except parceiros.ParceiroInvalidoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    resposta = next(p for p in parceiros.listar(db) if p["id"] == parceiro.id)
+    db.commit()
+    return resposta
+
+
+@app.post("/api/parceiros/{parceiro_id}/novo-link", dependencies=[Depends(exigir_admin), Depends(exigir_conta_real)])
+def api_novo_link_do_parceiro(parceiro_id: uuid.UUID, db: Session = Depends(db_sessao)):
+    """Troca o link secreto do painel: o antigo para de funcionar na hora."""
+    from app.services import parceiros
+
+    parceiro = parceiros.trocar_link_do_painel(db, _parceiro_ou_404(db, parceiro_id))
+    resposta = next(p for p in parceiros.listar(db) if p["id"] == parceiro.id)
+    db.commit()
+    return resposta
+
+
+@app.post("/api/parceiros/{parceiro_id}/pagar", dependencies=[Depends(exigir_admin), Depends(exigir_conta_real)])
+def api_pagar_parceiro(parceiro_id: uuid.UUID, req: ParceiroPagarRequest, db: Session = Depends(db_sessao)):
+    """Marca as comissões de um mês como repassadas (o Pix é feito por fora)."""
+    from app.services import parceiros
+
+    parceiro = _parceiro_ou_404(db, parceiro_id)
+    marcadas = parceiros.marcar_pago(db, parceiro, req.competencia, req.pago)
+    resposta = {"marcadas": marcadas, "parceiro": next(p for p in parceiros.listar(db) if p["id"] == parceiro.id)}
+    db.commit()
+    return resposta
+
+
+@app.get("/api/publico/parceira/{token}", responses={404: {"model": ErroResponse}}, dependencies=[Depends(limite("painel_parceira", 60, 3600))])
+def api_painel_da_parceira(token: str, db: Session = Depends(get_db)):
+    """O painel da parceira, SEM login: quem tem o link secreto vê o link de
+    indicação dela, os indicados (só o primeiro nome) e as comissões."""
+    from app.services import parceiros
+
+    painel = parceiros.painel_publico(db, token)
+    if painel is None:
+        raise HTTPException(status_code=404, detail="Link inválido ou trocado. Peça o link novo pra quem te convidou.")
+    return painel
 
 
 @app.get("/api/publico/nota/{token}", responses={404: {"model": ErroResponse}})

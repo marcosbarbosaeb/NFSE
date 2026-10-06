@@ -1,4 +1,4 @@
-import { lazy } from "react"
+import { lazy, Suspense } from "react"
 import { Navigate, Route, Routes } from "react-router-dom"
 import { AppShell } from "./components/layout/AppShell"
 import { SoNoEmissor } from "./components/layout/SoNoEmissor"
@@ -29,6 +29,8 @@ const FinanceiroPage = lazy(() => import("./pages/FinanceiroPage").then((m) => (
 const NfsePage = lazy(() => import("./pages/NfsePage").then((m) => ({ default: m.NfsePage })))
 const TomadoresPage = lazy(() => import("./pages/TomadoresPage").then((m) => ({ default: m.TomadoresPage })))
 const VinculoFormPage = lazy(() => import("./pages/VinculoFormPage").then((m) => ({ default: m.VinculoFormPage })))
+// Painel público da parceira de indicação (06/10/2026): sem login, aberto pelo link secreto.
+const ParceiraPage = lazy(() => import("./pages/ParceiraPage").then((m) => ({ default: m.ParceiraPage })))
 
 // Marco 15 (item 6): "/" virou a página de marketing pública (ver
 // LandingPage.tsx) — o painel autenticado, que antes vivia na raiz,
@@ -50,6 +52,18 @@ export default function App() {
           <Route path="/cadastro" element={<SoNoEmissor><CadastroPage /></SoNoEmissor>} />
           <Route path="/simulacao" element={<SoNoEmissor><SimulacaoPage /></SoNoEmissor>} />
           <Route path="/confirmar-email" element={<SoNoEmissor><ConfirmarEmailPage /></SoNoEmissor>} />
+          {/* Fora de /app de propósito: a parceira não tem conta. O Suspense é
+              próprio porque esta rota não passa pelo AppShell. */}
+          <Route
+            path="/parceira/:token"
+            element={
+              <SoNoEmissor>
+                <Suspense fallback={<p className="py-16 text-center text-sm text-slate-400">Carregando...</p>}>
+                  <ParceiraPage />
+                </Suspense>
+              </SoNoEmissor>
+            }
+          />
           <Route
             path="/app"
             element={

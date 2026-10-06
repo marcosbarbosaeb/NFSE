@@ -81,7 +81,12 @@ def registrar_indicacao(db: Session, codigo: str | None, indicado_id: uuid.UUID,
     if not codigo:
         return False
     dono = db.get(CodigoIndicacao, codigo)
-    if dono is None or dono.prestador_id == indicado_id:
+    if dono is None:
+        # Não é código de cliente: pode ser de uma parceira (comissão, não desconto).
+        from app.services import parceiros
+
+        return parceiros.registrar_indicacao(db, codigo, indicado_id, indicado_nome)
+    if dono.prestador_id == indicado_id:
         return False
     db.add(Indicacao(indicado_id=indicado_id, indicador_id=dono.prestador_id, indicado_nome=(indicado_nome or "")[:200], status="trial"))
     db.flush()
@@ -200,4 +205,9 @@ def desconto_no_checkout(db: Session, prestador_id: uuid.UUID) -> list[dict] | N
     """`discounts` pro Checkout de quem ainda vai assinar e já tem indicados."""
     pct = desconto_para(ativos_do_indicador(db, prestador_id))
     cupom = cupom_para(pct) if pct and _stripe_configurado() else None
-    return [{"coupon": cupom}] if cupom else None
+    if cupom:
+        return [{"coupon": cupom}]
+    # Veio por uma parceira: desconto só na primeira mensalidade.
+    from app.services import parceiros
+
+    return parceiros.desconto_no_checkout(db, prestador_id)

@@ -1465,3 +1465,41 @@ export interface ResumoConciliacao {
 export interface AjudaInfo {
   ia_url: string | null
 }
+
+// --- Parceiras de indicação com comissão (06/10/2026) ---
+export type StatusIndicadoParceira = "trial" | "ativa" | "inadimplente" | "cancelada"
+
+/** GET /publico/parceira/{token} — o que a parceira vê pelo link secreto. */
+export interface ParceiroResumo {
+  nome: string
+  codigo: string
+  /** Link de cadastro com ?ref=CODIGO — é o que a parceira divulga. */
+  link: string
+  comissao_pct: number
+  desconto_1_mes_pct: number
+  ativo: boolean
+  indicados_total: number
+  indicados_ativos: number
+  total_comissao: number
+  /** O que a plataforma ainda deve repassar. */
+  a_receber: number
+  indicados: { nome: string; status: StatusIndicadoParceira; desde: string }[]
+  meses: {
+    competencia: string
+    pagamentos: number
+    /** Soma do que os indicados pagaram no mês. */
+    base: number
+    comissao: number
+    a_pagar: number
+    pago_em: string | null
+  }[]
+}
+
+/** GET /parceiros — a mesma coisa, pra administração (nomes inteiros + link do painel). */
+export interface ParceiroAdmin extends ParceiroResumo {
+  id: string
+  email: string | null
+  /** URL completa do painel secreto da parceira. */
+  painel: string
+  criado_em: string
+}

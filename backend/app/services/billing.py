@@ -354,6 +354,36 @@ def _resolver_prestador_id_do_evento(obj: dict) -> uuid.UUID | None:
         return None
 
 
+def _prestador_da_fatura(fatura: dict) -> uuid.UUID | None:
+    """O `metadata.prestador_id` que gravamos na assinatura aparece na fatura
+    em lugares diferentes conforme a versão da API do Stripe."""
+    candidatos = [
+        fatura.get("subscription_details") or {},
+        ((fatura.get("parent") or {}).get("subscription_details")) or {},
+        *(((fatura.get("lines") or {}).get("data")) or []),
+        fatura,
+    ]
+    for candidato in candidatos:
+        prestador_id = _resolver_prestador_id_do_evento(candidato)
+        if prestador_id is not None:
+            return prestador_id
+    return None
+
+
+def _comissao_da_fatura(db: Session, fatura: dict) -> str:
+    """Mensalidade paga: se a empresa veio por uma parceira, nasce a comissão
+    dela (app/services/parceiros.py). Sem parceira, não faz nada."""
+    from decimal import Decimal
+
+    from app.services import parceiros
+
+    prestador_id = _prestador_da_fatura(fatura)
+    centavos = fatura.get("amount_paid") or 0
+    if prestador_id is not None and centavos > 0:
+        parceiros.registrar_pagamento(db, prestador_id, fatura.get("id") or "", Decimal(centavos) / Decimal(100))
+    return "invoice.paid"
+
+
 def processar_webhook(db: Session, payload: bytes, assinatura_header: str) -> str | None:
     """Verifica a assinatura do payload (`stripe_webhook_secret`) e
     sincroniza o `status`/`stripe_subscription_id` da Assinatura
@@ -374,6 +404,9 @@ def processar_webhook(db: Session, payload: bytes, assinatura_header: str) -> st
 
     tipo = event["type"]
     obj = event["data"]["object"]
+
+    if tipo == "invoice.paid":
+        return _comissao_da_fatura(db, obj)
 
     if tipo not in (
         "checkout.session.completed",
@@ -426,6 +459,9 @@ def processar_webhook(db: Session, payload: bytes, assinatura_header: str) -> st
     from app.services.indicacao import atualizar_status_indicado, sincronizar_desconto
 
     atualizar_status_indicado(db, prestador_id, assinatura.status)
+    from app.services import parceiros
+
+    parceiros.atualizar_status_indicado(db, prestador_id, assinatura.status)
     if assinatura.stripe_subscription_id:
         sincronizar_desconto(db, prestador_id)
     return tipo

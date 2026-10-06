@@ -231,10 +231,14 @@ def test_processar_webhook_evento_desconhecido_ignorado(db, monkeypatch):
     import app.services.billing as billing
 
     monkeypatch.setattr(get_settings(), "stripe_webhook_secret", "whsec_fake")
-    evento = {"type": "invoice.paid", "data": {"object": {}}}
+    # (invoice.paid passou a ser tratado em 06/10/2026: comissão das parceiras)
+    evento = {"type": "charge.refunded", "data": {"object": {}}}
     monkeypatch.setattr(billing.stripe.Webhook, "construct_event", lambda payload, sig_header, secret: evento)
 
     assert processar_webhook(db, b"{}", "assinatura-valida") is None
+    # fatura paga de quem não veio por parceira: tratada, sem efeito
+    evento["type"] = "invoice.paid"
+    assert processar_webhook(db, b"{}", "assinatura-valida") == "invoice.paid"
 
 
 # --- nível HTTP ---
