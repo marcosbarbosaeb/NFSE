@@ -139,7 +139,13 @@ def api_historico(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = De
 @rotas.get("/api/contador/atendimentos")
 def api_atendimentos(request: Request, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_logado)):
     ativa = contas.empresa_ativa(db, request, usuario)
-    return {"permissoes": _catalogo(), "ativa": ativa, **acesso.do_contador(db, usuario, ativa)}
+    from app.services import parceiros
+
+    return {
+        "permissoes": _catalogo(), "ativa": ativa, **acesso.do_contador(db, usuario, ativa),
+        # Bonificação do contador (parceria): aparece depois do primeiro cliente.
+        "bonificacao": parceiros.resumo_do_contador(db, usuario.id),
+    }
 
 
 @rotas.post("/api/contador/convites/{acesso_id}/aceitar")

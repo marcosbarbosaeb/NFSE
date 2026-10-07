@@ -280,7 +280,11 @@ def mudar_permissoes(db: Session, prestador_id: uuid.UUID, acesso_id: uuid.UUID,
 
 
 def remover(db: Session, prestador_id: uuid.UUID, acesso_id: uuid.UUID) -> None:
-    db.delete(_da_empresa(db, prestador_id, acesso_id))
+    from app.services import parceiros
+
+    acesso = _da_empresa(db, prestador_id, acesso_id)
+    parceiros.desvincular_contador(db, acesso.usuario_id, prestador_id)
+    db.delete(acesso)
     db.flush()
 
 
@@ -328,7 +332,9 @@ def do_contador(db: Session, usuario: Usuario, voltar_para: uuid.UUID) -> dict:
             if p is None:
                 continue
             pronta = prontidao(db, a.prestador_id)
+            pendencias = _pendencias_da_empresa(db, a.prestador_id, list(p.modulos or []) or ["emissor"])
             clientes.append({
+                "pendencias": pendencias, "total_pendencias": sum(x["quantidade"] for x in pendencias),
                 "id": a.id, "prestador_id": a.prestador_id, "empresa": p.razao_social, "nome_fantasia": p.nome_fantasia, "cnpj": p.cpf_cnpj,
                 "permissoes": _limpar_permissoes(a.permissoes), "desde": a.aceito_em, "modulos": list(p.modulos or []),
                 "pode_emitir": bool(pronta.get("pode_emitir")), "aviso": pronta.get("motivo"),
@@ -337,6 +343,45 @@ def do_contador(db: Session, usuario: Usuario, voltar_para: uuid.UUID) -> dict:
     finally:
         definir_prestador_atual(db, voltar_para)
     return {"convites": convites, "clientes": clientes}
+
+
+def _pendencias_da_empresa(db: Session, prestador_id: uuid.UUID, modulos: list[str]) -> list[dict]:
+    """O que tem pra fazer nesta empresa, sem precisar entrar nela — as mesmas
+    pendências da Visão geral dela (notas pra gerar, assinar, enviar,
+    recusadas) e da Conciliação. Só títulos e quantidades. Uma empresa com
+    problema não derruba a lista das outras."""
+    import logging
+
+    itens: list[dict] = []
+    try:
+        with db.begin_nested():
+            definir_prestador_atual(db, prestador_id)
+            if "emissor" in modulos:
+                from app.services.dashboard import proximos
+
+                for pend in proximos(db, prestador_id)["pendencias"]:
+                    itens.append({
+                        "tipo": pend["tipo"], "titulo": pend["titulo"], "link": pend.get("link") or "/app/nfse",
+                        "quantidade": len(pend["itens"]) if pend.get("itens") else _quantidade_no_titulo(pend["titulo"]),
+                        "atrasada": bool(pend.get("atrasada")) or pend["tipo"] == "erro",
+                    })
+            if "financeiro" in modulos:
+                # O financeiro responde pelo que é dele (app/eventos.py): o
+                # emissor não importa nada de app/financeiro.
+                from app import eventos
+
+                for grupo in eventos.coletar("pendencias_da_empresa", db, prestador_id=prestador_id):
+                    itens.extend(grupo)
+    except Exception:  # noqa: BLE001 — a lista do contador não pode cair por causa de uma empresa
+        logging.getLogger("agenteana.contador").exception("Falha ao levantar as pendências da empresa %s", prestador_id)
+        return [{"tipo": "indisponivel", "titulo": "Não consegui levantar as pendências agora", "link": "/app", "quantidade": 0, "atrasada": False}]
+    return itens
+
+
+def _quantidade_no_titulo(titulo: str) -> int:
+    """"Assinar 3 notas" -> 3; "Assinar a nota de Fulano" -> 1."""
+    achado = re.search(r"\b(\d+)\b", titulo)
+    return int(achado.group(1)) if achado else 1
 
 
 def _convite_do_usuario(db: Session, usuario: Usuario, acesso_id: uuid.UUID) -> AcessoContador:
@@ -355,6 +400,12 @@ def aceitar(db: Session, usuario: Usuario, acesso_id: uuid.UUID) -> AcessoContad
     acesso.status = "ativo"
     acesso.aceito_em = datetime.datetime.now(datetime.timezone.utc)
     db.flush()
+    # Bonificação: a empresa entra na parceria do contador enquanto ele a atender.
+    from app.services import parceiros
+
+    empresa = _empresa(db, acesso.prestador_id)
+    assinatura = db.query(Assinatura.status).filter_by(prestador_id=acesso.prestador_id).scalar()
+    parceiros.vincular_contador(db, usuario, acesso.prestador_id, empresa.razao_social if empresa else None, assinatura)
     return acesso
 
 
@@ -368,7 +419,10 @@ def sair(db: Session, usuario: Usuario, acesso_id: uuid.UUID) -> uuid.UUID:
     acesso = db.get(AcessoContador, acesso_id)
     if acesso is None or acesso.usuario_id != usuario.id:
         raise AcessoError("Acesso não encontrado.")
+    from app.services import parceiros
+
     prestador_id = acesso.prestador_id
+    parceiros.desvincular_contador(db, usuario.id, prestador_id)
     db.delete(acesso)
     db.flush()
     return prestador_id

@@ -1028,6 +1028,9 @@ class Parceiro(Base):
     # Desconto do indicado na primeira mensalidade (0 = sem desconto).
     desconto_1_mes_pct: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
     ativo: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
+    # Contador que atende clientes aqui (07/10/2026): o login dele. Parceira
+    # "de fora" (sem conta) fica com isto vazio.
+    usuario_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("usuario.id", ondelete="SET NULL"), unique=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
@@ -1050,6 +1053,9 @@ class IndicacaoParceiro(Base):
     )
     indicado_nome: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="trial", server_default="trial")
+    # Vínculo nascido do acesso de contador (não de um link de indicação):
+    # vale enquanto ele atender a empresa e some quando o acesso acaba.
+    por_contador: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=_agora_utc)
 

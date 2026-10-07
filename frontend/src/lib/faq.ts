@@ -589,6 +589,14 @@ export const FAQ: PerguntaFaq[] = [
     link: "/app/empresa?aba=contador",
   },
   {
+    id: "contador-bonificacao",
+    tema: "conta",
+    pergunta: "Sou contador. Ganho alguma coisa por atender meus clientes aqui?",
+    resposta:
+      "Sim: 10% de cada mensalidade que os clientes que você atende pagam, todo mês, enquanto você atender a empresa. Em “Empresas que atendo” aparece o card “Sua bonificação”, com quantos clientes estão pagando e quanto você tem a receber. Clique em “Ver extrato” pra ver mês a mês.",
+    link: "/app/atendimentos",
+  },
+  {
     id: "contador-atender",
     tema: "conta",
     pergunta: "Sou contador. Como entro na empresa de um cliente?",

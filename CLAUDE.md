@@ -43,6 +43,9 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
   Conta só de contador (`/cadastro?tipo=contador`): sem CNPJ, teste ou assinatura. Como todo login precisa de uma
   empresa "de casa", ela ganha um `prestador` de fachada com `so_contador=true` (cpf_cnpj = código "CT...", não é CNPJ);
   nele nada é criado (403) e ele fica fora dos números da Gestão.
+  Bonificação: ao aceitar o convite o contador vira `parceiro` (`usuario_id`, `CONTADOR_BONIFICACAO_PCT`, padrão 10%) e a
+  empresa entra como `indicacao_parceiro.por_contador`; some quando o acesso acaba. Empresa de outra parceira não muda de dono.
+  "Empresas que atendo" mostra as pendências de cada cliente (`acesso._pendencias_da_empresa`: só títulos e quantidades).
 - Bloqueio sem assinatura: `BLOQUEIO_ATIVO=true` deixa a empresa com teste vencido/cancelada só pra consulta (402 em
   tudo que muda, menos assinar/apagar). Desligado em produção até o Stripe estar recebendo. A Gestão libera na mão
   (`assinatura.liberado_ate/liberado_sempre`); a regra única é `billing.situacao_do_acesso`.
