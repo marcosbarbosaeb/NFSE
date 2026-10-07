@@ -57,6 +57,9 @@ if __name__ == "__main__":
     admin_url = os.environ.get("DATABASE_ADMIN_URL", "").strip()
     if not admin_url:
         sys.exit(0)
-    from app.config import get_settings
-
-    print("[provisionar] " + provisionar(admin_url, get_settings().database_url))
+    # Lê direto do ambiente: rodando como `python3 scripts/...` o pacote `app`
+    # não está no caminho de importação.
+    app_url = os.environ.get("DATABASE_URL", "").strip()
+    if not app_url:
+        sys.exit("[provisionar] DATABASE_URL não definida.")
+    print("[provisionar] " + provisionar(admin_url, app_url))
