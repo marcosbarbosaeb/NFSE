@@ -397,6 +397,7 @@ def importar(db: Session, prestador: Prestador, mapeamento: list[dict], *, ajust
     notas_por_vinculo: dict[uuid.UUID, int] = {}
     importadas, puladas, vinculos_criados = 0, [], 0
     agora = datetime.datetime.now(datetime.timezone.utc)
+    marca = agora.isoformat(timespec="seconds")
 
     for nota in sorted(b.notas.values(), key=lambda n: (n["dh_emi"] or "", n["n_dps"])):
         if nota["chave"] in existentes:
@@ -454,7 +455,12 @@ def importar(db: Session, prestador: Prestador, mapeamento: list[dict], *, ajust
                 "cLocPrestacao": nota["cLocPrestacao"], "cTribNac": nota["cTribNac"], "cTribMun": nota["cTribMun"], "cNBS": nota["cNBS"],
             },
             "dcompet": nota["dcompet"], "tpAmb": "1", "importada": True, "n_nfse": nota["n_nfse"],
+            # Marca de qual importação veio (pra poder desfazer — ver
+            # `importacoes` / `desfazer` no fim do arquivo).
+            "importacao": marca,
         }
+        if acao == "novo":
+            snapshot["tomador_da_importacao"] = True
         if documento_avulso:
             snapshot["avulso"] = True
         if nota.get("interm"):
@@ -578,3 +584,71 @@ def remover_importadas(db: Session, antes: str) -> dict:
             vinculos += 1
     db.flush()
     return {"notas": len(ids), "tomadores": vinculos}
+
+
+# --- desfazer uma importação (07/10/2026) -----------------------------------
+# Pedido do Marcos: "precisamos poder desfazer uma importação [...] ou
+# importou algo do emissor nacional, é importante ter um botão pra desfazer".
+# Cada nota importada leva no snapshot a marca da importação que a trouxe;
+# as importadas antes disso existir aparecem juntas, como "anteriores".
+
+ANTERIORES = "anteriores"
+
+
+def _marca():
+    from sqlalchemy import literal_column
+
+    # Texto fixo (e não parâmetro) pra o GROUP BY reconhecer a mesma expressão.
+    return literal_column("(emissao.tomador_snapshot ->> 'importacao')")
+
+
+def importacoes(db: Session) -> list[dict]:
+    from sqlalchemy import func
+
+    linhas = (
+        db.query(_marca(), func.count(Emissao.id), func.min(Emissao.competencia), func.max(Emissao.competencia))
+        .filter(Emissao.origem == "importada").group_by(_marca()).all()
+    )
+    saida = []
+    for marca, notas, de, ate in linhas:
+        periodo = de if de == ate else f"{de} a {ate}"
+        saida.append({
+            "id": marca or ANTERIORES, "quando": marca, "notas": notas, "periodo": periodo,
+            "titulo": "Importação do Emissor Nacional" if marca else "Importações anteriores",
+        })
+    saida.sort(key=lambda i: i["quando"] or "", reverse=True)
+    return saida
+
+
+def desfazer(db: Session, prestador: Prestador, importacao: str) -> dict:
+    """Tira as notas que aquela importação trouxe e os tomadores que ela
+    criou e ficaram sem nada. Notas geradas pela Ana nunca são tocadas."""
+    from app import eventos
+
+    consulta = db.query(Emissao).filter(Emissao.origem == "importada")
+    consulta = consulta.filter(_marca().is_(None) if importacao == ANTERIORES else _marca() == importacao)
+    notas = consulta.all()
+    if not notas:
+        raise ImportacaoAdnError("Importação não encontrada (talvez já tenha sido desfeita).")
+    criados = {n.prestador_tomador_id for n in notas if (n.tomador_snapshot or {}).get("tomador_da_importacao")}
+    ids = [n.id for n in notas]
+    db.query(Envio).filter(Envio.emissao_id.in_(ids)).delete(synchronize_session=False)
+    db.query(Emissao).filter(Emissao.id.in_(ids)).delete(synchronize_session=False)
+    db.expire_all()
+    tomadores = 0
+    for vinculo_id in criados:
+        v = db.get(PrestadorTomador, vinculo_id)
+        if v is None:
+            continue
+        tem_nota = db.query(Emissao.id).filter(Emissao.prestador_tomador_id == v.id).first()
+        if not tem_nota and not eventos.perguntar("tomador_em_uso", db, vinculo_id=v.id):
+            db.delete(v)
+            tomadores += 1
+    # A próxima busca relê o Emissor Nacional desde o começo (o que ainda
+    # está aqui é reconhecido pela chave e não duplica).
+    prestador = db.get(Prestador, prestador.id)
+    prestador.adn_ultimo_nsu = 0
+    with _lock:
+        _buscas.pop(prestador.id, None)
+    db.flush()
+    return {"notas": len(ids), "tomadores": tomadores}

@@ -1,6 +1,7 @@
 import { BriefcaseBusiness,
   Building2,
   CheckCircle2,
+  ChevronDown,
   DownloadCloud,
   Eraser,
   FileBadge,
@@ -19,6 +20,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import { CHAMADA_NACIONAL, useEmpresaVazia } from "../components/ComecarPeloNacional"
 import { EditorModeloEmail, type ValorModeloEmail } from "../components/EditorModeloEmail"
 import { ContadorCard } from "../components/ContadorCard"
+import { ImportacoesFeitas } from "../components/ImportacoesFeitas"
 import { ImportarEmissorModal } from "../components/ImportarEmissorModal"
 import { PaginaAbas, TituloSecao } from "../components/PaginaAbas"
 import { avisarEmpresaAtualizada } from "../components/TrocaEmpresa"
@@ -52,10 +54,22 @@ type AoAtualizar = (p: Prestador) => void
 // escolhem a aba certa e continuam rolando/destacando a seção.
 const ABA_DA_ANCORA: Record<string, string> = {
   certificado: "certificado",
-  aliquota: "aliquotas",
+  aliquota: "emitente",
   ambiente: "notas",
-  "email-nota": "emails",
-  "emails-gerais": "emails",
+  "email-nota": "notas",
+  "emails-gerais": "notas",
+  importacoes: "notas",
+  limpar: "mais",
+}
+
+// 07/10/2026 — "precisamos simplificar o menu empresa": eram oito abas, são
+// cinco. Os links antigos (?aba=aliquotas, ?aba=emails...) continuam valendo:
+// caem na aba nova, já na seção certa.
+const ABA_ANTIGA: Record<string, { aba: string; ancora?: string }> = {
+  aliquotas: { aba: "emitente", ancora: "aliquota" },
+  emails: { aba: "notas", ancora: "email-nota" },
+  modulos: { aba: "mais" },
+  dados: { aba: "mais", ancora: "limpar" },
 }
 
 export function EmpresaPage() {
@@ -78,9 +92,17 @@ export function EmpresaPage() {
   const ancora = location.hash.slice(1)
   const abaPedida = params.get("aba")
   useEffect(() => {
+    const antiga = abaPedida ? ABA_ANTIGA[abaPedida] : undefined
+    if (antiga) {
+      const destino = ancora || antiga.ancora
+      navigate({ search: `?aba=${antiga.aba}`, hash: destino ? `#${destino}` : "" }, { replace: true })
+      return
+    }
     const aba = ABA_DA_ANCORA[ancora]
     if (aba && !abaPedida) navigate({ search: `?aba=${aba}`, hash: `#${ancora}` }, { replace: true })
   }, [ancora, abaPedida, navigate])
+  // Os padrões de e-mail ficam recolhidos; quem chega por um atalho deles já vê aberto.
+  const abrirEmails = ancora === "email-nota" || ancora === "emails-gerais"
 
   // Rola até a seção e destaca por alguns segundos (o React Router não faz
   // isso sozinho com âncoras).
@@ -116,38 +138,72 @@ export function EmpresaPage() {
         </>
       }
       abas={[
-        { id: "emitente", rotulo: "Emitente", icone: Building2, conteudo: () => <AbaEmitente prestador={prestador} onAtualizado={setPrestador} /> },
-        ...soEmissor({
-          id: "emails",
-          rotulo: "Padrões de e-mail",
-          icone: Mail,
+        {
+          id: "emitente",
+          rotulo: "Dados da empresa",
+          icone: Building2,
           conteudo: () => (
             <>
-              {/* 07/10/2026: cada tomador tem o seu e-mail; aqui é só o padrão, opcional. */}
-              <p className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
-                <strong className="text-slate-800 dark:text-slate-100">Opcional.</strong> O e-mail de cada tomador (pra quem vai, assunto e
-                mensagem) você define no cadastro dele, em <Link to="/app/tomadores" className="font-medium text-primary-700 underline dark:text-primary-300">Tomadores</Link>.
-                O que estiver aqui só vale como ponto de partida pra tomadores que ainda não têm o deles.
-              </p>
-              <ModeloEmailCard prestador={prestador} onAtualizado={setPrestador} />
-              <EmailsGeraisCard prestador={prestador} onAtualizado={setPrestador} />
+              <AbaEmitente prestador={prestador} onAtualizado={setPrestador} />
+              {modulos.emissor && <AliquotaCard prestador={prestador} onAtualizado={setPrestador} />}
+            </>
+          ),
+        },
+        ...soEmissor({
+          id: "notas",
+          rotulo: "Notas e e-mails",
+          icone: ReceiptText,
+          conteudo: () => (
+            <>
+              <AmbienteNotasCard prestador={prestador} onAtualizado={setPrestador} />
+              <ImportarNacionalCard />
+              <div id="importacoes" className="scroll-mt-24 rounded-xl transition-shadow empty:hidden">
+                <ImportacoesFeitas origem="nacional" />
+              </div>
+              {/* 07/10/2026: cada tomador tem o seu e-mail; aqui é só o padrão, opcional — por isso fica recolhido. */}
+              <details open={abrirEmails} className="group rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 [&::-webkit-details-marker]:hidden">
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                      <Mail size={16} className="text-slate-400" aria-hidden /> Padrões de e-mail
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 dark:bg-slate-700 dark:text-slate-300">opcional</span>
+                    </span>
+                    <span className="mt-0.5 block text-sm text-slate-500 dark:text-slate-400">
+                      O e-mail de cada tomador você define no cadastro dele. Aqui é só o ponto de partida pra quem ainda não tem o seu.
+                    </span>
+                  </span>
+                  <ChevronDown size={18} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" aria-hidden />
+                </summary>
+                <div className="flex flex-col gap-6 border-t border-slate-100 p-5 dark:border-slate-700">
+                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                    Pra quem vai, assunto e mensagem de cada tomador ficam em{" "}
+                    <Link to="/app/tomadores" className="font-medium text-primary-700 underline dark:text-primary-300">Tomadores</Link>.
+                  </p>
+                  <ModeloEmailCard prestador={prestador} onAtualizado={setPrestador} />
+                  <EmailsGeraisCard prestador={prestador} onAtualizado={setPrestador} />
+                </div>
+              </details>
             </>
           ),
         }),
-        ...soEmissor({ id: "aliquotas", rotulo: "Alíquotas", icone: Percent, conteudo: () => <AliquotaCard prestador={prestador} onAtualizado={setPrestador} /> }),
-        ...soEmissor({ id: "notas", rotulo: "Notas", icone: ReceiptText, conteudo: () => (
-            <div className="flex flex-col gap-6">
-              <AmbienteNotasCard prestador={prestador} onAtualizado={setPrestador} />
-              <ImportarNacionalCard />
-            </div>
-          ) }),
         ...soEmissor({ id: "certificado", rotulo: "Certificado", icone: FileBadge, conteudo: () => <CertificadoCard /> }),
         // Contador (06/10/2026): quem mais entra na empresa e o que pode fazer.
         { id: "contador", rotulo: "Contador", icone: BriefcaseBusiness, conteudo: () => <ContadorCard /> },
-        // Módulos e exclusão são só do dono: o contador nem vê as abas.
+        // Módulos e exclusão são só do dono: o contador nem vê a aba.
         ...(contador ? [] : [
-          { id: "modulos", rotulo: "Módulos", icone: LayoutGrid, conteudo: () => <ModulosCard /> },
-          { id: "dados", rotulo: "Limpar e excluir", icone: Trash2, perigo: true, conteudo: () => <AbaDados prestador={prestador} /> },
+          {
+            id: "mais",
+            rotulo: "Mais opções",
+            icone: LayoutGrid,
+            conteudo: () => (
+              <>
+                <ModulosCard />
+                <div id="limpar" className="scroll-mt-24 flex flex-col gap-6 rounded-xl transition-shadow">
+                  <AbaDados prestador={prestador} />
+                </div>
+              </>
+            ),
+          },
         ]),
       ]}
     />
@@ -194,21 +250,21 @@ const OPCOES_REGIME_ESPECIAL = [
 ] as const
 
 function AbaEmitente({ prestador, onAtualizado }: { prestador: Prestador; onAtualizado: AoAtualizar }) {
-  const inicial = () => ({
-    razao_social: prestador.razao_social ?? "",
-    nome_fantasia: prestador.nome_fantasia ?? "",
-    inscricao_municipal: prestador.inscricao_municipal ?? "",
-    email: prestador.email ?? "",
-    telefone: prestador.telefone ?? "",
-    cep: mascararCep(prestador.cep ?? ""),
-    logradouro: prestador.logradouro ?? "",
-    numero: prestador.numero ?? "",
-    complemento: prestador.complemento ?? "",
-    bairro: prestador.bairro ?? "",
-    cod_municipio: prestador.cod_municipio ?? "",
-    op_simples_nacional: prestador.op_simples_nacional ?? "",
-    regime_apuracao_sn: prestador.regime_apuracao_sn ?? "",
-    regime_especial_trib: prestador.regime_especial_trib ?? "0",
+  const inicial = (p: Prestador = prestador) => ({
+    razao_social: p.razao_social ?? "",
+    nome_fantasia: p.nome_fantasia ?? "",
+    inscricao_municipal: p.inscricao_municipal ?? "",
+    email: p.email ?? "",
+    telefone: p.telefone ?? "",
+    cep: mascararCep(p.cep ?? ""),
+    logradouro: p.logradouro ?? "",
+    numero: p.numero ?? "",
+    complemento: p.complemento ?? "",
+    bairro: p.bairro ?? "",
+    cod_municipio: p.cod_municipio ?? "",
+    op_simples_nacional: p.op_simples_nacional ?? "",
+    regime_apuracao_sn: p.regime_apuracao_sn ?? "",
+    regime_especial_trib: p.regime_especial_trib ?? "0",
   })
   const [f, setF] = useState(inicial)
   const [salvando, setSalvando] = useState(false)
@@ -218,6 +274,34 @@ function AbaEmitente({ prestador, onAtualizado }: { prestador: Prestador; onAtua
     value: f[chave],
     onChange: (e: { target: { value: string } }) => setF((atual) => ({ ...atual, [chave]: e.target.value })),
   })
+
+  // "Sobre o completar os dados da empresa, falei para puxarmos pelo CNPJ"
+  // (07/10/2026): a Receita preenche o que estiver em branco.
+  const temCnpj = soDigitos(prestador.cpf_cnpj).length === 14
+  const [buscando, setBuscando] = useState(false)
+  const [receita, setReceita] = useState<{ ok: boolean; texto: string } | null>(null)
+  async function preencherPeloCnpj() {
+    setBuscando(true)
+    setReceita(null)
+    try {
+      const r = await api.post<{ preenchidos: string[]; faltam: { rotulo: string }[] }>("/prestador/completar-pelo-cnpj", {})
+      const novo = await api.get<Prestador>("/prestador")
+      onAtualizado(novo)
+      setF(inicial(novo))
+      avisarEmpresaAtualizada()
+      const falta = r.faltam.length ? ` Ainda falta: ${r.faltam.map((x) => x.rotulo).join("; ")}.` : ""
+      setReceita({
+        ok: true,
+        texto: r.preenchidos.length
+          ? `Preenchi pela Receita: ${r.preenchidos.join(", ")}. Confira e ajuste o que precisar.${falta}`
+          : `Não tinha nada em branco que a Receita soubesse preencher.${falta}`,
+      })
+    } catch (err) {
+      setReceita({ ok: false, texto: erroDe(err) })
+    } finally {
+      setBuscando(false)
+    }
+  }
 
   async function salvar(e: FormEvent) {
     e.preventDefault()
@@ -257,6 +341,22 @@ function AbaEmitente({ prestador, onAtualizado }: { prestador: Prestador; onAtua
 
   return (
     <form onSubmit={salvar} className="flex flex-col gap-6">
+      {temCnpj && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary-200 bg-primary-50/60 px-4 py-3 dark:border-primary-800 dark:bg-primary-900/20">
+          <p className="min-w-0 flex-1 basis-64 text-sm text-slate-700 dark:text-slate-200">
+            <strong className="font-semibold">Não precisa digitar tudo.</strong> Eu busco na Receita, pelo CNPJ, o endereço e o regime da
+            empresa e preencho só o que estiver em branco.
+          </p>
+          <Button type="button" variant="primary" onClick={() => void preencherPeloCnpj()} disabled={buscando || salvando}>
+            <DownloadCloud size={16} aria-hidden /> {buscando ? "Buscando na Receita..." : "Preencher pelo CNPJ"}
+          </Button>
+          {receita && (
+            <p role="status" className={`basis-full text-sm ${receita.ok ? "text-success-700 dark:text-success-300" : "text-danger-600"}`}>
+              {receita.texto}
+            </p>
+          )}
+        </div>
+      )}
       <Card className="p-5">
         <TituloSecao icone={Building2}>Identificação</TituloSecao>
         <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">Como a empresa aparece nas notas que você emite.</p>

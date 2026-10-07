@@ -76,7 +76,7 @@ def exige_modulo(nome: str):
         if nome not in modulos_da_empresa(db, prestador_id):
             raise HTTPException(
                 status_code=403,
-                detail=f"O módulo {NOMES_MODULOS.get(nome, nome)} não está ativo nesta empresa. Ative em Empresa › Módulos.",
+                detail=f"O módulo {NOMES_MODULOS.get(nome, nome)} não está ativo nesta empresa. Ative em Empresa › Mais opções.",
             )
 
     return _conferir

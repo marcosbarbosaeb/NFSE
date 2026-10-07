@@ -684,7 +684,7 @@ def api_auth_me(request: Request, db: Session = Depends(get_db)):
 
 @app.put("/api/empresa/modulos")
 def api_definir_modulos(req: ModulosRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
-    """Liga/desliga os produtos da empresa ativa (Empresa › Módulos). Desligar
+    """Liga/desliga os produtos da empresa ativa (Empresa › Mais opções). Desligar
     não apaga nada: os dados do módulo ficam guardados e voltam quando ele
     for ligado de novo. (Enquanto não há cobrança por módulo, quem liga é a
     própria pessoa.)"""
@@ -710,6 +710,35 @@ def _usuario_logado(request: Request, db: Session) -> Usuario:
     return usuario
 
 
+def _enviar_codigo_de_acesso(destinatario: str, codigo: str) -> bool:
+    from app.services import email_modelo as m
+
+    s = get_settings()
+    texto = (
+        f"Seu código de acesso à Agente Ana: {codigo}\n\n"
+        "Ele vale por 10 minutos. Se não foi você que pediu, ignore este e-mail."
+    )
+    html = m.moldura(
+        titulo="Seu código de acesso",
+        previa=f"{codigo} — vale por 10 minutos.",
+        motivo="Você recebeu este e-mail porque pediram um código de acesso pra esta conta. Se não foi você, ignore: ninguém entra sem o código.",
+        corpo_html=(
+            m.paragrafo("Use este código pra entrar na Agente Ana:")
+            + f'<p style="margin:6px 0 18px;font-family:Arial,Helvetica,sans-serif;font-size:34px;font-weight:bold;letter-spacing:8px;color:#1e2a5e">{codigo}</p>'
+            + m.paragrafo("Ele vale por <strong>10 minutos</strong> e só serve uma vez.", suave=True)
+        ),
+    )
+    try:
+        get_email_sender().enviar(
+            destinatario=destinatario, assunto=f"{codigo} é o seu código da Agente Ana",
+            corpo_texto=texto, corpo_html=html, responder_para=s.email_suporte,
+        )
+        return True
+    except EmailEnvioError:
+        logger.exception("Falha ao enviar código de login")
+        return False
+
+
 @app.post("/api/auth/codigo", dependencies=[Depends(limite("codigo", 5, 900))])
 def api_pedir_codigo(req: SolicitarCodigoRequest, db: Session = Depends(get_db)):
     """Login sem senha: manda um código de 6 dígitos pro e-mail. Responde
@@ -718,30 +747,7 @@ def api_pedir_codigo(req: SolicitarCodigoRequest, db: Session = Depends(get_db))
     if gerado is not None:
         usuario, codigo = gerado
         db.commit()
-        s = get_settings()
-        texto = (
-            f"Seu código de acesso à Agente Ana: {codigo}\n\n"
-            "Ele vale por 10 minutos. Se não foi você que pediu, ignore este e-mail."
-        )
-        from app.services import email_modelo as m
-
-        html = m.moldura(
-            titulo="Seu código de acesso",
-            previa=f"{codigo} — vale por 10 minutos.",
-            motivo="Você recebeu este e-mail porque pediram um código de acesso pra esta conta. Se não foi você, ignore: ninguém entra sem o código.",
-            corpo_html=(
-                m.paragrafo("Use este código pra entrar na Agente Ana:")
-                + f'<p style="margin:6px 0 18px;font-family:Arial,Helvetica,sans-serif;font-size:34px;font-weight:bold;letter-spacing:8px;color:#1e2a5e">{codigo}</p>'
-                + m.paragrafo("Ele vale por <strong>10 minutos</strong> e só serve uma vez.", suave=True)
-            ),
-        )
-        try:
-            get_email_sender().enviar(
-                destinatario=usuario.email, assunto=f"{codigo} é o seu código da Agente Ana",
-                corpo_texto=texto, corpo_html=html, responder_para=s.email_suporte,
-            )
-        except EmailEnvioError:
-            logger.exception("Falha ao enviar código de login")
+        _enviar_codigo_de_acesso(usuario.email, codigo)
     return {"ok": True}
 
 
@@ -985,7 +991,7 @@ def api_excluir_empresa(
 def api_atualizar_emitente(
     req: EmitenteAtualizarRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
 ):
-    """Dados do emitente (tela Empresa › Emitente)."""
+    """Dados do emitente (tela Empresa › Dados da empresa)."""
     prestador = db.get(Prestador, prestador_id)
     if prestador is None:
         raise HTTPException(status_code=404, detail="Prestador não encontrado.")
@@ -1735,6 +1741,29 @@ def api_ver_prestador(db: Session = Depends(db_sessao), prestador_id: uuid.UUID 
     if prestador is None:
         raise HTTPException(status_code=404, detail="Prestador não encontrado.")
     return prestador
+
+
+@app.post(
+    "/api/prestador/completar-pelo-cnpj", responses={400: {"model": ErroResponse}, 503: {"model": ErroResponse}},
+    dependencies=[Depends(exigir_conta_real), Depends(limite("cnpj", 60, 600))],
+)
+def api_completar_pelo_cnpj(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Busca na Receita os dados do CNPJ e preenche o que está em branco
+    (endereço, regime, nome fantasia...). Nunca troca o que a pessoa já
+    escreveu. Ver app/services/completar_empresa.py."""
+    from app.services import completar_empresa
+
+    prestador = db.get(Prestador, prestador_id)
+    try:
+        resultado = completar_empresa.completar(db, prestador)
+    except completar_empresa.SemCnpjError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (CnpjInvalidoError, CnpjNaoEncontradoError):
+        raise HTTPException(status_code=400, detail="Não encontrei esse CNPJ na Receita. Preencha os dados à mão.")
+    except ConsultaCnpjIndisponivelError:
+        raise HTTPException(status_code=503, detail="A consulta à Receita não respondeu agora. Tente de novo em instantes ou preencha à mão.")
+    db.commit()
+    return resultado
 
 
 @app.patch("/api/prestador/preferencias", response_model=PrestadorResponse, responses={404: {"model": ErroResponse}})
@@ -2799,6 +2828,25 @@ def api_gestao_tirar_liberacao(alvo: uuid.UUID, db: Session = Depends(db_sessao)
     return resposta
 
 
+@app.post("/api/gestao/emails-de-exemplo", dependencies=[Depends(exigir_gestor), Depends(limite("emails-exemplo", 5, 600))])
+def api_gestao_emails_de_exemplo(request: Request, db: Session = Depends(db_sessao)):
+    """Manda pra PRÓPRIA administradora uma cópia de cada e-mail da
+    plataforma (confirmação de cadastro, código de acesso, convite do
+    contador), pra ver como estão chegando. Os links e o código são de
+    mentira. Nunca aceita outro destinatário."""
+    from app.contador import _avisar_contador
+    from app.services.cadastro import _enviar_email_confirmacao
+
+    eu = _usuario_logado(request, db)
+    enviados = {
+        "Confirmação de cadastro": _enviar_email_confirmacao(eu.email, "exemplo-este-link-nao-funciona"),
+        "Confirmação de cadastro (contador)": _enviar_email_confirmacao(eu.email, "exemplo-este-link-nao-funciona", contador=True),
+        "Código de acesso": _enviar_codigo_de_acesso(eu.email, "123456"),
+        "Convite do contador": _avisar_contador("Empresa Exemplo Ltda", eu, eu.email, ["emitir", "enviar"]),
+    }
+    return {"para": eu.email, "enviados": [k for k, ok in enviados.items() if ok], "falharam": [k for k, ok in enviados.items() if not ok]}
+
+
 @app.get("/api/gestao/guia", dependencies=[Depends(exigir_gestor)])
 def api_gestao_guia():
     """O guia completo (o texto que alimenta a IA de ajuda). Não é público:
@@ -3188,6 +3236,28 @@ def api_buscar_nacional(
         )
     except importar_adn.ImportacaoAdnError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+class DesfazerImportacaoNacionalRequest(BaseModel):
+    importacao: str = Field(min_length=1, max_length=40)
+
+
+@app.get("/api/importar/nacional/importacoes", dependencies=[_SO_EMISSOR])
+def api_importacoes_do_nacional(db: Session = Depends(db_sessao)):
+    """O que já foi importado do Emissor Nacional, pra poder desfazer (07/10/2026)."""
+    return {"importacoes": importar_adn.importacoes(db)}
+
+
+@app.post("/api/importar/nacional/desfazer", responses={404: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
+def api_desfazer_importacao_do_nacional(
+    req: DesfazerImportacaoNacionalRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    try:
+        resultado = importar_adn.desfazer(db, db.get(Prestador, prestador_id), req.importacao)
+    except importar_adn.ImportacaoAdnError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    db.commit()
+    return resultado
 
 
 @app.post("/api/importar/nacional/limpar", dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])

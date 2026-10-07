@@ -15,7 +15,7 @@ import { Modal } from "./ui/Modal"
 // topo da barra lateral; trocar recarrega o painel inteiro pra todas as
 // telas buscarem os dados da empresa nova.
 
-/** Disparado quando os dados da empresa mudam (ex.: nome fantasia em Empresa › Emitente). */
+/** Disparado quando os dados da empresa mudam (ex.: nome fantasia em Empresa › Dados da empresa). */
 export const EVENTO_EMPRESA_ATUALIZADA = "agenteana:empresa-atualizada"
 
 export function avisarEmpresaAtualizada() {

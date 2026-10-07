@@ -95,11 +95,11 @@ O certificado fica guardado de forma criptografada.
 
 ### Dados da empresa (emitente)
 
-Em "Empresa", aba "Emitente", ficam os dados que aparecem nas notas: razão social, nome fantasia, inscrição municipal, e-mail, telefone, endereço e o regime tributário (Simples Nacional, MEI, regime especial). O CNPJ não muda — outro CNPJ é outra empresa. O regime tributário vai em toda nota; na dúvida, confirme com seu contador. Depois de mexer, clique em "Salvar dados do emitente".
+Em "Empresa", aba "Dados da empresa", ficam os dados que aparecem nas notas: razão social, nome fantasia, inscrição municipal, e-mail, telefone, endereço e o regime tributário (Simples Nacional, MEI, regime especial). O CNPJ não muda — outro CNPJ é outra empresa. O regime tributário vai em toda nota; na dúvida, confirme com seu contador. Depois de mexer, clique em "Salvar dados do emitente".
 
 ### Alíquota do Simples Nacional
 
-Em "Empresa", aba "Alíquotas", você informa a alíquota do Simples Nacional. Ela serve só pra já vir preenchida no campo de alíquota quando você cria uma nota nova. A Ana não calcula imposto nem gera boleto: é pra você não esquecer de conferir o número todo mês. O Calendário mostra um lembrete de "Revisar alíquota do Simples Nacional". Depois de conferir, clique em "Confirmar".
+Em "Empresa", aba "Dados da empresa", no bloco "Alíquota do Simples Nacional", você informa a alíquota do Simples Nacional. Ela serve só pra já vir preenchida no campo de alíquota quando você cria uma nota nova. A Ana não calcula imposto nem gera boleto: é pra você não esquecer de conferir o número todo mês. O Calendário mostra um lembrete de "Revisar alíquota do Simples Nacional". Depois de conferir, clique em "Confirmar".
 
 ### Notas de teste (homologação)
 
@@ -109,6 +109,17 @@ Em "Empresa", aba "Notas", existe a opção "Gerar notas de teste (homologação
 - Ligada: as notas novas vão pro ambiente de teste da Receita e **não valem como nota fiscal**. Ligue só pra testar.
 
 Quando está ligada, a tela de gerar nota avisa que a conta está gerando notas de teste.
+
+### Preencher os dados da empresa pelo CNPJ
+
+Não precisa digitar endereço e regime tributário. Em "Empresa", aba "Dados da empresa", o botão "Preencher pelo CNPJ" busca os dados na Receita e preenche só o que estiver em branco (endereço, cidade, regime tributário, nome fantasia, telefone e e-mail). O que você já escreveu não é trocado. Na "Visão geral", o passo "Dados da empresa" dos primeiros passos tem o mesmo atalho: "Puxar pelo CNPJ". A alíquota do Simples a Receita não informa: essa você (ou o seu contador) preenche.
+
+### Desfazer uma importação
+
+Importou a coisa errada ou ficou bagunçado? Dá pra desfazer a importação inteira:
+
+- **Extrato do banco e planilha de controle**: em "Financeiro" › "Conciliação", no fim da tela, o bloco "Importações feitas" lista cada importação com o botão "Desfazer". Desfazer um extrato tira as linhas dele da conciliação, apaga os recebimentos e despesas que ele criou (as notas voltam a ficar a receber) e reabre as contas que ele tinha dado como pagas. O que foi lançado à mão continua.
+- **Notas trazidas do Emissor Nacional**: em "Empresa" › "Notas e e-mails", o bloco "Importações feitas". Desfazer tira da Ana as notas que aquela importação trouxe e os tomadores que ela criou e ficaram sem nota. Nada muda no Emissor Nacional (as notas continuam válidas lá) e dá pra importar de novo. Notas geradas pela Ana nunca são apagadas por aqui.
 
 ### Mais de uma empresa (CNPJ) no mesmo login
 
@@ -225,7 +236,7 @@ Toda nota passa por quatro etapas:
 
 ### Gerar uma nota
 
-Na tela "NFS-e", clique em "Nova emissão". Escolha o tomador, confira a data de competência e informe o valor. A alíquota do Simples já vem preenchida com a referência de "Empresa › Alíquotas" — confira antes de gerar.
+Na tela "NFS-e", clique em "Nova emissão". Escolha o tomador, confira a data de competência e informe o valor. A alíquota do Simples já vem preenchida com a referência de "Empresa › Dados da empresa (Alíquota)" — confira antes de gerar.
 
 Você também pode clicar em "Gerar" na linha do tomador, na tela Tomadores.
 
@@ -674,7 +685,7 @@ A situação da assinatura aparece como "Período de teste", "Assinatura ativa",
 
 ### Ligar e desligar módulos
 
-Em "Empresa", aba "Módulos", ficam os módulos da empresa ("Notas" e "Financeiro"). Desligar um módulo só esconde as telas dele: nada é apagado, e tudo volta quando ele for ligado de novo. Pelo menos um módulo precisa ficar ligado.
+Em "Empresa", aba "Mais opções", ficam os módulos da empresa ("Notas" e "Financeiro"). Desligar um módulo só esconde as telas dele: nada é apagado, e tudo volta quando ele for ligado de novo. Pelo menos um módulo precisa ficar ligado.
 
 Com plano pago, os módulos vêm do plano que você assina: pra ligar ou desligar um módulo, mude o plano em "Minha conta" › "Assinatura".
 
@@ -712,14 +723,14 @@ Cada conta só enxerga os próprios dados. Senhas e certificados ficam guardados
 
 ### Limpar dados de teste
 
-Em "Empresa", aba "Limpar e excluir", o bloco "Limpar dados" apaga dados da empresa por categoria (tomadores, notas, calendário, recebimentos, despesas) — útil pra tirar dados de teste. Não tem como desfazer; por isso a Ana pede pra digitar LIMPAR.
+Em "Empresa", aba "Mais opções", o bloco "Limpar dados" apaga dados da empresa por categoria (tomadores, notas, calendário, recebimentos, despesas) — útil pra tirar dados de teste. Não tem como desfazer; por isso a Ana pede pra digitar LIMPAR.
 
 - Notas emitidas de verdade não podem ser apagadas: só saem as que nunca foram enviadas à Receita.
 - Tomadores com notas já emitidas ficam arquivados (as notas continuam guardadas).
 
 ### Excluir a empresa ou a conta
 
-- **"Excluir esta empresa"** ("Empresa" › "Limpar e excluir"): apaga a empresa e todo o histórico dela na Ana. Se for a única empresa do seu login, a conta é excluída junto. A Ana pede o CNPJ pra confirmar.
+- **"Excluir esta empresa"** ("Empresa" › "Mais opções"): apaga a empresa e todo o histórico dela na Ana. Se for a única empresa do seu login, a conta é excluída junto. A Ana pede o CNPJ pra confirmar.
 - **"Excluir minha conta"** ("Minha conta" › "Perfil"): apaga o seu login e as empresas em que você é o único usuário. A Ana pede pra digitar EXCLUIR. Se tiver assinatura ativa, cancele antes em "Assinatura" pra não ser cobrado de novo.
 
 Nos dois casos não tem como desfazer, e as notas já emitidas continuam válidas na Receita.
@@ -758,12 +769,12 @@ O e-mail do suporte é suporte@agenteana.com.br.
 | Quero... | Onde |
 | --- | --- |
 | Enviar ou trocar o certificado digital | "Empresa" › "Certificado" |
-| Mudar os dados da empresa que saem na nota | "Empresa" › "Emitente" |
+| Mudar os dados da empresa que saem na nota | "Empresa" › "Dados da empresa" |
 | Mudar o texto do e-mail das notas | "Empresa" › "E-mails" |
-| Informar a alíquota do Simples | "Empresa" › "Alíquotas" |
+| Informar a alíquota do Simples | "Empresa" › "Dados da empresa" |
 | Ligar notas de teste ou importar do Emissor Nacional | "Empresa" › "Notas" |
-| Ligar ou desligar um módulo | "Empresa" › "Módulos" |
-| Apagar dados de teste ou excluir a empresa | "Empresa" › "Limpar e excluir" |
+| Ligar ou desligar um módulo | "Empresa" › "Mais opções" |
+| Apagar dados de teste ou excluir a empresa | "Empresa" › "Mais opções" |
 | Cadastrar um cliente | "Tomadores" › "Adicionar tomador" |
 | Corrigir o CEP de um cliente | "Tomadores" › ficha do tomador › "Dados do tomador" |
 | Gerar uma nota | "NFS-e" › "Nova emissão" |

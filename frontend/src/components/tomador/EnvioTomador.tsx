@@ -203,13 +203,13 @@ export function EnvioTomador({ valor, onChange, prestador }: { valor: ValorEnvio
                   assunto: prestador?.email_assunto_padrao,
                   mensagem: prestador?.email_mensagem_padrao,
                   anexos: prestador?.email_anexos_padrao ?? null,
-                  rotulo: "o modelo padrão de Empresa › E-mails",
+                  rotulo: "o modelo padrão de Empresa › Notas e e-mails e e-mails (Padrões de e-mail)",
                 }}
                 mostrarCopia
                 rotuloCopia="Cópia (recebem o mesmo e-mail)"
                 dicaCopia={
                   prestador?.email_copia_padrao
-                    ? `Além destes, vai cópia pra ${prestador.email_copia_padrao} (Empresa › E-mails).`
+                    ? `Além destes, vai cópia pra ${prestador.email_copia_padrao} (Empresa › Notas e e-mails e e-mails (Padrões de e-mail)).`
                     : "Quem está em cópia recebe o mesmo e-mail do tomador."
                 }
               />

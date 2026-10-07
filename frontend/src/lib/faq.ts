@@ -635,11 +635,19 @@ export const FAQ: PerguntaFaq[] = [
       "Não. No topo do menu, clique no seletor “Empresa” e depois em “Adicionar empresa”. Dá pra “Importar do Emissor Nacional” (com o certificado, eu trago o cadastro, os tomadores e as notas) ou “Cadastrar do zero”. Cada empresa tem seus próprios tomadores, notas e certificado, e você troca entre elas no mesmo seletor.",
   },
   {
+    id: "desfazer-importacao",
+    tema: "conta",
+    pergunta: "Importei um extrato (ou notas do Emissor Nacional) e ficou bagunçado. Dá pra desfazer?",
+    resposta:
+      "Dá. Extrato do banco e planilha: em Financeiro › Conciliação, no fim da tela, “Importações feitas” › “Desfazer” — saem as linhas, os recebimentos e as despesas que aquela importação criou, e as notas voltam a ficar a receber. Notas do Emissor Nacional: em Empresa › Notas e e-mails, “Importações feitas” › “Desfazer” — saem as notas que ela trouxe e os tomadores que ela criou. O que você lançou à mão e as notas geradas pela Ana continuam; nada muda no Emissor Nacional.",
+    link: "/app/financeiro/conciliacao?parte=extrato",
+  },
+  {
     id: "limpar-ou-excluir",
     tema: "conta",
     pergunta: "Como apago dados de teste, ou excluo a empresa ou a conta?",
     resposta:
-      "Em Empresa, aba “Limpar e excluir”: “Limpar dados” apaga por categoria (útil pra tirar testes) e “Excluir esta empresa” apaga a empresa inteira. Pra apagar o seu login, vá em Minha conta, aba “Perfil”, “Excluir minha conta”. Nada disso tem como desfazer. As notas já emitidas de verdade continuam válidas na Receita.",
+      "Em Empresa, aba “Mais opções”: “Limpar dados” apaga por categoria (útil pra tirar testes) e “Excluir esta empresa” apaga a empresa inteira. Pra apagar o seu login, vá em Minha conta, aba “Perfil”, “Excluir minha conta”. Nada disso tem como desfazer. As notas já emitidas de verdade continuam válidas na Receita.",
     link: "/app/empresa?aba=dados",
   },
   {

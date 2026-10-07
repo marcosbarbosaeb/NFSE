@@ -64,6 +64,13 @@ class DadosCnpj:
     uf: str
     cod_municipio_sugerido: str | None
     situacao_cadastral: str | None
+    # 07/10/2026 — "completar os dados da empresa pelo CNPJ": o que mais a
+    # Receita sabe. `regime` já vem no código da nota (opSimpNac): "2" MEI,
+    # "3" ME/EPP do Simples, "1" não optante; None quando a Receita não diz.
+    nome_fantasia: str | None = None
+    regime: str | None = None
+    telefone: str | None = None
+    email: str | None = None
 
 
 def _limpar_cnpj(cnpj: str) -> str:
@@ -105,6 +112,10 @@ def consultar_cnpj(cnpj: str) -> DadosCnpj:
     if not municipio_por_codigo(cod_municipio_str):
         cod_municipio_str = codigo_por_nome(dados.get("municipio"), dados.get("uf"))
 
+    mei, simples = dados.get("opcao_pelo_mei"), dados.get("opcao_pelo_simples")
+    regime = "2" if mei is True else "3" if simples is True else "1" if simples is False else None
+    telefone = "".join(c for c in str(dados.get("ddd_telefone_1") or "") if c.isdigit()) or None
+
     return DadosCnpj(
         razao_social=(dados.get("razao_social") or dados.get("nome") or "").strip(),
         logradouro=dados.get("logradouro") or None,
@@ -116,4 +127,8 @@ def consultar_cnpj(cnpj: str) -> DadosCnpj:
         uf=(dados.get("uf") or "").strip().upper(),
         cod_municipio_sugerido=cod_municipio_str,
         situacao_cadastral=dados.get("descricao_situacao_cadastral"),
+        nome_fantasia=(dados.get("nome_fantasia") or "").strip() or None,
+        regime=regime,
+        telefone=telefone,
+        email=(dados.get("email") or "").strip().lower() or None,
     )

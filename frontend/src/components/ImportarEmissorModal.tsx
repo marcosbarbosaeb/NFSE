@@ -40,7 +40,7 @@ import { Modal } from "./ui/Modal"
 //
 // - modo "nova": mais um CNPJ no login (vem de "Adicionar empresa").
 // - modo "atual": a empresa aberta ainda está vazia (vem da Visão geral e de
-//   Empresa › Notas) — só falta o certificado e a importação.
+//   Empresa › Notas e e-mails) — só falta o certificado e a importação.
 //
 // A leitura e a gravação das notas são as mesmas de ImportarNacionalModal
 // (POST /importar/nacional/buscar e POST /importar/nacional).
@@ -50,7 +50,7 @@ type Fase = "carregando" | "certificado" | "confirmar" | "andamento" | "revisar"
 type Situacao = "espera" | "fazendo" | "feito" | "erro"
 type Etapa = "leitura" | "gravacao"
 
-const CAMINHO_DEPOIS = "Empresa › Notas › Importar do Emissor Nacional"
+const CAMINHO_DEPOIS = "Empresa › Notas e e-mails › Importar do Emissor Nacional"
 const MES = /^\d{4}-\d{2}$/
 
 function dataBR(iso: string): string {
@@ -525,7 +525,7 @@ export function ImportarEmissorModal({ modo, onFechar, onVoltar }: { modo: Modo;
                 maxLength={200}
                 value={nomeFantasia}
                 onChange={(e) => setNomeFantasia(e.target.value)}
-                hint="É o nome que aparece no seletor de empresas. O endereço você confere depois em Empresa › Emitente."
+                hint="É o nome que aparece no seletor de empresas. O endereço você confere depois em Empresa › Dados da empresa."
               />
             </>
           )}

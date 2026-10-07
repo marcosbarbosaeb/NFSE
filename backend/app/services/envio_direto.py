@@ -658,7 +658,7 @@ def enviar_geral(
     modelo = _modelo_geral(db, emissao, dados)
     destinos = lista_emails(para) if para is not None else modelo["destinos"]
     if not destinos:
-        raise EmailIndisponivelError("Cadastre os e-mails gerais (contador, o seu) em Empresa › E-mails.")
+        raise EmailIndisponivelError("Cadastre os e-mails gerais (contador, o seu) em Empresa › Notas e e-mails e e-mails (Padrões de e-mail).")
     if assunto and assunto.strip():
         modelo["assunto"] = re.sub(r"[\r\n]+", " ", mensagens.renderizar_modelo(assunto, dados)).strip()[:300]
     if texto and texto.strip():

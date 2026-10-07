@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.deps import db_sessao, exige_modulo, exigir_conta_real, ler_upload as _ler_upload, prestador_atual_id
-from app.financeiro import classificar_extrato, clientes, conciliacao, conciliacao_notas, importar_planilha
+from app.financeiro import classificar_extrato, clientes, conciliacao, conciliacao_notas, desfazer as desfazer_importacao, importar_planilha
 from app.financeiro import contas_mes as financeiro
 from app.financeiro import mes_a_mes
 from app.financeiro.a_receber import notas_em_aberto, recebimentos_sem_nota
@@ -255,6 +255,29 @@ def api_confirmar_extrato(
         itens=[{"indice": r.indice, "ok": r.ok, "mensagem": r.mensagem, "pagamento_id": r.pagamento_id} for r in resultados],
         despesas_registradas=len(req.despesas), sem_nota=sem_nota, pendentes=pendentes,
     )
+
+
+class DesfazerImportacaoRequest(BaseModel):
+    tipo: str = Field(pattern="^(extrato|planilha)$")
+    quando: str = Field(min_length=10, max_length=40)
+
+
+@rotas.get("/api/financeiro/importacoes")
+def api_importacoes_do_financeiro(db: Session = Depends(db_sessao)):
+    """Extratos e planilhas importados, pra poder desfazer (07/10/2026)."""
+    return {"importacoes": desfazer_importacao.listar(db)}
+
+
+@rotas.post("/api/financeiro/importacoes/desfazer", responses={404: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
+def api_desfazer_importacao_do_financeiro(req: DesfazerImportacaoRequest, db: Session = Depends(db_sessao)):
+    """Apaga o que aquela importação gravou (linhas do extrato e o que elas
+    viraram). O que foi lançado à mão fica. Ver app/financeiro/desfazer.py."""
+    try:
+        resultado = desfazer_importacao.desfazer(db, req.tipo, req.quando)
+    except desfazer_importacao.DesfazerError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    db.commit()
+    return resultado
 
 
 @rotas.get("/api/conciliacao")

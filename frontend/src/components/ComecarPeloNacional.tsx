@@ -6,7 +6,7 @@ import type { VinculoResumo } from "../lib/types"
 // Empresa que ainda não tem tomador nem nota: dá pra trazer as notas do
 // Emissor Nacional com o certificado. Desde 06/10/2026 isso NÃO aparece mais
 // na Visão geral ("não quero essa importação na tela inicial": primeiro os
-// tomadores pré-cadastrados — ver PrimeirosPassos); fica em Empresa › Notas.
+// tomadores pré-cadastrados — ver PrimeirosPassos); fica em Empresa › Notas e e-mails.
 
 export const CHAMADA_NACIONAL = "Já emite pelo Emissor Nacional? Eu trago seus tomadores e notas"
 

@@ -317,7 +317,7 @@ def resumo_mes(
             "tipo": "aliquota_pendente",
             "titulo": "Alíquota do Simples Nacional",
             "mensagem": (
-                "Ainda não confirmada este mês — revise em Empresa › Alíquotas antes de emitir notas."
+                "Ainda não confirmada este mês — revise em Empresa › Dados da empresa (Alíquota) antes de emitir notas."
                 if prestador.aliquota_atual is not None
                 else "Nenhuma alíquota de referência definida ainda — configure em Configurações."
             ),

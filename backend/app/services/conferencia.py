@@ -408,7 +408,7 @@ def conferir_empresa(db: Session, prestador_id: uuid.UUID, *, certificado_trava:
         if not prestador.modo_teste and prestador.tp_amb_padrao == "2":
             pontos.append(_ponto(
                 "aviso", "ambiente_teste", "Sua conta está no ambiente de teste: as notas saem sem valor fiscal (não valem de verdade).",
-                "Para emitir notas de verdade, mude para “Produção” em Empresa › Notas.", campo="ambiente", onde="empresa",
+                "Para emitir notas de verdade, mude para “Produção” em Empresa › Notas e e-mails.", campo="ambiente", onde="empresa",
             ))
     if not prestador.demo:
         from app.services.compatibilidade import usa_emissor_nacional
@@ -424,7 +424,7 @@ def conferir_empresa(db: Session, prestador_id: uuid.UUID, *, certificado_trava:
     if prestador.op_simples_nacional == "3" and prestador.aliquota_atual is None:
         pontos.append(_ponto(
             "aviso", "aliquota_nao_definida", "A alíquota do Simples Nacional da sua empresa não está informada.",
-            "Informe a alíquota em Empresa › Alíquotas (o seu contador sabe o número).", campo="aliquota", onde="empresa",
+            "Informe a alíquota em Empresa › Dados da empresa (Alíquota) (o seu contador sabe o número).", campo="aliquota", onde="empresa",
         ))
     return pontos
 
@@ -611,7 +611,7 @@ def conferir_emissao(db: Session, emissao: Emissao) -> list[dict]:
     if str(snap.get("tpAmb") or "") == "2" and prestador is not None and not prestador.demo and not prestador.modo_teste:
         pontos.append(_ponto(
             "aviso", "ambiente_teste", "Esta nota foi gerada no ambiente de teste: ela sai sem valor fiscal (não vale de verdade).",
-            "Para valer, mude para “Produção” em Empresa › Notas e gere a nota de novo.", campo="ambiente", onde="empresa",
+            "Para valer, mude para “Produção” em Empresa › Notas e e-mails e gere a nota de novo.", campo="ambiente", onde="empresa",
         ))
 
     historico = None if avulsa else _historico(db, emissao.prestador_tomador_id, ignorar_id=emissao.id)

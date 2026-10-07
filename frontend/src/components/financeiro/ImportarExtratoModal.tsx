@@ -531,6 +531,9 @@ export function ImportarExtratoModal({
                 ))}
             </ul>
           )}
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Não era isso? Dá pra desfazer esta importação inteira em Financeiro › Conciliação › Importações feitas.
+          </p>
           <div className="flex justify-end pt-2">
             <Button type="button" variant="accent" onClick={onClose}>
               Fechar

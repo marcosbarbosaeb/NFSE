@@ -9,8 +9,8 @@ import type { PontoConferencia } from "../lib/types"
 
 const ABA_DA_EMPRESA: Record<string, { aba: string; rotulo: string }> = {
   certificado: { aba: "certificado", rotulo: "Abrir Empresa › Certificado" },
-  aliquota: { aba: "aliquotas", rotulo: "Abrir Empresa › Alíquotas" },
-  ambiente: { aba: "notas", rotulo: "Abrir Empresa › Notas" },
+  aliquota: { aba: "aliquotas", rotulo: "Abrir Empresa › Dados da empresa (Alíquota)" },
+  ambiente: { aba: "notas", rotulo: "Abrir Empresa › Notas e e-mails" },
 }
 
 function atalho(ponto: PontoConferencia, vinculoId?: string | null): { para: string; rotulo: string } | null {

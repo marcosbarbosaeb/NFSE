@@ -723,6 +723,9 @@ function Resultado({ resultado, onFechar }: { resultado: ResultadoNacional; onFe
           </ul>
         </div>
       )}
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        Não era isso? Dá pra desfazer esta importação em Empresa › Notas e e-mails › Importações feitas.
+      </p>
       <div className="flex justify-end">
         <Button type="button" variant="accent" onClick={onFechar}>
           Fechar

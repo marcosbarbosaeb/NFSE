@@ -205,7 +205,7 @@ export function EnvioNota({
       "geral",
       async () => {
         const destinos = lista(geralPara)
-        if (destinos.length === 0) throw new ApiError(400, "Informe pelo menos um e-mail (ou cadastre os e-mails gerais em Empresa › E-mails).")
+        if (destinos.length === 0) throw new ApiError(400, "Informe pelo menos um e-mail (ou cadastre os e-mails gerais em Empresa › Notas e e-mails e e-mails (Padrões de e-mail)).")
         const body: EnviarGeralBody = { para: destinos, assunto: geralAssunto.trim() || null, texto: geralTexto.trim() || null }
         const envio = await api.post<Envio>(`/dps/${nota.id}/enviar-geral`, body)
         if (envio.status === "falha") throw new ApiError(400, `O e-mail não saiu: ${envio.erro ?? "erro no provedor"}. Tente de novo.`)
@@ -491,7 +491,7 @@ export function EnvioNota({
             <span className={dica}>
               {geralSemDestino ? "Nenhum e-mail geral cadastrado ainda. " : "Vale só pra este envio. "}
               <Link to="/app/empresa?aba=emails" className="font-medium text-primary-600 hover:underline">
-                {geralSemDestino ? "Cadastrar em Empresa › E-mails" : "Mudar o padrão"}
+                {geralSemDestino ? "Cadastrar em Empresa › Notas e e-mails e e-mails (Padrões de e-mail)" : "Mudar o padrão"}
               </Link>
             </span>
           </label>

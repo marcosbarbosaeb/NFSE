@@ -88,6 +88,7 @@ _REGRAS_BRUTAS: list[tuple[str, str, str, str]] = [
     ("POST", r"/api/lotes", "emitir", "Iniciou uma ação em lote"),
     ("POST", r"/api/lotes/[^/]+/(cancelar|refazer-falhas|retomar)", "emitir", "Mexeu numa ação em lote"),
     ("POST", r"/api/importar/nacional(/buscar)?", "emitir", "Importou notas do Emissor Nacional"),
+    ("POST", r"/api/importar/nacional/desfazer", "emitir", "Desfez uma importação do Emissor Nacional"),
     # tomadores
     ("POST", r"/api/vinculos", "tomadores", "Cadastrou um tomador"),
     ("PATCH|DELETE", r"/api/vinculos/[^/]+(/tomador)?", "tomadores", "Alterou um tomador"),
@@ -96,6 +97,7 @@ _REGRAS_BRUTAS: list[tuple[str, str, str, str]] = [
     # financeiro
     (_MUDA, r"/api/pagamentos(/[^/]+)?", "financeiro", "Alterou um recebimento"),
     ("POST", r"/api/recebimentos/extrato/confirmar", "financeiro", "Importou um extrato"),
+    ("POST", r"/api/financeiro/importacoes/desfazer", "financeiro", "Desfez uma importação do financeiro"),
     ("POST", r"/api/conciliacao/.*", "financeiro", "Conciliou lançamentos"),
     (_MUDA, r"/api/despesas(/[^/]+)?", "financeiro", "Alterou uma despesa"),
     ("POST", r"/api/financeiro/conciliar", "financeiro", "Conciliou notas e recebimentos"),
@@ -107,6 +109,7 @@ _REGRAS_BRUTAS: list[tuple[str, str, str, str]] = [
     ("POST", r"/api/painel/pendencias/ignorar", "financeiro", "Marcou uma pendência como resolvida"),
     # dados da empresa
     ("PATCH", r"/api/prestador(/.*)?", "empresa", "Alterou os dados da empresa"),
+    ("POST", r"/api/prestador/completar-pelo-cnpj", "empresa", "Completou os dados da empresa pelo CNPJ"),
     ("POST", r"/api/certificado", "empresa", "Trocou o certificado A1"),
     ("POST|DELETE", r"/api/drive(/conectar)?", "empresa", "Alterou a ligação com o Google Drive"),
 ]

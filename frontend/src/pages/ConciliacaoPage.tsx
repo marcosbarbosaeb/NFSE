@@ -4,6 +4,7 @@ import { Link, useSearchParams } from "react-router-dom"
 import { ConciliacaoExtrato } from "../components/financeiro/ConciliacaoExtrato"
 import { ConciliacaoNotas, type FiltroNotas, ehFiltroNotas } from "../components/financeiro/ConciliacaoNotas"
 import { ImportarExtratoModal } from "../components/financeiro/ImportarExtratoModal"
+import { ImportacoesFeitas } from "../components/ImportacoesFeitas"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { api } from "../lib/api"
@@ -241,6 +242,15 @@ export function ConciliacaoPage() {
           />
         )}
       </div>
+
+      <ImportacoesFeitas
+        origem="financeiro"
+        recarga={recarga}
+        onDesfeito={() => {
+          setRecarga((n) => n + 1)
+          void carregarResumo()
+        }}
+      />
 
       {importando && (
         <ImportarExtratoModal

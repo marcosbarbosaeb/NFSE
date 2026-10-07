@@ -366,7 +366,7 @@ def test_importacao_indisponivel_mantem_empresa_e_certificado_e_da_pra_tentar_de
     assert cliente.get("/api/certificado/status").json()["carregado"] is True
     assert cliente.get("/api/vinculos?todos=true").json() == []
 
-    # mais tarde (Empresa › Notas › Importar do Emissor Nacional) funciona
+    # mais tarde (Empresa › Notas e e-mails › Importar do Emissor Nacional) funciona
     docs = _notas_sinteticas()
     _paginas(monkeypatch, [docs, []])
     previa = cliente.post("/api/importar/nacional/buscar", json={"desde": "2026-01"}).json()

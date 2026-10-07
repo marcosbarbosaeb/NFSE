@@ -1,7 +1,8 @@
-import { ArrowRight, Check, FileBadge, Building2, Users } from "lucide-react"
+import { ArrowRight, Check, DownloadCloud, FileBadge, Building2, Users } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { api } from "../lib/api"
+import { mensagemDeErro } from "../lib/excluir"
 import type { Prontidao } from "../lib/types"
 import { Card } from "./ui/Card"
 
@@ -38,6 +39,8 @@ function Passo({
   texto,
   to,
   rotulo,
+  acao,
+  nota,
 }: {
   n: number
   feito: boolean
@@ -47,6 +50,9 @@ function Passo({
   texto: React.ReactNode
   to: string
   rotulo: string
+  /** Em vez de levar pra outra tela, resolve aqui mesmo (ex.: buscar na Receita). */
+  acao?: { rotulo: string; fazendo: boolean; onClick: () => void }
+  nota?: React.ReactNode
 }) {
   return (
     <li
@@ -72,21 +78,59 @@ function Passo({
         </p>
         <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">{texto}</p>
       </div>
+      {!feito && acao && (
+        <button
+          type="button"
+          onClick={acao.onClick}
+          disabled={acao.fazendo}
+          className={`${BOTAO} bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-60`}
+        >
+          <DownloadCloud size={15} aria-hidden /> {acao.rotulo}
+        </button>
+      )}
       {!feito && (
         <Link
           to={to}
-          className={`${BOTAO} ${atual ? "bg-accent-500 text-white hover:bg-accent-600" : "border border-slate-300 text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"}`}
+          className={`${BOTAO} ${atual && !acao ? "bg-accent-500 text-white hover:bg-accent-600" : "border border-slate-300 text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"}`}
         >
           {rotulo} <ArrowRight size={15} aria-hidden />
         </Link>
       )}
+      {nota && <p className="basis-full pl-12 text-sm">{nota}</p>}
     </li>
   )
 }
 
 export function PrimeirosPassos() {
-  const p = useProntidao()
+  // "Sobre o completar os dados da empresa, falei para puxarmos pelo CNPJ"
+  // (07/10/2026): o passo 2 busca na Receita em vez de mandar digitar.
+  const [versao, setVersao] = useState(0)
+  const [buscando, setBuscando] = useState(false)
+  const [receita, setReceita] = useState<{ ok: boolean; texto: string } | null>(null)
+  const [tentou, setTentou] = useState(false)
+  const p = useProntidao(versao)
+  async function buscarNaReceita() {
+    setBuscando(true)
+    setReceita(null)
+    try {
+      const r = await api.post<{ preenchidos: string[]; faltam: { rotulo: string }[] }>("/prestador/completar-pelo-cnpj", {})
+      setReceita({
+        ok: true,
+        texto: r.preenchidos.length
+          ? `Busquei na Receita e preenchi: ${r.preenchidos.join(", ")}.${r.faltam.length ? " O que sobrou, a Receita não informa." : ""}`
+          : "A Receita não tinha o que falta. Complete à mão, é rapidinho.",
+      })
+      setVersao((n) => n + 1)
+    } catch (err) {
+      setReceita({ ok: false, texto: mensagemDeErro(err) })
+    } finally {
+      setBuscando(false)
+      setTentou(true)
+    }
+  }
   if (!p || !p.aplica || p.pronta) return null
+  // A Receita sabe o endereço e o regime; a alíquota do Simples, não.
+  const daReceita = !tentou && p.dados_faltando.some((f) => f.campo === "endereco" || f.campo === "regime")
   const certOk = p.certificado === "ok"
   const dadosOk = p.dados_faltando.length === 0
   const tomadoresOk = p.tomadores > 0
@@ -124,7 +168,15 @@ export function PrimeirosPassos() {
           titulo="Dados da empresa"
           texto={dadosOk ? "Endereço e regime tributário conferidos." : <>Falta preencher: {p.dados_faltando.map((f) => f.rotulo).join("; ")}.</>}
           to={p.dados_faltando[0]?.link ?? "/app/empresa?aba=emitente"}
-          rotulo="Completar os dados"
+          rotulo={daReceita ? "Preencher à mão" : "Completar os dados"}
+          acao={daReceita ? { rotulo: buscando ? "Buscando..." : "Puxar pelo CNPJ", fazendo: buscando, onClick: () => void buscarNaReceita() } : undefined}
+          nota={
+            receita && (
+              <span role="status" className={receita.ok ? "text-success-700 dark:text-success-300" : "text-danger-600"}>
+                {receita.texto}
+              </span>
+            )
+          }
         />
         <Passo
           n={3}
@@ -145,7 +197,7 @@ export function PrimeirosPassos() {
         <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
           Já emitia pelo Emissor Nacional? Depois de cadastrar os seus tomadores, dá pra trazer as notas antigas em{" "}
           <Link to="/app/empresa?aba=notas" className="font-semibold text-primary-600 hover:underline dark:text-primary-300">
-            Empresa › Notas
+            Empresa › Notas e e-mails
           </Link>{" "}
           — você escolhe de quais tomadores.
         </p>

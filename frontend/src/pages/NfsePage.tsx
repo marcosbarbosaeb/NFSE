@@ -139,7 +139,7 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
   // Vindo do botão "Gerar" da aba Tomadores: ?gerar=<vínculo>&competencia=AAAA-MM
   const [modalNova, setModalNova] = useState(Boolean(searchParams.get("gerar") || searchParams.get("nova")))
   const [modalCsv, setModalCsv] = useState(false)
-  // "Importar do Emissor Nacional" mora em Empresa › Notas (05/10/2026): é
+  // "Importar do Emissor Nacional" mora em Empresa › Notas e e-mails (05/10/2026): é
   // usado uma vez ou outra — de lá o link abre esta tela com ?importar=1.
   const [modalNacional, setModalNacional] = useState(searchParams.get("importar") === "1" && !emLote)
   const [shopee, setShopee] = useState<VinculoResumo | null>(null)
@@ -1324,7 +1324,7 @@ function NovaEmissaoModal({
           label="Alíquota do Simples Nacional (%)"
           valor={aliqSn}
           onChange={setAliqSn}
-          hint={aliquotaReferencia != null ? "Pré-preenchida com a referência de Empresa › Alíquotas — confira antes de gerar." : "Opcional."}
+          hint={aliquotaReferencia != null ? "Pré-preenchida com a referência de Empresa › Dados da empresa (Alíquota) — confira antes de gerar." : "Opcional."}
         />
 
 
@@ -1387,7 +1387,7 @@ function NovaEmissaoModal({
         {ambienteTeste && !ehRelatorio && !avisosConferencia.some((p) => p.codigo === "ambiente_teste") && (
           <p className="rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
             Sua conta está gerando notas de <strong>teste</strong> (homologação). Pra emitir de verdade, desligue em
-            Empresa › Notas.
+            Empresa › Notas e e-mails.
           </p>
         )}
 

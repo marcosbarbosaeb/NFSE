@@ -1,4 +1,8 @@
-import { Layers, Mail, MailWarning, Trophy } from "lucide-react"
+import { Layers, Mail, MailWarning, Send, Trophy } from "lucide-react"
+import { useState } from "react"
+import { api } from "../../lib/api"
+import { mensagemDeErro } from "../../lib/excluir"
+import { Button } from "../ui/Button"
 import { formatCompetenciaLonga } from "../../lib/format"
 import { nomeDaConta, numero, plural } from "../../lib/gestao"
 import type { PainelGestao } from "../../lib/types"
@@ -15,6 +19,48 @@ const COTA_MENSAL = 50_000
 
 const classeTh = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500"
 const classeTd = "px-3 py-2.5 text-slate-700 dark:text-slate-200"
+
+/** "Dispara um e-mail pra eu poder visualizar como ficou" (07/10/2026): uma
+ * cópia de cada e-mail da plataforma, sempre pro próprio login de quem pede. */
+function EmailsDeExemplo() {
+  const [enviando, setEnviando] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null)
+  async function enviar() {
+    setEnviando(true)
+    setMsg(null)
+    try {
+      const r = await api.post<{ para: string; enviados: string[]; falharam: string[] }>("/gestao/emails-de-exemplo", {})
+      setMsg(
+        r.falharam.length
+          ? { ok: false, texto: `Não consegui enviar: ${r.falharam.join(", ")}. ${r.enviados.length ? `Os outros foram pra ${r.para}.` : "Confira a configuração do envio de e-mails."}` }
+          : { ok: true, texto: `Enviei ${r.enviados.length} e-mails pra ${r.para}: ${r.enviados.join(", ")}.` },
+      )
+    } catch (err) {
+      setMsg({ ok: false, texto: mensagemDeErro(err) })
+    } finally {
+      setEnviando(false)
+    }
+  }
+  return (
+    <Card className="p-5">
+      <TituloSecao icone={Send}>Ver como os e-mails chegam</TituloSecao>
+      <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+        Mando pra você uma cópia de cada e-mail da plataforma: confirmação de cadastro (cliente e contador), código de acesso e convite do
+        contador. Vão só pro seu e-mail; os links e o código são de exemplo.
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="outline" onClick={() => void enviar()} disabled={enviando}>
+          <Send size={15} aria-hidden /> {enviando ? "Enviando..." : "Enviar os exemplos pra mim"}
+        </Button>
+        {msg && (
+          <span role="status" className={`text-sm ${msg.ok ? "text-success-700 dark:text-success-300" : "text-danger-600"}`}>
+            {msg.texto}
+          </span>
+        )}
+      </div>
+    </Card>
+  )
+}
 
 export function EmailsGestao({ painel }: { painel: PainelGestao }) {
   const r = painel.resumo
@@ -122,6 +168,7 @@ export function EmailsGestao({ painel }: { painel: PainelGestao }) {
           </>
         )}
       </Card>
+      <EmailsDeExemplo />
     </>
   )
 }

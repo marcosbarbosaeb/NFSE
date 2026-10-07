@@ -1,4 +1,4 @@
-import { Bell, Building2, ChevronDown, CircleHelp, Gift, LogOut, Menu, Search, UserRound } from "lucide-react"
+import { Bell, BriefcaseBusiness, Building2, ChevronDown, CircleHelp, Gift, LogOut, Menu, Search, UserRound } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { useAuth } from "../../lib/auth"
@@ -104,6 +104,12 @@ export function Topbar({ onAbrirMenu }: { onAbrirMenu?: () => void }) {
                 {[
                   { to: "/app/conta", rotulo: "Minha conta", Icone: UserRound },
                   { to: "/app/empresa", rotulo: "Dados da empresa", Icone: Building2 },
+                  // 07/10/2026: "quero colocar o convite para contador de forma mais
+                  // visível, pensei naquele menu que fica com Olá, Marcos". Só pro
+                  // dono de uma empresa de verdade.
+                  ...(usuario.papel !== "contador" && !usuario.so_contador && !usuario.demo
+                    ? [{ to: "/app/empresa?aba=contador", rotulo: "Convidar meu contador", Icone: BriefcaseBusiness }]
+                    : []),
                   { to: "/app/conta?aba=indique", rotulo: "Indique e ganhe", Icone: Gift },
                 ].map(({ to, rotulo, Icone }) => (
                   <Link

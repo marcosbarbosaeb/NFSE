@@ -56,6 +56,13 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
 - Bloqueio sem assinatura: `BLOQUEIO_ATIVO=true` deixa a empresa com teste vencido/cancelada só pra consulta (402 em
   tudo que muda, menos assinar/apagar). Desligado em produção até o Stripe estar recebendo. A Gestão libera na mão
   (`assinatura.liberado_ate/liberado_sempre`); a regra única é `billing.situacao_do_acesso`.
+- Desfazer importação (07/10/2026): não há tabela de "importações". Extrato e planilha são reconhecidos pelo `criado_em`
+  (tudo que uma importação grava nasce na mesma transação → mesmo `now()`): `app/financeiro/desfazer.py`. Nota do Emissor
+  Nacional leva a marca em `tomador_snapshot["importacao"]` (`importar_adn.importacoes/desfazer`); as de antes disso aparecem
+  juntas como "anteriores". Desfazer nunca toca no que foi lançado à mão nem em nota gerada pela Ana.
+- Completar a empresa pelo CNPJ (`app/services/completar_empresa.py`): só preenche campo em branco, nunca troca o que a pessoa escreveu.
+- Tela Empresa tem cinco abas (`emitente`, `notas`, `certificado`, `contador`, `mais`); os ids antigos (`aliquotas`, `emails`,
+  `modulos`, `dados`) são redirecionados em `EmpresaPage.ABA_ANTIGA` — não quebre links antigos.
 - Fluxo de publicação: tudo vai primeiro pra branch `teste` (ambiente `teste` do Railway, app-teste.up.railway.app);
   só depois de conferido lá entra na `main`.
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.
