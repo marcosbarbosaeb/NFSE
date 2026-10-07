@@ -158,6 +158,50 @@ def api_atendimentos(request: Request, db: Session = Depends(get_db), usuario: U
     }
 
 
+@rotas.get("/api/contador/atendimentos/{acesso_id}/pacote", responses={404: {"description": "Sem notas"}})
+def api_pacote_do_cliente(
+    acesso_id: uuid.UUID, competencia: str, request: Request,
+    db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_logado),
+):
+    """Fechamento do mês (07/10/2026): o .zip com os XMLs e PDFs das notas
+    de um cliente numa competência, sem precisar entrar na empresa dele.
+    Fica no histórico que o dono vê."""
+    import re
+
+    from fastapi.responses import Response
+
+    from app.models import RegistroContador
+    from app.services import pacote
+
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", competencia):
+        raise HTTPException(status_code=422, detail="competencia deve estar no formato AAAA-MM")
+    meu = db.get(acesso.AcessoContador, acesso_id)
+    if meu is None or meu.usuario_id != usuario.id or meu.status != "ativo":
+        raise HTTPException(status_code=404, detail="Você não atende esta empresa.")
+    voltar = contas.empresa_ativa(db, request, usuario)
+    try:
+        definir_prestador_atual(db, meu.prestador_id)
+        empresa = db.get(Prestador, meu.prestador_id)
+        emissoes = pacote.selecionar(db, competencia=competencia, so_autorizadas=True)
+        conteudo, quantas = pacote.montar_zip(db, emissoes, "ambos")
+        if not quantas:
+            raise HTTPException(status_code=404, detail="Esta empresa não tem nota autorizada nesse mês.")
+        cnpj = "".join(c for c in empresa.cpf_cnpj if c.isalnum())
+        mes = f"{competencia[5:]}/{competencia[:4]}"
+        db.add(RegistroContador(
+            id=uuid.uuid4(), prestador_id=meu.prestador_id, usuario_id=usuario.id, email=usuario.email,
+            acao=f"Baixou as notas de {mes} ({quantas})",
+        ))
+        db.flush()
+    finally:
+        definir_prestador_atual(db, voltar)
+    db.commit()
+    return Response(
+        content=conteudo, media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="notas-{cnpj}-{competencia}.zip"'},
+    )
+
+
 @rotas.post("/api/contador/convites/{acesso_id}/aceitar")
 def api_aceitar(acesso_id: uuid.UUID, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_logado)):
     try:

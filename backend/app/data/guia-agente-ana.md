@@ -756,6 +756,17 @@ Cada empresa da lista mostra "O que tem pra fazer": notas pra gerar, assinar, en
 
 **Bonificação do contador:** ele recebe 10% de cada mensalidade paga pelos clientes que atende, enquanto atender a empresa. O card "Sua bonificação" mostra quantos clientes estão pagando e quanto há a receber; "Ver extrato" abre o detalhe mês a mês. O repasse é feito pela equipe da Agente Ana.
 
+### Para contadores: o painel da carteira (números, alertas e raio-x)
+
+No topo de "Empresas que atendo" o contador vê a carteira inteira sem entrar em nenhuma empresa:
+
+- **Cartões**: quantas empresas atende, notas autorizadas e faturado em notas no mês (somando todas) e quantos alertas existem.
+- **"Precisa da sua atenção"**: os alertas de todas as empresas, os urgentes primeiro — certificado digital faltando, vencido ou vencendo (aviso a 30 dias, urgente a 15), notas recusadas esperando correção, faturamento chegando a 80% do limite do MEI (R$ 81 mil no ano) ou do Simples (R$ 4,8 milhões no ano), recebimento sem nota fiscal e empresa sem assinatura. Clicar abre a empresa já na tela onde aquilo se resolve.
+- **Raio-X de cada empresa** (em "Tabela" ou "Cartões"): regime, notas e faturado no mês, faturado no ano comparado com o limite do regime (barra), os 12 meses anteriores (a base do RBT12), se o mês passado está fechado na conciliação e a validade do certificado.
+- **"Baixar notas do mês (XML + PDF)"**: um .zip com as notas autorizadas da empresa naquele mês, pronto pra importar no sistema contábil. O dono vê no histórico que o contador baixou.
+
+O faturamento mostrado é a soma das notas autorizadas que passaram pela Ana (geradas aqui ou importadas do Emissor Nacional). Receita que não virou NFS-e por aqui não entra — é um indicador, não o RBT12 oficial. O regime é o que está no cadastro da empresa: quem não é do Simples aparece como "Fora do Simples" (a Ana não sabe se é Lucro Presumido ou Real).
+
 ### Falar com o suporte
 
 No menu, clique em "Precisa de ajuda? Fale com o suporte" (ou use o botão da tela "Ajuda"). Abre um formulário: escreva o assunto e a mensagem e clique em "Enviar". A resposta chega no seu e-mail, normalmente no mesmo dia útil. Quando disponível, também aparece o botão "Chamar no WhatsApp".

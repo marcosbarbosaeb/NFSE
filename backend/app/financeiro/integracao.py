@@ -62,12 +62,23 @@ def _tomador_em_uso(db: Session, vinculo_id: uuid.UUID) -> bool:
     return db.query(PagamentoRecebido.id).filter(PagamentoRecebido.prestador_tomador_id == vinculo_id).first() is not None
 
 
-def _pendencias_da_empresa(db: Session, prestador_id: uuid.UUID) -> list[dict]:
-    """Pro painel do contador (app/services/acesso.py): o que falta conferir
-    na conciliação desta empresa — só quantidades."""
+def _resumo_pro_contador(db: Session, prestador_id: uuid.UUID) -> dict:
+    """Pro painel do contador (app/services/acesso.py e raio_x.py): o que
+    falta conferir na conciliação desta empresa, como ficou o fechamento do
+    mês passado e quanto dinheiro entrou sem nota — só quantidades."""
     from app.financeiro import conciliacao_notas
 
     r = conciliacao_notas.resumo(db, prestador_id)
+    # fechamentos vêm do mais antigo pro atual: o penúltimo é o mês passado
+    anterior = r["fechamentos"][-2] if len(r["fechamentos"]) >= 2 else None
+    return {
+        "pendencias": _pendencias_da_empresa(r),
+        "fechamento": {"competencia": anterior["competencia"], "estado": anterior["estado"]} if anterior else None,
+        "sem_nota": int(r["notas"].get("sem_nota") or 0) if r["notas"].get("aplica") else 0,
+    }
+
+
+def _pendencias_da_empresa(r: dict) -> list[dict]:
     notas = r["notas"]["pendencias"] if r["notas"].get("aplica") else 0
     extrato = r["extrato"]["pendentes"]
     itens = []
@@ -89,4 +100,4 @@ def registrar() -> None:
     eventos.ouvir("antes_de_trocar_nota", _antes_de_trocar_nota)
     eventos.ouvir("tomador_em_uso", _tomador_em_uso)
     eventos.ouvir("agenda", eventos_da_agenda)
-    eventos.ouvir("pendencias_da_empresa", _pendencias_da_empresa)
+    eventos.ouvir("resumo_pro_contador", _resumo_pro_contador)

@@ -28,7 +28,8 @@ def arquivos_da_nota(db: Session, emissao: Emissao, conteudo: str) -> list[tuple
     if conteudo in ("xml", "ambos"):
         try:
             nome, xml = melhor_xml_disponivel(emissao)
-            arquivos.append((nome, xml.encode("utf-8"), "application/xml"))
+            if xml:  # nota antiga sem XML guardado: entra só o PDF
+                arquivos.append((nome, xml.encode("utf-8"), "application/xml"))
         except EmissaoSemConteudoError:
             pass
     return arquivos

@@ -1,6 +1,7 @@
-import { AlertTriangle, ArrowRight, BriefcaseBusiness, Building2, Check, CircleCheck, Gift, Loader2, Lock, LogIn, MailPlus } from "lucide-react"
+import { AlertTriangle, ArrowRight, BriefcaseBusiness, Building2, Check, CircleCheck, Gift, LayoutList, Loader2, Lock, LogIn, MailPlus, Table2 } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
+import { CardsDaCarteira, CentralDeAlertas, RaioXDoCliente, TabelaRaioX } from "../components/contador/PainelContador"
 import { nomeEmpresa } from "../components/TrocaEmpresa"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
@@ -56,10 +57,20 @@ export function AtendimentosPage() {
   // com a pendência de cada empresa, sem entrar em cada uma". Quem tem mais
   // o que fazer vem primeiro; o filtro esconde quem está em dia.
   const [soPendentes, setSoPendentes] = useState(false)
+  const [busca, setBusca] = useState("")
   const clientes = useMemo(() => {
-    const lista = [...(dados?.clientes ?? [])].sort((a, b) => (b.total_pendencias ?? 0) - (a.total_pendencias ?? 0))
-    return soPendentes ? lista.filter((c) => (c.total_pendencias ?? 0) > 0) : lista
-  }, [dados, soPendentes])
+    const peso = (c: ClienteAtendido) =>
+      (c.alertas ?? []).filter((x) => x.nivel === "critico").length * 1000 + (c.alertas ?? []).length * 100 + (c.total_pendencias ?? 0)
+    const lista = [...(dados?.clientes ?? [])].sort((a, b) => peso(b) - peso(a))
+    const termo = busca.trim().toLowerCase()
+    return lista
+      .filter((c) => !soPendentes || (c.total_pendencias ?? 0) > 0 || (c.alertas ?? []).length > 0)
+      .filter((c) => !termo || `${c.empresa} ${c.nome_fantasia ?? ""} ${c.cnpj}`.toLowerCase().includes(termo) || c.cnpj.includes(termo.replace(/\D/g, "") || "#"))
+  }, [dados, soPendentes, busca])
+  // Tabela (a carteira inteira numa tela) ou cartões (o detalhe de cada uma).
+  // Com quatro empresas ou mais, já abre na tabela.
+  const [modo, setModo] = useState<"cartoes" | "tabela" | null>(null)
+  const emTabela = (modo ?? ((dados?.clientes.length ?? 0) >= 4 ? "tabela" : "cartoes")) === "tabela"
   const totalPendencias = (dados?.clientes ?? []).reduce((soma, c) => soma + (c.total_pendencias ?? 0), 0)
   const comPendencia = (dados?.clientes ?? []).filter((c) => (c.total_pendencias ?? 0) > 0).length
 
@@ -96,13 +107,13 @@ export function AtendimentosPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6">
+    <div className={`mx-auto flex flex-col gap-6 ${emTabela ? "max-w-6xl" : "max-w-4xl"}`}>
       <header>
         <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
           <BriefcaseBusiness size={24} className="text-primary-600 dark:text-primary-400" aria-hidden="true" /> Empresas que atendo
         </h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-As empresas dos seus clientes, com o que cada uma tem pra fazer. Clique numa pendência pra abrir a empresa já na tela certa.
+As empresas dos seus clientes num só lugar: os números do mês, o que pede atenção e o que cada uma tem pra fazer — sem entrar em nenhuma.
         </p>
       </header>
 
@@ -145,6 +156,11 @@ As empresas dos seus clientes, com o que cada uma tem pra fazer. Clique numa pen
         </section>
       )}
 
+      {dados && dados.clientes.length > 0 && dados.resumo && <CardsDaCarteira resumo={dados.resumo} />}
+      {dados && dados.clientes.length > 0 && (
+        <CentralDeAlertas clientes={dados.clientes} desligado={fazendo !== null} aoAbrir={(c, link) => abrir(c, link)} />
+      )}
+
       {dados && dados.clientes.length > 0 && (
         <section className="flex flex-col gap-3" aria-label="Empresas atendidas">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -156,18 +172,54 @@ As empresas dos seus clientes, com o que cada uma tem pra fazer. Clique numa pen
                   : `· ${totalPendencias} ${totalPendencias === 1 ? "pendência" : "pendências"} em ${comPendencia} ${comPendencia === 1 ? "empresa" : "empresas"}`}
               </span>
             </h2>
-            {totalPendencias > 0 && dados.clientes.length > 1 && (
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+            <div className="flex flex-wrap items-center gap-3">
+              {dados.clientes.length > 3 && (
                 <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-                  checked={soPendentes}
-                  onChange={(e) => setSoPendentes(e.target.checked)}
+                  type="search"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  placeholder="Buscar empresa ou CNPJ"
+                  aria-label="Buscar empresa ou CNPJ"
+                  className="w-52 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                 />
-                Só com pendência
-              </label>
-            )}
+              )}
+              {dados.clientes.length > 1 && (
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                    checked={soPendentes}
+                    onChange={(e) => setSoPendentes(e.target.checked)}
+                  />
+                  Só com alerta ou pendência
+                </label>
+              )}
+              <div className="hidden rounded-lg border border-slate-200 p-0.5 lg:flex dark:border-slate-700" role="group" aria-label="Como ver as empresas">
+                {([["tabela", "Tabela", Table2], ["cartoes", "Cartões", LayoutList]] as const).map(([id, rotulo, Icone]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={emTabela === (id === "tabela")}
+                    onClick={() => setModo(id)}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium ${
+                      emTabela === (id === "tabela")
+                        ? "bg-primary-600 text-white"
+                        : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700"
+                    }`}
+                  >
+                    <Icone size={14} aria-hidden /> {rotulo}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
+          {clientes.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">Nenhuma empresa com esse filtro.</p>}
+          {emTabela && clientes.length > 0 && (
+            <div className="hidden lg:block">
+              <TabelaRaioX clientes={clientes} ativa={dados.ativa} desligado={fazendo !== null} aoAbrir={(c, link) => abrir(c, link)} />
+            </div>
+          )}
+          <div className={`flex flex-col gap-3 ${emTabela ? "lg:hidden" : ""}`}>
           {clientes.map((c) => {
             const dentro = c.prestador_id === dados.ativa
             return (
@@ -185,6 +237,7 @@ As empresas dos seus clientes, com o que cada uma tem pra fazer. Clique numa pen
                     </p>
                     <Permissoes catalogo={catalogo} marcadas={c.permissoes} />
                     <PendenciasDoCliente cliente={c} desligado={fazendo !== null} aoAbrir={(link) => abrir(c, link)} />
+                    <RaioXDoCliente cliente={c} />
                     {c.situacao.bloqueado && (
                       <p className="mt-3 flex items-start gap-1.5 text-sm text-danger-700 dark:text-danger-300">
                         <Lock size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
@@ -218,6 +271,11 @@ As empresas dos seus clientes, com o que cada uma tem pra fazer. Clique numa pen
               </Card>
             )
           })}
+          </div>
+          <p className="text-xs text-slate-400 dark:text-slate-500">
+            Faturamento = soma das notas autorizadas que passaram pela Ana (geradas aqui ou importadas do Emissor Nacional). Receita que não virou
+            NFS-e por aqui não entra, então trate como indicador, não como o RBT12 oficial. Limites: MEI R$ 81 mil e Simples R$ 4,8 milhões por ano.
+          </p>
         </section>
       )}
 

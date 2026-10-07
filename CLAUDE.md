@@ -46,6 +46,9 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
   Bonificação: ao aceitar o convite o contador vira `parceiro` (`usuario_id`, `CONTADOR_BONIFICACAO_PCT`, padrão 10%) e a
   empresa entra como `indicacao_parceiro.por_contador`; some quando o acesso acaba. Empresa de outra parceira não muda de dono.
   "Empresas que atendo" mostra as pendências de cada cliente (`acesso._pendencias_da_empresa`: só títulos e quantidades).
+  Painel da carteira (07/10/2026, `app/services/raio_x.py`): cartões, alertas e raio-x de cada empresa. Faturamento = notas
+  AUTORIZADAS por competência (homologação só conta no ambiente de teste); não é o RBT12 oficial e a tela diz isso. O
+  financeiro entra pelo evento `resumo_pro_contador`. Pacote do mês: `GET /api/contador/atendimentos/{id}/pacote` (registra no histórico).
 - E-mails da plataforma (confirmação, código, convite) usam a moldura de `app/services/email_modelo.py` (logo em
   `frontend/public/ana-email.png`). E-mail de nota pro tomador NÃO passa por ela.
 - Planos (`billing.PLANOS`, `app/services/planos.py`): por limite de notas AUTORIZADAS no mês, por CNPJ (cancelada, recusada,

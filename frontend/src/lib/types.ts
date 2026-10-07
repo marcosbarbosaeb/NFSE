@@ -89,6 +89,44 @@ export interface ClienteAtendido {
   /** O que tem pra fazer nesta empresa (só títulos e quantidades). */
   pendencias?: PendenciaDoCliente[]
   total_pendencias?: number
+  /** Números da empresa pro painel do contador (backend/app/services/raio_x.py). */
+  raio_x?: RaioX | null
+  alertas?: AlertaDoCliente[]
+}
+
+export interface RaioX {
+  /** "1" fora do Simples, "2" MEI, "3" Simples (ME/EPP); null = não informado */
+  regime: string | null
+  regime_nome: string
+  competencia: string
+  notas_mes: number
+  faturado_mes: number
+  faturado_ano: number
+  /** Notas autorizadas nos 12 meses antes do mês corrente (base do RBT12). */
+  faturado_12m: number
+  limite: number | null
+  limite_pct: number | null
+  certificado: { situacao: "ok" | "falta" | "vencido" | "vencendo"; validade: string | null; dias: number | null } | null
+  recusadas: number
+  fechamento: { competencia: string; estado: "fechado" | "pendente" | "aguardando" | "vazio" } | null
+  sem_nota: number | null
+}
+
+export interface AlertaDoCliente {
+  tipo: string
+  nivel: "critico" | "atencao"
+  texto: string
+  link: string
+}
+
+export interface ResumoCarteira {
+  empresas: number
+  notas_mes: number
+  faturado_mes: number
+  pendencias: number
+  alertas_criticos: number
+  alertas: number
+  competencia: string | null
 }
 
 export interface PendenciaDoCliente {
@@ -117,6 +155,7 @@ export interface Atendimentos {
   convites: ConviteContador[]
   clientes: ClienteAtendido[]
   bonificacao?: BonificacaoContador | null
+  resumo?: ResumoCarteira
 }
 
 export interface CadastroRequest {

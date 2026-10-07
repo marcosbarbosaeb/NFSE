@@ -317,6 +317,7 @@ def tem_algo(db: Session, usuario: Usuario) -> bool:
 def do_contador(db: Session, usuario: Usuario, voltar_para: uuid.UUID) -> dict:
     """Convites esperando resposta e empresas que este login atende. Lê o
     nome de cada empresa trocando o contexto e devolve o contexto no fim."""
+    from app.services import raio_x
     from app.services.prontidao import prontidao
 
     convites, clientes = [], []
@@ -335,20 +336,42 @@ def do_contador(db: Session, usuario: Usuario, voltar_para: uuid.UUID) -> dict:
             if p is None:
                 continue
             pronta = prontidao(db, a.prestador_id)
-            pendencias = _pendencias_da_empresa(db, a.prestador_id, list(p.modulos or []) or ["emissor"])
+            modulos = list(p.modulos or []) or ["emissor"]
+            do_financeiro: dict = {}
+            pendencias = _pendencias_da_empresa(db, a.prestador_id, modulos, do_financeiro)
+            sit = situacao(db, a.prestador_id)
+            raio = _raio_x(db, a.prestador_id, do_financeiro)
             clientes.append({
+                "raio_x": raio, "alertas": raio_x.alertas(raio, bloqueada=bool(sit.get("bloqueado"))) if raio else [],
                 "pendencias": pendencias, "total_pendencias": sum(x["quantidade"] for x in pendencias),
                 "id": a.id, "prestador_id": a.prestador_id, "empresa": p.razao_social, "nome_fantasia": p.nome_fantasia, "cnpj": p.cpf_cnpj,
                 "permissoes": _limpar_permissoes(a.permissoes), "desde": a.aceito_em, "modulos": list(p.modulos or []),
                 "pode_emitir": bool(pronta.get("pode_emitir")), "aviso": pronta.get("motivo"),
-                "situacao": situacao(db, a.prestador_id),
+                "situacao": sit,
             })
     finally:
         definir_prestador_atual(db, voltar_para)
-    return {"convites": convites, "clientes": clientes}
+    return {"convites": convites, "clientes": clientes, "resumo": raio_x.resumo(clientes)}
 
 
-def _pendencias_da_empresa(db: Session, prestador_id: uuid.UUID, modulos: list[str]) -> list[dict]:
+def _raio_x(db: Session, prestador_id: uuid.UUID, do_financeiro: dict) -> dict | None:
+    """Os números da empresa pro painel do contador (app/services/raio_x.py).
+    Uma empresa com problema não derruba as outras."""
+    import logging
+
+    from app.services import raio_x
+    from app.tempo import hoje as hoje_br
+
+    try:
+        with db.begin_nested():
+            definir_prestador_atual(db, prestador_id)
+            return raio_x.da_empresa(db, db.get(Prestador, prestador_id), hoje_br(), do_financeiro)
+    except Exception:  # noqa: BLE001
+        logging.getLogger("agenteana.contador").exception("Falha no raio-x da empresa %s", prestador_id)
+        return None
+
+
+def _pendencias_da_empresa(db: Session, prestador_id: uuid.UUID, modulos: list[str], do_financeiro: dict | None = None) -> list[dict]:
     """O que tem pra fazer nesta empresa, sem precisar entrar nela — as mesmas
     pendências da Visão geral dela (notas pra gerar, assinar, enviar,
     recusadas) e da Conciliação. Só títulos e quantidades. Uma empresa com
@@ -373,8 +396,12 @@ def _pendencias_da_empresa(db: Session, prestador_id: uuid.UUID, modulos: list[s
                 # emissor não importa nada de app/financeiro.
                 from app import eventos
 
-                for grupo in eventos.coletar("pendencias_da_empresa", db, prestador_id=prestador_id):
-                    itens.extend(grupo)
+                # (o financeiro devolve também o fechamento do mês e o dinheiro
+                # sem nota, que o raio-x usa — `do_financeiro`)
+                for grupo in eventos.coletar("resumo_pro_contador", db, prestador_id=prestador_id):
+                    itens.extend(grupo["pendencias"])
+                    if do_financeiro is not None:
+                        do_financeiro.update({k: v for k, v in grupo.items() if k != "pendencias"})
     except Exception:  # noqa: BLE001 — a lista do contador não pode cair por causa de uma empresa
         logging.getLogger("agenteana.contador").exception("Falha ao levantar as pendências da empresa %s", prestador_id)
         return [{"tipo": "indisponivel", "titulo": "Não consegui levantar as pendências agora", "link": "/app", "quantidade": 0, "atrasada": False}]
