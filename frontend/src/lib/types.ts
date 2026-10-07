@@ -86,6 +86,29 @@ export interface ClienteAtendido {
   pode_emitir: boolean
   aviso: string | null
   situacao: SituacaoAcesso
+  /** O que tem pra fazer nesta empresa (só títulos e quantidades). */
+  pendencias?: PendenciaDoCliente[]
+  total_pendencias?: number
+}
+
+export interface PendenciaDoCliente {
+  tipo: string
+  titulo: string
+  link: string
+  quantidade: number
+  atrasada: boolean
+}
+
+/** Bonificação do contador: % de cada mensalidade paga pelos clientes que ele atende. */
+export interface BonificacaoContador {
+  pct: number
+  ativo: boolean
+  painel: string
+  link: string
+  clientes: number
+  clientes_pagando: number
+  total: number
+  a_receber: number
 }
 
 export interface Atendimentos {
@@ -93,6 +116,7 @@ export interface Atendimentos {
   ativa: string
   convites: ConviteContador[]
   clientes: ClienteAtendido[]
+  bonificacao?: BonificacaoContador | null
 }
 
 export interface CadastroRequest {

@@ -2,6 +2,7 @@
 pela Gestão (06/10/2026). Só dados sintéticos. Aqui o login é de verdade
 (sem trocar `prestador_atual_id`): é nele que as travas moram."""
 import datetime
+from decimal import Decimal
 import uuid
 
 import pytest
@@ -338,3 +339,73 @@ def test_cadastro_de_contador_pela_api(db, api):
     assert cliente.post("/api/cadastro/contador", json={"email": "novo@escritorio.example", "senha": SENHA, "nome": "De novo"}).status_code == 409
     usuario = db.query(Usuario).filter_by(email="novo@escritorio.example").one()
     assert usuario.email_confirmado is False and usuario.nome == "Novo Contador"
+
+
+# --- bonificação do contador e pendências das empresas (07/10/2026) -----------
+
+
+def test_contador_vira_parceiro_com_10_por_cento_enquanto_atende(db, api, cenario):
+    from app.models import IndicacaoParceiro, Parceiro
+    from app.services import parceiros
+
+    da_dona, da_contadora = _convidar_e_aceitar(db, api, cenario, ["financeiro"])
+    parceiro = db.query(Parceiro).filter_by(usuario_id=cenario["contadora"].id).one()
+    assert (float(parceiro.comissao_pct), parceiro.desconto_1_mes_pct, parceiro.email) == (10.0, 0, "contadora@escritorio.example")
+    indicacao = db.get(IndicacaoParceiro, cenario["cliente"].id)
+    assert (indicacao.parceiro_id, indicacao.por_contador, indicacao.status) == (parceiro.id, True, "trial")
+    bonus = da_contadora.get("/api/contador/atendimentos").json()["bonificacao"]
+    assert (bonus["pct"], bonus["clientes"], bonus["a_receber"]) == (10.0, 1, 0)
+    assert bonus["painel"] == f"/parceira/{parceiro.token_painel}"
+
+    # a mensalidade do cliente gera 10% pra ela
+    parceiros.registrar_pagamento(db, cenario["cliente"].id, "in_teste_1", Decimal("129.90"), datetime.date(2026, 10, 7))
+    assert da_contadora.get("/api/contador/atendimentos").json()["bonificacao"]["a_receber"] == 12.99
+
+    # o cliente tirou o acesso: a bonificação daquela empresa para, o que já rendeu fica
+    acesso_id = db.query(AcessoContador).one().id
+    assert da_dona.delete(f"/api/contador/acessos/{acesso_id}").status_code == 200
+    assert db.get(IndicacaoParceiro, cenario["cliente"].id) is None
+    assert parceiros.resumo_do_contador(db, cenario["contadora"].id)["total"] == 12.99
+
+
+def test_empresa_que_veio_por_outra_parceira_continua_dela(db, api, cenario):
+    from app.models import IndicacaoParceiro
+    from app.services import parceiros
+
+    outra = parceiros.criar(db, "Parceira Antiga", None, 20, 0)
+    parceiros.registrar_indicacao(db, outra.codigo, cenario["cliente"].id, "CLIENTE LTDA")
+    da_dona, _ = _convidar_e_aceitar(db, api, cenario, [])
+    assert db.get(IndicacaoParceiro, cenario["cliente"].id).parceiro_id == outra.id
+    acesso_id = db.query(AcessoContador).one().id
+    assert da_dona.delete(f"/api/contador/acessos/{acesso_id}").status_code == 200
+    assert db.get(IndicacaoParceiro, cenario["cliente"].id).parceiro_id == outra.id  # não mexe na indicação alheia
+
+
+def test_contador_ve_as_pendencias_de_cada_empresa_sem_entrar_nela(db, api, cenario):
+    from app.models import PrestadorTomador, Tomador
+    from app.services.motor_emissao import criar_rascunho
+
+    _, da_contadora = _convidar_e_aceitar(db, api, cenario, ["emitir"])
+    assert da_contadora.post(f"/api/empresas/{cenario['escritorio'].id}/ativar").status_code == 200  # fora do cliente
+    cliente = cenario["cliente"]
+    definir_prestador_atual(db, cliente.id)
+    tomador = Tomador(id=uuid.uuid4(), cnpj="00000000000515", razao_social="TOMADOR SINTETICO LTDA", cod_municipio="3550308")
+    db.add(tomador)
+    db.flush()
+    vinculo = PrestadorTomador(
+        id=uuid.uuid4(), prestador_id=cliente.id, tomador_id=tomador.id, apelido="Tomador Sintético",
+        cod_local_prestacao=cliente.cod_municipio, cod_trib_nacional="170601", cod_trib_municipal="001",
+        template_descricao="Serviço - {competencia_mm_aaaa}", serie="1", requer_revisao=True, ativo=True,
+    )
+    db.add(vinculo)
+    db.flush()
+    nota = criar_rascunho(db, vinculo, competencia="2026-10", valor=100)
+    nota.estado = "montado"  # pronta pra assinar
+    db.flush()
+
+    atendido = da_contadora.get("/api/contador/atendimentos").json()["clientes"][0]
+    assert atendido["total_pendencias"] >= 1, atendido["pendencias"]
+    assert any(p["tipo"] == "assinar" and "Tomador Sintético" in p["titulo"] for p in atendido["pendencias"])
+    # só título e quantidade — e ela continua na empresa dela
+    assert set(atendido["pendencias"][0]) == {"tipo", "titulo", "link", "quantidade", "atrasada"}
+    assert da_contadora.get("/api/auth/me").json()["prestador_id"] == str(cenario["escritorio"].id)

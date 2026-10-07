@@ -119,10 +119,16 @@ export function EmpresaPage() {
         { id: "emitente", rotulo: "Emitente", icone: Building2, conteudo: () => <AbaEmitente prestador={prestador} onAtualizado={setPrestador} /> },
         ...soEmissor({
           id: "emails",
-          rotulo: "E-mails",
+          rotulo: "Padrões de e-mail",
           icone: Mail,
           conteudo: () => (
             <>
+              {/* 07/10/2026: cada tomador tem o seu e-mail; aqui é só o padrão, opcional. */}
+              <p className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+                <strong className="text-slate-800 dark:text-slate-100">Opcional.</strong> O e-mail de cada tomador (pra quem vai, assunto e
+                mensagem) você define no cadastro dele, em <Link to="/app/tomadores" className="font-medium text-primary-700 underline dark:text-primary-300">Tomadores</Link>.
+                O que estiver aqui só vale como ponto de partida pra tomadores que ainda não têm o deles.
+              </p>
               <ModeloEmailCard prestador={prestador} onAtualizado={setPrestador} />
               <EmailsGeraisCard prestador={prestador} onAtualizado={setPrestador} />
             </>

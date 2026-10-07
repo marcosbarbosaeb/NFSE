@@ -725,6 +725,10 @@ Clique em "Enviar convite". O contador entra com o login dele (você não passa 
 
 O contador cria a própria conta em "Criar conta", na opção "Sou contador(a)": é grátis, não pede CNPJ e não tem período de teste nem assinatura — quem assina é o cliente. O e-mail tem que ser o mesmo que o cliente convidou. Essa conta mostra só "Empresas que atendo", "Minha conta" e "Ajuda"; pra emitir as próprias notas, o contador adiciona a empresa dele pelo seletor de empresas ("Adicionar empresa"). O convite aparece em "Empresas que atendo" (no menu): "Aceitar" e depois "Abrir empresa". Dentro da empresa do cliente aparece uma faixa azul no topo dizendo o que ele pode fazer ali. As empresas dos clientes ficam também no seletor de empresas, no topo do menu, no grupo "Empresas que atendo". Se o contador tentar algo que o cliente não liberou, a Ana avisa qual permissão falta. "Deixar de atender" tira a empresa da lista.
 
+Cada empresa da lista mostra "O que tem pra fazer": notas pra gerar, assinar, enviar, recusadas pela prefeitura e o que falta conferir na conciliação. Clicar numa pendência abre a empresa já na tela certa. "Só com pendência" esconde quem está em dia.
+
+**Bonificação do contador:** ele recebe 10% de cada mensalidade paga pelos clientes que atende, enquanto atender a empresa. O card "Sua bonificação" mostra quantos clientes estão pagando e quanto há a receber; "Ver extrato" abre o detalhe mês a mês. O repasse é feito pela equipe da Agente Ana.
+
 ### Falar com o suporte
 
 No menu, clique em "Precisa de ajuda? Fale com o suporte" (ou use o botão da tela "Ajuda"). Abre um formulário: escreva o assunto e a mensagem e clique em "Enviar". A resposta chega no seu e-mail, normalmente no mesmo dia útil. Quando disponível, também aparece o botão "Chamar no WhatsApp".

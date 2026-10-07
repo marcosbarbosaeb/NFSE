@@ -257,3 +257,59 @@ def listar(db: Session) -> list[dict]:
         {"id": p.id, "email": p.email, "painel": f"{base}/parceira/{p.token_painel}", "criado_em": p.criado_em, **_resumo(db, p, nomes_inteiros=True)}
         for p in db.query(Parceiro).order_by(Parceiro.criado_em)
     ]
+
+
+# --- Contador como parceiro (07/10/2026) -------------------------------------
+# "O contador não irá ganhar desconto: ele entra no módulo de parceria
+# ganhando uma bonificação de 10% pra cada cliente dele que usar o sistema."
+# A bonificação vale enquanto ele atende a empresa: nasce quando aceita o
+# convite e acaba quando o acesso acaba. Empresa que já veio por outra
+# parceira continua sendo dela.
+
+
+def do_contador(db: Session, usuario_id: uuid.UUID) -> Parceiro | None:
+    return db.query(Parceiro).filter_by(usuario_id=usuario_id).one_or_none()
+
+
+def vincular_contador(db: Session, usuario, prestador_id: uuid.UUID, empresa_nome: str | None, status: str | None) -> Parceiro | None:
+    """Chamado quando o contador aceita o convite de uma empresa."""
+    pct = get_settings().contador_bonificacao_pct
+    if pct <= 0:
+        return None
+    parceiro = do_contador(db, usuario.id)
+    if parceiro is None:
+        parceiro = criar(db, (usuario.nome or usuario.email)[:120], usuario.email, pct, 0)
+        parceiro.usuario_id = usuario.id
+        db.flush()
+    if parceiro.ativo and db.get(IndicacaoParceiro, prestador_id) is None:
+        db.add(IndicacaoParceiro(
+            indicado_id=prestador_id, parceiro_id=parceiro.id, indicado_nome=(empresa_nome or "")[:200],
+            status=status if status in ("trial", "ativa", "inadimplente", "cancelada") else "trial", por_contador=True,
+        ))
+        db.flush()
+    return parceiro
+
+
+def desvincular_contador(db: Session, usuario_id: uuid.UUID | None, prestador_id: uuid.UUID) -> None:
+    """O acesso acabou: a bonificação daquela empresa para (o que já foi
+    gerado continua registrado)."""
+    if usuario_id is None:
+        return
+    parceiro = do_contador(db, usuario_id)
+    indicacao = db.get(IndicacaoParceiro, prestador_id)
+    if parceiro is not None and indicacao is not None and indicacao.por_contador and indicacao.parceiro_id == parceiro.id:
+        db.delete(indicacao)
+        db.flush()
+
+
+def resumo_do_contador(db: Session, usuario_id: uuid.UUID) -> dict | None:
+    """Pro card "Sua bonificação" em Empresas que atendo."""
+    parceiro = do_contador(db, usuario_id)
+    if parceiro is None:
+        return None
+    r = _resumo(db, parceiro, nomes_inteiros=True)
+    return {
+        "pct": r["comissao_pct"], "ativo": r["ativo"], "painel": f"/parceira/{parceiro.token_painel}", "link": r["link"],
+        "clientes": r["indicados_total"], "clientes_pagando": r["indicados_ativos"],
+        "total": r["total_comissao"], "a_receber": r["a_receber"],
+    }

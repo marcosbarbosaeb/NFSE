@@ -89,6 +89,9 @@ export function CadastroPage() {
   // município continuam campos normais, editáveis, e a pessoa sempre pode
   // simplesmente preencher tudo na mão se a consulta falhar ou vier errada.
   const [consultandoCnpj, setConsultandoCnpj] = useState(false)
+  const [cnpjConsultado, setCnpjConsultado] = useState<string | null>(null)
+  /** Mostra razão social e cidade pra preencher/corrigir à mão. */
+  const [manual, setManual] = useState(false)
   const [avisoCnpj, setAvisoCnpj] = useState<string | null>(null)
   const [enderecoResolvido, setEnderecoResolvido] = useState<string | null>(null)
   const [enderecoAutopreenchido, setEnderecoAutopreenchido] = useState<{
@@ -119,8 +122,17 @@ export function CadastroPage() {
 
   if (usuario) return <Navigate to="/app" replace />
 
-  async function onCnpjBlur(e: FocusEvent<HTMLInputElement>) {
-    const digitos = e.target.value.replace(/\D/g, "")
+  // Cadastro só com o CNPJ (07/10/2026): "importe os dados da empresa da
+  // Receita, não precisa ela preencher todos os campos". Razão social e
+  // cidade só aparecem se a consulta falhar ou a pessoa quiser corrigir.
+  function onCnpjBlur(e: FocusEvent<HTMLInputElement>) {
+    void consultarCnpj(e.target.value)
+  }
+
+  async function consultarCnpj(valor: string) {
+    const digitos = valor.replace(/\D/g, "")
+    if (digitos.length === 14 && digitos === cnpjConsultado) return
+    setCnpjConsultado(digitos.length === 14 ? digitos : null)
     setAvisoCnpj(null)
     setEnderecoResolvido(null)
     setEnderecoAutopreenchido(null)
@@ -137,6 +149,8 @@ export function CadastroPage() {
       })
       const partes = [dados.logradouro, dados.numero, dados.bairro].filter(Boolean)
       setEnderecoResolvido(`${partes.join(", ")}${partes.length ? " — " : ""}${dados.municipio}/${dados.uf}`)
+      // Sem razão social ou cidade a pessoa completa à mão.
+      setManual(!dados.razao_social || !dados.cod_municipio_sugerido)
       if (dados.situacao_cadastral && dados.situacao_cadastral.toUpperCase() !== "ATIVA") {
         setAvisoCnpj(`Situação cadastral deste CNPJ na Receita: ${dados.situacao_cadastral}. Confirme se está certo antes de continuar.`)
       }
@@ -146,6 +160,7 @@ export function CadastroPage() {
       } else {
         setAvisoCnpj("Não conseguimos consultar esse CNPJ automaticamente agora — preencha os dados manualmente.")
       }
+      setManual(true)
     } finally {
       setConsultandoCnpj(false)
     }
@@ -169,6 +184,15 @@ export function CadastroPage() {
     }
     if (senha !== confirmacao) {
       setErro("A confirmação não bate com a senha.")
+      return
+    }
+    if (tipo === "empresa" && (!razaoSocial.trim() || !/^\d{7}$/.test(codMunicipio.replace(/\D/g, "")))) {
+      setManual(true)
+      setErro(
+        cnpj.replace(/\D/g, "").length === 14
+          ? "Não consegui trazer os dados da empresa sozinha. Preencha a razão social e a cidade abaixo."
+          : "Digite os 14 números do CNPJ pra eu buscar os dados da empresa.",
+      )
       return
     }
     setEnviando(true)
@@ -342,21 +366,34 @@ export function CadastroPage() {
                   label="CNPJ"
                   required
                   value={cnpj}
-                  onChange={(e) => setCnpj(e.target.value)}
+                  onChange={(e) => {
+                    setCnpj(e.target.value)
+                    // Terminou de digitar os 14 números: já busca, sem esperar sair do campo.
+                    if (e.target.value.replace(/\D/g, "").length === 14) void consultarCnpj(e.target.value)
+                  }}
                   onBlur={onCnpjBlur}
                   inputMode="numeric"
                   placeholder="14 dígitos"
-                  hint="Digite o CNPJ: eu preencho o resto e já confiro se a Ana emite nota na sua cidade."
+                  hint="Só o CNPJ: eu busco os dados da empresa na Receita e já confiro se a Ana emite nota na sua cidade."
                 />
                 {consultandoCnpj && (
                   <p className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
                     <Loader2 size={12} className="animate-spin" /> Consultando CNPJ...
                   </p>
                 )}
-                {enderecoResolvido && !consultandoCnpj && (
-                  <p className="mt-1.5 flex items-start gap-1.5 text-xs text-success-700">
-                    <CheckCircle2 size={13} className="mt-0.5 shrink-0" /> {enderecoResolvido}
-                  </p>
+                {enderecoResolvido && !consultandoCnpj && razaoSocial && (
+                  <div className="mt-2 flex items-start gap-2 rounded-lg border border-success-200 bg-success-50 px-3 py-2 text-sm text-success-800 dark:border-success-800 dark:bg-success-900/30 dark:text-success-200">
+                    <CheckCircle2 size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold">{razaoSocial}</span>
+                      <span className="block text-xs">{enderecoResolvido}</span>
+                    </span>
+                    {!manual && (
+                      <button type="button" onClick={() => setManual(true)} className="shrink-0 text-xs font-medium underline">
+                        Corrigir
+                      </button>
+                    )}
+                  </div>
                 )}
                 {avisoCnpj && !consultandoCnpj && (
                   <p className="mt-1.5 flex items-start gap-1.5 text-xs text-warning-700">
@@ -365,15 +402,19 @@ export function CadastroPage() {
                 )}
               </div>
 
-              <Field label="Razão social" required value={razaoSocial} onChange={(e) => setRazaoSocial(e.target.value)} />
+              {manual && (
+                <>
+                  <Field label="Razão social" required value={razaoSocial} onChange={(e) => setRazaoSocial(e.target.value)} />
 
-              <CampoCidade
-                label="Cidade"
-                required
-                codigo={codMunicipio}
-                onChange={setCodMunicipio}
-                hint={enderecoAutopreenchido ? "Preenchida automaticamente a partir do CNPJ — confira se está certa." : undefined}
-              />
+                  <CampoCidade
+                    label="Cidade"
+                    required
+                    codigo={codMunicipio}
+                    onChange={setCodMunicipio}
+                    hint={enderecoAutopreenchido ? "Preenchida automaticamente a partir do CNPJ — confira se está certa." : undefined}
+                  />
+                </>
+              )}
 
               {compat && querNotas && compat.emissor === "sim" && (
                 <p className="flex items-start gap-2 rounded-lg bg-success-50 px-3 py-2 text-sm text-success-700 dark:bg-success-900/30 dark:text-success-300" role="status">

@@ -176,22 +176,40 @@ def criar_cadastro_contador(db: Session, *, email: str, senha: str, nome: str, e
     db.flush()
     db.add(UsuarioPrestador(usuario_id=usuario.id, prestador_id=prestador_id))
     db.flush()
-    usuario.email_enviado = _enviar_email_confirmacao(usuario.email, token)
+    usuario.email_enviado = _enviar_email_confirmacao(usuario.email, token, contador=True)
     return usuario
 
 
-def _enviar_email_confirmacao(email: str, token: str) -> bool:
-    """True se o e-mail saiu. A conta já existe de qualquer jeito."""
+def _enviar_email_confirmacao(email: str, token: str, contador: bool | None = None) -> bool:
+    """True se o e-mail saiu. A conta já existe de qualquer jeito.
+    `contador`: conta só de contador (muda o texto e o menu do e-mail)."""
+    from app.services import email_modelo as m
+
     link = f"{get_settings().app_base_url}/confirmar-email?token={token}"
+    if contador:
+        abertura = "Oi! Eu sou a Ana. Sua conta de contador está quase pronta."
+        depois = "Depois de confirmar, você já vê os convites dos seus clientes em “Empresas que atendo” e entra na empresa de cada um."
+    else:
+        abertura = "Oi! Eu sou a Ana, sua agente de notas fiscais. Que bom ter você aqui!"
+        depois = "Depois de confirmar, eu te mostro os primeiros passos: certificado digital, dados da empresa e seus tomadores."
     corpo_texto = (
-        f"Oi! Eu sou a Ana, sua agente de notas fiscais. Que bom ter você aqui!\n\n"
+        f"{abertura}\n\n"
         f"Confirme seu e-mail clicando no link abaixo (válido por 24 horas):\n{link}\n\n"
+        f"{depois}\n\n"
         f"Se você não pediu esse cadastro, pode ignorar esta mensagem."
     )
-    corpo_html = (
-        f"<p>Oi! Eu sou a Ana, sua agente de notas fiscais. Que bom ter você aqui!</p>"
-        f'<p>Confirme seu e-mail clicando <a href="{link}">aqui</a> (válido por 24 horas).</p>'
-        f"<p>Se você não pediu esse cadastro, pode ignorar esta mensagem.</p>"
+    corpo_html = m.moldura(
+        titulo="Confirme o seu e-mail",
+        previa="Falta só um clique pra sua conta na Agente Ana ficar pronta.",
+        menu=m.MENU_CONTADOR if contador else m.MENU_CLIENTE,
+        motivo="Você recebeu este e-mail porque alguém criou uma conta na Agente Ana com este endereço. Se não foi você, é só ignorar.",
+        corpo_html=(
+            m.paragrafo(abertura)
+            + m.paragrafo("Pra ativar a conta, confirme que este e-mail é seu. O link vale por <strong>24 horas</strong>.")
+            + m.botao("Confirmar meu e-mail", link)
+            + m.paragrafo(depois)
+            + m.link_que_nao_abre(link)
+        ),
     )
     try:
         get_email_sender().enviar(
@@ -233,4 +251,6 @@ def reenviar_confirmacao(db: Session, email: str) -> bool:
     usuario.token_confirmacao_expira_em = datetime.datetime.now(datetime.timezone.utc) + _VALIDADE_TOKEN
     db.flush()
     # False = tentei e o serviço de e-mail não aceitou (limite de envios).
-    return _enviar_email_confirmacao(usuario.email, token)
+    definir_prestador_atual(db, usuario.prestador_id)
+    contador = bool(db.query(Prestador.so_contador).filter(Prestador.id == usuario.prestador_id).scalar())
+    return _enviar_email_confirmacao(usuario.email, token, contador=contador)

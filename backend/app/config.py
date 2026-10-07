@@ -126,6 +126,9 @@ class Settings(BaseSettings):
     # Desligado por padrão: só ligar em produção quando o Stripe estiver
     # recebendo, senão a pessoa fica travada sem ter como pagar.
     bloqueio_ativo: bool = False
+    # Bonificação do contador (07/10/2026): % de cada mensalidade paga pelos
+    # clientes que ele atende. 0 desliga.
+    contador_bonificacao_pct: int = 10
 
     # Marco 16, item 1 — "integre o login/cadastro ao Google". Mesmo
     # padrão do resend_api_key/stripe_secret_key acima: Marcos confirmou

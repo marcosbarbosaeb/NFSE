@@ -1,5 +1,6 @@
-import { AlertTriangle, BriefcaseBusiness, Building2, Check, Loader2, Lock, LogIn, MailPlus } from "lucide-react"
-import { useCallback, useEffect, useState } from "react"
+import { AlertTriangle, ArrowRight, BriefcaseBusiness, Building2, Check, CircleCheck, Gift, Loader2, Lock, LogIn, MailPlus } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 import { nomeEmpresa } from "../components/TrocaEmpresa"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
@@ -51,12 +52,24 @@ export function AtendimentosPage() {
     }
   }
 
-  async function abrir(c: ClienteAtendido) {
+  // Painel de pendências (07/10/2026): "o contador poder ter uma aba de gestão
+  // com a pendência de cada empresa, sem entrar em cada uma". Quem tem mais
+  // o que fazer vem primeiro; o filtro esconde quem está em dia.
+  const [soPendentes, setSoPendentes] = useState(false)
+  const clientes = useMemo(() => {
+    const lista = [...(dados?.clientes ?? [])].sort((a, b) => (b.total_pendencias ?? 0) - (a.total_pendencias ?? 0))
+    return soPendentes ? lista.filter((c) => (c.total_pendencias ?? 0) > 0) : lista
+  }, [dados, soPendentes])
+  const totalPendencias = (dados?.clientes ?? []).reduce((soma, c) => soma + (c.total_pendencias ?? 0), 0)
+  const comPendencia = (dados?.clientes ?? []).filter((c) => (c.total_pendencias ?? 0) > 0).length
+
+  /** Abre a empresa já na tela onde a pendência se resolve. */
+  async function abrir(c: ClienteAtendido, destino = "/app") {
     setFazendo(c.id)
     setErro(null)
     try {
       await api.post(`/empresas/${c.prestador_id}/ativar`)
-      window.location.assign("/app")
+      window.location.assign(destino)
     } catch (err) {
       setErro(erroDe(err))
       setFazendo(null)
@@ -89,8 +102,7 @@ export function AtendimentosPage() {
           <BriefcaseBusiness size={24} className="text-primary-600 dark:text-primary-400" aria-hidden="true" /> Empresas que atendo
         </h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Para contadores: as empresas de clientes em que você entra pra cuidar das notas e do financeiro, cada uma com o que o cliente
-          liberou.
+As empresas dos seus clientes, com o que cada uma tem pra fazer. Clique numa pendência pra abrir a empresa já na tela certa.
         </p>
       </header>
 
@@ -135,10 +147,28 @@ export function AtendimentosPage() {
 
       {dados && dados.clientes.length > 0 && (
         <section className="flex flex-col gap-3" aria-label="Empresas atendidas">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            {dados.clientes.length === 1 ? "1 empresa" : `${dados.clientes.length} empresas`}
-          </h2>
-          {dados.clientes.map((c) => {
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              {dados.clientes.length === 1 ? "1 empresa" : `${dados.clientes.length} empresas`}
+              <span className="ml-2 normal-case tracking-normal text-slate-400 dark:text-slate-500">
+                {totalPendencias === 0
+                  ? "· tudo em dia"
+                  : `· ${totalPendencias} ${totalPendencias === 1 ? "pendência" : "pendências"} em ${comPendencia} ${comPendencia === 1 ? "empresa" : "empresas"}`}
+              </span>
+            </h2>
+            {totalPendencias > 0 && dados.clientes.length > 1 && (
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                  checked={soPendentes}
+                  onChange={(e) => setSoPendentes(e.target.checked)}
+                />
+                Só com pendência
+              </label>
+            )}
+          </div>
+          {clientes.map((c) => {
             const dentro = c.prestador_id === dados.ativa
             return (
               <Card key={c.id} className={`p-5 ${dentro ? "ring-2 ring-primary-500" : ""}`}>
@@ -154,6 +184,7 @@ export function AtendimentosPage() {
                       {c.desde && <> · desde {quando(c.desde).slice(0, 10)}</>}
                     </p>
                     <Permissoes catalogo={catalogo} marcadas={c.permissoes} />
+                    <PendenciasDoCliente cliente={c} desligado={fazendo !== null} aoAbrir={(link) => abrir(c, link)} />
                     {c.situacao.bloqueado && (
                       <p className="mt-3 flex items-start gap-1.5 text-sm text-danger-700 dark:text-danger-300">
                         <Lock size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
@@ -171,6 +202,9 @@ export function AtendimentosPage() {
                     <Button type="button" variant={dentro ? "outline" : "primary"} disabled={fazendo !== null || dentro} onClick={() => abrir(c)}>
                       {fazendo === c.id ? <Loader2 size={15} className="animate-spin" /> : <LogIn size={15} />}
                       {dentro ? "Aberta" : "Abrir empresa"}
+                      {!dentro && (c.total_pendencias ?? 0) > 0 && (
+                        <span className="ml-1 rounded-full bg-white/25 px-1.5 text-xs font-semibold">{c.total_pendencias}</span>
+                      )}
                     </Button>
                     <button
                       type="button"
@@ -185,6 +219,37 @@ export function AtendimentosPage() {
             )
           })}
         </section>
+      )}
+
+      {dados?.bonificacao && (
+        <Card className="p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-slate-100">
+                <Gift size={18} className="shrink-0 text-accent-500" aria-hidden="true" /> Sua bonificação: {dados.bonificacao.pct}% de cada mensalidade
+              </p>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                Você recebe {dados.bonificacao.pct}% do que cada cliente que você atende paga de assinatura, todo mês, enquanto atender a
+                empresa. {dados.bonificacao.clientes_pagando === 0
+                  ? "Ainda nenhum cliente seu está pagando."
+                  : `${dados.bonificacao.clientes_pagando} de ${dados.bonificacao.clientes} ${dados.bonificacao.clientes === 1 ? "cliente está" : "clientes estão"} pagando.`}
+                {dados.bonificacao.a_receber > 0 && (
+                  <>
+                    {" "}
+                    <strong>A receber: {dados.bonificacao.a_receber.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}.</strong>
+                  </>
+                )}
+              </p>
+            </div>
+            <Link
+              to={dados.bonificacao.painel}
+              target="_blank"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              Ver extrato <ArrowRight size={15} aria-hidden="true" />
+            </Link>
+          </div>
+        </Card>
       )}
 
       {dados && dados.clientes.length === 0 && dados.convites.length === 0 && (
@@ -219,6 +284,40 @@ export function AtendimentosPage() {
           </div>
         </Modal>
       )}
+    </div>
+  )
+}
+
+function PendenciasDoCliente({ cliente: c, desligado, aoAbrir }: { cliente: ClienteAtendido; desligado: boolean; aoAbrir: (link: string) => void }) {
+  const lista = c.pendencias ?? []
+  if (lista.length === 0) {
+    return (
+      <p className="mt-3 flex items-center gap-1.5 text-sm text-success-700 dark:text-success-300">
+        <CircleCheck size={15} aria-hidden="true" /> Nada pendente por aqui.
+      </p>
+    )
+  }
+  return (
+    <div className="mt-3">
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">O que tem pra fazer</p>
+      <ul className="flex flex-col">
+        {lista.map((p, i) => (
+          <li key={`${p.tipo}-${i}`}>
+            <button
+              type="button"
+              disabled={desligado || p.tipo === "indisponivel"}
+              onClick={() => aoAbrir(p.link)}
+              title="Abrir a empresa nesta tela"
+              className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:opacity-60 dark:text-slate-200 dark:hover:bg-slate-700/40"
+            >
+              <span className={`h-2 w-2 shrink-0 rounded-full ${p.atrasada ? "bg-danger-600" : "bg-warning-600"}`} aria-hidden="true" />
+              <span className="min-w-0 flex-1">{p.titulo}</span>
+              {p.atrasada && <Badge variant="danger">{p.tipo === "erro" ? "recusada" : "atrasada"}</Badge>}
+              <ArrowRight size={14} className="shrink-0 text-slate-300 group-hover:text-primary-600 dark:text-slate-600" aria-hidden="true" />
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

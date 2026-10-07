@@ -721,11 +721,17 @@ def api_pedir_codigo(req: SolicitarCodigoRequest, db: Session = Depends(get_db))
             f"Seu código de acesso à Agente Ana: {codigo}\n\n"
             "Ele vale por 10 minutos. Se não foi você que pediu, ignore este e-mail."
         )
-        html = (
-            "<div style='font-family:Arial,sans-serif;font-size:15px;color:#1e293b'>"
-            "<p>Seu código de acesso à Agente Ana:</p>"
-            f"<p style='font-size:28px;font-weight:bold;letter-spacing:6px'>{codigo}</p>"
-            "<p style='color:#64748b;font-size:13px'>Vale por 10 minutos. Se não foi você que pediu, ignore este e-mail.</p></div>"
+        from app.services import email_modelo as m
+
+        html = m.moldura(
+            titulo="Seu código de acesso",
+            previa=f"{codigo} — vale por 10 minutos.",
+            motivo="Você recebeu este e-mail porque pediram um código de acesso pra esta conta. Se não foi você, ignore: ninguém entra sem o código.",
+            corpo_html=(
+                m.paragrafo("Use este código pra entrar na Agente Ana:")
+                + f'<p style="margin:6px 0 18px;font-family:Arial,Helvetica,sans-serif;font-size:34px;font-weight:bold;letter-spacing:8px;color:#1e2a5e">{codigo}</p>'
+                + m.paragrafo("Ele vale por <strong>10 minutos</strong> e só serve uma vez.", suave=True)
+            ),
         )
         try:
             get_email_sender().enviar(

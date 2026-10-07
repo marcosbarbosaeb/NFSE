@@ -58,13 +58,23 @@ def _avisar_contador(empresa: str, quem: Usuario, email: str, permissoes: list[s
         f"Se você já tem conta com este e-mail, entre e aceite o convite: {base}/app/atendimentos\n"
         f"Se ainda não tem, crie a sua conta de contador (grátis, sem CNPJ), com este mesmo e-mail: {link_cadastro}\n"
     )
-    corpo = (
-        "<div style='font-family:Arial,sans-serif;font-size:15px;color:#1e293b;line-height:1.5'>"
-        f"<p><strong>{html.escape(de)}</strong> convidou você para cuidar da empresa "
-        f"<strong>{html.escape(empresa)}</strong> na Agente Ana.</p>"
-        "<p>O que você vai poder fazer:</p><ul>" + "".join(f"<li>{html.escape(p)}</li>" for p in pode) + "</ul>"
-        f"<p><a href='{base}/app/atendimentos' style='background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none'>Ver o convite</a></p>"
-        f"<p style='color:#64748b;font-size:13px'>Ainda não tem conta? <a href='{link_cadastro}'>Crie a sua conta de contador</a> (grátis, sem CNPJ) usando este mesmo e-mail — o convite aparece assim que você entrar.</p></div>"
+    from app.services import email_modelo as m
+
+    corpo = m.moldura(
+        titulo=f"Convite pra cuidar de {empresa}",
+        previa=f"{de} convidou você na Agente Ana.",
+        menu=m.MENU_CONTADOR,
+        motivo=f"Você recebeu este e-mail porque {de} informou o seu endereço como contador(a) da empresa na Agente Ana.",
+        corpo_html=(
+            m.paragrafo(f"<strong>{html.escape(de)}</strong> convidou você pra cuidar da empresa <strong>{html.escape(empresa)}</strong> na Agente Ana.")
+            + m.paragrafo("O que você vai poder fazer lá:")
+            + '<ul style="margin:0 0 14px;padding-left:20px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#1e293b">'
+            + "".join(f"<li>{html.escape(p)}</li>" for p in pode) + "</ul>"
+            + m.botao("Ver o convite", f"{base}/app/atendimentos")
+            + m.paragrafo(
+                f'Ainda não tem conta? <a href="{link_cadastro}" style="color:#e11d74">Crie a sua conta de contador</a> — é grátis e não pede CNPJ. '
+                "Use este mesmo e-mail: o convite aparece assim que você entrar.", suave=True)
+        ),
     )
     try:
         get_email_sender().enviar(
@@ -139,7 +149,13 @@ def api_historico(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = De
 @rotas.get("/api/contador/atendimentos")
 def api_atendimentos(request: Request, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_logado)):
     ativa = contas.empresa_ativa(db, request, usuario)
-    return {"permissoes": _catalogo(), "ativa": ativa, **acesso.do_contador(db, usuario, ativa)}
+    from app.services import parceiros
+
+    return {
+        "permissoes": _catalogo(), "ativa": ativa, **acesso.do_contador(db, usuario, ativa),
+        # Bonificação do contador (parceria): aparece depois do primeiro cliente.
+        "bonificacao": parceiros.resumo_do_contador(db, usuario.id),
+    }
 
 
 @rotas.post("/api/contador/convites/{acesso_id}/aceitar")
