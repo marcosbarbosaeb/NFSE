@@ -27,6 +27,11 @@ export function CadastroPage() {
   // google_oauth.py: não dá pra criar a conta só com o que a Google manda,
   // falta CNPJ/razão social) — só pré-preenche o e-mail, editável como
   // qualquer outro campo.
+  // Conta só de contador (07/10/2026): /cadastro?tipo=contador — sem CNPJ,
+  // sem teste e sem assinatura; ele trabalha nas empresas dos clientes.
+  const [tipo, setTipo] = useState<"empresa" | "contador">(searchParams.get("tipo") === "contador" ? "contador" : "empresa")
+  const [nome, setNome] = useState(searchParams.get("google_nome") ?? "")
+  const [escritorio, setEscritorio] = useState("")
   const googleEmail = searchParams.get("google_email")
   const googleNome = searchParams.get("google_nome")
   const [razaoSocial, setRazaoSocial] = useState("")
@@ -167,6 +172,23 @@ export function CadastroPage() {
       return
     }
     setEnviando(true)
+    if (tipo === "contador") {
+      try {
+        const resp = await api.post<{ mensagem: string; email: string; email_enviado?: boolean }>("/cadastro/contador", {
+          email,
+          senha,
+          nome: nome.trim(),
+          escritorio: escritorio.trim() || null,
+        })
+        setEmailSaiu(resp.email_enviado !== false)
+        setEnviado(resp.email)
+      } catch (err) {
+        setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
+      } finally {
+        setEnviando(false)
+      }
+      return
+    }
     try {
       const payload: CadastroRequest = {
         email,
@@ -238,7 +260,39 @@ export function CadastroPage() {
             </div>
           ) : (
             <form onSubmit={onSubmit} className="flex flex-col gap-3">
-              {modoTeste && (
+              <div role="tablist" aria-label="Tipo de conta" className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-900/60">
+                {(
+                  [
+                    ["empresa", "Tenho empresa"],
+                    ["contador", "Sou contador(a)"],
+                  ] as const
+                ).map(([id, rotulo]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={tipo === id}
+                    onClick={() => {
+                      setTipo(id)
+                      setErro(null)
+                    }}
+                    className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                      tipo === id
+                        ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
+                        : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                    }`}
+                  >
+                    {rotulo}
+                  </button>
+                ))}
+              </div>
+              {tipo === "contador" && (
+                <p className="rounded-lg bg-primary-50 px-3 py-2 text-sm text-primary-700 dark:bg-primary-900/30 dark:text-primary-200">
+                  <strong>Conta de contador: grátis e sem CNPJ.</strong> Você entra nas empresas dos clientes que te convidarem e cuida das
+                  notas e do financeiro por eles. Use o mesmo e-mail em que recebeu o convite.
+                </p>
+              )}
+              {modoTeste && tipo === "empresa" && (
                 <p className="rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
                   <strong>Conta de teste.</strong> Faça tudo como um cliente novo: as notas saem só em homologação (sem valor fiscal) e os
                   e-mails de nota vão só pro e-mail desta conta. Pode usar o mesmo CNPJ de uma conta real.
@@ -251,11 +305,11 @@ export function CadastroPage() {
               )}
               {googleEmail && (
                 <p className="rounded-lg bg-primary-50 px-3 py-2 text-sm text-primary-700">
-                  {googleNome ? `Oi, ${googleNome}! ` : ""}Confirme os dados da sua empresa pra terminar de criar a
+                  {googleNome ? `Oi, ${googleNome}! ` : ""}Confirme os dados {tipo === "contador" ? "abaixo" : "da sua empresa"} pra terminar de criar a
                   conta com <span className="font-medium">{googleEmail}</span>.
                 </p>
               )}
-              {!googleEmail && (
+              {!googleEmail && tipo === "empresa" && (
                 <>
                   {erroGoogle && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erroGoogle}</p>}
                   <Button type="button" variant="outline" onClick={onGoogleClick} className="w-full">
@@ -270,6 +324,19 @@ export function CadastroPage() {
               )}
               {erro && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erro}</p>}
 
+              {tipo === "contador" && (
+                <>
+                  <Field label="Seu nome" required minLength={2} maxLength={120} autoComplete="name" value={nome} onChange={(e) => setNome(e.target.value)} />
+                  <Field
+                    label="Nome do escritório (opcional)"
+                    maxLength={200}
+                    value={escritorio}
+                    onChange={(e) => setEscritorio(e.target.value)}
+                  />
+                </>
+              )}
+              {tipo === "empresa" && (
+                <>
               <div>
                 <Field
                   label="CNPJ"
@@ -327,6 +394,9 @@ export function CadastroPage() {
                     {compat.lista_atualizada_em?.split("-").reverse().join("/") ?? "alguns dias atrás"}).
                   </p>
                 </div>
+              )}
+
+                </>
               )}
 
               <Field label="E-mail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />

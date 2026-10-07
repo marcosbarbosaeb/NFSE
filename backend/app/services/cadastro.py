@@ -150,6 +150,36 @@ def criar_cadastro(
     return usuario
 
 
+def criar_cadastro_contador(db: Session, *, email: str, senha: str, nome: str, escritorio: str | None = None) -> Usuario:
+    """Conta só de contador: sem CNPJ, sem teste, sem assinatura. Cria a
+    empresa de fachada (`so_contador`) que serve de "casa" do login — nela
+    não se emite nem se lança nada; o contador trabalha nas empresas dos
+    clientes que o convidarem (ver app/services/acesso.py)."""
+    email_norm = email.strip().lower()
+    if db.query(Usuario).filter_by(email=email_norm).one_or_none() is not None:
+        raise EmailJaCadastradoError(f"Já existe uma conta com o e-mail '{email_norm}'.")
+    prestador_id = uuid.uuid4()
+    definir_prestador_atual(db, prestador_id)
+    db.add(Prestador(
+        id=prestador_id, cpf_cnpj="CT" + uuid.uuid4().hex[:12].upper(),
+        razao_social=((escritorio or "").strip() or nome.strip())[:200], cod_municipio="0000000",
+        so_contador=True, modulos=[],
+    ))
+    db.flush()
+    token = _gerar_token()
+    usuario = Usuario(
+        id=uuid.uuid4(), prestador_id=prestador_id, email=email_norm, senha_hash=hash_senha(senha),
+        nome=nome.strip()[:120] or None, email_confirmado=False, token_confirmacao=token,
+        token_confirmacao_expira_em=datetime.datetime.now(datetime.timezone.utc) + _VALIDADE_TOKEN,
+    )
+    db.add(usuario)
+    db.flush()
+    db.add(UsuarioPrestador(usuario_id=usuario.id, prestador_id=prestador_id))
+    db.flush()
+    usuario.email_enviado = _enviar_email_confirmacao(usuario.email, token)
+    return usuario
+
+
 def _enviar_email_confirmacao(email: str, token: str) -> bool:
     """True se o e-mail saiu. A conta já existe de qualquer jeito."""
     link = f"{get_settings().app_base_url}/confirmar-email?token={token}"

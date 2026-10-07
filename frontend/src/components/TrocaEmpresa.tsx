@@ -104,12 +104,12 @@ export function TrocaEmpresa() {
         </span>
         <span className="min-w-0 flex-1 leading-tight">
           <span className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
-            {ativa.papel === "contador" ? "Cliente (contador)" : "Empresa"}
+            {ativa.so_contador ? "Sua conta" : ativa.papel === "contador" ? "Cliente (contador)" : "Empresa"}
           </span>
           <span className="block truncate text-sm font-medium text-white" title={nomeEmpresa(ativa)}>
             {nomeEmpresa(ativa)}
           </span>
-          <span className="block truncate text-xs text-slate-400">{formatarDocumento(ativa.cnpj)}</span>
+          <span className="block truncate text-xs text-slate-400">{ativa.so_contador ? "Conta de contador" : formatarDocumento(ativa.cnpj)}</span>
         </span>
         <ChevronsUpDown size={16} className="shrink-0 text-slate-400" aria-hidden="true" />
       </button>
@@ -125,7 +125,7 @@ export function TrocaEmpresa() {
                 {/* Primeiro as próprias, depois as dos clientes (contador). */}
                 {(i === 0 || (e.papel ?? "dono") !== (empresas[i - 1].papel ?? "dono")) && (
                   <p className={`px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 ${i > 0 ? "mt-1 border-t border-slate-100 dark:border-slate-700" : ""}`}>
-                    {e.papel === "contador" ? "Empresas que atendo" : "Suas empresas"}
+                    {e.papel === "contador" ? "Empresas que atendo" : e.so_contador ? "Sua conta" : "Suas empresas"}
                   </p>
                 )}
                 <button
@@ -139,7 +139,7 @@ export function TrocaEmpresa() {
                     <span className={`block truncate text-sm ${e.ativa ? "font-semibold text-primary-700 dark:text-primary-300" : "font-medium"}`}>
                       {nomeEmpresa(e)}
                     </span>
-                    <span className="block text-xs text-slate-400">{formatarDocumento(e.cnpj)}</span>
+                    <span className="block text-xs text-slate-400">{e.so_contador ? "Conta de contador" : formatarDocumento(e.cnpj)}</span>
                   </span>
                   {trocando === e.id ? (
                     <Loader2 size={15} className="shrink-0 animate-spin text-slate-400" aria-label="Trocando" />

@@ -60,13 +60,18 @@ export function ContaPage() {
   return (
     <PaginaAbas
       titulo="Minha conta"
-      subtitulo="Seu acesso, sua assinatura e suas indicações."
+      subtitulo={usuario?.so_contador ? "Seu acesso e suas preferências." : "Seu acesso, sua assinatura e suas indicações."}
       abas={[
         { id: "perfil", rotulo: "Perfil", icone: UserRound, conteudo: () => <AbaPerfil conta={conta} onAtualizada={setConta} demo={demo} /> },
         { id: "autenticacao", rotulo: "Acesso e segurança", icone: ShieldCheck, conteudo: () => <AbaAutenticacao conta={conta} demo={demo} /> },
         { id: "preferencias", rotulo: "Preferências", icone: Palette, conteudo: () => <AbaPreferencias /> },
-        { id: "assinatura", rotulo: "Assinatura", icone: CreditCard, conteudo: () => <AbaAssinatura demo={demo} /> },
-        { id: "indique", rotulo: "Indique e ganhe", icone: Gift, conteudo: () => <IndiqueConteudo /> },
+        // Conta só de contador não tem assinatura nem indicação.
+        ...(usuario?.so_contador
+          ? []
+          : [
+              { id: "assinatura", rotulo: "Assinatura", icone: CreditCard, conteudo: () => <AbaAssinatura demo={demo} /> },
+              { id: "indique", rotulo: "Indique e ganhe", icone: Gift, conteudo: () => <IndiqueConteudo /> },
+            ]),
       ]}
     />
   )

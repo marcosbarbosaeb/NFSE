@@ -593,7 +593,7 @@ export const FAQ: PerguntaFaq[] = [
     tema: "conta",
     pergunta: "Sou contador. Como entro na empresa de um cliente?",
     resposta:
-      "Peça pro cliente te convidar pelo seu e-mail em Empresa, aba “Contador”. O convite aparece em “Empresas que atendo”, no menu: clique em “Aceitar” e depois em “Abrir empresa”. As empresas dos clientes também ficam no seletor de empresas, no topo do menu, separadas das suas.",
+      "Crie a sua conta de contador em “Criar conta”, na opção “Sou contador(a)”: é grátis e não pede CNPJ. Depois peça pro cliente te convidar pelo mesmo e-mail em Empresa, aba “Contador”. O convite aparece em “Empresas que atendo”, no menu: clique em “Aceitar” e depois em “Abrir empresa”. As empresas dos clientes também ficam no seletor de empresas, no topo do menu, separadas das suas.",
     link: "/app/atendimentos",
   },
   {

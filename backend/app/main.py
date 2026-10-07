@@ -68,6 +68,7 @@ from app.schemas import (
     AjusteOcorrenciaRequest,
     AliquotaAtualizarRequest,
     AssinaturaResponse,
+    CadastroContadorRequest,
     CadastroRequest,
     CadastroResponse,
     CalendarioResponse,
@@ -590,6 +591,28 @@ def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
     )
 
 
+@app.post("/api/cadastro/contador", response_model=CadastroResponse, responses={409: {"model": ErroResponse}}, dependencies=[Depends(limite("cadastro", 10, 3600))])
+def api_cadastro_contador(req: CadastroContadorRequest, db: Session = Depends(get_db)):
+    """Conta só de contador: nome, e-mail e senha. Não pede CNPJ, não tem
+    teste grátis nem assinatura — ele trabalha nas empresas dos clientes."""
+    from app.services.cadastro import criar_cadastro_contador
+
+    try:
+        usuario = criar_cadastro_contador(db, email=req.email, senha=req.senha, nome=req.nome, escritorio=req.escritorio)
+    except CadastroEmailJaCadastradoError:
+        raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")
+    db.commit()
+    enviado = bool(getattr(usuario, "email_enviado", True))
+    return CadastroResponse(
+        mensagem=(
+            "Conta criada! Enviamos um link de confirmação pro seu e-mail — confira sua caixa de entrada."
+            if enviado else
+            "Conta criada, mas não consegui mandar o e-mail de confirmação agora. Tente “reenviar” daqui a pouco na tela de entrar."
+        ),
+        email=usuario.email, email_enviado=enviado,
+    )
+
+
 @app.post("/api/cadastro/confirmar", response_model=UsuarioResponse, responses={400: {"model": ErroResponse}})
 def api_confirmar_email(req: ConfirmarEmailRequest, request: Request, db: Session = Depends(get_db)):
     """Confirma o e-mail E já loga (mesma sessão) — evita o usuário ter que
@@ -647,9 +670,11 @@ def api_auth_me(request: Request, db: Session = Depends(get_db)):
     from app.services import acesso
 
     papel, permissoes = acesso.papel(db, usuario, ativa)
+    so_contador = acesso.eh_so_contador(db, ativa)
     return UsuarioResponse(
-        email=usuario.email, prestador_id=ativa, demo=eh_email_demo(usuario.email), nome=usuario.nome, teste=teste,
-        modulos=modulos_da_empresa(db, ativa),
+        email=usuario.email, prestador_id=ativa, demo=eh_email_demo(usuario.email), nome=usuario.nome,
+        teste=teste and not so_contador, so_contador=so_contador,
+        modulos=[] if so_contador else modulos_da_empresa(db, ativa),
         papel=papel, permissoes=permissoes, atende_empresas=acesso.tem_algo(db, usuario),
         acesso=acesso.situacao(db, ativa),
     )

@@ -43,7 +43,8 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
   const naIndicacao = naConta && new URLSearchParams(search).get("aba") === "indique"
   const modulos = useModulos()
   const { usuario } = useAuth()
-  const grupos = [
+  const soContador = usuario?.so_contador === true
+  const grupos = soContador ? [] : [
     ...(modulos.emissor ? [{ titulo: "Notas", itens: NOTAS }] : []),
     ...(modulos.financeiro ? [{ titulo: "Financeiro", itens: modulos.emissor ? FINANCEIRO : [...FINANCEIRO, CLIENTES] }] : []),
     { titulo: "", itens: GERAL },
@@ -87,7 +88,7 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
     >
       <div>
         <div className="mb-5 flex items-center gap-2 px-2">
-          <Marca escuro subtitulo={doisProdutos ? "Notas e financeiro" : modulos.financeiro ? "Financeiro" : "Emissor de notas"} />
+          <Marca escuro subtitulo={soContador ? "Conta de contador" : doisProdutos ? "Notas e financeiro" : modulos.financeiro ? "Financeiro" : "Emissor de notas"} />
         </div>
 
         <div className="mb-5">
@@ -95,10 +96,17 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
         </div>
 
         <nav className="flex flex-col gap-1" data-tour="menu">
-          <NavLink to={INICIO_ITEM.to} end onClick={onFechar} className={({ isActive }) => classeItem(isActive)}>
-            <Home size={18} />
-            {INICIO_ITEM.label}
-          </NavLink>
+          {soContador ? (
+            <NavLink to="/app/atendimentos" onClick={onFechar} className={({ isActive }) => classeItem(isActive)}>
+              <BriefcaseBusiness size={18} />
+              Empresas que atendo
+            </NavLink>
+          ) : (
+            <NavLink to={INICIO_ITEM.to} end onClick={onFechar} className={({ isActive }) => classeItem(isActive)}>
+              <Home size={18} />
+              {INICIO_ITEM.label}
+            </NavLink>
+          )}
           {grupos.map((grupo) => (
             <div key={grupo.titulo || "geral"} className="flex flex-col gap-1">
               {grupo.titulo && (
@@ -138,7 +146,7 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
             Minha conta
           </Link>
           {/* Contador (06/10/2026): só pra quem atende empresas ou tem convite. */}
-          {usuario?.atende_empresas && (
+          {usuario?.atende_empresas && !soContador && (
             <NavLink to="/app/atendimentos" onClick={onFechar} className={({ isActive }) => `mt-1 ${classeItem(isActive)}`}>
               <BriefcaseBusiness size={18} aria-hidden="true" />
               Empresas que atendo
@@ -155,6 +163,7 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
             <CircleHelp size={18} aria-hidden="true" />
             Ajuda
           </NavLink>
+          {!soContador && (
           <Link
             to="/app/conta?aba=indique"
             onClick={onFechar}
@@ -166,6 +175,7 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
             <Gift size={15} aria-hidden="true" />
             Indique e ganhe desconto
           </Link>
+          )}
         </div>
 
       <div className="rounded-xl bg-brand-800/70 p-4 text-slate-300">
@@ -174,7 +184,9 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
           <p className="text-sm font-medium text-white">Deixa comigo.</p>
         </div>
         <p className="text-xs text-slate-400">
-          {modulos.emissor
+          {soContador
+            ? "Abra a empresa de um cliente e eu deixo tudo à mão: notas, tomadores e financeiro, com o que ele liberou."
+            : modulos.emissor
             ? "Cadastre cada tomador uma vez — todo mês eu preparo a nota e você só confere."
             : "Importe o extrato do banco — eu separo o que entrou do que saiu e lembro como você classifica."}
         </p>

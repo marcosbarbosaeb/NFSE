@@ -15,6 +15,8 @@ export interface Usuario {
   atende_empresas?: boolean
   /** Assinatura da empresa ativa. */
   acesso?: SituacaoAcesso
+  /** Conta só de contador, fora da empresa de um cliente: sem notas nem financeiro próprios. */
+  so_contador?: boolean
 }
 
 // --- Contador com permissões e bloqueio sem assinatura (06/10/2026) ---
@@ -1003,6 +1005,8 @@ export interface Empresa {
   ativa: boolean
   /** "contador" = empresa de um cliente que este login atende. */
   papel?: "dono" | "contador"
+  /** A "casa" de uma conta só de contador (não é empresa de verdade). */
+  so_contador?: boolean
 }
 
 export interface EmpresaCriarRequest {
@@ -1663,6 +1667,8 @@ export interface ContaGestao {
   /** Pode usar tudo? (teste, assinatura, liberação da Gestão...) */
   acesso: SituacaoAcesso
   liberado_obs: string | null
+  /** Conta só de contador: não é cliente (sem notas, sem assinatura). */
+  so_contador?: boolean
   /** Contadores com acesso ativo a esta empresa. */
   contadores: number
 }

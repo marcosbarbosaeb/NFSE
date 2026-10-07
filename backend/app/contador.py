@@ -49,13 +49,14 @@ def _avisar_contador(empresa: str, quem: Usuario, email: str, permissoes: list[s
     pro contador assim que entrar com aquele e-mail."""
     s = get_settings()
     base = s.app_base_url.rstrip("/")
+    link_cadastro = f"{base}/cadastro?tipo=contador"
     pode = ["Ver as notas e o financeiro"] + [acesso.PERMISSOES[p][0] for p in permissoes]
     de = quem.nome or quem.email
     texto = (
         f"{de} convidou você para cuidar da empresa {empresa} na Agente Ana.\n\n"
         "O que você vai poder fazer:\n" + "\n".join(f"- {p}" for p in pode) + "\n\n"
         f"Se você já tem conta com este e-mail, entre e aceite o convite: {base}/app/atendimentos\n"
-        f"Se ainda não tem, crie a sua (use este mesmo e-mail): {base}/cadastro\n"
+        f"Se ainda não tem, crie a sua conta de contador (grátis, sem CNPJ), com este mesmo e-mail: {link_cadastro}\n"
     )
     corpo = (
         "<div style='font-family:Arial,sans-serif;font-size:15px;color:#1e293b;line-height:1.5'>"
@@ -63,7 +64,7 @@ def _avisar_contador(empresa: str, quem: Usuario, email: str, permissoes: list[s
         f"<strong>{html.escape(empresa)}</strong> na Agente Ana.</p>"
         "<p>O que você vai poder fazer:</p><ul>" + "".join(f"<li>{html.escape(p)}</li>" for p in pode) + "</ul>"
         f"<p><a href='{base}/app/atendimentos' style='background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none'>Ver o convite</a></p>"
-        f"<p style='color:#64748b;font-size:13px'>Ainda não tem conta? <a href='{base}/cadastro'>Crie a sua</a> usando este mesmo e-mail — o convite aparece assim que você entrar.</p></div>"
+        f"<p style='color:#64748b;font-size:13px'>Ainda não tem conta? <a href='{link_cadastro}'>Crie a sua conta de contador</a> (grátis, sem CNPJ) usando este mesmo e-mail — o convite aparece assim que você entrar.</p></div>"
     )
     try:
         get_email_sender().enviar(

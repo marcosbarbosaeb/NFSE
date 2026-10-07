@@ -40,6 +40,9 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
   `deps.prestador_atual_id` → `acesso.conferir`. **Rota nova que muda algo tem que entrar em `acesso.REGRAS`**
   (permissão, LIVRE ou NUNCA); sem regra ela é recusada pro contador e `tests/test_contador.py` acusa.
   Empresa de cliente nunca vira `usuario.prestador_id` (fica só na sessão).
+  Conta só de contador (`/cadastro?tipo=contador`): sem CNPJ, teste ou assinatura. Como todo login precisa de uma
+  empresa "de casa", ela ganha um `prestador` de fachada com `so_contador=true` (cpf_cnpj = código "CT...", não é CNPJ);
+  nele nada é criado (403) e ele fica fora dos números da Gestão.
 - Bloqueio sem assinatura: `BLOQUEIO_ATIVO=true` deixa a empresa com teste vencido/cancelada só pra consulta (402 em
   tudo que muda, menos assinar/apagar). Desligado em produção até o Stripe estar recebendo. A Gestão libera na mão
   (`assinatura.liberado_ate/liberado_sempre`); a regra única é `billing.situacao_do_acesso`.

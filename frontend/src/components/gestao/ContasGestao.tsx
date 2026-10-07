@@ -29,7 +29,7 @@ import { Card } from "../ui/Card"
 // Gestão › Contas (06/10/2026): quem tem conta, quem está ativo e quanto usa.
 // Só números de uso — o conteúdo das notas e do financeiro não chega aqui.
 
-type Filtro = "todas" | "ativas" | "sem-acesso" | "nao-confirmou" | "sem-certificado" | "teste" | "sem-assinatura" | "liberadas"
+type Filtro = "todas" | "ativas" | "sem-acesso" | "nao-confirmou" | "sem-certificado" | "teste" | "sem-assinatura" | "liberadas" | "contadores"
 const FILTROS: { id: Filtro; rotulo: string; vale: (c: ContaGestao) => boolean }[] = [
   { id: "todas", rotulo: "Todas", vale: () => true },
   { id: "ativas", rotulo: "Ativas 30 dias", vale: ativa30 },
@@ -39,6 +39,7 @@ const FILTROS: { id: Filtro; rotulo: string; vale: (c: ContaGestao) => boolean }
   { id: "teste", rotulo: "Contas de teste", vale: (c) => c.modo_teste },
   // Quem o bloqueio trava (teste vencido, cancelada) e quem você liberou na mão.
   { id: "sem-assinatura", rotulo: "Teste vencido / sem assinatura", vale: (c) => !c.demo && c.acesso?.liberado === false },
+  { id: "contadores", rotulo: "Contas de contador", vale: (c) => c.so_contador === true },
   { id: "liberadas", rotulo: "Liberadas por você", vale: (c) => c.acesso?.motivo === "liberacao" },
 ]
 
@@ -400,11 +401,12 @@ function Empresa({ conta: c }: { conta: ContaGestao }) {
     <span className="block min-w-0">
       <span className="block break-words font-medium text-slate-800 dark:text-slate-100">{nomeDaConta(c)}</span>
       <span className={`${classeSub} tabular-nums`}>
-        {formatarDocumento(c.cnpj) || "sem CNPJ"}
+        {c.so_contador ? "sem CNPJ" : formatarDocumento(c.cnpj) || "sem CNPJ"}
         {c.criada_em && ` · desde ${dia(c.criada_em)}`}
       </span>
-      {(c.modo_teste || c.demo) && (
+      {(c.modo_teste || c.demo || c.so_contador) && (
         <span className="mt-1 flex flex-wrap gap-1">
+          {c.so_contador && <Badge variant="info">conta de contador</Badge>}
           {c.modo_teste && <Badge variant="warning">teste</Badge>}
           {c.demo && <Badge variant="neutral">simulação</Badge>}
         </span>
@@ -447,7 +449,9 @@ function Assinatura({ conta: c, emLinha = false }: { conta: ContaGestao; emLinha
   ].filter(Boolean).join(" · ")
   return (
     <span className={emLinha ? "inline-flex flex-wrap items-center gap-x-2 gap-y-1" : "block"}>
-      {liberada ? (
+      {c.so_contador ? (
+        <Badge variant="neutral">Não se aplica</Badge>
+      ) : liberada ? (
         <Badge variant="success">Liberada por você</Badge>
       ) : (
         <Badge variant={teste !== null && teste <= 0 ? "danger" : s.variante}>{s.rotulo}</Badge>
@@ -489,7 +493,7 @@ function LiberarAcesso({ conta: c, aoMudar }: { conta: ContaGestao; aoMudar?: ()
   const liberar = (corpo: { dias?: number; sempre?: boolean }) =>
     pedir(() => api.post(`/gestao/contas/${c.id}/liberar`, { ...corpo, obs: obs.trim() || null }))
 
-  if (c.demo) return null
+  if (c.demo || c.so_contador) return null
   return (
     <div className="max-w-2xl rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
       <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Acesso sem assinatura</p>

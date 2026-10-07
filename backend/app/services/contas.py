@@ -230,7 +230,7 @@ def listar_empresas(db: Session, usuario: Usuario) -> list[dict]:
         definir_prestador_atual(db, prestador_id)
         p = db.get(Prestador, prestador_id)
         if p is not None:
-            empresas.append({"id": p.id, "razao_social": p.razao_social, "nome_fantasia": p.nome_fantasia, "cnpj": p.cpf_cnpj, "papel": "dono"})
+            empresas.append({"id": p.id, "razao_social": p.razao_social, "nome_fantasia": p.nome_fantasia, "cnpj": p.cpf_cnpj, "papel": "dono", "so_contador": bool(p.so_contador)})
     return empresas
 
 

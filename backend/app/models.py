@@ -74,6 +74,11 @@ class Prestador(Base):
     razao_social: Mapped[str] = mapped_column(String(200), nullable=False)
 
     cod_municipio: Mapped[str] = mapped_column(String(7), nullable=False)
+    # Conta só de contador (07/10/2026): "empresa" de fachada de quem se
+    # cadastrou só pra atender clientes. Não emite, não tem teste nem
+    # assinatura; existe porque todo login precisa de uma empresa "de casa".
+    # `cpf_cnpj` é um código interno ("CT" + 12 caracteres), não um CNPJ.
+    so_contador: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     cep: Mapped[str | None] = mapped_column(String(8))
     logradouro: Mapped[str | None] = mapped_column(String(200))
     numero: Mapped[str | None] = mapped_column(String(20))

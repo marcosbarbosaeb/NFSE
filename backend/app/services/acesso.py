@@ -117,6 +117,9 @@ _LIVRE_SEM_ASSINATURA = re.compile(
     r"/api/(assinatura/.*|empresa|dados/limpar|cep/buscar|contador/acessos(/.*)?|drive)/?"
 )
 
+# Na "casa" da conta só de contador só se mexe no nome do escritório e na exclusão.
+_LIVRE_NA_CONTA_DE_CONTADOR = re.compile(r"/api/(prestador|empresa|cep/buscar)/?")
+
 MENSAGEM_BLOQUEIO = {
     "teste_acabou": "O teste grátis desta empresa terminou. Pra continuar gerando notas e lançando, assine um plano em Minha conta › Assinatura.",
     "cancelada": "A assinatura desta empresa foi encerrada. Pra voltar a usar, assine de novo em Minha conta › Assinatura.",
@@ -159,10 +162,23 @@ def papel(db: Session, usuario: Usuario, prestador_id: uuid.UUID) -> tuple[str, 
     return "contador", [p for p in PERMISSOES if p in (acesso.permissoes or [])]
 
 
+def eh_so_contador(db: Session, prestador_id: uuid.UUID) -> bool:
+    """A empresa é a "casa" de uma conta só de contador?"""
+    definir_prestador_atual(db, prestador_id)
+    return bool(db.query(Prestador.so_contador).filter(Prestador.id == prestador_id).scalar())
+
+
+MENSAGEM_SO_CONTADOR = "Esta é uma conta de contador: aqui não há notas nem lançamentos. Abra a empresa de um cliente em “Empresas que atendo”."
+
+
 def situacao(db: Session, prestador_id: uuid.UUID) -> dict:
     """Situação da assinatura da empresa + se o bloqueio está valendo."""
     from app.services.billing import situacao_do_acesso
 
+    if eh_so_contador(db, prestador_id):
+        # Conta só de contador não tem teste nem assinatura: nunca "vence".
+        return {"liberado": True, "motivo": "contador", "ate": None, "dias_restantes": None,
+                "bloqueio_ativo": get_settings().bloqueio_ativo, "bloqueado": False, "mensagem": None}
     definir_prestador_atual(db, prestador_id)
     assinatura = db.query(Assinatura).filter_by(prestador_id=prestador_id).one_or_none()
     s = situacao_do_acesso(assinatura)
@@ -195,7 +211,12 @@ def conferir(db: Session, request, usuario: Usuario, prestador_id: uuid.UUID) ->
             if rotulo:
                 # Entra na mesma transação da rota: só fica se ela der commit.
                 db.add(RegistroContador(id=uuid.uuid4(), prestador_id=prestador_id, usuario_id=usuario.id, email=usuario.email, acao=rotulo))
-    if metodo in ("GET", "HEAD", "OPTIONS") or not get_settings().bloqueio_ativo:
+    if metodo in ("GET", "HEAD", "OPTIONS"):
+        return
+    # Na "casa" da conta só de contador não se cria nada (não é empresa).
+    if eh_so_contador(db, prestador_id) and not _LIVRE_NA_CONTA_DE_CONTADOR.fullmatch(caminho):
+        raise HTTPException(status_code=403, detail=MENSAGEM_SO_CONTADOR)
+    if not get_settings().bloqueio_ativo:
         return
     if _LIVRE_SEM_ASSINATURA.fullmatch(caminho) or eh_email_demo(usuario.email):
         return

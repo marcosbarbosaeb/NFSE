@@ -31,7 +31,7 @@ export function FaixaContador() {
 export function FaixaAssinatura() {
   const { usuario } = useAuth()
   const acesso = usuario?.acesso
-  if (!acesso || usuario?.demo) return null
+  if (!acesso || usuario?.demo || usuario?.so_contador) return null
   const contador = ehContador(usuario)
   if (acesso.bloqueado) {
     return (

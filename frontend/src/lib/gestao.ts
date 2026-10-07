@@ -61,7 +61,7 @@ export const ativa30 = (c: ContaGestao) => c.dias_sem_acesso !== null && c.dias_
 export const semAcesso = (c: ContaGestao) => !ativa30(c)
 
 /** Certificado só faz falta pra quem emite nota (conta sem módulos = emissor, regra antiga). */
-export const usaEmissor = (c: ContaGestao) => c.modulos.length === 0 || c.modulos.includes("emissor")
+export const usaEmissor = (c: ContaGestao) => !c.so_contador && (c.modulos.length === 0 || c.modulos.includes("emissor"))
 export const semCertificado = (c: ContaGestao) => usaEmissor(c) && c.certificado !== "ok"
 
 /** Dias até o fim do período de teste (negativo = já venceu); null se não está em teste. */

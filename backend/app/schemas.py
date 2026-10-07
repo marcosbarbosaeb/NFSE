@@ -505,6 +505,9 @@ class UsuarioResponse(BaseModel):
     atende_empresas: bool = False
     # Assinatura da empresa ativa: liberado/motivo/dias_restantes/bloqueado.
     acesso: dict = {}
+    # A empresa ativa é a "casa" de uma conta só de contador: sem notas nem
+    # financeiro próprios — o painel mostra só "Empresas que atendo".
+    so_contador: bool = False
 
 
 class ModulosRequest(BaseModel):
@@ -515,6 +518,14 @@ class GoogleOAuthUrlResponse(BaseModel):
     """Marco 16, item 1 — URL de autorização da Google pra POST
     /api/auth/google/iniciar (ver app/services/google_oauth.py)."""
     url: str
+
+
+class CadastroContadorRequest(BaseModel):
+    """Conta só de contador (07/10/2026): sem CNPJ, sem teste, sem assinatura."""
+    email: str
+    senha: str = Field(min_length=8)
+    nome: str = Field(min_length=2, max_length=120)
+    escritorio: str | None = Field(default=None, max_length=200)
 
 
 class CadastroRequest(BaseModel):
@@ -1381,6 +1392,8 @@ class EmpresaResponse(BaseModel):
     ativa: bool = False
     # "dono" ou "contador" (empresa de cliente que este login atende)
     papel: str = "dono"
+    # A "casa" de uma conta só de contador (não é empresa de verdade).
+    so_contador: bool = False
 
 
 class EmpresaCriarRequest(BaseModel):

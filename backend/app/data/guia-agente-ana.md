@@ -723,7 +723,7 @@ Clique em "Enviar convite". O contador entra com o login dele (você não passa 
 
 ### Para contadores: "Empresas que atendo"
 
-O contador precisa ter a própria conta na Ana, com o mesmo e-mail que o cliente convidou. O convite aparece em "Empresas que atendo" (no menu): "Aceitar" e depois "Abrir empresa". Dentro da empresa do cliente aparece uma faixa azul no topo dizendo o que ele pode fazer ali. As empresas dos clientes ficam também no seletor de empresas, no topo do menu, no grupo "Empresas que atendo". Se o contador tentar algo que o cliente não liberou, a Ana avisa qual permissão falta. "Deixar de atender" tira a empresa da lista.
+O contador cria a própria conta em "Criar conta", na opção "Sou contador(a)": é grátis, não pede CNPJ e não tem período de teste nem assinatura — quem assina é o cliente. O e-mail tem que ser o mesmo que o cliente convidou. Essa conta mostra só "Empresas que atendo", "Minha conta" e "Ajuda"; pra emitir as próprias notas, o contador adiciona a empresa dele pelo seletor de empresas ("Adicionar empresa"). O convite aparece em "Empresas que atendo" (no menu): "Aceitar" e depois "Abrir empresa". Dentro da empresa do cliente aparece uma faixa azul no topo dizendo o que ele pode fazer ali. As empresas dos clientes ficam também no seletor de empresas, no topo do menu, no grupo "Empresas que atendo". Se o contador tentar algo que o cliente não liberou, a Ana avisa qual permissão falta. "Deixar de atender" tira a empresa da lista.
 
 ### Falar com o suporte
 

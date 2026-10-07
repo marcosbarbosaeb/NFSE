@@ -292,3 +292,49 @@ def test_gestao_libera_e_tira_a_liberacao(db, api, monkeypatch):
     assert gestor.post(f"/api/gestao/contas/{alvo.id}/liberar", json={"sempre": True}).json()["acesso"]["ate"] is None
     assert gestor.delete(f"/api/gestao/contas/{alvo.id}/liberar").json()["acesso"]["motivo"] == "teste_acabou"
     assert gestor.post(f"/api/gestao/contas/{uuid.uuid4()}/liberar", json={"sempre": True}).status_code == 404
+
+
+# --- conta só de contador (07/10/2026) ----------------------------------------
+
+
+def test_conta_so_de_contador_sem_cnpj_sem_teste_e_so_trabalha_no_cliente(db, api, monkeypatch):
+    from app.services.cadastro import criar_cadastro_contador
+
+    monkeypatch.setattr(get_settings(), "bloqueio_ativo", True)
+    cliente, _ = _conta(db, "00000000000272", "dona@cliente.example", nome="CLIENTE")
+    contadora = criar_cadastro_contador(db, email="Ana@Escritorio.example", senha=SENHA, nome="Ana Contadora", escritorio="Escritório Ana")
+    contadora.email_confirmado = True
+    db.flush()
+    casa = contadora.prestador_id
+    definir_prestador_atual(db, casa)
+    assert db.query(Assinatura).filter_by(prestador_id=casa).count() == 0  # sem teste, sem assinatura
+    assert db.get(Prestador, casa).so_contador is True
+
+    dela = _entrar(api, "ana@escritorio.example")
+    eu = dela.get("/api/auth/me").json()
+    assert (eu["so_contador"], eu["modulos"], eu["papel"]) == (True, [], "dono")
+    assert (eu["acesso"]["liberado"], eu["acesso"]["bloqueado"], eu["acesso"]["motivo"]) == (True, False, "contador")
+    # na "casa" dela não se cria nada
+    r = dela.post("/api/financeiro/anotacoes", json={"titulo": "x", "texto": "y"})
+    assert r.status_code == 403
+    assert dela.post("/api/dps", json={}).status_code == 403
+    assert dela.get("/api/empresas").json()[0]["so_contador"] is True
+
+    # convidada, aceita e trabalha na empresa do cliente
+    da_dona = _entrar(api, "dona@cliente.example")
+    assert da_dona.post("/api/contador/acessos", json={"email": "ana@escritorio.example", "permissoes": ["financeiro"]}).status_code == 200
+    convite = dela.get("/api/contador/atendimentos").json()["convites"][0]
+    assert dela.post(f"/api/contador/convites/{convite['id']}/aceitar").status_code == 200
+    assert dela.post(f"/api/empresas/{cliente.id}/ativar").json()["papel"] == "contador"
+    eu = dela.get("/api/auth/me").json()
+    assert (eu["so_contador"], eu["papel"], eu["permissoes"]) == (False, "contador", ["financeiro"])
+    assert dela.post("/api/financeiro/anotacoes", json={"titulo": "Fechamento", "texto": "ok"}).status_code in (200, 201)
+
+
+def test_cadastro_de_contador_pela_api(db, api):
+    cliente = api()
+    r = cliente.post("/api/cadastro/contador", json={"email": "novo@escritorio.example", "senha": SENHA, "nome": "Novo Contador"})
+    assert r.status_code == 200 and r.json()["email"] == "novo@escritorio.example"
+    assert cliente.post("/api/cadastro/contador", json={"email": "novo@escritorio.example", "senha": SENHA, "nome": "De novo"}).status_code == 409
+    usuario = db.query(Usuario).filter_by(email="novo@escritorio.example").one()
+    assert usuario.email_confirmado is False and usuario.nome == "Novo Contador"

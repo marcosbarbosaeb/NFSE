@@ -112,7 +112,7 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
         for prestador_id, pessoas in logins.items():
             definir_prestador_atual(db, prestador_id)
             empresa = db.execute(text("""
-                SELECT p.razao_social, p.cpf_cnpj, p.cod_municipio, p.criado_em, p.demo, p.modo_teste, p.modulos,
+                SELECT p.razao_social, p.cpf_cnpj, p.cod_municipio, p.criado_em, p.demo, p.modo_teste, p.modulos, p.so_contador,
                        (p.drive_token IS NOT NULL) AS drive,
                        a.status AS assinatura, a.plano, a.trial_termina_em, a.liberado_ate, a.liberado_sempre, a.liberado_obs,
                        c.validade AS certificado_validade, (c.id IS NOT NULL) AS tem_certificado,
@@ -128,6 +128,8 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
                 continue
             n = db.execute(_CONTAGENS, {"mes": inicio_mes}).mappings().one()
             acesso = _acesso(empresa, agora)
+            if empresa["so_contador"]:
+                acesso = {"liberado": True, "motivo": "contador", "ate": None, "dias_restantes": None}
             acessos = [u["ultimo_acesso"] for u in pessoas if u["ultimo_acesso"] is not None]
             ultimo_acesso = max(acessos) if acessos else None
             validade = empresa["certificado_validade"]
@@ -135,6 +137,8 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
                 "id": str(prestador_id),
                 "razao_social": empresa["razao_social"], "cnpj": empresa["cpf_cnpj"], "cod_municipio": empresa["cod_municipio"],
                 "criada_em": _data(empresa["criado_em"]), "demo": bool(empresa["demo"]), "modo_teste": bool(empresa["modo_teste"]),
+                # conta só de contador: não é cliente, não entra nos números
+                "so_contador": bool(empresa["so_contador"]),
                 "modulos": list(empresa["modulos"] or []),
                 "assinatura": empresa["assinatura"], "plano": empresa["plano"], "trial_termina_em": _data(empresa["trial_termina_em"]),
                 # liberado? por quê? (teste, assinatura, liberação da gestão...)
@@ -161,7 +165,7 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
         definir_prestador_atual(db, prestador_de_volta)
 
     contas.sort(key=lambda c: c["criada_em"] or "", reverse=True)
-    reais = [c for c in contas if not c["demo"]]
+    reais = [c for c in contas if not c["demo"] and not c["so_contador"]]
     por_assinatura: dict[str, int] = {}
     for c in reais:
         chave = c["assinatura"] or "sem assinatura"
@@ -181,7 +185,8 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
         "competencia": f"{hoje.year:04d}-{hoje.month:02d}",
         "resumo": {
             "contas": len(reais),
-            "contas_simulacao": len(contas) - len(reais),
+            "contas_simulacao": sum(1 for c in contas if c["demo"]),
+            "contas_contador": sum(1 for c in contas if c["so_contador"]),
             "contas_teste": sum(1 for c in reais if c["modo_teste"]),
             "email_confirmado": sum(1 for c in reais if c["email_confirmado"]),
             "com_certificado": sum(1 for c in reais if c["certificado"] == "ok"),

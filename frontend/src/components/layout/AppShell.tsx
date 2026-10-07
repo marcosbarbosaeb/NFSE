@@ -1,6 +1,6 @@
 import { FlaskConical } from "lucide-react"
 import { Suspense, useState } from "react"
-import { Outlet, useNavigate } from "react-router-dom"
+import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom"
 import { useAuth } from "../../lib/auth"
 import { TourDaPagina } from "../tour/Tour"
 import { AvisoSemAssinatura, FaixaAssinatura, FaixaContador } from "./FaixasAcesso"
@@ -48,8 +48,17 @@ function FaixaContaTeste() {
   )
 }
 
+// Conta só de contador (07/10/2026): fora da empresa de um cliente não há
+// notas nem financeiro — só estas telas existem pra ela.
+const TELAS_DA_CONTA_DE_CONTADOR = ["/app/atendimentos", "/app/conta", "/app/ajuda", "/app/gestao"]
+
 export function AppShell() {
   const [menuAberto, setMenuAberto] = useState(false)
+  const { usuario } = useAuth()
+  const { pathname } = useLocation()
+  if (usuario?.so_contador && !TELAS_DA_CONTA_DE_CONTADOR.some((t) => pathname === t || pathname.startsWith(t + "/"))) {
+    return <Navigate to="/app/atendimentos" replace />
+  }
   return (
     <div className="flex min-h-screen bg-canvas dark:bg-canvas-dark">
       <Sidebar aberto={menuAberto} onFechar={() => setMenuAberto(false)} />

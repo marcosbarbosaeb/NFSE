@@ -6,6 +6,7 @@ export type Modulo = "emissor" | "financeiro"
 
 export function useModulos(): { emissor: boolean; financeiro: boolean; lista: Modulo[] } {
   const { usuario } = useAuth()
-  const lista = (usuario?.modulos?.length ? usuario.modulos : ["emissor"]) as Modulo[]
+  // Conta só de contador (fora da empresa de um cliente): nenhum módulo.
+  const lista = (usuario?.so_contador ? [] : usuario?.modulos?.length ? usuario.modulos : ["emissor"]) as Modulo[]
   return { emissor: lista.includes("emissor"), financeiro: lista.includes("financeiro"), lista }
 }
