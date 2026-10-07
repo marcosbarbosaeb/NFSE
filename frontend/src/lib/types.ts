@@ -391,9 +391,35 @@ export interface Assinatura {
   situacao?: string
   liberado_ate?: string | null
   bloqueio_ativo?: boolean
+  com_financeiro?: boolean
+  uso?: UsoDoPlano
+  financeiro_a_parte?: { valor: number; disponivel: boolean }
   plano?: "emissor" | "financeiro" | "ambos" | null
   planos?: PlanoAssinatura[]
   modulos_pelo_plano?: boolean
+}
+
+/** Notas autorizadas no mês x limite do plano (07/10/2026). */
+export interface UsoDoPlano {
+  competencia: string
+  usadas: number
+  limite: number | null
+  restantes: number | null
+  pct: number | null
+  /** "perto" = 80% ou mais; "limite" = chegou no limite. */
+  aviso: "perto" | "limite" | null
+  plano: string | null
+  plano_nome: string | null
+  em_teste: boolean
+  proximo_plano: { id: string; nome: string; limite_notas: number | null; valor: number | null } | null
+  excedente_preco: number
+  /** Tem plano assinado: pode aceitar pagar por nota a mais. */
+  excedente_pode: boolean
+  excedente_aceito: boolean
+  excedentes: number
+  excedente_valor: number
+  trava_ligada: boolean
+  travado: boolean
 }
 
 export interface CheckoutSessao {
@@ -1394,10 +1420,14 @@ export interface Compatibilidade {
 }
 
 export interface PlanoAssinatura {
-  id: "emissor" | "financeiro" | "ambos"
+  id: "basico" | "empreendedor" | "empresa" | "avancado" | "ilimitado" | "financeiro" | "emissor" | "ambos"
   nome: string
   descricao: string
   modulos: string[]
+  /** Notas autorizadas por mês (null = sem limite; 0 = plano sem notas). */
+  limite_notas?: number | null
+  /** Plano só de notas: dá pra somar o Financeiro. */
+  aceita_financeiro?: boolean
   disponivel: boolean
   atual: boolean
   valor?: number

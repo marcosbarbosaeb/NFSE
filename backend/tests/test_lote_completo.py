@@ -327,15 +327,17 @@ def test_plano_define_os_modulos_da_empresa(client, db, prestador_teste, monkeyp
     s = get_settings()
     monkeypatch.setattr(s, "stripe_secret_key", "sk_test_x")
     monkeypatch.setattr(s, "stripe_webhook_secret", "whsec_x")
-    monkeypatch.setattr(s, "stripe_price_id_emissor", "price_notas")
+    monkeypatch.setattr(s, "stripe_price_id_basico", "price_basico")
     monkeypatch.setattr(s, "stripe_price_id_financeiro", "price_fin")
-    monkeypatch.setattr(s, "stripe_price_id_ambos", "price_tudo")
+    monkeypatch.setattr(s, "stripe_price_id_empresa", "price_empresa")
     monkeypatch.setattr(billing.stripe.Price, "retrieve", lambda pid, api_key=None: {"unit_amount": 4900, "currency": "brl", "recurring": {"interval": "month"}})
     billing._precos_cache.clear()
     assinatura = billing.criar_assinatura_trial(db, prestador_teste.id)
 
     planos = {p["id"]: p for p in client.get("/api/assinatura").json()["planos"]}
-    assert planos["emissor"]["disponivel"] and planos["emissor"]["valor"] == 49.0 and planos["ambos"]["modulos"] == ["emissor", "financeiro"]
+    # com o preço configurado, vale o valor da Stripe; sem ele, o de tabela e "em breve"
+    assert planos["basico"]["disponivel"] and planos["basico"]["valor"] == 49.0 and planos["empresa"]["modulos"] == ["emissor", "financeiro"]
+    assert planos["avancado"]["disponivel"] is False and planos["avancado"]["valor"] == 149.0 and planos["avancado"]["limite_notas"] == 500
     # em teste grátis a pessoa liga e desliga módulo à vontade
     assert client.put("/api/empresa/modulos", json={"modulos": ["emissor", "financeiro"]}).status_code == 200
 
@@ -350,15 +352,27 @@ def test_plano_define_os_modulos_da_empresa(client, db, prestador_teste, monkeyp
     # com plano pago, módulo só muda trocando o plano
     assert client.put("/api/empresa/modulos", json={"modulos": ["emissor"]}).status_code == 409
     resp = client.get("/api/assinatura").json()
-    assert resp["plano"] == "financeiro" and resp["modulos_pelo_plano"] is True
+    assert resp["plano"] == "financeiro" and resp["modulos_pelo_plano"] is True and resp["uso"]["limite"] == 0
 
+    # muda pro Básico somando o Financeiro: dois itens na mesma assinatura
     chamadas = {}
     monkeypatch.setattr(billing.stripe.Subscription, "retrieve", lambda sid, api_key=None: {"items": {"data": [{"id": "si_1"}]}})
     monkeypatch.setattr(billing.stripe.Subscription, "modify", lambda sid, **kw: chamadas.update(kw))
-    r = client.post("/api/assinatura/plano", json={"plano": "ambos"})
+    r = client.post("/api/assinatura/plano", json={"plano": "basico", "com_financeiro": True})
     assert r.status_code == 200 and r.json()["modulos"] == ["emissor", "financeiro"]
-    assert chamadas["items"] == [{"id": "si_1", "price": "price_tudo"}] and prestador_teste.modulos == ["emissor", "financeiro"]
-    assert db.query(Assinatura).filter_by(prestador_id=prestador_teste.id).one().plano == "ambos"
+    assert chamadas["items"] == [{"id": "si_1", "price": "price_basico"}, {"price": "price_fin"}]
+    atual = db.query(Assinatura).filter_by(prestador_id=prestador_teste.id).one()
+    assert (atual.plano, atual.com_financeiro) == ("basico", True)
+    assert client.get("/api/assinatura").json()["uso"]["limite"] == 30
+
+    # sobe pro Empresa (já inclui o Financeiro): o item a mais sai
+    monkeypatch.setattr(billing.stripe.Subscription, "retrieve", lambda sid, api_key=None: {"items": {"data": [{"id": "si_1"}, {"id": "si_2"}]}})
+    r = client.post("/api/assinatura/plano", json={"plano": "empresa"})
+    assert r.status_code == 200 and chamadas["items"] == [{"id": "si_1", "price": "price_empresa"}, {"id": "si_2", "deleted": True}]
+    assert (atual.plano, atual.com_financeiro, prestador_teste.modulos) == ("empresa", False, ["emissor", "financeiro"])
+    # plano que ainda não tem preço configurado não se assina; o antigo não está mais à venda
+    assert client.post("/api/assinatura/plano", json={"plano": "avancado"}).status_code == 400
+    assert client.post("/api/assinatura/plano", json={"plano": "ambos"}).status_code == 422
 
 
 def test_lote_de_email_nao_reenvia_nota_ja_entregue_por_outro_caminho(client, db, vinculo_teste, pipeline):

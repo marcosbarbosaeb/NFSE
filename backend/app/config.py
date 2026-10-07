@@ -107,6 +107,18 @@ class Settings(BaseSettings):
     stripe_price_id_emissor: str = ""
     stripe_price_id_financeiro: str = ""
     stripe_price_id_ambos: str = ""
+    # Planos por limite de notas (07/10/2026) — um preço da Stripe pra cada.
+    # (`stripe_price_id_financeiro`, acima, serve pro plano só Financeiro e
+    # pro Financeiro somado ao Básico/Empreendedor.)
+    stripe_price_id_basico: str = ""
+    stripe_price_id_empreendedor: str = ""
+    stripe_price_id_empresa: str = ""
+    stripe_price_id_avancado: str = ""
+    stripe_price_id_ilimitado: str = ""
+    # Nota acima do limite do plano: centavos por nota (R$ 0,80).
+    nota_excedente_centavos: int = 80
+    # Limite de notas durante o teste grátis.
+    trial_limite_notas: int = 150
     # Duração do período de teste grátis pra quem se cadastra pelo /cadastro
     # público (contas administrativas, criadas via scripts/criar_usuario.py,
     # não passam por trial — ver app/services/billing.py).

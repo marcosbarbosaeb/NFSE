@@ -543,7 +543,15 @@ export const FAQ: PerguntaFaq[] = [
     tema: "assinatura",
     pergunta: "Quais são os planos?",
     resposta:
-      "São três: “Notas” (emissão de NFS-e, tomadores, envio e calendário), “Financeiro” (recebimentos, contas do mês, conciliação e resultado) e “Notas + Financeiro” (tudo junto: a nota emitida já vira conta a receber). O valor de cada um aparece em Minha conta, aba “Assinatura”. Pra assinar, clique em “Assinar este”.",
+      "Os planos vão pelo número de notas autorizadas no mês, por CNPJ: “Básico” (até 30), “Empreendedor” (até 150), “Empresa” (até 300, com o Financeiro), “Avançado” (até 500, com o Financeiro) e “Ilimitado”. Tem também o “Financeiro” sozinho, e dá pra somar o Financeiro ao Básico ou ao Empreendedor. Os valores estão em Minha conta, aba “Assinatura”. Pra algo fora disso, clique em “Fale com a nossa equipe” no cartão “Personalizado”.",
+    link: "/app/conta?aba=assinatura",
+  },
+  {
+    id: "limite-de-notas",
+    tema: "assinatura",
+    pergunta: "O que conta no limite de notas? E se eu passar do limite?",
+    resposta:
+      "Conta só nota autorizada pela prefeitura no mês; cancelada, recusada e de teste não contam, e o contador zera no dia 1º. Aos 80% eu aviso e mostro o plano de cima. No limite, você sobe de plano ou marca “Continuar emitindo depois do limite”, em Minha conta, aba “Assinatura”: cada nota a mais custa R$ 0,80 e entra na fatura seguinte. As notas já prontas ficam esperando, nada se perde.",
     link: "/app/conta?aba=assinatura",
   },
   {

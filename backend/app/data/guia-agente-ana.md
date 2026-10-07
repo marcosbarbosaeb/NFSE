@@ -639,13 +639,29 @@ Se o pagamento de um mês falhar, a conta não trava na hora: o cartão é cobra
 
 ### Planos
 
-Há três planos, e o plano escolhido define os módulos da empresa:
+Os planos vão pelo número de notas autorizadas no mês. O limite é por CNPJ.
 
-- **"Notas"**: emissão de NFS-e, tomadores, envio das notas e calendário.
-- **"Financeiro"**: recebimentos, contas do mês, conciliação do extrato e resultado.
-- **"Notas + Financeiro"**: tudo junto — a nota emitida já vira conta a receber.
+| Plano | Valor por mês | Notas por mês | Financeiro |
+|---|---|---|---|
+| Básico | R$ 49,90 | até 30 | pode somar por R$ 39,90 |
+| Empreendedor | R$ 99,90 | até 150 | pode somar por R$ 39,90 |
+| Empresa | R$ 129,90 | até 300 | incluído |
+| Avançado | R$ 149,00 | até 500 | incluído |
+| Ilimitado | R$ 299,00 | sem limite | incluído |
+| Financeiro | R$ 39,90 | não emite notas | é o próprio plano |
 
-O valor de cada plano aparece na própria tela de Assinatura. Pra assinar, clique em "Assinar este" no plano escolhido: você é levado pra página de pagamento.
+"Personalizado": pra várias empresas ou volume muito alto, clique em "Fale com a nossa equipe" na aba "Assinatura".
+
+Pra assinar: "Minha conta" › "Assinatura" › "Assinar este" no plano escolhido. Pra somar o Financeiro ao Básico ou ao Empreendedor, marque "Somar o Financeiro" antes de escolher o plano.
+
+### Limite de notas
+
+- **O que conta:** só nota autorizada pela prefeitura no mês. Cancelada, recusada, de teste (homologação) e importada do Emissor Nacional não contam. O contador zera no dia 1º.
+- **Onde ver:** "Minha conta" › "Assinatura" mostra "Notas deste mês", com a barra de uso.
+- **Aos 80%:** a Ana avisa no topo da tela e sugere o plano de cima.
+- **No limite:** a emissão para até você subir de plano — ou marcar "Continuar emitindo depois do limite por R$ 0,80 cada nota" (só pra quem já assina). As notas a mais entram na fatura seguinte; dá pra desmarcar quando quiser. As notas já prontas ficam esperando, nada se perde.
+- **No teste grátis:** o limite é de 150 notas, com o Financeiro liberado. No teste não há nota excedente: pra passar do limite, assine um plano.
+- **Lote:** antes de começar um lote que não cabe no limite, a Ana avisa quantas notas cabem.
 
 ### Mudar de plano, forma de pagamento e cancelamento
 

@@ -46,6 +46,7 @@ testada contra a API real (rede bloqueada neste sandbox); cancelamento tem
 uma receita já validada em produção, mas cada envio aqui é uma chamada de
 rede de verdade — os testes deste módulo usam ClienteSefin mockado.
 """
+import logging
 import hashlib
 import re
 import uuid
@@ -67,6 +68,9 @@ NS = "http://www.sped.fazenda.gov.br/nfse"
 ESTADOS_ATIVOS_PARA_IDEMPOTENCIA = "estado != 'cancelada'"  # espelha o índice parcial do Marco 1
 
 
+logger = logging.getLogger("agenteana.motor")
+
+
 class TransicaoInvalidaError(Exception):
     """A Emissao não está no estado que essa transição exige."""
 
@@ -82,6 +86,14 @@ class ReenvioPrecisaConferirError(TransicaoInvalidaError):
     def __init__(self):
         Exception.__init__(self, "A última tentativa caiu no meio: envie de novo que a Ana confere com a Receita antes.")
         self.esperado, self.atual = "erro", "erro"
+
+
+class LimiteDoPlanoError(TransicaoInvalidaError):
+    """Limite de notas do plano (app/services/planos.py). Não é erro da
+    nota: ela fica como está, pronta pra ir quando houver espaço."""
+
+    def __init__(self, mensagem: str):
+        Exception.__init__(self, mensagem)
 
 
 class SoHomologacaoError(TransicaoInvalidaError):
@@ -449,6 +461,13 @@ def _confirmar_com_resposta(db: Session, emissao: Emissao, resposta, cliente: Cl
     from app.services import drive
 
     drive.guardar_se_configurado(db, emissao)
+    # Nota acima do limite do plano (com o aceite da pessoa): entra na próxima fatura.
+    try:
+        from app.services import planos
+
+        planos.cobrar_excedente(db, emissao.prestador_id)
+    except Exception:  # noqa: BLE001 — cobrança nunca atrapalha a nota já autorizada
+        logger.exception("Falha ao registrar a nota excedente da emissão %s", emissao.id)
     return emissao
 
 
@@ -521,6 +540,15 @@ def submeter(db: Session, emissao: Emissao, cliente: ClienteSefin) -> Emissao:
     if get_settings().ambiente_teste and str((emissao.tomador_snapshot or {}).get("tpAmb") or "1") != "2":
         raise SoHomologacaoError()
     tentativa_apos_queda = emissao.estado == "erro" and (emissao.erro_detalhe or "").startswith(MARCA_FALHA_COMUNICACAO)
+    if not tentativa_apos_queda:
+        # Limite de notas do plano (só trava com BLOQUEIO_ATIVO). Depois de
+        # uma queda de rede a nota pode já existir na Receita: aí passa.
+        from app.services import planos
+
+        try:
+            planos.conferir(db, emissao.prestador_id)
+        except planos.LimiteDeNotasError as exc:
+            raise LimiteDoPlanoError(str(exc)) from exc
     emissao.estado = "submetido"
     emissao.erro_detalhe = None
     db.flush()  # marca a tentativa ANTES do request de rede — se cair no meio, fica visível como 'submetido', não como 'assinado' silenciosamente reenviável sem rastro

@@ -25,7 +25,10 @@ export function situacaoAssinatura(status: string | null | undefined) {
   return ASSINATURAS.find((a) => a.id === id) ?? { id, rotulo: id, variante: "neutral" as const }
 }
 
-const NOME_PLANO: Record<string, string> = { emissor: "Notas", financeiro: "Financeiro", ambos: "Notas + Financeiro" }
+const NOME_PLANO: Record<string, string> = {
+  basico: "Básico", empreendedor: "Empreendedor", empresa: "Empresa", avancado: "Avançado", ilimitado: "Ilimitado",
+  financeiro: "Financeiro", emissor: "Notas (antigo)", ambos: "Notas + Financeiro (antigo)",
+}
 export const nomeDoPlano = (plano: string | null) => (plano ? (NOME_PLANO[plano] ?? plano) : "")
 const NOME_MODULO: Record<string, string> = { emissor: "Notas", financeiro: "Financeiro" }
 export const nomeDoModulo = (modulo: string) => NOME_MODULO[modulo] ?? modulo

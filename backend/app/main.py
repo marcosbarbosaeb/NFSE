@@ -69,6 +69,7 @@ from app.schemas import (
     AliquotaAtualizarRequest,
     AssinaturaResponse,
     CadastroContadorRequest,
+    ExcedenteRequest,
     CadastroRequest,
     CadastroResponse,
     CalendarioResponse,
@@ -206,6 +207,7 @@ from app.services.envios import (
 )
 from app.limites import limitador, limite  # noqa: F401 — limitador: os testes zeram
 from app.services import acesso as acesso_servico
+from app.services import planos as planos_servico
 from app.services import contas, importar_adn, lotes, mensagens
 from app.services.indicacao import resumo as resumo_indicacao
 from app.services.email import EmailEnvioError, get_email_sender
@@ -1093,6 +1095,9 @@ def api_ver_assinatura(prestador_id: uuid.UUID = Depends(prestador_atual_id), db
         trial_termina_em=assinatura.trial_termina_em if assinatura else None,
         tem_assinatura_stripe=bool(assinatura and assinatura.stripe_subscription_id),
         plano=assinatura.plano if assinatura else None,
+        com_financeiro=bool(assinatura and assinatura.com_financeiro),
+        uso=planos_servico.uso(db, prestador_id),
+        financeiro_a_parte={"valor": billing.PLANOS["financeiro"]["preco"], "disponivel": bool(billing.preco_do_plano("financeiro") and get_settings().stripe_secret_key)},
         planos=billing.listar_planos(assinatura.plano if assinatura else None),
         modulos_pelo_plano=billing.modulos_presos_ao_plano(assinatura),
     )
@@ -1109,7 +1114,7 @@ def api_criar_checkout(
         raise HTTPException(status_code=401, detail="Não autenticado.")
     usuario = db.get(Usuario, uuid.UUID(usuario_id))
     try:
-        url = criar_sessao_checkout(db, prestador_id, usuario.email, plano=req.plano if req else None)
+        url = criar_sessao_checkout(db, prestador_id, usuario.email, plano=req.plano if req else None, com_financeiro=bool(req and req.com_financeiro))
     except (BillingNaoConfiguradoError, billing.PlanoInvalidoError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     db.commit()
@@ -1122,13 +1127,33 @@ def api_trocar_plano(req: PlanoRequest, prestador_id: uuid.UUID = Depends(presta
     Stripe e os módulos da empresa passam a ser os do plano novo."""
     definir_prestador_atual(db, prestador_id)
     try:
-        assinatura = billing.trocar_plano(db, prestador_id, req.plano)
+        assinatura = billing.trocar_plano(db, prestador_id, req.plano, req.com_financeiro)
     except (BillingNaoConfiguradoError, AssinaturaNaoEncontradaError, billing.PlanoInvalidoError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 — erro da Stripe vira mensagem, não 500
         logger.exception("Falha ao trocar o plano na Stripe")
         raise HTTPException(status_code=400, detail="Não consegui mudar o plano agora. Tente de novo em instantes.") from exc
-    resposta = {"plano": assinatura.plano, "modulos": billing.PLANOS[assinatura.plano]["modulos"]}
+    resposta = {"plano": assinatura.plano, "modulos": billing.modulos_do_plano(assinatura.plano, assinatura.com_financeiro)}
+    db.commit()
+    return resposta
+
+
+@app.get("/api/assinatura/uso")
+def api_uso_do_plano(prestador_id: uuid.UUID = Depends(prestador_atual_id), db: Session = Depends(get_db)):
+    """Notas autorizadas no mês e o limite do plano (pro aviso dos 80% e do limite)."""
+    definir_prestador_atual(db, prestador_id)
+    return planos_servico.uso(db, prestador_id)
+
+
+@app.post("/api/assinatura/excedente", responses={400: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])
+def api_aceitar_excedente(req: ExcedenteRequest, prestador_id: uuid.UUID = Depends(prestador_atual_id), db: Session = Depends(get_db)):
+    """Aceita (ou desfaz) pagar por nota acima do limite do plano. Vale dali
+    em diante, todo mês, até a pessoa desfazer."""
+    definir_prestador_atual(db, prestador_id)
+    try:
+        resposta = planos_servico.aceitar_excedente(db, prestador_id, req.aceitar)
+    except planos_servico.LimiteDeNotasError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
     return resposta
 
@@ -2092,6 +2117,13 @@ def api_criar_lote(
     ids = _ids_do_lote(db, req)
     if not ids:
         raise HTTPException(status_code=422, detail="Nenhuma nota selecionada está pronta pra essa ação.")
+    # Lote que manda notas à prefeitura: confere o limite do plano ANTES de
+    # começar (senão ele pararia no meio, nota por nota).
+    if req.acao == "submeter" or (req.acao == "completo" and "submeter" in lotes.normalizar_passos(req.passos)):
+        try:
+            planos_servico.conferir(db, prestador_id, len(ids))
+        except planos_servico.LimiteDeNotasError as exc:
+            raise HTTPException(status_code=402, detail=str(exc)) from exc
     base = base_url(str(request.base_url))
     try:
         lote = lotes.criar_lote(

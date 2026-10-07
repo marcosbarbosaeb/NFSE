@@ -1,9 +1,11 @@
-import { BriefcaseBusiness, Clock, Lock } from "lucide-react"
+import { BriefcaseBusiness, Clock, Gauge, Lock } from "lucide-react"
 import { useEffect, useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import { EVENTO_SEM_ASSINATURA } from "../../lib/api"
 import { useAuth } from "../../lib/auth"
 import { ehContador, resumoPermissoes } from "../../lib/contador"
+import { useModulos } from "../../lib/modulos"
+import { reais, useUsoDoPlano } from "../../lib/planos"
 import { Button } from "../ui/Button"
 import { Modal } from "../ui/Modal"
 
@@ -69,6 +71,47 @@ export function FaixaAssinatura() {
   )
 }
 
+// Limite de notas do plano (07/10/2026): aviso a partir de 80% e no limite,
+// com o plano de cima sugerido. Some pra quem aceitou a nota excedente.
+export function FaixaUsoDoPlano() {
+  const { usuario } = useAuth()
+  const { pathname } = useLocation()
+  const modulos = useModulos()
+  const ligado = Boolean(usuario) && !usuario?.demo && !usuario?.so_contador && modulos.emissor
+  const uso = useUsoDoPlano(ligado, pathname)
+  if (!uso || !uso.aviso || uso.limite === null || uso.excedente_aceito || usuario?.acesso?.bloqueado) return null
+  const contador = ehContador(usuario)
+  const proximo = uso.proximo_plano
+  const noLimite = uso.aviso === "limite"
+  return (
+    <div
+      className={`flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 py-2 text-center text-sm ${
+        noLimite ? "bg-danger-50 text-danger-800 dark:bg-danger-900/40 dark:text-danger-200" : "bg-warning-50 text-warning-800 dark:bg-warning-900/40 dark:text-warning-200"
+      }`}
+    >
+      <span className="flex items-center gap-1.5 font-semibold">
+        <Gauge size={15} aria-hidden="true" />
+        {noLimite
+          ? `Limite de notas do mês atingido (${uso.usadas} de ${uso.limite})`
+          : `Você já usou ${uso.pct}% das notas do mês (${uso.usadas} de ${uso.limite})`}
+      </span>
+      {proximo && !contador && (
+        <span>
+          O plano {proximo.nome} comporta {proximo.limite_notas === null ? "notas sem limite" : `${proximo.limite_notas} por mês`}
+          {proximo.valor != null && ` por ${reais(proximo.valor)}`}.
+        </span>
+      )}
+      {contador ? (
+        <span>Avise o dono da empresa.</span>
+      ) : (
+        <Link to="/app/conta?aba=assinatura" className="font-semibold underline">
+          {uso.em_teste ? "Ver os planos" : noLimite && uso.excedente_pode ? "Subir de plano ou pagar por nota" : "Ver os planos"}
+        </Link>
+      )}
+    </div>
+  )
+}
+
 /** Abre quando a API recusa uma ação por falta de assinatura (402). */
 export function AvisoSemAssinatura() {
   const { usuario } = useAuth()
@@ -82,14 +125,18 @@ export function AvisoSemAssinatura() {
   }, [])
   if (!mensagem) return null
   const contador = ehContador(usuario)
+  // O mesmo aviso serve pro limite de notas do plano (a mensagem diz qual é o caso).
+  const limite = /limite/i.test(mensagem)
   return (
-    <Modal titulo="Pra continuar, é preciso assinar" onClose={() => setMensagem(null)}>
+    <Modal titulo={limite ? "Limite de notas do plano" : "Pra continuar, é preciso assinar"} onClose={() => setMensagem(null)}>
       <div className="flex flex-col gap-4">
         <p className="text-sm text-slate-600 dark:text-slate-300">{mensagem}</p>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          {contador
-            ? "Quem assina é o dono da empresa. Enquanto isso, você continua vendo e baixando tudo o que já está aqui."
-            : "Nada foi apagado: suas notas, tomadores e lançamentos continuam aqui, e você pode ver e baixar tudo."}
+          {limite
+            ? "As notas que já estão prontas continuam aqui, esperando: nada se perde."
+            : contador
+              ? "Quem assina é o dono da empresa. Enquanto isso, você continua vendo e baixando tudo o que já está aqui."
+              : "Nada foi apagado: suas notas, tomadores e lançamentos continuam aqui, e você pode ver e baixar tudo."}
         </p>
         <div className="flex flex-wrap justify-end gap-3">
           <Button type="button" variant="ghost" onClick={() => setMensagem(null)}>

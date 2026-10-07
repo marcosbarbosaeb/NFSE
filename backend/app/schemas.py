@@ -992,6 +992,10 @@ class AssinaturaResponse(BaseModel):
     liberado_ate: datetime | None = None
     # Se o bloqueio de quem não tem assinatura está valendo (BLOQUEIO_ATIVO).
     bloqueio_ativo: bool = False
+    # Financeiro somado ao plano de notas; uso do mês (app/services/planos.py).
+    com_financeiro: bool = False
+    uso: dict = {}
+    financeiro_a_parte: dict = {}
     # Planos por módulo (05/10/2026): o contratado, os que dá pra assinar e
     # se os módulos da empresa estão presos ao plano.
     plano: str | None = None
@@ -1000,7 +1004,13 @@ class AssinaturaResponse(BaseModel):
 
 
 class PlanoRequest(BaseModel):
-    plano: Literal["emissor", "financeiro", "ambos"]
+    plano: Literal["basico", "empreendedor", "empresa", "avancado", "ilimitado", "financeiro"]
+    # Financeiro somado a um plano só de notas (Básico/Empreendedor).
+    com_financeiro: bool = False
+
+
+class ExcedenteRequest(BaseModel):
+    aceitar: bool
 
 
 class CheckoutSessaoResponse(BaseModel):

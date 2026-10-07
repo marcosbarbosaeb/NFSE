@@ -53,12 +53,34 @@ _STRIPE_STATUS_PARA_NOSSO = {
 }
 
 
-# Planos (05/10/2026): cada um libera um conjunto de módulos da empresa.
+# Planos (07/10/2026): por limite de notas no mês, por CNPJ.
+#   Básico 30 · Empreendedor 150 · Empresa 300 + Financeiro · Avançado 500 +
+#   Financeiro · Ilimitado · Financeiro sozinho.
+# `limite`: notas autorizadas por mês (None = sem limite; 0 = plano sem notas).
+# `preco` é o valor de tabela, pra tela mostrar antes de a Stripe estar ligada
+# — o que a Stripe cobra é o do preço configurado (`STRIPE_PRICE_ID_...`).
+# "emissor" e "ambos" são os planos antigos (sem limite): continuam valendo
+# pra quem já os tem, mas não estão mais à venda.
 PLANOS = {
-    "emissor": {"nome": "Notas", "modulos": ["emissor"], "descricao": "Emissão de NFS-e, tomadores, envio das notas e calendário."},
-    "financeiro": {"nome": "Financeiro", "modulos": ["financeiro"], "descricao": "Recebimentos, contas do mês, conciliação do extrato e resultado."},
-    "ambos": {"nome": "Notas + Financeiro", "modulos": ["emissor", "financeiro"], "descricao": "Tudo junto: a nota emitida já vira conta a receber."},
+    "basico": {"nome": "Básico", "modulos": ["emissor"], "limite": 30, "preco": 49.90, "a_venda": True,
+               "descricao": "Até 30 notas por mês. Emissão de NFS-e, tomadores, envio e calendário."},
+    "empreendedor": {"nome": "Empreendedor", "modulos": ["emissor"], "limite": 150, "preco": 99.90, "a_venda": True,
+                     "descricao": "Até 150 notas por mês. Emissão de NFS-e, tomadores, envio e calendário."},
+    "empresa": {"nome": "Empresa", "modulos": ["emissor", "financeiro"], "limite": 300, "preco": 129.90, "a_venda": True,
+                "descricao": "Até 300 notas por mês e o Financeiro incluído."},
+    "avancado": {"nome": "Avançado", "modulos": ["emissor", "financeiro"], "limite": 500, "preco": 149.00, "a_venda": True,
+                 "descricao": "Até 500 notas por mês e o Financeiro incluído."},
+    "ilimitado": {"nome": "Ilimitado", "modulos": ["emissor", "financeiro"], "limite": None, "preco": 299.00, "a_venda": True,
+                  "descricao": "Notas sem limite e o Financeiro incluído."},
+    "financeiro": {"nome": "Financeiro", "modulos": ["financeiro"], "limite": 0, "preco": 39.90, "a_venda": True,
+                   "descricao": "Recebimentos, contas do mês, conciliação do extrato e resultado. Sem emissão de notas."},
+    "emissor": {"nome": "Notas (plano antigo)", "modulos": ["emissor"], "limite": None, "preco": None, "a_venda": False,
+                "descricao": "Emissão de NFS-e, tomadores, envio das notas e calendário."},
+    "ambos": {"nome": "Notas + Financeiro (plano antigo)", "modulos": ["emissor", "financeiro"], "limite": None, "preco": None, "a_venda": False,
+              "descricao": "Tudo junto: a nota emitida já vira conta a receber."},
 }
+# Do menor pro maior: é por aqui que a Ana sugere "o plano de cima".
+ESCADA_DE_NOTAS = ("basico", "empreendedor", "empresa", "avancado", "ilimitado")
 _precos_cache: dict[str, tuple[float, dict]] = {}
 
 
@@ -66,11 +88,27 @@ class PlanoInvalidoError(Exception):
     pass
 
 
+def aceita_financeiro_a_parte(plano: str | None) -> bool:
+    """Plano só de notas: dá pra somar o Financeiro (R$ 39,90)."""
+    return plano in PLANOS and PLANOS[plano]["a_venda"] and "financeiro" not in PLANOS[plano]["modulos"]
+
+
+def modulos_do_plano(plano: str, com_financeiro: bool = False) -> list[str]:
+    modulos = list(PLANOS[plano]["modulos"])
+    if com_financeiro and "financeiro" not in modulos:
+        modulos.append("financeiro")
+    return modulos
+
+
 def preco_do_plano(plano: str) -> str | None:
     """Price ID da Stripe configurado pro plano (None = não está à venda).
     Sem nenhum plano configurado, o preço único antigo vale como "ambos"."""
     s = get_settings()
-    proprio = {"emissor": s.stripe_price_id_emissor, "financeiro": s.stripe_price_id_financeiro, "ambos": s.stripe_price_id_ambos}.get(plano)
+    proprio = {
+        "basico": s.stripe_price_id_basico, "empreendedor": s.stripe_price_id_empreendedor, "empresa": s.stripe_price_id_empresa,
+        "avancado": s.stripe_price_id_avancado, "ilimitado": s.stripe_price_id_ilimitado,
+        "emissor": s.stripe_price_id_emissor, "financeiro": s.stripe_price_id_financeiro, "ambos": s.stripe_price_id_ambos,
+    }.get(plano)
     if proprio:
         return proprio
     unico = s.stripe_price_id_mensal
@@ -86,6 +124,17 @@ def plano_do_preco(price_id: str | None) -> str | None:
         if preco_do_plano(plano) == price_id:
             return plano
     return None
+
+
+def plano_dos_itens(itens: list[dict]) -> tuple[str | None, bool]:
+    """(plano, com_financeiro) a partir dos itens de uma assinatura da
+    Stripe: o item de notas manda; um segundo item "financeiro" é o
+    Financeiro somado. Só o item financeiro = plano Financeiro."""
+    planos = [p for p in (plano_do_preco((i.get("price") or {}).get("id")) for i in itens or []) if p]
+    de_notas = [p for p in planos if p != "financeiro"]
+    if de_notas:
+        return de_notas[0], "financeiro" in planos and aceita_financeiro_a_parte(de_notas[0])
+    return ("financeiro", False) if planos else (None, False)
 
 
 def _valor_do_preco(price_id: str) -> dict:
@@ -110,27 +159,39 @@ def _valor_do_preco(price_id: str) -> dict:
 
 
 def listar_planos(plano_atual: str | None = None) -> list[dict]:
+    """Os planos à venda (e o antigo de quem ainda o tem). `valor` é o que a
+    Stripe cobra quando o preço está configurado; senão, o de tabela."""
     lista = []
+    ligada = bool(get_settings().stripe_secret_key)
     for chave, info in PLANOS.items():
+        if not info["a_venda"] and chave != plano_atual:
+            continue
         price_id = preco_do_plano(chave)
-        disponivel = bool(price_id) and bool(get_settings().stripe_secret_key)
+        disponivel = bool(price_id) and ligada
+        da_stripe = _valor_do_preco(price_id) if disponivel else {}
         lista.append({
             "id": chave, "nome": info["nome"], "descricao": info["descricao"], "modulos": info["modulos"],
+            "limite_notas": info["limite"], "aceita_financeiro": aceita_financeiro_a_parte(chave),
             "disponivel": disponivel, "atual": chave == plano_atual,
-            **({k: v for k, v in _valor_do_preco(price_id).items()} if disponivel else {}),
+            "valor": da_stripe.get("valor", info["preco"]), "moeda": da_stripe.get("moeda", "BRL"),
+            "intervalo": da_stripe.get("intervalo", "month"),
         })
     return lista
 
 
-def aplicar_plano(db: Session, assinatura: Assinatura, plano: str | None) -> None:
+def aplicar_plano(db: Session, assinatura: Assinatura, plano: str | None, com_financeiro: bool | None = None) -> None:
     """O plano pago define os módulos da empresa (os dados de um módulo
     desligado ficam guardados e voltam se ele for contratado de novo)."""
     if plano not in PLANOS:
         return
     assinatura.plano = plano
+    if com_financeiro is not None:
+        assinatura.com_financeiro = bool(com_financeiro) and aceita_financeiro_a_parte(plano)
+    elif not aceita_financeiro_a_parte(plano):
+        assinatura.com_financeiro = False
     prestador = db.get(Prestador, assinatura.prestador_id)
     if prestador is not None:
-        prestador.modulos = list(PLANOS[plano]["modulos"])
+        prestador.modulos = modulos_do_plano(plano, assinatura.com_financeiro)
     db.flush()
 
 
@@ -140,32 +201,49 @@ def modulos_presos_ao_plano(assinatura: Assinatura | None) -> bool:
     return bool(assinatura and assinatura.plano and assinatura.stripe_subscription_id and assinatura.status in ("ativa", "inadimplente"))
 
 
-def trocar_plano(db: Session, prestador_id: uuid.UUID, plano: str) -> Assinatura:
-    """Muda o plano de uma assinatura já paga: troca o preço do item na
-    Stripe (com acerto proporcional na próxima fatura) e já ajusta os
-    módulos — o webhook confirma depois."""
-    _exigir_stripe_configurado_para(plano)
+def _itens_do_plano(plano: str, com_financeiro: bool) -> list[str]:
+    """Os preços que a assinatura deve ter: o do plano e, se for o caso, o
+    do Financeiro somado."""
+    precos = [preco_do_plano(plano)]
+    if com_financeiro and aceita_financeiro_a_parte(plano):
+        precos.append(preco_do_plano("financeiro"))
+    return precos
+
+
+def trocar_plano(db: Session, prestador_id: uuid.UUID, plano: str, com_financeiro: bool = False) -> Assinatura:
+    """Muda o plano de uma assinatura já paga: acerta os itens na Stripe (com
+    acerto proporcional na próxima fatura) e já ajusta os módulos — o
+    webhook confirma depois."""
+    _exigir_stripe_configurado_para(plano, com_financeiro)
     assinatura = db.query(Assinatura).filter_by(prestador_id=prestador_id).one_or_none()
     if assinatura is None or not assinatura.stripe_subscription_id:
         raise AssinaturaNaoEncontradaError("Nenhuma assinatura paga ainda — assine o plano primeiro.")
     chave = get_settings().stripe_secret_key
     atual = stripe.Subscription.retrieve(assinatura.stripe_subscription_id, api_key=chave)
-    item = atual["items"]["data"][0]
+    queridos = _itens_do_plano(plano, com_financeiro)
+    existentes = list(atual["items"]["data"])
+    itens: list[dict] = []
+    for i, item in enumerate(existentes):
+        # reaproveita os itens que já existem; o que sobrar é removido
+        itens.append({"id": item["id"], "price": queridos[i]} if i < len(queridos) else {"id": item["id"], "deleted": True})
+    itens += [{"price": preco} for preco in queridos[len(existentes):]]
     stripe.Subscription.modify(
         assinatura.stripe_subscription_id,
-        items=[{"id": item["id"], "price": preco_do_plano(plano)}],
+        items=itens,
         proration_behavior="create_prorations",
-        metadata={"prestador_id": str(prestador_id), "plano": plano},
+        metadata={"prestador_id": str(prestador_id), "plano": plano, "com_financeiro": "1" if com_financeiro else "0"},
         api_key=chave,
     )
-    aplicar_plano(db, assinatura, plano)
+    aplicar_plano(db, assinatura, plano, com_financeiro)
     return assinatura
 
 
-def _exigir_stripe_configurado_para(plano: str) -> None:
-    if plano not in PLANOS:
+def _exigir_stripe_configurado_para(plano: str, com_financeiro: bool = False) -> None:
+    if plano not in PLANOS or not PLANOS[plano]["a_venda"]:
         raise PlanoInvalidoError("Plano desconhecido.")
-    if not get_settings().stripe_secret_key or not preco_do_plano(plano):
+    if com_financeiro and not aceita_financeiro_a_parte(plano):
+        raise PlanoInvalidoError(f"O plano {PLANOS[plano]['nome']} já inclui o Financeiro.")
+    if not get_settings().stripe_secret_key or not all(_itens_do_plano(plano, com_financeiro)):
         raise BillingNaoConfiguradoError(
             f"O plano {PLANOS[plano]['nome']} ainda não está à venda (falta configurar o preço dele). Fale com o suporte."
         )
@@ -299,7 +377,7 @@ def _obter_ou_criar_customer(assinatura: Assinatura, prestador: Prestador, email
     return customer["id"]
 
 
-def criar_sessao_checkout(db: Session, prestador_id: uuid.UUID, email: str, plano: str | None = None) -> str:
+def criar_sessao_checkout(db: Session, prestador_id: uuid.UUID, email: str, plano: str | None = None, com_financeiro: bool = False) -> str:
     """Cria (ou reaproveita) o Customer da Stripe e devolve a URL de uma
     Checkout Session em modo assinatura. Levanta `BillingNaoConfiguradoError`
     enquanto não houver conta Stripe de verdade (ver docstring do
@@ -308,10 +386,10 @@ def criar_sessao_checkout(db: Session, prestador_id: uuid.UUID, email: str, plan
     if plano is None:
         _exigir_stripe_configurado()
     else:
-        _exigir_stripe_configurado_para(plano)
+        _exigir_stripe_configurado_para(plano, com_financeiro)
     settings = get_settings()
-    price_id = preco_do_plano(plano) if plano else settings.stripe_price_id_mensal
-    marcas = {"prestador_id": str(prestador_id), **({"plano": plano} if plano else {})}
+    precos = _itens_do_plano(plano, com_financeiro) if plano else [settings.stripe_price_id_mensal]
+    marcas = {"prestador_id": str(prestador_id), **({"plano": plano, "com_financeiro": "1" if com_financeiro else "0"} if plano else {})}
     prestador = db.get(Prestador, prestador_id)
     if prestador is None:
         raise AssinaturaNaoEncontradaError("Prestador não encontrado.")
@@ -345,7 +423,7 @@ def criar_sessao_checkout(db: Session, prestador_id: uuid.UUID, email: str, plan
         **extras,
         mode="subscription",
         customer=customer_id,
-        line_items=[{"price": price_id, "quantity": 1}],
+        line_items=[{"price": preco, "quantity": 1} for preco in precos],
         success_url=f"{base}/app/conta?aba=assinatura&assinatura=sucesso",
         cancel_url=f"{base}/app/conta?aba=assinatura&assinatura=cancelado",
         metadata=marcas,
@@ -466,11 +544,12 @@ def processar_webhook(db: Session, payload: bytes, assinatura_header: str) -> st
     # Plano: o preço do item da assinatura é a fonte de verdade (cobre a
     # troca feita no portal da Stripe); no checkout, o plano escolhido vem
     # no metadata. Só aplica os módulos com a assinatura em vigor.
-    plano = None
+    plano, com_financeiro = None, None
     if tipo != "checkout.session.completed":
-        itens = ((obj.get("items") or {}).get("data")) or []
-        plano = plano_do_preco(((itens[0].get("price") or {}).get("id")) if itens else None)
-    plano = plano or (obj.get("metadata") or {}).get("plano")
+        plano, com_financeiro = plano_dos_itens(((obj.get("items") or {}).get("data")) or [])
+    if plano is None:
+        plano = (obj.get("metadata") or {}).get("plano")
+        com_financeiro = (obj.get("metadata") or {}).get("com_financeiro") == "1"
 
     if tipo == "checkout.session.completed":
         assinatura.stripe_subscription_id = obj.get("subscription")
@@ -486,7 +565,7 @@ def processar_webhook(db: Session, payload: bytes, assinatura_header: str) -> st
     elif tipo == "customer.subscription.deleted":
         assinatura.status = "cancelada"
     if plano in PLANOS and assinatura.status == "ativa" and tipo != "customer.subscription.deleted":
-        aplicar_plano(db, assinatura, plano)
+        aplicar_plano(db, assinatura, plano, com_financeiro)
 
     db.flush()
     # Programa de indicação: o status deste prestador conta pro desconto de

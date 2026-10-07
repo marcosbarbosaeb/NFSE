@@ -847,6 +847,14 @@ class Assinatura(Base):
     liberado_ate: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     liberado_sempre: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     liberado_obs: Mapped[str | None] = mapped_column(String(200))
+    # Planos por limite de notas (07/10/2026). `com_financeiro`: Financeiro
+    # somado a um plano só de notas (Básico/Empreendedor).
+    # `excedente_aceito_em`: a pessoa aceitou pagar por nota acima do limite.
+    # `excedente_cobranca`: o que já foi mandado pra Stripe, por mês
+    # ({"2026-10": {"cobradas": 12, "item": "ii_...", "item_qtd": 12}}).
+    com_financeiro: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
+    excedente_aceito_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    excedente_cobranca: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(

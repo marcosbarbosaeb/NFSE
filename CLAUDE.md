@@ -48,6 +48,11 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
   "Empresas que atendo" mostra as pendências de cada cliente (`acesso._pendencias_da_empresa`: só títulos e quantidades).
 - E-mails da plataforma (confirmação, código, convite) usam a moldura de `app/services/email_modelo.py` (logo em
   `frontend/public/ana-email.png`). E-mail de nota pro tomador NÃO passa por ela.
+- Planos (`billing.PLANOS`, `app/services/planos.py`): por limite de notas AUTORIZADAS no mês, por CNPJ (cancelada, recusada,
+  homologação e importada não contam). Aviso aos 80%; no limite, sobe de plano ou aceita R$ 0,80 por nota (item pendente
+  na Stripe, cai na próxima fatura). Teste grátis: 150 notas. Cortesia e liberação da Gestão: sem limite. O limite só
+  TRAVA com `BLOQUEIO_ATIVO` (a trava mora em `motor_emissao.submeter` e no início do lote). Um preço da Stripe por
+  plano: `STRIPE_PRICE_ID_BASICO/EMPREENDEDOR/EMPRESA/AVANCADO/ILIMITADO/FINANCEIRO`.
 - Bloqueio sem assinatura: `BLOQUEIO_ATIVO=true` deixa a empresa com teste vencido/cancelada só pra consulta (402 em
   tudo que muda, menos assinar/apagar). Desligado em produção até o Stripe estar recebendo. A Gestão libera na mão
   (`assinatura.liberado_ate/liberado_sempre`); a regra única é `billing.situacao_do_acesso`.

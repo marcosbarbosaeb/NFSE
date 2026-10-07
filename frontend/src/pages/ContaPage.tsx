@@ -29,7 +29,9 @@ import { useAuth } from "../lib/auth"
 import { excluirComConfirmacao, mensagemDeErro } from "../lib/excluir"
 import { useTheme } from "../lib/theme"
 import { definirTutorialAtivo, mostrarDicasDaTela, reverTodasAsDicas, tutorialAtivo } from "../lib/tutorial"
-import type { Assinatura, CheckoutSessao, Conta, PlanoAssinatura, SessaoConectada } from "../lib/types"
+import { GradeDePlanos, UsoDoMes } from "../components/PlanosAssinatura"
+import { avisarUsoMudou } from "../lib/planos"
+import type { Assinatura, CheckoutSessao, Conta, PlanoAssinatura, SessaoConectada, UsoDoPlano } from "../lib/types"
 import { IndiqueConteudo } from "./IndiquePage"
 
 // "Minha conta" (29/09/2026) — o que é da PESSOA (login, senha, aparelhos,
@@ -656,22 +658,26 @@ function AssinaturaCard({ assinatura, aoMudar }: { assinatura: Assinatura; aoMud
   const { recarregarUsuario } = useAuth()
   const planos = (assinatura.planos ?? []).filter((p) => p.disponivel)
   const [confirmarPlano, setConfirmarPlano] = useState<PlanoAssinatura | null>(null)
+  /** Financeiro somado ao plano de notas escolhido (Básico/Empreendedor). */
+  const [escolhaFinanceiro, setEscolhaFinanceiro] = useState(false)
+  const [uso, setUso] = useState<UsoDoPlano | null>(assinatura.uso ?? null)
   const [planoFeito, setPlanoFeito] = useState<string | null>(null)
 
   /** Assinar um plano (checkout) ou, pra quem já paga, trocar de plano. */
-  async function escolherPlano(plano: PlanoAssinatura) {
+  async function escolherPlano(plano: PlanoAssinatura, comFinanceiro = escolhaFinanceiro) {
     setErro(null)
     setPlanoFeito(null)
     setCarregando(true)
     try {
       if (assinatura.tem_assinatura_stripe && assinatura.status !== "cancelada") {
-        await api.post("/assinatura/plano", { plano: plano.id })
+        await api.post("/assinatura/plano", { plano: plano.id, com_financeiro: comFinanceiro })
         await recarregarUsuario()
+        avisarUsoMudou()
         setConfirmarPlano(null)
         setPlanoFeito(`Pronto: seu plano agora é ${plano.nome}. A diferença de valor entra proporcional na próxima fatura.`)
         aoMudar?.()
       } else {
-        const { url } = await api.post<CheckoutSessao>("/assinatura/checkout", { plano: plano.id })
+        const { url } = await api.post<CheckoutSessao>("/assinatura/checkout", { plano: plano.id, com_financeiro: comFinanceiro })
         window.location.href = url
       }
     } catch (err) {
@@ -740,66 +746,44 @@ function AssinaturaCard({ assinatura, aoMudar }: { assinatura: Assinatura; aoMud
 
       {planoFeito && <p className="mb-4 rounded-lg bg-success-50 px-4 py-3 text-sm text-success-700 dark:bg-success-900/30 dark:text-success-300">{planoFeito}</p>}
 
-      {/* Planos por módulo (05/10/2026): o plano escolhido define os módulos da empresa. */}
-      {assinatura.status !== "cortesia" && planos.length > 0 && (
-        <div className="mb-4">
-          <p className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-            {assinatura.tem_assinatura_stripe && assinatura.status !== "cancelada" ? "Seu plano" : "Escolha o plano"}
-          </p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {planos.map((p) => {
-              const atual = p.atual && assinatura.tem_assinatura_stripe && assinatura.status !== "cancelada"
-              return (
-                <div
-                  key={p.id}
-                  className={`flex flex-col rounded-xl border p-4 ${
-                    atual ? "border-primary-500 bg-primary-50/60 dark:bg-primary-900/20" : "border-slate-200 dark:border-slate-700"
-                  }`}
-                >
-                  <p className="flex items-center justify-between gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                    {p.nome}
-                    {atual && <Badge variant="success">seu plano</Badge>}
-                  </p>
-                  {p.valor != null && (
-                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                      {dinheiro(p.valor, p.moeda)}
-                      <span className="text-xs font-normal text-slate-500 dark:text-slate-400"> /{p.intervalo === "year" ? "ano" : "mês"}</span>
-                    </p>
-                  )}
-                  <p className="mt-1 flex-1 text-xs text-slate-500 dark:text-slate-400">{p.descricao}</p>
-                  {!atual && (
-                    <Button
-                      type="button"
-                      variant={p.id === "ambos" ? "accent" : "outline"}
-                      className="mt-3 px-3 py-1.5"
-                      disabled={carregando}
-                      onClick={() => (assinatura.tem_assinatura_stripe && assinatura.status !== "cancelada" ? setConfirmarPlano(p) : escolherPlano(p))}
-                    >
-                      {assinatura.tem_assinatura_stripe && assinatura.status !== "cancelada" ? "Mudar pra este" : "Assinar este"}
-                    </Button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-          <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
-            O plano define os módulos desta empresa. Se você sair de um módulo, os dados dele ficam guardados e voltam quando contratar de
-            novo.
-          </p>
-        </div>
+      {/* Uso do mês e planos por limite de notas (07/10/2026). */}
+      {uso && assinatura.status !== "cortesia" && <UsoDoMes uso={uso} aoMudar={setUso} />}
+      {assinatura.status !== "cortesia" && (
+        <GradeDePlanos
+          assinatura={{ ...assinatura, uso: uso ?? assinatura.uso }}
+          carregando={carregando}
+          aoEscolher={(p, comFinanceiro) => {
+            setEscolhaFinanceiro(comFinanceiro)
+            if (assinatura.tem_assinatura_stripe && assinatura.status !== "cancelada") setConfirmarPlano(p)
+            else escolherPlano(p, comFinanceiro)
+          }}
+        />
       )}
 
-      {assinatura.status !== "cortesia" && (planos.length === 0 || assinatura.tem_assinatura_stripe) && (
-        <Button type="button" variant={planos.length > 0 ? "outline" : "accent"} disabled={carregando} onClick={iniciarCheckoutOuPortal}>
-          {carregando ? "Um momento..." : assinatura.tem_assinatura_stripe ? "Forma de pagamento, faturas e cancelamento" : "Assinar agora"}
+      {assinatura.status !== "cortesia" && assinatura.tem_assinatura_stripe && (
+        <Button type="button" variant="outline" disabled={carregando} onClick={iniciarCheckoutOuPortal}>
+          {carregando ? "Um momento..." : "Forma de pagamento, faturas e cancelamento"}
         </Button>
+      )}
+      {assinatura.status !== "cortesia" && planos.length === 0 && !assinatura.tem_assinatura_stripe && (
+        <p className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:bg-slate-900/40 dark:text-slate-300">
+          A cobrança ainda está sendo ligada: por enquanto não dá pra assinar por aqui, e nada é cobrado.
+        </p>
       )}
       {confirmarPlano && (
         <Modal titulo={`Mudar pro plano ${confirmarPlano.nome}?`} onClose={() => (carregando ? null : setConfirmarPlano(null))}>
           <div className="flex flex-col gap-4">
             <p className="text-sm text-slate-600 dark:text-slate-300">
               A partir de agora esta empresa fica com: <strong>{confirmarPlano.descricao}</strong>
-              {confirmarPlano.valor != null && <> O valor passa a ser {dinheiro(confirmarPlano.valor, confirmarPlano.moeda)} por mês;</>} a diferença deste
+              {escolhaFinanceiro && confirmarPlano.aceita_financeiro && <strong> Mais o Financeiro.</strong>}
+              {confirmarPlano.valor != null && (
+                <>
+                  {" "}
+                  O valor passa a ser{" "}
+                  {dinheiro(confirmarPlano.valor + (escolhaFinanceiro && confirmarPlano.aceita_financeiro ? (assinatura.financeiro_a_parte?.valor ?? 0) : 0), confirmarPlano.moeda)} por mês;
+                </>
+              )}{" "}
+              a diferença deste
               mês entra proporcional na próxima fatura. Nada é apagado.
             </p>
             {erro && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erro}</p>}
