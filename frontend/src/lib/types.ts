@@ -248,6 +248,9 @@ export interface EmissaoResumoLinha {
   estado: string
   estado_label: string
   envio_status: string | null
+  /** Linha de vendedores: quantas notas já foram entregues, de quantas autorizadas. */
+  enviadas?: number | null
+  a_enviar?: number | null
   tem_pdf?: boolean
   tem_email?: boolean
   homologacao?: boolean
@@ -909,6 +912,8 @@ export interface PendenciaItem {
   atrasada?: boolean
   /** Linha que junta várias ("Gerar 8 notas"): cada uma, pra abrir na tela. */
   itens?: PendenciaItem[] | null
+  /** O grupo já chega aberto (o dia que vence primeiro). */
+  aberto?: boolean
 }
 
 export interface AgendaItem {
@@ -1052,6 +1057,8 @@ export interface AndamentoLote {
   sem_email: { emissao_id: string; nome: string }[]
   total_sem_email: number
   etapa: "assinar" | "prefeitura" | "enviar" | "pacote"
+  /** "Guardar os arquivos" (opcional) já foi feito ou marcado como concluído. */
+  pacote_feito?: boolean
   regular: boolean
   lote_ativo: Lote | null
 }
@@ -1307,7 +1314,8 @@ export interface Prontidao {
   pode_emitir: boolean
   motivo: string | null
   certificado: "ok" | "falta" | "vencido"
-  dados_faltando: { campo: string; rotulo: string; link: string }[]
+  /** `obrigatorio`: a nota exige (hoje, só o regime). O resto pode ficar em branco. */
+  dados_faltando: { campo: string; rotulo: string; link: string; obrigatorio?: boolean; por_que?: string }[]
   tomadores: number
   pronta: boolean
 }
@@ -1760,6 +1768,12 @@ export interface ContaGestao {
   /** Pode usar tudo? (teste, assinatura, liberação da Gestão...) */
   acesso: SituacaoAcesso
   liberado_obs: string | null
+  /** Bloqueio manual pela Gestão (vale mesmo com o bloqueio geral desligado). */
+  bloqueada_em?: string | null
+  bloqueada_obs?: string | null
+  /** Contato que está no cadastro da empresa. */
+  telefone?: string | null
+  email_empresa?: string | null
   /** Conta só de contador: não é cliente (sem notas, sem assinatura). */
   so_contador?: boolean
   /** Contadores com acesso ativo a esta empresa. */

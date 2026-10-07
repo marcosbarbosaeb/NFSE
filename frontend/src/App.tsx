@@ -22,6 +22,7 @@ const ConfiguracoesPage = lazy(() => import("./pages/ConfiguracoesPage").then((m
 const ContaPage = lazy(() => import("./pages/ContaPage").then((m) => ({ default: m.ContaPage })))
 // Gestão da plataforma (06/10/2026): só a administração (ADMIN_EMAILS) — a própria tela confere.
 // Contador (06/10/2026): convites e empresas que este login atende.
+const NovidadesPage = lazy(() => import("./pages/NovidadesPage").then((m) => ({ default: m.NovidadesPage })))
 const AtendimentosPage = lazy(() => import("./pages/AtendimentosPage").then((m) => ({ default: m.AtendimentosPage })))
 const GestaoPage = lazy(() => import("./pages/GestaoPage").then((m) => ({ default: m.GestaoPage })))
 const EmpresaPage = lazy(() => import("./pages/EmpresaPage").then((m) => ({ default: m.EmpresaPage })))
@@ -103,6 +104,7 @@ export default function App() {
             <Route path="configuracoes" element={<ConfiguracoesPage />} />
             {/* Ajuda / FAQ (05/10/2026): vale pra qualquer módulo. */}
             <Route path="ajuda" element={<AjudaPage />} />
+            <Route path="novidades" element={<NovidadesPage />} />
             <Route path="indique" element={<Navigate to="/app/conta?aba=indique" replace />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

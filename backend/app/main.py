@@ -562,6 +562,22 @@ def api_compatibilidade(cnpj: str | None = None, cod_municipio: str | None = Non
     return {**compatibilidade.verificar(cod_municipio, situacao), "razao_social": razao}
 
 
+def _completar_pela_receita(db: Session, prestador_id: uuid.UUID) -> None:
+    """No cadastro, o que a Receita sabe já entra na empresa (regime,
+    telefone, e-mail, nome fantasia) — a pessoa não precisa digitar depois.
+    Nunca derruba o cadastro: se a consulta falhar, fica pra tela."""
+    from app.services import completar_empresa
+
+    try:
+        definir_prestador_atual(db, prestador_id)
+        prestador = db.get(Prestador, prestador_id)
+        if prestador is not None and len("".join(c for c in prestador.cpf_cnpj if c.isdigit())) == 14:
+            completar_empresa.aplicar(prestador, consultar_cnpj(prestador.cpf_cnpj))
+            db.flush()
+    except Exception:  # noqa: BLE001 — Receita fora do ar, CNPJ novo demais...
+        logger.info("Cadastro: não deu pra completar a empresa %s pela Receita agora", prestador_id)
+
+
 @app.post("/api/cadastro", response_model=CadastroResponse, responses={409: {"model": ErroResponse}}, dependencies=[Depends(limite("cadastro", 10, 3600))])
 def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
     """Marco 15 — cadastro público self-service (rota pública, sem sessão).
@@ -581,6 +597,7 @@ def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")
     except PrestadorJaCadastradoError:
         raise HTTPException(status_code=409, detail="Já existe uma conta cadastrada com este CNPJ.")
+    _completar_pela_receita(db, usuario.prestador_id)
     db.commit()
     enviado = bool(getattr(usuario, "email_enviado", True))
     return CadastroResponse(
@@ -2828,6 +2845,78 @@ def api_gestao_tirar_liberacao(alvo: uuid.UUID, db: Session = Depends(db_sessao)
     return resposta
 
 
+class BloquearContaRequest(BaseModel):
+    obs: str | None = Field(default=None, max_length=200)
+
+
+def _nao_e_a_minha(alvo: uuid.UUID, prestador_id: uuid.UUID, request: Request, db: Session) -> None:
+    """A administradora não bloqueia nem exclui a própria conta por aqui
+    (ficaria trancada do lado de fora da Gestão)."""
+    eu = _usuario_logado(request, db)
+    minhas = {prestador_id, eu.prestador_id} | {p for (p,) in db.query(UsuarioPrestador.prestador_id).filter_by(usuario_id=eu.id)}
+    if alvo in minhas:
+        raise HTTPException(status_code=400, detail="Esta é uma empresa sua. Por segurança, bloquear ou excluir a própria conta não é feito pela Gestão.")
+
+
+@app.post("/api/gestao/contas/{alvo}/bloquear", dependencies=[Depends(exigir_gestor)])
+def api_gestao_bloquear(
+    alvo: uuid.UUID, req: BloquearContaRequest, request: Request,
+    db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Bloqueia a conta na mão: ela fica só pra consulta, com ou sem
+    `BLOQUEIO_ATIVO`, até a Gestão desbloquear."""
+    _nao_e_a_minha(alvo, prestador_id, request, db)
+    try:
+        assinatura = _assinatura_de(db, alvo)
+        billing.bloquear(assinatura, req.obs)
+        db.flush()
+        resposta = {"acesso": acesso_servico.situacao(db, alvo), "bloqueada_obs": assinatura.bloqueada_obs}
+    finally:
+        definir_prestador_atual(db, prestador_id)
+    db.commit()
+    return resposta
+
+
+@app.delete("/api/gestao/contas/{alvo}/bloquear", dependencies=[Depends(exigir_gestor)])
+def api_gestao_desbloquear(alvo: uuid.UUID, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    try:
+        assinatura = _assinatura_de(db, alvo)
+        billing.desbloquear(assinatura)
+        db.flush()
+        resposta = {"acesso": acesso_servico.situacao(db, alvo), "bloqueada_obs": None}
+    finally:
+        definir_prestador_atual(db, prestador_id)
+    db.commit()
+    return resposta
+
+
+@app.delete("/api/gestao/contas/{alvo}", dependencies=[Depends(exigir_gestor)])
+def api_gestao_excluir_conta(
+    alvo: uuid.UUID, req: ExcluirRequest, request: Request,
+    db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
+):
+    """Exclui a empresa e TODO o histórico dela aqui (não tem volta). Os
+    logins que só tinham essa empresa vão junto. Confirmação: o CNPJ (ou o
+    código da conta de contador). As notas já autorizadas continuam válidas
+    na Receita."""
+    _nao_e_a_minha(alvo, prestador_id, request, db)
+    try:
+        definir_prestador_atual(db, alvo)
+        empresa = db.get(Prestador, alvo)
+        if empresa is None:
+            raise HTTPException(status_code=404, detail="Conta não encontrada.")
+        limpo = lambda t: "".join(c for c in (t or "") if c.isalnum()).upper()  # noqa: E731
+        if limpo(req.confirmacao) != limpo(empresa.cpf_cnpj):
+            raise HTTPException(status_code=422, detail="Digite o CNPJ da empresa pra confirmar a exclusão.")
+        nome = empresa.razao_social
+        contas.apagar_empresa(db, alvo)
+    finally:
+        definir_prestador_atual(db, prestador_id)
+    logger.warning("Gestão: conta %s (%s) excluída por %s", alvo, nome, _usuario_logado(request, db).email)
+    db.commit()
+    return {"ok": True, "excluida": nome}
+
+
 @app.post("/api/gestao/emails-de-exemplo", dependencies=[Depends(exigir_gestor), Depends(limite("emails-exemplo", 5, 600))])
 def api_gestao_emails_de_exemplo(request: Request, db: Session = Depends(db_sessao)):
     """Manda pra PRÓPRIA administradora uma cópia de cada e-mail da
@@ -3291,6 +3380,52 @@ def api_importar_nacional(
 
 
 _COMPETENCIA_RE = r"^\d{4}-(0[1-9]|1[0-2])$"
+
+
+# --- Versão e novidades (08/10/2026, ver app/novidades.py) ---
+
+
+@app.get("/api/versao")
+def api_versao():
+    """Qual versão está no ar aqui (rodapé do painel). Pública: serve pra
+    conferir, depois de publicar, se o ambiente está na versão certa."""
+    from app import novidades
+
+    return {"versao": novidades.VERSAO, "ambiente": "teste" if get_settings().ambiente_teste else "producao"}
+
+
+def _perfis_de(request: Request, db: Session, usuario: Usuario) -> set[str]:
+    """Novidades por perfil: quem tem empresa vê as de empresa; quem atende
+    alguém (ou tem conta só de contador) vê as de contador."""
+    ativa = contas.empresa_ativa(db, request, usuario)
+    try:
+        so_contador = acesso_servico.eh_so_contador(db, ativa)
+    finally:
+        definir_prestador_atual(db, ativa)
+    perfis = set() if so_contador else {"empresa"}
+    if so_contador or acesso_servico.tem_algo(db, usuario):
+        perfis.add("contador")
+    return perfis
+
+
+@app.get("/api/novidades")
+def api_novidades(request: Request, db: Session = Depends(get_db)):
+    from app import novidades
+
+    usuario = _usuario_logado(request, db)
+    vista = ((usuario.preferencias or {}).get("novidades") or {}).get("vista")
+    return novidades.para(_perfis_de(request, db, usuario), vista)
+
+
+@app.post("/api/conta/novidades-vistas")
+def api_novidades_vistas(request: Request, db: Session = Depends(get_db)):
+    """A pessoa abriu a tela Novidades: some a bolinha do sino."""
+    from app import novidades
+
+    usuario = _usuario_logado(request, db)
+    usuario.preferencias = {**(usuario.preferencias or {}), "novidades": {"vista": novidades.VERSAO}}
+    db.commit()
+    return {"vista": novidades.VERSAO}
 
 
 @app.get("/api/conta/preferencias")

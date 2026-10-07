@@ -130,9 +130,13 @@ export function PrimeirosPassos() {
   }
   if (!p || !p.aplica || p.pronta) return null
   // A Receita sabe o endereço e o regime; a alíquota do Simples, não.
-  const daReceita = !tentou && p.dados_faltando.some((f) => f.campo === "endereco" || f.campo === "regime")
+  const daReceita = !tentou && p.dados_faltando.some((f) => f.campo === "regime")
   const certOk = p.certificado === "ok"
-  const dadosOk = p.dados_faltando.length === 0
+  // Só o obrigatório segura o passo (hoje: o regime tributário). O que é
+  // opcional aparece como sugestão, sem travar nada (08/10/2026).
+  const obrigatorios = p.dados_faltando.filter((f) => f.obrigatorio)
+  const opcionais = p.dados_faltando.filter((f) => !f.obrigatorio)
+  const dadosOk = obrigatorios.length === 0
   const tomadoresOk = p.tomadores > 0
   const atual = !certOk ? 1 : !dadosOk ? 2 : 3
   return (
@@ -166,8 +170,27 @@ export function PrimeirosPassos() {
           atual={atual === 2}
           icone={Building2}
           titulo="Dados da empresa"
-          texto={dadosOk ? "Endereço e regime tributário conferidos." : <>Falta preencher: {p.dados_faltando.map((f) => f.rotulo).join("; ")}.</>}
-          to={p.dados_faltando[0]?.link ?? "/app/empresa?aba=emitente"}
+          texto={
+            dadosOk ? (
+              opcionais.length > 0 ? (
+                <>
+                  O que a nota exige já está preenchido. Opcional, se quiser completar:{" "}
+                  <Link to={opcionais[0].link} className="font-medium text-primary-700 underline dark:text-primary-300">
+                    {opcionais.map((f) => f.rotulo.toLowerCase()).join("; ")}
+                  </Link>
+                  .
+                </>
+              ) : (
+                "Regime tributário e endereço conferidos."
+              )
+            ) : (
+              <>
+                Só preciso de uma coisa: <strong>{obrigatorios.map((f) => f.rotulo).join("; ")}</strong> — {obrigatorios[0].por_que}.
+                {opcionais.length > 0 && <> O resto ({opcionais.map((f) => f.rotulo.toLowerCase()).join("; ")}) é opcional: pode ficar em branco.</>}
+              </>
+            )
+          }
+          to={obrigatorios[0]?.link ?? "/app/empresa?aba=emitente"}
           rotulo={daReceita ? "Preencher à mão" : "Completar os dados"}
           acao={daReceita ? { rotulo: buscando ? "Buscando..." : "Puxar pelo CNPJ", fazendo: buscando, onClick: () => void buscarNaReceita() } : undefined}
           nota={

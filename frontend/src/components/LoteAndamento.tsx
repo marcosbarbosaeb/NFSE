@@ -119,6 +119,17 @@ export function LoteAndamento({
   const passosQueFaltam = [d.a_assinar > 0 && "assinar", (d.a_assinar > 0 || d.a_prefeitura > 0) && "enviar à prefeitura", "mandar aos vendedores"].filter(Boolean) as string[]
   const estado = (pendentes: number, anteriores: number): "feito" | "atual" | "depois" => (pendentes === 0 && anteriores === 0 ? "feito" : anteriores === 0 ? "atual" : "depois")
 
+  // "Guardar os arquivos" não é obrigatório (08/10/2026): dá pra só marcar
+  // como concluído. Baixar, mandar por e-mail ou guardar no Drive marca sozinho.
+  async function marcarPacote(feito: boolean) {
+    try {
+      await api.post("/painel/pendencias/ignorar", { chave: `pacote:${d.vinculo_id}:${mes}`, ignorar: feito })
+      setDados((atual) => (atual ? { ...atual, pacote_feito: feito } : atual))
+    } catch {
+      /* é só uma marcação: se falhar, a etapa continua aberta */
+    }
+  }
+
   async function continuar() {
     setOcupado("continuar")
     setErro(null)
@@ -151,6 +162,7 @@ export function LoteAndamento({
       a.click()
       a.remove()
       setTimeout(() => URL.revokeObjectURL(url), 2000)
+      void marcarPacote(true)
     } catch (err) {
       setErro(msg(err))
     } finally {
@@ -171,6 +183,7 @@ export function LoteAndamento({
       const r = await api.post<{ enviado_para: string[]; notas: number }>("/pacote/email", { para: destinos, conteudo, competencia: mes, vinculo_id: d.vinculo_id })
       setAviso(`Pacote com ${r.notas} notas enviado pra ${r.enviado_para.join(", ")}.`)
       setEmailAberto(false)
+      void marcarPacote(true)
     } catch (err) {
       setErro(msg(err))
     } finally {
@@ -197,6 +210,7 @@ export function LoteAndamento({
     try {
       onLote(await api.post<Lote>("/lotes", { acao: "drive", vinculo_id: d.vinculo_id, competencia: mes, so_avulsas: true, conteudo }))
       setAviso("Estou guardando os arquivos no seu Google Drive, na pasta Agente Ana. Pode fechar a página — o link da pasta aparece no relatório.")
+      void marcarPacote(true)
     } catch (err) {
       setErro(msg(err))
     } finally {
@@ -255,7 +269,12 @@ export function LoteAndamento({
           estado={estado(d.a_enviar, d.a_assinar + d.a_prefeitura)}
           detalhe={d.total_sem_email > 0 ? <span className="text-slate-500 dark:text-slate-400">{d.total_sem_email} sem e-mail</span> : undefined}
         />
-        <Etapa n={4} titulo="Guardar os arquivos" estado={d.regular ? "atual" : "depois"} detalhe={<span className="text-slate-500 dark:text-slate-400">baixar, e-mail ou Drive</span>} />
+        <Etapa
+          n={4}
+          titulo="Guardar os arquivos"
+          estado={d.pacote_feito ? "feito" : d.regular ? "atual" : "depois"}
+          detalhe={<span className="text-slate-500 dark:text-slate-400">{d.pacote_feito ? "concluído" : "opcional: baixar, e-mail ou Drive"}</span>}
+        />
       </ol>
 
       {erro && <p role="alert" className="mt-3 rounded-lg bg-danger-50 px-4 py-2.5 text-sm text-danger-700 dark:bg-danger-900/30 dark:text-danger-300">{erro}</p>}
@@ -380,6 +399,23 @@ export function LoteAndamento({
                 </button>
               ))}
           </div>
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+            {d.pacote_feito ? (
+              <>
+                Etapa concluída.{" "}
+                <button type="button" className="font-medium underline hover:text-slate-700 dark:hover:text-slate-200" onClick={() => void marcarPacote(false)}>
+                  Reabrir
+                </button>
+              </>
+            ) : (
+              <>
+                Guardar os arquivos é opcional. Não vai compartilhar agora?{" "}
+                <button type="button" className="font-semibold text-primary-700 underline hover:text-primary-800 dark:text-primary-300" onClick={() => void marcarPacote(true)}>
+                  Marcar como concluído
+                </button>
+              </>
+            )}
+          </p>
           {emailAberto && (
             <div className="mt-3 flex flex-wrap items-end gap-2">
               <label className="min-w-[240px] flex-1 text-sm">

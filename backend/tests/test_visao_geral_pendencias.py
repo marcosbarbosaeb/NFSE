@@ -270,3 +270,69 @@ def test_endpoint_proximos_devolve_o_grupo_com_os_itens(client, db, prestador_te
     # (no dia 29+ de um mês o teste cai no mesmo grupo, só que atrasado)
     assert len(grupos) == 1 and grupos[0]["titulo"] == "Gerar 3 notas"
     assert len(grupos[0]["itens"]) == 3 and all(i["vinculo_id"] and i["chave"] for i in grupos[0]["itens"])
+
+
+# --- 08/10/2026: dia mais próximo aberto, vendedores enviados, pacote opcional --
+
+
+def test_notas_do_dia_mais_proximo_vem_abertas_e_as_dos_dias_seguintes_recolhidas(db, prestador_teste, vinculo_teste):
+    """"Deveria estar ao contrário: a data mais próxima estendida e a data
+    mais longa recolhida"."""
+    vinculo_teste.ativo = False  # só os desta história
+    for n in range(3):
+        _vinculo(db, prestador_teste, f"Perto {n}", dia=10)
+    for n in range(2):
+        _vinculo(db, prestador_teste, f"Longe {n}", dia=25)
+    db.flush()
+    gerar = [p for p in proximos(db, prestador_teste.id, HOJE)["pendencias"] if p["tipo"] == "gerar"]
+    assert [(p["data"], p["titulo"], p.get("aberto"), len(p["itens"])) for p in gerar] == [
+        (datetime.date(2026, 10, 10), "Gerar 3 notas", True, 3),
+        (datetime.date(2026, 10, 25), "Gerar 2 notas", False, 2),
+    ]
+
+
+def test_linha_dos_vendedores_mostra_quantas_ja_foram_enviadas(db, prestador_teste, vinculo_teste):
+    from decimal import Decimal
+
+    from app.models import Emissao, Envio
+
+    notas = []
+    for n in range(3):
+        e = Emissao(
+            id=uuid.uuid4(), prestador_id=prestador_teste.id, prestador_tomador_id=vinculo_teste.id, competencia="2026-10",
+            serie="5", n_dps=700 + n, estado="confirmado", valor=Decimal("10.00"), origem="ana",
+            tomador_documento=f"0000000000{n}", tomador_snapshot={"razao_social": f"Vendedor {n}", "email": "v@example.com"},
+        )
+        db.add(e)
+        notas.append(e)
+    db.flush()
+    linha = lambda: next(l for l in resumo_mes(db, prestador_teste.id, hoje=HOJE)["emissoes"] if l.get("vendedores"))  # noqa: E731
+    assert (linha()["envio_status"], linha()["enviadas"], linha()["a_enviar"]) == (None, 0, 3)
+    db.add(Envio(id=uuid.uuid4(), emissao_id=notas[0].id, canal="email", status="enviado", tentativas=1))
+    db.add(Envio(id=uuid.uuid4(), emissao_id=notas[1].id, canal="email", status="falha", tentativas=1))
+    db.flush()
+    assert (linha()["envio_status"], linha()["enviadas"]) == ("parcial", 1)
+    for e in notas[1:]:
+        db.add(Envio(id=uuid.uuid4(), emissao_id=e.id, canal="email", status="enviado", tentativas=1))
+    db.flush()
+    assert (linha()["envio_status"], linha()["enviadas"]) == ("enviado", 3)
+
+
+def test_guardar_os_arquivos_do_lote_e_opcional(client, db, prestador_teste, vinculo_teste):
+    from decimal import Decimal
+
+    from app.models import Emissao
+
+    db.add(Emissao(
+        id=uuid.uuid4(), prestador_id=prestador_teste.id, prestador_tomador_id=vinculo_teste.id, competencia="2026-10",
+        serie="5", n_dps=800, estado="confirmado", valor=Decimal("10.00"), origem="ana",
+        tomador_documento="00000000001", tomador_snapshot={"razao_social": "Vendedor"},
+    ))
+    db.flush()
+    d = client.get("/api/lotes/andamento").json()
+    assert d["pacote_feito"] is False
+    chave = f"pacote:{d['vinculo_id']}:{d['competencia']}"
+    assert client.post("/api/painel/pendencias/ignorar", json={"chave": chave, "ignorar": True}).status_code == 200
+    assert client.get("/api/lotes/andamento").json()["pacote_feito"] is True
+    client.post("/api/painel/pendencias/ignorar", json={"chave": chave, "ignorar": False})
+    assert client.get("/api/lotes/andamento").json()["pacote_feito"] is False

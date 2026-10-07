@@ -27,7 +27,7 @@ import type {
   RegraImportacao,
   ResultadoImportarEmissor,
 } from "../lib/types"
-import { documentoLegivel, faixaCompetencias, mensagemDe, padrao } from "./ImportarNacionalModal"
+import { ORDENS_IMPORTACAO, type OrdemImportacao, buscarGrupos, documentoLegivel, faixaCompetencias, mensagemDe, ordenarGrupos, padrao } from "./ImportarNacionalModal"
 import { Button } from "./ui/Button"
 import { CampoCidade } from "./ui/CampoCidade"
 import { Field } from "./ui/Field"
@@ -334,6 +334,12 @@ export function ImportarEmissorModal({ modo, onFechar, onVoltar }: { modo: Modo;
   const escolhidos = useMemo(() => grupos.filter((g) => !fora[g.documento]), [grupos, fora])
   const totalNotas = escolhidos.reduce((soma, g) => soma + g.quantidade, 0)
   const semCnpj = grupos.filter((g) => g.tipo !== "CNPJ")
+  // Buscar, ordenar e marcar o que está na tela (08/10/2026).
+  const [busca, setBusca] = useState("")
+  const [ordem, setOrdem] = useState<OrdemImportacao>("valor")
+  const listados = useMemo(() => ordenarGrupos(buscarGrupos(grupos, busca), ordem), [grupos, busca, ordem])
+  const marcarListados = (marcar: boolean) =>
+    setFora((atual) => ({ ...atual, ...Object.fromEntries(listados.map((g) => [g.documento, !marcar])) }))
 
   async function gravar() {
     setFalha(null)
@@ -710,10 +716,46 @@ export function ImportarEmissorModal({ modo, onFechar, onVoltar }: { modo: Modo;
             </p>
           )}
 
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="search"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar nome, CPF/CNPJ, descrição..."
+              aria-label="Buscar tomador na importação"
+              className="min-w-0 flex-1 basis-56 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+            />
+            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+              Ordenar
+              <select
+                value={ordem}
+                onChange={(e) => setOrdem(e.target.value as OrdemImportacao)}
+                aria-label="Ordenar os tomadores"
+                className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+              >
+                {ORDENS_IMPORTACAO.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.rotulo}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-slate-500 dark:text-slate-400">
               {escolhidos.length} de {grupos.length} marcados
             </span>
+            {busca.trim() && listados.length > 0 && (
+              <>
+                <Button type="button" variant="outline" className="px-2.5 py-1 text-xs" onClick={() => marcarListados(true)}>
+                  Marcar os {listados.length} da busca
+                </Button>
+                <Button type="button" variant="outline" className="px-2.5 py-1 text-xs" onClick={() => marcarListados(false)}>
+                  Desmarcar os da busca
+                </Button>
+              </>
+            )}
             {semCnpj.length > 0 && (
               <Button
                 type="button"
@@ -738,7 +780,8 @@ export function ImportarEmissorModal({ modo, onFechar, onVoltar }: { modo: Modo;
           </div>
 
           <ul className="-mx-5 max-h-[46vh] divide-y divide-slate-100 overflow-y-auto border-y border-slate-100 dark:divide-slate-700/60 dark:border-slate-700/60">
-            {grupos.map((g) => (
+            {listados.length === 0 && <li className="px-5 py-8 text-center text-sm text-slate-400 dark:text-slate-500">Nenhum tomador com essa busca.</li>}
+            {listados.map((g) => (
               <LinhaEncontrada
                 key={g.documento}
                 grupo={g}

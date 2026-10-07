@@ -40,7 +40,13 @@ function badgeEstadoNfse(estado: string, label: string) {
   return <Badge variant="neutral">{label}</Badge>
 }
 
-function badgeEnvio(status: string | null) {
+function badgeEnvio(status: string | null, linha?: EmissaoResumoLinha) {
+  // Linha que junta as notas dos vendedores: mostra a conta.
+  if (linha?.vendedores && linha.a_enviar) {
+    const n = linha.enviadas ?? 0
+    if (status === "enviado") return <Badge variant="success">Enviadas ({n})</Badge>
+    if (status === "parcial") return <Badge variant="warning">{n} de {linha.a_enviar} enviadas</Badge>
+  }
   if (status === "enviado") return <Badge variant="success">Enviada</Badge>
   if (status === "falha") return <Badge variant="danger">Falha</Badge>
   if (status === "pendente") return <Badge variant="warning">Pendente</Badge>
@@ -291,7 +297,7 @@ export function DashboardPage() {
                               <td className="py-3" colSpan={2}>
                                 {badgeEstadoNfse(linha.estado, linha.estado_label)}
                               </td>
-                              <td className="py-3">{badgeEnvio(linha.envio_status)}</td>
+                              <td className="py-3">{badgeEnvio(linha.envio_status, linha)}</td>
                             </>
                           ) : (
                             <>

@@ -696,6 +696,12 @@ def andamento(db: Session, vinculo_id: uuid.UUID | None = None, competencia: str
     etapa = (
         "assinar" if a_assinar else "prefeitura" if a_prefeitura else "enviar" if a_enviar else "pacote"
     )
+    # "Guardar os arquivos" é opcional (08/10/2026): a pessoa baixa/manda/guarda
+    # ou só marca como concluído — fica anotado por tomador + mês.
+    from app.models import AjusteEvento
+
+    dono = vinculo_id or notas[0].prestador_tomador_id
+    pacote_feito = db.query(AjusteEvento.id).filter_by(tipo="pendencia", chave=f"pacote:{dono}:{competencia}", oculto=True).first() is not None
     return {
         "meses": meses, "competencia": competencia, "vinculo_id": vinculo_id or notas[0].prestador_tomador_id,
         "total": total, "valor": round(valor, 2),
@@ -705,7 +711,7 @@ def andamento(db: Session, vinculo_id: uuid.UUID | None = None, competencia: str
         "sem_email": sem_email, "total_sem_email": sum(
             1 for e in notas if e.estado == "confirmado" and e.id not in entregues and not _tem_email(e)
         ),
-        "etapa": etapa,
+        "etapa": etapa, "pacote_feito": pacote_feito,
         # Tudo o que dependia do sistema foi feito? (vendedor sem e-mail não segura o "regular")
         "regular": a_assinar == 0 and a_prefeitura == 0 and a_enviar == 0,
         "lote_ativo": resumo(ativo) if ativo is not None and not _parado(ativo) else None,

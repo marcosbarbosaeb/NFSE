@@ -243,12 +243,29 @@ def resumo_mes(
         do_mes = notas_por_vinculo.get(vinculo.id, [])
         vendedores = vendedores_por_vinculo.get(vinculo.id, [])
         if vendedores:
+            # "A Shopee vendedores está como não enviado, no entanto foram
+            # disparados os e-mails" (08/10/2026): a linha junta centenas de
+            # notas, então o envio é a conta de quantas já foram entregues.
+            autorizadas = [e.id for e in vendedores if e.estado == "confirmado"]
+            entregues = 0
+            if autorizadas:
+                entregues = (
+                    db.query(func.count(func.distinct(Envio.emissao_id)))
+                    .join(Emissao, Emissao.id == Envio.emissao_id)
+                    .filter(
+                        Emissao.prestador_tomador_id == vinculo.id, Emissao.competencia == competencia,
+                        Emissao.tomador_documento.isnot(None), Emissao.estado == "confirmado",
+                        Envio.status == "enviado", Envio.canal.in_(("email", "whatsapp", "direto_fornecedor")),
+                    ).scalar() or 0
+                )
+            envio_do_grupo = None if not entregues else "enviado" if entregues >= len(autorizadas) else "parcial"
             emissoes.append({
                 "emissao_id": vendedores[0].id, "vinculo_id": vinculo.id, "quantidade": len(vendedores),
                 "apelido": f"{vinculo.apelido} — vendedores ({len(vendedores)} notas)", "tomador_razao_social": "vários vendedores",
                 "competencia": competencia, "valor": float(sum((e.valor for e in vendedores), Decimal(0))),
                 "estado": vendedores[0].estado, "estado_label": ESTADO_NFSE_LABEL.get(vendedores[0].estado, vendedores[0].estado),
-                "envio_status": None, "tem_pdf": False, "tem_email": False,
+                "envio_status": envio_do_grupo, "enviadas": int(entregues), "a_enviar": len(autorizadas),
+                "tem_pdf": False, "tem_email": False,
                 "homologacao": (vendedores[0].tomador_snapshot or {}).get("tpAmb") == "2", "envio_forma": "email",
                 "vendedores": True,
             })
@@ -481,12 +498,18 @@ def proximos(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = 
     for p in pendencias:
         if p["tipo"] == "gerar":
             gerar_por_dia.setdefault(p.get("data"), []).append(p)
-    for data, do_dia in gerar_por_dia.items():
-        if len(do_dia) > 2:
-            do_dia.sort(key=lambda p: p["titulo"].lower())
+    # 08/10/2026: "a data mais próxima estendida e a data mais longa
+    # recolhida" — o dia que vence primeiro já vem aberto, nota por nota; os
+    # dias seguintes ficam numa linha só cada, pra abrir se quiser.
+    dias = sorted(gerar_por_dia, key=lambda d: d or datetime.date.max)
+    for n, data in enumerate(dias):
+        do_dia = sorted(gerar_por_dia[data], key=lambda p: p["titulo"].lower())
+        mais_proximo = n == 0
+        if len(do_dia) > 2 or (len(do_dia) == 2 and not mais_proximo):
             agrupadas.append({
                 "tipo": "gerar", "titulo": f"Gerar {len(do_dia)} notas", "acao": "Ver", "link": "/app/tomadores",
                 "competencia": competencia, "data": data, "atrasada": bool(data and data < hoje), "itens": do_dia,
+                "aberto": mais_proximo,
             })
         else:
             agrupadas += do_dia

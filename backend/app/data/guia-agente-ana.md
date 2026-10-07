@@ -68,7 +68,7 @@ Você pode entrar de três jeitos: com e-mail e senha, com "Continuar com Google
 Enquanto falta alguma coisa pra emitir, a Visão geral mostra o cartão "Primeiros passos pra emitir sua nota", com três passos, nesta ordem:
 
 1. **Certificado digital A1**: clique em "Enviar o certificado". Sem certificado válido a emissão fica travada: os botões "Nova emissão" e "Enviar relatório da Shopee" ficam desligados e a tela mostra o aviso com o caminho pra Empresa › Certificado.
-2. **Dados da empresa**: o cartão diz o que falta (endereço, regime tributário, alíquota do Simples) e "Completar os dados" leva pra tela certa em "Empresa".
+2. **Dados da empresa**: só o **regime tributário** é obrigatório (vai em toda nota) — o botão "Puxar pelo CNPJ" busca na Receita. Endereço (só aparece no PDF da nota) e alíquota do Simples (referência pra já vir preenchida) são opcionais: o cartão avisa, mas deixar em branco não trava nada.
 3. **Seus tomadores**: "Escolher tomadores" abre o cadastro. Os tomadores mais comuns já vêm pré-cadastrados, com o serviço e a descrição prontos.
 
 O cartão some sozinho quando os três passos estão feitos.
@@ -113,6 +113,14 @@ Quando está ligada, a tela de gerar nota avisa que a conta está gerando notas 
 ### Preencher os dados da empresa pelo CNPJ
 
 Não precisa digitar endereço e regime tributário. Em "Empresa", aba "Dados da empresa", o botão "Preencher pelo CNPJ" busca os dados na Receita e preenche só o que estiver em branco (endereço, cidade, regime tributário, nome fantasia, telefone e e-mail). O que você já escreveu não é trocado. Na "Visão geral", o passo "Dados da empresa" dos primeiros passos tem o mesmo atalho: "Puxar pelo CNPJ". A alíquota do Simples a Receita não informa: essa você (ou o seu contador) preenche.
+
+### Novidades e versão
+
+O sino no topo abre a tela "Novidades", com o que mudou em cada atualização (cada pessoa vê o que é do perfil dela: empresa, contador ou os dois). Uma bolinha no sino avisa quando saiu versão nova. O número da versão fica no rodapé do menu.
+
+### Escolher o que importar do Emissor Nacional
+
+Na revisão da importação dá pra **buscar** (nome, CPF/CNPJ, descrição), **ordenar** (maior valor, mais notas, nota mais recente, nome) e marcar ou desmarcar de uma vez só o que apareceu na busca.
 
 ### Desfazer uma importação
 
@@ -406,6 +414,8 @@ O serviço de e-mail tem um limite de envios. Se o lote bater nesse limite, ele 
 Se o vendedor não informou e-mail no relatório, a nota dele não tem como ser enviada. Isso não é pendência sua, e a situação do mês fica regular do mesmo jeito. Se o vendedor te passar o e-mail, abra a nota e envie por lá.
 
 ### Guardar os arquivos do mês
+
+Esta etapa é **opcional**. Quem não vai baixar nem compartilhar agora clica em "Marcar como concluído" (logo abaixo dos botões) e a etapa fica feita; "Reabrir" desfaz. Baixar, mandar por e-mail ou guardar no Drive também marca sozinho.
 
 Depois que as notas são autorizadas, o bloco "Arquivos do mês" deixa escolher o que vai no pacote ("PDF e XML", "Só PDF" ou "Só XML") e oferece:
 

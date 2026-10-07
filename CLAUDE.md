@@ -66,8 +66,17 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
 - Completar a empresa pelo CNPJ (`app/services/completar_empresa.py`): só preenche campo em branco, nunca troca o que a pessoa escreveu.
 - Tela Empresa tem cinco abas (`emitente`, `notas`, `certificado`, `contador`, `mais`); os ids antigos (`aliquotas`, `emails`,
   `modulos`, `dados`) são redirecionados em `EmpresaPage.ABA_ANTIGA` — não quebre links antigos.
-- Fluxo de publicação: tudo vai primeiro pra branch `teste` (ambiente `teste` do Railway, app-teste.up.railway.app);
-  só depois de conferido lá entra na `main`.
+- **Fluxo de publicação (rotina combinada em 08/10/2026):** tudo vai primeiro pra branch `teste` (ambiente `teste` do
+  Railway, app-teste.up.railway.app); só com o "pode subir" do Marcos a `main` recebe exatamente a `teste`. NADA vai direto
+  pra `main`. Cada leva tem número (`ano.mês.sequência`): bloco novo no topo de `backend/app/novidades.py` (texto pro
+  usuário, por perfil: todos/empresa/contador) + seção no `CHANGELOG.md` (técnico) — um teste cobra as duas. O rodapé do
+  menu e `GET /api/versao` mostram versão e ambiente. O Railway não publica sozinho: `DEPLOY_REF=<commit>` no serviço.
+- Gestão manual de contas: liberar ("aceitar"), bloquear (`assinatura.bloqueada_em`, vale mesmo com `BLOQUEIO_ATIVO`
+  desligado; a trava leve fica em `acesso.conferir`) e excluir (pede o CNPJ). Nunca na própria conta de quem administra.
+- `envio` NÃO tem RLS (não carrega `prestador_id`): toda consulta nela tem que passar por `emissao` — a Gestão já contou os
+  e-mails de todas as contas em cada conta por causa disso.
+- Dados da empresa: obrigatório é só o regime tributário (`prontidao._dados_que_faltam`, `obrigatorio`). Endereço e alíquota
+  são opcionais — não use pra travar nada.
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.
 - Segredos (Stripe, Resend, Google) só nas variáveis do Railway — nunca no código nem em conversa.
 

@@ -57,7 +57,7 @@ function LinhaPendencia({
   /** Dentro de um grupo o dia já está na linha de cima. */
   semPrazo?: boolean
 }) {
-  const [aberto, setAberto] = useState(false)
+  const [aberto, setAberto] = useState(Boolean(p.aberto))
   const bolinha = <span className={`h-2 w-2 shrink-0 rounded-full ${COR_PENDENCIA[p.tipo] ?? "bg-slate-400"}`} aria-hidden />
   const dica = [p.titulo, p.competencia ? formatCompetenciaLonga(p.competencia) : null, p.valor != null ? formatBRL(p.valor) : null]
     .filter(Boolean)

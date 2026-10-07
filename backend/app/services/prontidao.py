@@ -38,18 +38,36 @@ def motivo_que_trava(db: Session, prestador_id: uuid.UUID) -> str | None:
 
 
 def _dados_que_faltam(prestador: Prestador) -> list[dict]:
+    """O que falta no cadastro da empresa. 08/10/2026 — "não vamos travar pra
+    a pessoa preencher os dados da empresa, vamos cobrar o mínimo necessário
+    e indicar pra ela o que seria isso; o restante, se ela deixar em branco,
+    não é problema".
+
+    Obrigatório é só o que a nota exige: o **regime tributário** (vai em toda
+    DPS). O endereço da empresa não vai no XML (a Receita já tem) — só
+    aparece no PDF; e a alíquota do Simples é uma referência que a pessoa
+    confere a cada nota. Esses dois ficam como `obrigatorio: False`."""
     faltam: list[dict] = []
+    if not prestador.op_simples_nacional:
+        faltam.append({
+            "campo": "regime", "rotulo": "Regime tributário (Simples Nacional, MEI...)", "link": "/app/empresa?aba=emitente",
+            "obrigatorio": True, "por_que": "vai em toda nota",
+        })
     endereco = [
         rotulo for campo, rotulo in (("cep", "CEP"), ("logradouro", "rua"), ("numero", "número"), ("bairro", "bairro"))
         if not str(getattr(prestador, campo) or "").strip()
     ]
     if endereco:
-        faltam.append({"campo": "endereco", "rotulo": f"Endereço da empresa ({', '.join(endereco)})", "link": "/app/empresa?aba=emitente"})
-    if not prestador.op_simples_nacional:
-        faltam.append({"campo": "regime", "rotulo": "Regime tributário (Simples Nacional, MEI...)", "link": "/app/empresa?aba=emitente"})
+        faltam.append({
+            "campo": "endereco", "rotulo": f"Endereço da empresa ({', '.join(endereco)})", "link": "/app/empresa?aba=emitente",
+            "obrigatorio": False, "por_que": "só aparece no PDF da nota",
+        })
     # "3" = ME/EPP do Simples: é quem informa a alíquota na nota.
     if prestador.op_simples_nacional == "3" and prestador.aliquota_atual is None:
-        faltam.append({"campo": "aliquota", "rotulo": "Alíquota do Simples Nacional", "link": "/app/empresa?aba=aliquotas"})
+        faltam.append({
+            "campo": "aliquota", "rotulo": "Alíquota do Simples Nacional", "link": "/app/empresa?aba=aliquotas",
+            "obrigatorio": False, "por_que": "já vem preenchida na nota; sem ela você digita a cada nota",
+        })
     return faltam
 
 
@@ -73,5 +91,6 @@ def prontidao(db: Session, prestador_id: uuid.UUID) -> dict:
     return {
         "aplica": True, "pode_emitir": motivo is None, "motivo": motivo, "certificado": certificado,
         "dados_faltando": faltam, "tomadores": tomadores,
-        "pronta": motivo is None and not faltam and tomadores > 0,
+        # só o obrigatório segura os "primeiros passos"
+        "pronta": motivo is None and not any(f["obrigatorio"] for f in faltam) and tomadores > 0,
     }

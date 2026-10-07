@@ -50,14 +50,24 @@ def test_conta_nova_e_guiada_e_nao_gera_nota_sem_certificado(client, db, prestad
 
 def test_com_certificado_e_dados_a_empresa_fica_pronta(client, db, prestador_teste, vinculo_teste):
     _certificado(db, prestador_teste, datetime.date.today() + datetime.timedelta(days=200))
-    prestador_teste.cep, prestador_teste.logradouro, prestador_teste.numero, prestador_teste.bairro = "30130000", "Rua A", "10", "Centro"
-    prestador_teste.op_simples_nacional = "3"
+    # 08/10/2026: só o regime é obrigatório — sem ele a empresa não fica pronta
+    prestador_teste.op_simples_nacional = None
     db.flush()
     p = client.get("/api/empresa/prontidao").json()
-    assert p["pode_emitir"] is True and [f["campo"] for f in p["dados_faltando"]] == ["aliquota"] and p["pronta"] is False
+    assert p["pronta"] is False and [f["campo"] for f in p["dados_faltando"] if f["obrigatorio"]] == ["regime"]
+    # com o regime, endereço e alíquota em branco não seguram mais nada
+    prestador_teste.cep = prestador_teste.logradouro = prestador_teste.numero = prestador_teste.bairro = None
+    prestador_teste.op_simples_nacional = "3"
+    prestador_teste.aliquota_atual = None
+    db.flush()
+    p = client.get("/api/empresa/prontidao").json()
+    assert p["pode_emitir"] is True and p["pronta"] is True
+    assert {f["campo"]: f["obrigatorio"] for f in p["dados_faltando"]} == {"endereco": False, "aliquota": False}
+    prestador_teste.cep, prestador_teste.logradouro, prestador_teste.numero, prestador_teste.bairro = "30130000", "Rua A", "10", "Centro"
     prestador_teste.aliquota_atual = 6
     db.flush()
-    assert client.get("/api/empresa/prontidao").json()["pronta"] is True
+    p = client.get("/api/empresa/prontidao").json()
+    assert p["pronta"] is True and p["dados_faltando"] == []
     assert prontidao.motivo_que_trava(db, prestador_teste.id) is None
 
 

@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ChevronDown, Download, Search } from "lucide-react"
+import { ArrowDown, ArrowUp, Ban, ChevronDown, Download, MessageCircle, Search, Trash2, Unlock } from "lucide-react"
 import { Fragment, type ReactNode, useMemo, useState } from "react"
 import { formatarDocumento, soDigitos } from "../../lib/documento"
 import {
@@ -21,15 +21,17 @@ import {
   situacaoAssinatura,
 } from "../../lib/gestao"
 import { api } from "../../lib/api"
+import { excluirComConfirmacao } from "../../lib/excluir"
 import type { ContaGestao, PainelGestao } from "../../lib/types"
 import { Badge } from "../ui/Badge"
 import { Button } from "../ui/Button"
 import { Card } from "../ui/Card"
+import { Modal } from "../ui/Modal"
 
 // Gestão › Contas (06/10/2026): quem tem conta, quem está ativo e quanto usa.
 // Só números de uso — o conteúdo das notas e do financeiro não chega aqui.
 
-type Filtro = "todas" | "ativas" | "sem-acesso" | "nao-confirmou" | "sem-certificado" | "teste" | "sem-assinatura" | "liberadas" | "contadores"
+type Filtro = "todas" | "ativas" | "sem-acesso" | "nao-confirmou" | "sem-certificado" | "teste" | "sem-assinatura" | "liberadas" | "bloqueadas" | "contadores"
 const FILTROS: { id: Filtro; rotulo: string; vale: (c: ContaGestao) => boolean }[] = [
   { id: "todas", rotulo: "Todas", vale: () => true },
   { id: "ativas", rotulo: "Ativas 30 dias", vale: ativa30 },
@@ -41,6 +43,7 @@ const FILTROS: { id: Filtro; rotulo: string; vale: (c: ContaGestao) => boolean }
   { id: "sem-assinatura", rotulo: "Teste vencido / sem assinatura", vale: (c) => !c.demo && c.acesso?.liberado === false },
   { id: "contadores", rotulo: "Contas de contador", vale: (c) => c.so_contador === true },
   { id: "liberadas", rotulo: "Liberadas por você", vale: (c) => c.acesso?.motivo === "liberacao" },
+  { id: "bloqueadas", rotulo: "Bloqueadas por você", vale: (c) => c.acesso?.motivo === "bloqueada" },
 ]
 
 type Campo = "criada_em" | "ultimo_acesso" | "notas" | "emails"
@@ -95,6 +98,7 @@ export function ContasGestao({ painel, aoMudar }: { painel: PainelGestao; aoMuda
       if (!termo) return true
       if (sem(c.razao_social ?? "").includes(termo)) return true
       if (digitos.length >= 3 && soDigitos(c.cnpj).includes(digitos)) return true
+      if (digitos.length >= 4 && soDigitos(c.telefone ?? "").includes(digitos)) return true
       return c.logins.some((l) => sem(l.email).includes(termo) || sem(l.nome ?? "").includes(termo))
     })
     const sinal = ordem.desc ? -1 : 1
@@ -135,14 +139,14 @@ export function ContasGestao({ painel, aoMudar }: { painel: PainelGestao; aoMuda
     const simNao = (v: boolean) => (v ? "sim" : "não")
     baixarCsv(`contas-agente-ana-${painel.competencia}.csv`, [
       [
-        "Empresa", "CNPJ", "E-mail principal", "Outros logins", "E-mail confirmado", "Assinatura", "Plano", "Módulos",
+        "Empresa", "CNPJ", "Telefone", "E-mail principal", "Outros logins", "E-mail confirmado", "Assinatura", "Plano", "Módulos",
         "Criada em", "Último acesso", "Dias sem acesso", "Certificado", "Tomadores",
         "Notas no mês (uma a uma)", "Notas no mês (lote)", "Notas no total", "Notas importadas",
         "E-mails no mês", "E-mails de lote no mês", "Falhas de e-mail no mês", "E-mails no total",
         "Conta de teste", "Simulação", "Veio por",
       ],
       ...lista.map((c) => [
-        c.razao_social ?? "", formatarDocumento(c.cnpj), c.logins[0]?.email ?? "", c.logins.slice(1).map((l) => l.email).join(", "),
+        c.razao_social ?? "", formatarDocumento(c.cnpj), telefoneLegivel(c.telefone), c.logins[0]?.email ?? "", c.logins.slice(1).map((l) => l.email).join(", "),
         simNao(c.email_confirmado), situacaoAssinatura(c.assinatura).rotulo, nomeDoPlano(c.plano), c.modulos.map(nomeDoModulo).join(" + "),
         c.criada_em ? dia(c.criada_em) : "", c.ultimo_acesso ? diaHora(c.ultimo_acesso) : "", c.dias_sem_acesso ?? "", ROTULO_CERTIFICADO[c.certificado] ?? c.certificado, c.tomadores,
         c.notas_mes, c.notas_lote_mes, c.notas_total, c.notas_importadas,
@@ -171,13 +175,13 @@ export function ContasGestao({ painel, aoMudar }: { painel: PainelGestao; aoMuda
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <label className="relative min-w-0 flex-1">
-            <span className="sr-only">Buscar por nome, CNPJ ou e-mail</span>
+            <span className="sr-only">Buscar por nome, CNPJ, e-mail ou telefone</span>
             <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
             <input
               type="search"
               value={busca}
               onChange={(e) => mudar(setBusca)(e.target.value)}
-              placeholder="Buscar por nome, CNPJ ou e-mail"
+              placeholder="Buscar por nome, CNPJ, e-mail ou telefone"
               className={`${classeCampo} w-full pl-9`}
             />
           </label>
@@ -396,6 +400,14 @@ export function ContasGestao({ painel, aoMudar }: { painel: PainelGestao; aoMuda
 
 const classeSub = "block text-xs text-slate-400 dark:text-slate-500"
 
+/** 92999990000 -> (92) 99999-0000 */
+function telefoneLegivel(telefone: string | null | undefined): string {
+  const d = soDigitos(telefone ?? "")
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`
+  return telefone ?? ""
+}
+
 function Empresa({ conta: c }: { conta: ContaGestao }) {
   return (
     <span className="block min-w-0">
@@ -404,6 +416,18 @@ function Empresa({ conta: c }: { conta: ContaGestao }) {
         {c.so_contador ? "sem CNPJ" : formatarDocumento(c.cnpj) || "sem CNPJ"}
         {c.criada_em && ` · desde ${dia(c.criada_em)}`}
       </span>
+      {c.telefone && (
+        <a
+          href={`https://wa.me/${soDigitos(c.telefone).length <= 11 ? "55" : ""}${soDigitos(c.telefone)}`}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          title="Abrir conversa no WhatsApp"
+          className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium tabular-nums text-primary-700 hover:underline dark:text-primary-300"
+        >
+          <MessageCircle size={12} aria-hidden="true" /> {telefoneLegivel(c.telefone)}
+        </a>
+      )}
       {(c.modo_teste || c.demo || c.so_contador) && (
         <span className="mt-1 flex flex-wrap gap-1">
           {c.so_contador && <Badge variant="info">conta de contador</Badge>}
@@ -449,7 +473,9 @@ function Assinatura({ conta: c, emLinha = false }: { conta: ContaGestao; emLinha
   ].filter(Boolean).join(" · ")
   return (
     <span className={emLinha ? "inline-flex flex-wrap items-center gap-x-2 gap-y-1" : "block"}>
-      {c.so_contador ? (
+      {c.acesso?.motivo === "bloqueada" ? (
+        <Badge variant="danger">Bloqueada por você</Badge>
+      ) : c.so_contador ? (
         <Badge variant="neutral">Não se aplica</Badge>
       ) : liberada ? (
         <Badge variant="success">Liberada por você</Badge>
@@ -475,8 +501,9 @@ function LiberarAcesso({ conta: c, aoMudar }: { conta: ContaGestao; aoMudar?: ()
   const [erro, setErro] = useState<string | null>(null)
   const a = c.acesso
   const liberada = a?.motivo === "liberacao"
+  const bloqueada = a?.motivo === "bloqueada"
   // Quem paga ou é cortesia não precisa de liberação.
-  const precisa = !a || !["assinatura", "cortesia", "pagamento_pendente"].includes(a.motivo)
+  const precisa = !a || !["assinatura", "cortesia", "pagamento_pendente", "bloqueada"].includes(a.motivo)
 
   async function pedir(acao: () => Promise<unknown>) {
     setFazendo(true)
@@ -496,9 +523,10 @@ function LiberarAcesso({ conta: c, aoMudar }: { conta: ContaGestao; aoMudar?: ()
   if (c.demo || c.so_contador) return null
   return (
     <div className="max-w-2xl rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Acesso sem assinatura</p>
+      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Aceitar a conta (liberar o uso sem assinatura)</p>
       <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">
-        {!precisa && "Esta conta já tem acesso (paga ou é cortesia). Não precisa liberar."}
+        {bloqueada && "Esta conta está bloqueada por você. Desbloqueie abaixo pra ela voltar a valer."}
+        {!precisa && !bloqueada && "Esta conta já tem acesso (paga ou é cortesia). Não precisa liberar."}
         {precisa && liberada && (a.ate ? `Liberada por você até ${dia(a.ate)}.` : "Liberada por você, sem prazo.")}
         {precisa && !liberada && a?.motivo === "teste" && `Em teste grátis até ${dia(a.ate)}. Você pode liberar por mais tempo.`}
         {precisa && !liberada && a && !a.liberado && "Sem acesso: o teste acabou ou a assinatura foi encerrada. Com o bloqueio ligado, ela só consulta."}
@@ -534,6 +562,123 @@ function LiberarAcesso({ conta: c, aoMudar }: { conta: ContaGestao; aoMudar?: ()
         </>
       )}
       {erro && <p className="mt-2 text-sm text-danger-700 dark:text-danger-300">{erro}</p>}
+    </div>
+  )
+}
+
+// Gestão manual (08/10/2026): "nessa fase em que o sistema de pagamento não
+// está implementado quero poder fazer a gestão de contas manualmente,
+// aceitando, bloqueando e excluindo". Aceitar = liberar (acima); aqui ficam
+// bloquear (a conta fica só pra consulta) e excluir (não tem volta).
+function BloquearOuExcluir({ conta: c, aoMudar }: { conta: ContaGestao; aoMudar?: () => void }) {
+  const bloqueada = c.acesso?.motivo === "bloqueada"
+  const [obs, setObs] = useState(c.bloqueada_obs ?? "")
+  const [fazendo, setFazendo] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const [excluindo, setExcluindo] = useState(false)
+  const [digitado, setDigitado] = useState("")
+  const codigo = c.so_contador ? (c.cnpj ?? "") : formatarDocumento(c.cnpj)
+  // mesma conta do servidor: só letras e números, sem pontuação
+  const limpo = (t: string) => t.replace(/[^a-zA-Z0-9]/g, "").toUpperCase()
+  const confere = limpo(digitado) !== "" && limpo(digitado) === limpo(c.cnpj ?? "")
+
+  async function pedir(acao: () => Promise<unknown>) {
+    setFazendo(true)
+    setErro(null)
+    try {
+      await acao()
+      setExcluindo(false)
+      aoMudar?.()
+    } catch (err) {
+      setErro(erroDe(err))
+    } finally {
+      setFazendo(false)
+    }
+  }
+
+  if (c.demo) return null
+  return (
+    <div className="max-w-2xl rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Bloquear ou excluir</p>
+      <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">
+        {bloqueada
+          ? `Bloqueada por você${c.bloqueada_em ? ` em ${dia(c.bloqueada_em)}` : ""}: a pessoa entra e consulta, mas não gera nota nem lança nada.`
+          : "Bloquear deixa a conta só pra consulta (a pessoa vê um aviso pra falar com o suporte). Vale na hora e passa por cima de teste e liberação."}
+      </p>
+      {!c.so_contador && (
+        <label className="mt-3 block">
+          <span className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Motivo do bloqueio (só você vê)</span>
+          <input
+            value={obs}
+            maxLength={200}
+            onChange={(e) => setObs(e.target.value)}
+            placeholder="Ex.: não pagou o combinado, uso indevido"
+            disabled={bloqueada}
+            className={`${classeCampo} w-full disabled:opacity-70`}
+          />
+        </label>
+      )}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {!c.so_contador &&
+          (bloqueada ? (
+            <Button type="button" variant="outline" className="!px-3 !py-1.5" disabled={fazendo} onClick={() => pedir(() => api.delete(`/gestao/contas/${c.id}/bloquear`))}>
+              <Unlock size={15} aria-hidden="true" /> Desbloquear
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              className="!px-3 !py-1.5 !text-danger-600"
+              disabled={fazendo}
+              onClick={() => pedir(() => api.post(`/gestao/contas/${c.id}/bloquear`, { obs: obs.trim() || null }))}
+            >
+              <Ban size={15} aria-hidden="true" /> Bloquear a conta
+            </Button>
+          ))}
+        <Button
+          type="button"
+          variant="ghost"
+          className="!px-3 !py-1.5 !text-danger-600"
+          disabled={fazendo}
+          onClick={() => {
+            setErro(null)
+            setDigitado("")
+            setExcluindo(true)
+          }}
+        >
+          <Trash2 size={15} aria-hidden="true" /> Excluir a conta...
+        </Button>
+      </div>
+      {erro && !excluindo && <p className="mt-2 text-sm text-danger-700 dark:text-danger-300">{erro}</p>}
+
+      {excluindo && (
+        <Modal titulo="Excluir esta conta?" onClose={() => !fazendo && setExcluindo(false)}>
+          <div className="flex flex-col gap-3 text-sm text-slate-600 dark:text-slate-300">
+            <p>
+              <strong className="text-slate-900 dark:text-slate-100">{nomeDaConta(c)}</strong> e todo o histórico dela aqui são apagados: tomadores, notas,
+              recebimentos, despesas e o certificado. {c.logins.length > 0 && `O login ${c.logins.map((l) => l.email).join(", ")} vai junto (se não tiver outra empresa).`}
+            </p>
+            <p className="rounded-lg bg-danger-50 px-3 py-2 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300">
+              Não tem como desfazer. As notas já autorizadas continuam válidas na Receita, mas saem da Ana. Se a ideia é só impedir o uso, prefira bloquear.
+            </p>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+                Pra confirmar, digite {c.so_contador ? "o código da conta" : "o CNPJ"}: <strong className="tabular-nums">{codigo}</strong>
+              </span>
+              <input value={digitado} onChange={(e) => setDigitado(e.target.value)} className={`${classeCampo} w-full`} autoComplete="off" />
+            </label>
+            {erro && <p className="text-danger-700 dark:text-danger-300">{erro}</p>}
+            <div className="mt-1 flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="outline" disabled={fazendo} onClick={() => setExcluindo(false)}>
+                Cancelar
+              </Button>
+              <Button type="button" variant="danger" disabled={fazendo || !confere} onClick={() => pedir(() => excluirComConfirmacao(`/gestao/contas/${c.id}`, digitado))}>
+                <Trash2 size={15} aria-hidden="true" /> {fazendo ? "Excluindo..." : "Excluir de vez"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }
@@ -603,6 +748,7 @@ function Detalhes({ conta: c, aoMudar }: { conta: ContaGestao; aoMudar?: () => v
   return (
     <div className="flex flex-col gap-4">
       <LiberarAcesso conta={c} aoMudar={aoMudar} />
+      <BloquearOuExcluir conta={c} aoMudar={aoMudar} />
       <div>
         <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
           {c.logins.length === 1 ? "Login" : `Logins (${c.logins.length})`}

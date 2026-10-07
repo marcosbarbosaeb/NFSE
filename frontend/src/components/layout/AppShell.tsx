@@ -50,7 +50,7 @@ function FaixaContaTeste() {
 
 // Conta só de contador (07/10/2026): fora da empresa de um cliente não há
 // notas nem financeiro — só estas telas existem pra ela.
-const TELAS_DA_CONTA_DE_CONTADOR = ["/app/atendimentos", "/app/conta", "/app/ajuda", "/app/gestao"]
+const TELAS_DA_CONTA_DE_CONTADOR = ["/app/atendimentos", "/app/conta", "/app/ajuda", "/app/novidades", "/app/gestao"]
 
 export function AppShell() {
   const [menuAberto, setMenuAberto] = useState(false)

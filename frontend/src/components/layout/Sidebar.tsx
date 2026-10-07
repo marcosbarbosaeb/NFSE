@@ -4,6 +4,7 @@ import { Link, NavLink, useLocation } from "react-router-dom"
 import { api } from "../../lib/api"
 import { useAuth } from "../../lib/auth"
 import { useModulos } from "../../lib/modulos"
+import { useVersao } from "../../lib/novidades"
 import { BotaoSuporte } from "../SuporteModal"
 import { TrocaEmpresa } from "../TrocaEmpresa"
 import { AnaAvatar, Marca } from "../brand/Marca"
@@ -37,6 +38,19 @@ const classeItem = (ativo: boolean) =>
 
 // Celular (revisão de 28/09/2026): abaixo de "lg" a barra vira uma gaveta
 // que abre pelo botão de menu do topo e fecha ao escolher uma tela.
+/** Versão que está no ar e em qual ambiente (08/10/2026) — pra bater o olho
+ * e saber se o teste e o real estão na mesma. Leva pra tela Novidades. */
+function RodapeVersao({ onFechar }: { onFechar?: () => void }) {
+  const v = useVersao()
+  if (!v) return null
+  return (
+    <Link to="/app/novidades" onClick={onFechar} className="mt-2 block px-1 text-center text-[11px] tabular-nums text-slate-400 hover:text-slate-200" title="Ver o que mudou em cada versão">
+      versão {v.versao}
+      {v.ambiente === "teste" && <span className="ml-1.5 rounded bg-warning-600/80 px-1.5 py-0.5 font-semibold text-white">teste</span>}
+    </Link>
+  )
+}
+
 export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFechar?: () => void }) {
   const { pathname, search } = useLocation()
   const naConta = pathname.replace(/\/+$/, "") === "/app/conta"
@@ -194,6 +208,7 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
           Precisa de ajuda? Fale com o suporte
         </BotaoSuporte>
       </div>
+      <RodapeVersao onFechar={onFechar} />
       </div>
     </aside>
     </>

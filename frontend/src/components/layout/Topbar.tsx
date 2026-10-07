@@ -2,6 +2,7 @@ import { Bell, BriefcaseBusiness, Building2, ChevronDown, CircleHelp, Gift, LogO
 import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { useAuth } from "../../lib/auth"
+import { useNovidades } from "../../lib/novidades"
 import { mostrarDicasDaTela } from "../../lib/tutorial"
 
 function iniciais(email: string, nomeCompleto?: string | null): string {
@@ -15,6 +16,9 @@ export function Topbar({ onAbrirMenu }: { onAbrirMenu?: () => void }) {
   const { usuario, logout } = useAuth()
   const [menuAberto, setMenuAberto] = useState(false)
   const refMenu = useRef<HTMLDivElement>(null)
+  // O sino (08/10/2026): leva pra tela Novidades e acende quando sai versão nova.
+  const { dados: novidades } = useNovidades()
+  const novas = usuario && !usuario.demo ? (novidades?.novas ?? 0) : 0
 
   // Menu do usuário fecha ao clicar fora ou apertar Esc.
   useEffect(() => {
@@ -61,14 +65,15 @@ export function Topbar({ onAbrirMenu }: { onAbrirMenu?: () => void }) {
         >
           <CircleHelp size={18} />
         </button>
-        <button
-          type="button"
-          className="rounded-full p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
-          title="Notificações (ainda não implementado)"
-          disabled
+        <Link
+          to="/app/novidades"
+          className="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-accent-600 dark:text-slate-400 dark:hover:bg-slate-700"
+          title={novas > 0 ? "Tem novidade na Agente Ana" : "Novidades"}
+          aria-label={novas > 0 ? `Novidades: ${novas} ${novas === 1 ? "versão nova" : "versões novas"}` : "Novidades"}
         >
           <Bell size={18} />
-        </button>
+          {novas > 0 && <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-accent-500 ring-2 ring-white dark:ring-slate-800" aria-hidden="true" />}
+        </Link>
 
         {usuario && (
           <div className="relative" ref={refMenu}>

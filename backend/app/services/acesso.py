@@ -127,6 +127,7 @@ MENSAGEM_BLOQUEIO = {
     "teste_acabou": "O teste grátis desta empresa terminou. Pra continuar gerando notas e lançando, assine um plano em Minha conta › Assinatura.",
     "cancelada": "A assinatura desta empresa foi encerrada. Pra voltar a usar, assine de novo em Minha conta › Assinatura.",
     "sem_assinatura": "Esta empresa está sem assinatura. Assine um plano em Minha conta › Assinatura.",
+    "bloqueada": "Esta conta foi bloqueada pela equipe da Agente Ana e está só pra consulta. Fale com o suporte pra voltar a usar.",
 }
 
 
@@ -186,11 +187,13 @@ def situacao(db: Session, prestador_id: uuid.UUID) -> dict:
     assinatura = db.query(Assinatura).filter_by(prestador_id=prestador_id).one_or_none()
     s = situacao_do_acesso(assinatura)
     ligado = get_settings().bloqueio_ativo
+    bloqueado = s["motivo"] == "bloqueada" or (ligado and not s["liberado"])
     return {
         **s, "ate": s["ate"].isoformat() if s["ate"] else None,
         "bloqueio_ativo": ligado,
-        "bloqueado": ligado and not s["liberado"],
-        "mensagem": MENSAGEM_BLOQUEIO.get(s["motivo"]) if ligado and not s["liberado"] else None,
+        # Bloqueio manual da Gestão vale sempre; o de "sem assinatura", só com BLOQUEIO_ATIVO.
+        "bloqueado": bloqueado,
+        "mensagem": MENSAGEM_BLOQUEIO.get(s["motivo"]) if bloqueado else None,
     }
 
 
@@ -219,9 +222,14 @@ def conferir(db: Session, request, usuario: Usuario, prestador_id: uuid.UUID) ->
     # Na "casa" da conta só de contador não se cria nada (não é empresa).
     if eh_so_contador(db, prestador_id) and not _LIVRE_NA_CONTA_DE_CONTADOR.fullmatch(caminho):
         raise HTTPException(status_code=403, detail=MENSAGEM_SO_CONTADOR)
-    if not get_settings().bloqueio_ativo:
-        return
     if _LIVRE_SEM_ASSINATURA.fullmatch(caminho) or eh_email_demo(usuario.email):
+        return
+    if not get_settings().bloqueio_ativo:
+        # Sem o bloqueio geral, só trava quem a Gestão bloqueou na mão
+        # (consulta leve: uma coluna).
+        definir_prestador_atual(db, prestador_id)
+        if db.query(Assinatura.bloqueada_em).filter_by(prestador_id=prestador_id).scalar() is not None:
+            raise HTTPException(status_code=402, detail=MENSAGEM_BLOQUEIO["bloqueada"])
         return
     s = situacao(db, prestador_id)
     if s["bloqueado"]:

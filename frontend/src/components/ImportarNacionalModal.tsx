@@ -51,6 +51,40 @@ export function padrao(g: GrupoImportacao): Regra {
   return { acao: g.pre_cadastrado ? "novo" : "ignorar", vinculo_id: null }
 }
 
+/** 08/10/2026 — "na hora de importar a pessoa possa buscar, ordenar e
+ * selecionar o que ela quer importar, por exemplo ordenar por valor". */
+export type OrdemImportacao = "valor" | "notas" | "nome" | "recente"
+export const ORDENS_IMPORTACAO: { id: OrdemImportacao; rotulo: string }[] = [
+  { id: "valor", rotulo: "Maior valor" },
+  { id: "notas", rotulo: "Mais notas" },
+  { id: "recente", rotulo: "Nota mais recente" },
+  { id: "nome", rotulo: "Nome (A–Z)" },
+]
+
+export function ordenarGrupos(grupos: GrupoImportacao[], ordem: OrdemImportacao): GrupoImportacao[] {
+  const ultima = (g: GrupoImportacao) => [...g.competencias].sort().pop() ?? ""
+  const por: Record<OrdemImportacao, (a: GrupoImportacao, b: GrupoImportacao) => number> = {
+    valor: (a, b) => b.total - a.total,
+    notas: (a, b) => b.quantidade - a.quantidade || b.total - a.total,
+    recente: (a, b) => ultima(b).localeCompare(ultima(a)) || b.total - a.total,
+    nome: (a, b) => a.nome.localeCompare(b.nome, "pt-BR"),
+  }
+  return [...grupos].sort(por[ordem])
+}
+
+export function buscarGrupos(grupos: GrupoImportacao[], busca: string): GrupoImportacao[] {
+  const termo = busca.trim().toLowerCase()
+  if (!termo) return grupos
+  const digitos = termo.replace(/\D/g, "")
+  return grupos.filter(
+    (g) =>
+      g.nome.toLowerCase().includes(termo) ||
+      (digitos.length > 0 && g.documento.includes(digitos)) ||
+      (g.intermediario ?? "").toLowerCase().includes(termo) ||
+      (g.descricao_exemplo ?? "").toLowerCase().includes(termo),
+  )
+}
+
 function valorSelect(r: Regra): string {
   if (r.acao === "vinculo" || r.acao === "avulsa") return `${r.acao}:${r.vinculo_id ?? ""}`
   return r.acao
@@ -104,6 +138,7 @@ export function ImportarNacionalModal({ onClose, onConcluido }: { onClose: () =>
   // Filtros e ação em massa da revisão.
   const [busca, setBusca] = useState("")
   const [soSemCadastro, setSoSemCadastro] = useState(false)
+  const [ordem, setOrdem] = useState<OrdemImportacao>("valor")
   const [escopoMassa, setEscopoMassa] = useState<"sem_cadastro" | "pessoas">("sem_cadastro")
   const [destinoEscolhido, setDestinoMassa] = useState("")
 
@@ -190,20 +225,26 @@ export function ImportarNacionalModal({ onClose, onConcluido }: { onClose: () =>
 
   const grupos = useMemo(() => previa?.grupos ?? [], [previa])
 
-  const visiveis = useMemo(() => {
-    const termo = busca.trim().toLowerCase()
-    const digitos = termo.replace(/\D/g, "")
-    return grupos.filter((g) => {
-      if (soSemCadastro && !semCadastro(g)) return false
-      if (!termo) return true
-      return (
-        g.nome.toLowerCase().includes(termo) ||
-        (digitos.length > 0 && g.documento.includes(digitos)) ||
-        (g.intermediario ?? "").toLowerCase().includes(termo) ||
-        (g.descricao_exemplo ?? "").toLowerCase().includes(termo)
-      )
+  const visiveis = useMemo(
+    () => ordenarGrupos(buscarGrupos(grupos, busca).filter((g) => !soSemCadastro || semCadastro(g)), ordem),
+    [grupos, busca, soSemCadastro, ordem],
+  )
+
+  /** Marca (ou desmarca) de uma vez tudo o que está na tela depois da busca. */
+  function marcarVisiveis(importar: boolean) {
+    setRegras((atual) => {
+      const nova = { ...atual }
+      visiveis.forEach((g) => {
+        if (!importar) nova[g.documento] = { acao: "ignorar", vinculo_id: null }
+        else if ((nova[g.documento] ?? padrao(g)).acao === "ignorar") {
+          nova[g.documento] =
+            (g.sugestao === "vinculo" || g.sugestao === "avulsa") && g.vinculo_id ? { acao: g.sugestao, vinculo_id: g.vinculo_id } : { acao: "novo", vinculo_id: null }
+        }
+      })
+      return nova
     })
-  }, [grupos, busca, soSemCadastro])
+  }
+  const visiveisMarcados = visiveis.filter((g) => (regras[g.documento] ?? padrao(g)).acao !== "ignorar").length
 
   const alvoMassa = useMemo(
     () => visiveis.filter((g) => semCadastro(g) && (escopoMassa === "sem_cadastro" || pessoaOuExterior(g))),
@@ -423,6 +464,27 @@ export function ImportarNacionalModal({ onClose, onConcluido }: { onClose: () =>
                   />
                   Só os sem tomador cadastrado ({grupos.filter(semCadastro).length})
                 </label>
+                <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                  Ordenar
+                  <select value={ordem} onChange={(e) => setOrdem(e.target.value as OrdemImportacao)} className={`${SELECT} w-auto`} aria-label="Ordenar os tomadores">
+                    {ORDENS_IMPORTACAO.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.rotulo}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <span>
+                  {visiveisMarcados} de {visiveis.length} {busca || soSemCadastro ? "na busca" : ""} marcados pra importar
+                </span>
+                <Button type="button" variant="ghost" className="px-2.5 py-1 text-xs" disabled={visiveis.length === 0} onClick={() => marcarVisiveis(true)}>
+                  Importar {busca || soSemCadastro ? `os ${visiveis.length} da busca` : "todos"}
+                </Button>
+                <Button type="button" variant="ghost" className="px-2.5 py-1 text-xs" disabled={visiveis.length === 0} onClick={() => marcarVisiveis(false)}>
+                  Não importar {busca || soSemCadastro ? "os da busca" : "nenhum"}
+                </Button>
               </div>
 
               {/* Ação em massa — pensada pras dezenas de vendedores da Shopee. */}

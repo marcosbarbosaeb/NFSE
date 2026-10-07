@@ -45,11 +45,16 @@ _CONTAGENS = text("""
       (SELECT count(*) FROM emissao WHERE estado = 'confirmado' AND origem <> 'importada' AND tomador_documento IS NOT NULL AND criado_em >= :mes) AS notas_lote_mes,
       (SELECT count(*) FROM emissao WHERE origem = 'importada') AS notas_importadas,
       (SELECT max(criado_em) FROM emissao WHERE origem <> 'importada') AS ultima_nota,
-      (SELECT count(*) FROM envio WHERE canal IN ('email', 'email_geral') AND status = 'enviado' AND criado_em >= :mes) AS emails_mes,
-      (SELECT count(*) FROM envio WHERE canal IN ('email', 'email_geral') AND status = 'enviado') AS emails_total,
+      -- `envio` não tem RLS própria (não carrega prestador_id): sem passar pela
+      -- nota, a contagem pegava os envios de TODAS as contas em cada conta (08/10/2026).
+      (SELECT count(*) FROM envio e JOIN emissao n ON n.id = e.emissao_id
+         WHERE e.canal IN ('email', 'email_geral') AND e.status = 'enviado' AND e.criado_em >= :mes) AS emails_mes,
+      (SELECT count(*) FROM envio e JOIN emissao n ON n.id = e.emissao_id
+         WHERE e.canal IN ('email', 'email_geral') AND e.status = 'enviado') AS emails_total,
       (SELECT count(*) FROM envio e JOIN emissao n ON n.id = e.emissao_id
          WHERE e.canal = 'email' AND e.status = 'enviado' AND e.criado_em >= :mes AND n.tomador_documento IS NOT NULL) AS emails_lote_mes,
-      (SELECT count(*) FROM envio WHERE canal IN ('email', 'email_geral') AND status = 'falha' AND criado_em >= :mes) AS emails_falha_mes,
+      (SELECT count(*) FROM envio e JOIN emissao n ON n.id = e.emissao_id
+         WHERE e.canal IN ('email', 'email_geral') AND e.status = 'falha' AND e.criado_em >= :mes) AS emails_falha_mes,
       (SELECT count(*) FROM pagamento_recebido WHERE criado_em >= :mes) + (SELECT count(*) FROM despesa WHERE criado_em >= :mes) AS lancamentos_financeiros_mes,
       (SELECT count(*) FROM lancamento_bancario WHERE criado_em >= :mes) AS linhas_extrato_mes,
       (SELECT count(*) FROM anotacao) AS anotacoes,
@@ -70,6 +75,7 @@ def _acesso(empresa, agora: datetime.datetime) -> dict:
     assinatura = None if empresa["assinatura"] is None else SimpleNamespace(
         status=empresa["assinatura"], trial_termina_em=empresa["trial_termina_em"],
         liberado_ate=empresa["liberado_ate"], liberado_sempre=bool(empresa["liberado_sempre"]),
+        bloqueada_em=empresa["bloqueada_em"],
     )
     s = situacao_do_acesso(assinatura, agora)
     return {**s, "ate": _data(s["ate"])}
@@ -114,7 +120,8 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
             empresa = db.execute(text("""
                 SELECT p.razao_social, p.cpf_cnpj, p.cod_municipio, p.criado_em, p.demo, p.modo_teste, p.modulos, p.so_contador,
                        (p.drive_token IS NOT NULL) AS drive,
-                       a.status AS assinatura, a.plano, a.trial_termina_em, a.liberado_ate, a.liberado_sempre, a.liberado_obs,
+                       a.status AS assinatura, a.plano, a.trial_termina_em, a.liberado_ate, a.liberado_sempre, a.liberado_obs, a.bloqueada_em, a.bloqueada_obs,
+                       p.telefone, p.email AS email_empresa,
                        c.validade AS certificado_validade, (c.id IS NOT NULL) AS tem_certificado,
                        (SELECT count(*) FROM indicacao i WHERE i.indicador_id = p.id) AS indicou,
                        (SELECT count(*) FROM indicacao i WHERE i.indicador_id = p.id AND i.status = 'ativa') AS indicou_ativos,
@@ -143,6 +150,9 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
                 "assinatura": empresa["assinatura"], "plano": empresa["plano"], "trial_termina_em": _data(empresa["trial_termina_em"]),
                 # liberado? por quê? (teste, assinatura, liberação da gestão...)
                 "acesso": acesso, "liberado_obs": empresa["liberado_obs"],
+                "bloqueada_em": _data(empresa["bloqueada_em"]), "bloqueada_obs": empresa["bloqueada_obs"],
+                # contato da empresa (cadastro dela) — pra falar com o cliente
+                "telefone": empresa["telefone"], "email_empresa": empresa["email_empresa"],
                 "contadores": contadores.get(prestador_id, 0),
                 "certificado": "falta" if not empresa["tem_certificado"] else ("vencido" if validade is not None and validade < hoje else "ok"),
                 "logins": [

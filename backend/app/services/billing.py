@@ -318,7 +318,7 @@ def _dias_ate(fim: datetime.datetime, agora: datetime.datetime) -> int:
 def situacao_do_acesso(assinatura: Assinatura | None, agora: datetime.datetime | None = None) -> dict:
     """"Esta empresa pode usar tudo?" e por quê. `motivo`:
     cortesia | assinatura | pagamento_pendente | liberacao | teste (liberados)
-    teste_acabou | cancelada | sem_assinatura (não liberados).
+    teste_acabou | cancelada | sem_assinatura | bloqueada (não liberados).
 
     - "pagamento_pendente": o cartão falhou e o Stripe ainda está tentando;
       não trava (quando ele desiste, a assinatura vira "cancelada").
@@ -328,6 +328,9 @@ def situacao_do_acesso(assinatura: Assinatura | None, agora: datetime.datetime |
     agora = agora or datetime.datetime.now(datetime.timezone.utc)
     if assinatura is None:
         return {"liberado": False, "motivo": "sem_assinatura", "ate": None, "dias_restantes": None}
+    if getattr(assinatura, "bloqueada_em", None) is not None:
+        # A Gestão bloqueou esta conta na mão: passa por cima de tudo.
+        return {"liberado": False, "motivo": "bloqueada", "ate": None, "dias_restantes": None}
     if assinatura.status == "cortesia":
         return {"liberado": True, "motivo": "cortesia", "ate": None, "dias_restantes": None}
     if assinatura.status == "ativa":
@@ -362,6 +365,19 @@ def tirar_liberacao(assinatura: Assinatura) -> None:
     assinatura.liberado_sempre = False
     assinatura.liberado_ate = None
     assinatura.liberado_obs = None
+
+
+def bloquear(assinatura: Assinatura, obs: str | None = None) -> None:
+    """Gestão: bloqueia a conta (fica só pra consulta), valha o que valer —
+    teste, liberação, assinatura. Não depende de `BLOQUEIO_ATIVO`."""
+    assinatura.bloqueada_em = datetime.datetime.now(datetime.timezone.utc)
+    assinatura.bloqueada_obs = (obs or "").strip()[:200] or None
+
+
+def desbloquear(assinatura: Assinatura) -> None:
+    assinatura.bloqueada_em = None
+    assinatura.bloqueada_obs = None
+
 
 
 def _obter_ou_criar_customer(assinatura: Assinatura, prestador: Prestador, email: str) -> str:

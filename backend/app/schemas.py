@@ -357,6 +357,9 @@ class EmissaoResumoLinha(BaseModel):
     erro_detalhe: str | None = None
     # Linha das notas de vendedores da Shopee (pagamento indireto).
     vendedores: bool = False
+    # ...e quantas dessas notas já foram entregues ao vendedor (de quantas autorizadas).
+    enviadas: int | None = None
+    a_enviar: int | None = None
 
 
 class AtencaoItem(BaseModel):
@@ -404,6 +407,8 @@ class PendenciaItem(BaseModel):
     atrasada: bool = False
     # Linha que junta várias ("Gerar 8 notas"): cada uma, pra abrir na tela.
     itens: list["PendenciaItem"] | None = None
+    # O grupo já chega aberto na tela (o dia que vence primeiro).
+    aberto: bool = False
 
 
 class AgendaItem(BaseModel):
