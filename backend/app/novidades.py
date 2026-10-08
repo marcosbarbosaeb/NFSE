@@ -23,8 +23,19 @@ VERSOES: list[dict] = [
     {
         "versao": "2026.10.5",
         "data": "2026-10-08",
-        "resumo": "Notas pra empresas de fora do Brasil: nome em outro alfabeto e empresa sem número fiscal.",
+        "resumo": "Calendário novo, gráficos que mudam de forma, listas mais curtas e notas pra empresas de fora.",
         "itens": [
+            {"perfil": "todos", "titulo": "Calendário: tudo do dia num clique", "link": "/app/calendario",
+             "texto": "Clique num dia e veja tudo o que está marcado nele: dá pra editar seus eventos, mudar a data de um prazo (vale também "
+                      "em Próximos passos) e ir direto pra tela onde ele se resolve. Cada tipo de evento ganhou um ícone, além da cor."},
+            {"perfil": "empresa", "titulo": "Escolha o tipo de gráfico", "link": "/app/financeiro",
+             "texto": "Em “Para onde vai o dinheiro” e “Recebido por cliente”, escolha entre barras, rosca ou faixa. Eu lembro da sua escolha."},
+            {"perfil": "empresa", "titulo": "Conciliação abre onde está a pendência", "link": "/app/financeiro/conciliacao",
+             "texto": "Clicar nas notas de um mês, no Fechamento do mês, abre a lista já naquele mês e nas notas que faltam."},
+            {"perfil": "empresa", "titulo": "Listas de notas mais curtas", "link": "/app/nfse/lote",
+             "texto": "Notas em lote e NFS-e mostram 10 notas por vez, com “Carregar mais” no fim. Selecionar todas continua valendo pra tudo o que o filtro achou."},
+            {"perfil": "empresa", "titulo": "Vendedores na Visão geral",
+             "texto": "A linha das notas dos vendedores mostra quantas estão assinadas, autorizadas e enviadas, como as outras notas."},
             {"perfil": "empresa", "titulo": "PDF da nota com nome em chinês, japonês, coreano...",
              "texto": "Tomador de fora com o nome escrito em outro alfabeto agora sai certo no PDF da nota (antes apareciam quadradinhos "
                       "no lugar das letras). No XML sempre saiu certo."},

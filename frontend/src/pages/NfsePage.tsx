@@ -68,6 +68,9 @@ const MAX_IDS_ZIP = 250
 
 // Painel de lote fechado pela pessoa não volta a aparecer ao recarregar a página.
 const CHAVE_LOTES_FECHADOS = "agenteana:lotes-fechados"
+/** Quantas notas a lista mostra de cada vez. */
+const POR_PAGINA = 10
+
 function lotesFechados(): string[] {
   try {
     return JSON.parse(sessionStorage.getItem(CHAVE_LOTES_FECHADOS) ?? "[]")
@@ -279,6 +282,13 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
     const falhas = doMes.filter((e) => e.envio_status === "falha").length
     return { total: doMes.length, enviados, falhas, semEnvio: doMes.length - enviados - falhas }
   }, [emissoes, vinculoFiltro, competenciaFiltro])
+
+  // A lista mostra as primeiras notas e um "Carregar mais" no fim (08/10/2026:
+  // "não precisa listar todas as notas... cerca de dez já está bom"). A seleção
+  // e as ações continuam valendo pra tudo o que o filtro achou.
+  const [limite, setLimite] = useState(POR_PAGINA)
+  useEffect(() => setLimite(POR_PAGINA), [ano, vinculoFiltro, competenciaFiltro, busca, soPendentes, modo])
+  const mostradas = filtradas.slice(0, limite)
 
   // Só conta (e age sobre) o que está visível: esconder uma nota com a busca
   // tira ela da ação, sem surpresa.
@@ -747,7 +757,7 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
               </tr>
             </thead>
             <tbody>
-              {filtradas.map((e) => (
+              {mostradas.map((e) => (
                 <tr
                   key={e.id}
                   className={`border-b border-slate-50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/50 ${
@@ -800,6 +810,21 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
               )}
             </tbody>
           </table>
+          </div>
+        )}
+        {emissoes !== null && filtradas.length > mostradas.length && (
+          <div className="mt-3 flex flex-col items-center gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-between dark:border-slate-700/60">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Mostrando {mostradas.length} de {filtradas.length} notas
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setLimite((n) => n + POR_PAGINA)}>
+                Carregar mais {Math.min(POR_PAGINA, filtradas.length - mostradas.length)}
+              </Button>
+              <Button variant="ghost" onClick={() => setLimite(filtradas.length)}>
+                Mostrar todas
+              </Button>
+            </div>
           </div>
         )}
       </Card>

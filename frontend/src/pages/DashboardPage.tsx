@@ -54,6 +54,14 @@ function badgeEnvio(status: string | null, linha?: EmissaoResumoLinha) {
 }
 
 
+/** Linha que junta as notas dos vendedores: "Assinadas (464)" quando todas
+ * estão, senão "120 de 464 assinadas". */
+function badgeDoGrupo(feitas: number, total: number, todas: string, parte: string) {
+  if (total > 0 && feitas >= total) return <Badge variant="success">{todas} ({total})</Badge>
+  if (feitas === 0) return <Badge variant="neutral">Nenhuma {parte.replace(/s$/, "")}</Badge>
+  return <Badge variant="warning">{feitas} de {total} {parte}</Badge>
+}
+
 function notaDaLinha(l: EmissaoResumoLinha): NotaParaAcoes {
   return { id: l.emissao_id, estado: l.estado, envio_status: l.envio_status, tem_pdf: l.tem_pdf, tem_email: l.tem_email, homologacao: l.homologacao, envio_forma: l.envio_forma, vinculo_id: l.vinculo_id, erro_detalhe: l.erro_detalhe, erro_corrigivel: l.erro_corrigivel }
 }
@@ -292,7 +300,18 @@ export function DashboardPage() {
                             <p className="text-xs text-slate-400 dark:text-slate-500">{linha.tomador_razao_social}</p>
                           </td>
                           <td className="py-3 text-slate-600 dark:text-slate-300">{formatBRL(linha.valor)}</td>
-                          {(linha.quantidade ?? 1) > 1 ? (
+                          {linha.vendedores && linha.total_grupo != null ? (
+                            <>
+                              <td className="py-3">{badgeDoGrupo(linha.assinadas ?? 0, linha.total_grupo, "Assinadas", "assinadas")}</td>
+                              <td className="py-3">
+                                <span className="inline-flex flex-col items-start gap-1">
+                                  {badgeDoGrupo(linha.autorizadas ?? 0, linha.total_grupo, "Autorizadas", "autorizadas")}
+                                  {(linha.recusadas ?? 0) > 0 && <Badge variant="danger">{linha.recusadas} recusada{linha.recusadas === 1 ? "" : "s"}</Badge>}
+                                </span>
+                              </td>
+                              <td className="py-3">{badgeEnvio(linha.envio_status, linha)}</td>
+                            </>
+                          ) : (linha.quantidade ?? 1) > 1 ? (
                             <>
                               <td className="py-3" colSpan={2}>
                                 {badgeEstadoNfse(linha.estado, linha.estado_label)}

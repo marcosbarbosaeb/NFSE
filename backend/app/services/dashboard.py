@@ -259,12 +259,18 @@ def resumo_mes(
                     ).scalar() or 0
                 )
             envio_do_grupo = None if not entregues else "enviado" if entregues >= len(autorizadas) else "parcial"
+            # "Deixe ela com Assinada, Autorizada e o Enviada (x)" (08/10/2026): a
+            # linha mostra as mesmas três colunas das outras, com a conta do grupo.
+            ativas = [e for e in vendedores if e.estado != "substituida"]
+            assinadas = sum(1 for e in ativas if e.estado in ("assinado", "submetido", "confirmado", "erro"))
+            recusadas = sum(1 for e in ativas if e.estado == "erro")
             emissoes.append({
                 "emissao_id": vendedores[0].id, "vinculo_id": vinculo.id, "quantidade": len(vendedores),
                 "apelido": f"{vinculo.apelido} — vendedores ({len(vendedores)} notas)", "tomador_razao_social": "vários vendedores",
                 "competencia": competencia, "valor": float(sum((e.valor for e in vendedores), Decimal(0))),
                 "estado": vendedores[0].estado, "estado_label": ESTADO_NFSE_LABEL.get(vendedores[0].estado, vendedores[0].estado),
                 "envio_status": envio_do_grupo, "enviadas": int(entregues), "a_enviar": len(autorizadas),
+                "total_grupo": len(ativas), "assinadas": assinadas, "autorizadas": len(autorizadas), "recusadas": recusadas,
                 "tem_pdf": False, "tem_email": False,
                 "homologacao": (vendedores[0].tomador_snapshot or {}).get("tpAmb") == "2", "envio_forma": "email",
                 "vendedores": True,

@@ -266,6 +266,11 @@ export interface EmissaoResumoLinha {
   /** Linha de vendedores: quantas notas já foram entregues, de quantas autorizadas. */
   enviadas?: number | null
   a_enviar?: number | null
+  /** Linha de vendedores: a conta do grupo pras colunas Assinatura e Prefeitura. */
+  total_grupo?: number
+  assinadas?: number
+  autorizadas?: number
+  recusadas?: number
   tem_pdf?: boolean
   tem_email?: boolean
   homologacao?: boolean

@@ -208,3 +208,26 @@ def test_nota_pra_empresa_de_fora_sem_nif_sai_com_o_motivo_e_vale_no_xsd(client,
     # mudou o motivo no cadastro depois: a nota pronta avisa
     vinculo.tomador.motivo_sem_nif = "2"
     assert "cadastro_mudou" in {p["codigo"] for p in conferir_emissao(db, emissao)}
+
+
+# --- 4. Visão geral: linha dos vendedores com Assinadas / Autorizadas / Enviadas --
+
+
+def test_linha_dos_vendedores_conta_assinadas_autorizadas_e_recusadas(db, prestador_teste, vinculo_teste):
+    """"Shopee vendedores: deixe ela com Assinada, Autorizada e o Enviada (x)"."""
+    from decimal import Decimal
+
+    from app.services.dashboard import resumo_mes
+
+    estados = ["confirmado", "confirmado", "assinado", "erro", "montado", "substituida"]
+    for n, estado in enumerate(estados):
+        db.add(Emissao(
+            id=uuid.uuid4(), prestador_id=prestador_teste.id, prestador_tomador_id=vinculo_teste.id, competencia="2026-10",
+            serie="5", n_dps=900 + n, estado=estado, valor=Decimal("10.00"), origem="ana",
+            tomador_documento=f"0000000009{n}", tomador_snapshot={"razao_social": f"Vendedor {n}"},
+        ))
+    db.flush()
+    linha = next(l for l in resumo_mes(db, prestador_teste.id, hoje=datetime.date(2026, 10, 8))["emissoes"] if l.get("vendedores"))
+    # a substituída não conta; montado = ainda não assinada
+    assert (linha["total_grupo"], linha["assinadas"], linha["autorizadas"], linha["recusadas"]) == (5, 4, 2, 1)
+    assert (linha["a_enviar"], linha["enviadas"]) == (2, 0)

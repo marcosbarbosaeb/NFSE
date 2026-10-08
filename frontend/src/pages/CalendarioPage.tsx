@@ -1,7 +1,8 @@
 import { CaixaBusca } from "../components/ui/CaixaBusca"
 import { MoedaField } from "../components/ui/CampoMoeda"
-import { Plus, RotateCcw } from "lucide-react"
+import { Bell, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, FileText, type LucideIcon, Pencil, Percent, Plus, RotateCcw, Wallet } from "lucide-react"
 import { type FormEvent, useEffect, useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { Field, FieldWrap } from "../components/ui/Field"
@@ -17,12 +18,36 @@ const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
 // estão definidos em src/index.css pra essas duas escalas (ver @theme) — -500
 // só existe pra primary. Um bg-warning-500/bg-success-500 aqui renderizaria
 // sem cor nenhuma (bolinha invisível), erro encontrado na 1ª verificação visual.
-const ESTILO_EVENTO: Record<TipoEventoCalendario, { dot: string; chip: string; label: string }> = {
-  prazo_emissao: { dot: "bg-warning-600", chip: "bg-warning-50 text-warning-700", label: "Dia de gerar a nota" },
-  recebimento_previsto: { dot: "bg-primary-600", chip: "bg-primary-50 text-primary-700", label: "Previsão de recebimento" },
-  recebimento_confirmado: { dot: "bg-success-600", chip: "bg-success-50 text-success-700", label: "Recebimento confirmado" },
-  revisar_aliquota: { dot: "bg-slate-500", chip: "bg-slate-100 text-slate-700", label: "Revisar alíquota do Simples Nacional" },
-  manual: { dot: "bg-accent-600", chip: "bg-accent-50 text-accent-700", label: "Evento (meu)" },
+// 08/10/2026: "algum símbolo além do código de cores" — cada tipo tem também
+// um ícone, na legenda, nos eventos da grade e no painel do dia.
+const ESTILO_EVENTO: Record<TipoEventoCalendario, { dot: string; chip: string; label: string; Icone: LucideIcon }> = {
+  prazo_emissao: { dot: "bg-warning-600", chip: "bg-warning-50 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300", label: "Dia de gerar a nota", Icone: FileText },
+  recebimento_previsto: { dot: "bg-primary-600", chip: "bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-200", label: "Previsão de recebimento", Icone: CalendarClock },
+  recebimento_confirmado: { dot: "bg-success-600", chip: "bg-success-50 text-success-700 dark:bg-success-900/30 dark:text-success-300", label: "Recebimento confirmado", Icone: CheckCircle2 },
+  revisar_aliquota: { dot: "bg-slate-500", chip: "bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200", label: "Revisar alíquota do Simples Nacional", Icone: Percent },
+  manual: { dot: "bg-accent-600", chip: "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-200", label: "Evento (meu)", Icone: Bell },
+}
+
+function nomeDoEvento(ev: EventoCalendario): string {
+  return ev.tipo === "manual" ? ev.titulo : (ev.apelido ?? ev.titulo)
+}
+
+function iconeDoEvento(ev: EventoCalendario): LucideIcon {
+  if (ev.tipo === "manual" && ev.categoria === "recebimento_previsto") return Wallet
+  if (ev.tipo === "manual" && ev.categoria === "prazo_emissao") return FileText
+  return ESTILO_EVENTO[ev.tipo].Icone
+}
+
+/** O que dá pra fazer com o evento fora do calendário (a "outra ponta"). */
+function acaoDoEvento(ev: EventoCalendario): { rotulo: string; link: string } | null {
+  if (ev.tipo === "prazo_emissao" && ev.vinculo_id) {
+    const competencia = ev.chave?.split(":")[1]
+    return { rotulo: "Gerar a nota", link: `/app/nfse?gerar=${ev.vinculo_id}${competencia ? `&competencia=${competencia}` : ""}` }
+  }
+  if (ev.tipo === "recebimento_previsto") return { rotulo: "Conferir na conciliação", link: "/app/financeiro/conciliacao?parte=notas&filtro=abertas" }
+  if (ev.tipo === "recebimento_confirmado") return { rotulo: "Ver no Financeiro", link: "/app/financeiro" }
+  if (ev.tipo === "revisar_aliquota") return { rotulo: "Revisar a alíquota", link: "/app/empresa?aba=emitente" }
+  return null
 }
 
 // Eventos manuais herdam a cor do tipo que representam (uma previsão de
@@ -73,6 +98,23 @@ export function CalendarioPage() {
   const [modalEvento, setModalEvento] = useState<string | EventoCalendario | null>(null)
   // Alerta calculado clicado -> modal de ajuste (só esta vez / regra).
   const [modalAjuste, setModalAjuste] = useState<EventoCalendario | null>(null)
+  // 08/10/2026: "quando a pessoa clicar no dia ela tem que poder editar todos
+  // os eventos marcados para aquele dia". Clicar no dia abre o painel do dia;
+  // editar um evento fecha o painel e, ao terminar, volta pra ele.
+  const [diaAberto, setDiaAberto] = useState<string | null>(null)
+  const [voltarAoDia, setVoltarAoDia] = useState<string | null>(null)
+  function editarDoDia(ev: EventoCalendario) {
+    setVoltarAoDia(ev.data)
+    setDiaAberto(null)
+    if (ev.tipo === "manual") setModalEvento(ev)
+    else setModalAjuste(ev)
+  }
+  function fecharEdicao() {
+    setModalEvento(null)
+    setModalAjuste(null)
+    if (voltarAoDia) setDiaAberto(voltarAoDia)
+    setVoltarAoDia(null)
+  }
   const [vinculos, setVinculos] = useState<VinculoResumo[]>([])
   useEffect(() => {
     api.get<VinculoResumo[]>("/vinculos").then(setVinculos).catch(() => {})
@@ -138,16 +180,18 @@ export function CalendarioPage() {
               type="button"
               onClick={() => setCompetencia((c) => deslocarCompetencia(c, -1))}
               className="rounded px-2 py-0.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+              aria-label="Mês anterior"
             >
-              ‹
+              <ChevronLeft size={16} />
             </button>
             <span className="min-w-[9rem] text-center font-medium text-slate-700 dark:text-slate-300">{formatCompetenciaLonga(competencia)}</span>
             <button
               type="button"
               onClick={() => setCompetencia((c) => deslocarCompetencia(c, 1))}
               className="rounded px-2 py-0.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+              aria-label="Próximo mês"
             >
-              ›
+              <ChevronRight size={16} />
             </button>
           </div>
           <Button type="button" variant="accent" onClick={() => setModalEvento(paraISO(new Date()))}>
@@ -162,8 +206,10 @@ export function CalendarioPage() {
         {(Object.entries(ESTILO_EVENTO) as [TipoEventoCalendario, (typeof ESTILO_EVENTO)[TipoEventoCalendario]][])
           .filter(([tipo]) => financeiro || !tipo.startsWith("recebimento"))
           .map(([tipo, estilo]) => (
-            <div key={tipo} className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-              <span className={`h-2 w-2 rounded-full ${estilo.dot}`} />
+            <div key={tipo} className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+              <span className={`inline-flex h-5 w-5 items-center justify-center rounded-md ${estilo.chip}`} aria-hidden>
+                <estilo.Icone size={12} />
+              </span>
               {estilo.label}
             </div>
           )
@@ -185,50 +231,61 @@ export function CalendarioPage() {
             const eventos = eventosPorDia.get(iso) ?? []
             const ehHoje = iso === hojeISO
             return (
-              <div
+              <button
+                type="button"
                 key={iso}
-                onClick={() => setModalEvento(iso)}
-                className={`group min-h-[7rem] cursor-pointer border-b border-r border-slate-100 dark:border-slate-700/60 p-2 [&:nth-child(7n)]:border-r-0 hover:bg-slate-50 dark:hover:bg-slate-700/40 ${
-                  doMes ? "bg-white dark:bg-slate-800" : "bg-slate-50/60"
-                }`}
+                onClick={() => setDiaAberto(iso)}
+                aria-label={`${dataBR(iso)}: ${eventos.length === 0 ? "nenhum evento" : `${eventos.length} ${eventos.length === 1 ? "evento" : "eventos"}`}. Abrir o dia`}
+                className={`group flex min-h-[5.5rem] flex-col border-b border-r border-slate-100 p-1.5 text-left align-top [&:nth-child(7n)]:border-r-0 hover:bg-slate-50 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-primary-500 sm:min-h-[7rem] sm:p-2 dark:border-slate-700/60 dark:hover:bg-slate-700/40 ${
+                  doMes ? "bg-white dark:bg-slate-800" : "bg-slate-50/60 dark:bg-slate-900/30"
+                } ${ehHoje ? "ring-2 ring-inset ring-primary-500/40" : ""}`}
               >
                 <div className="flex items-center justify-between">
                   <span
                     className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium ${
-                      ehHoje ? "bg-primary-600 text-white" : doMes ? "text-slate-700 dark:text-slate-300" : "text-slate-300"
+                      ehHoje ? "bg-primary-600 text-white" : doMes ? "text-slate-700 dark:text-slate-300" : "text-slate-300 dark:text-slate-600"
                     }`}
                   >
                     {data.getDate()}
                   </span>
-                  <Plus size={13} className="text-slate-300 opacity-0 group-hover:opacity-100 dark:text-slate-500" />
+                  {eventos.length > 0 ? (
+                    <span className="text-[10px] font-medium text-slate-400 sm:hidden dark:text-slate-500">{eventos.length}</span>
+                  ) : (
+                    <Plus size={13} className="text-slate-300 opacity-0 group-hover:opacity-100 dark:text-slate-500" />
+                  )}
                 </div>
-                <div className="mt-1 flex flex-col gap-1">
-                  {eventos.slice(0, 3).map((ev, i) => (
-                    <div
-                      key={i}
-                      title={
-                        (ev.descricao ? `${ev.titulo} — ${ev.descricao}` : ev.titulo) +
-                        (ev.ajustado && ev.data_original ? ` (data ajustada; original ${dataBR(ev.data_original)})` : "")
-                      }
-                      onClick={(e) => {
-                        if (ev.tipo === "manual") {
-                          e.stopPropagation()
-                          setModalEvento(ev)
-                        } else if (AJUSTAVEIS.includes(ev.tipo)) {
-                          e.stopPropagation()
-                          setModalAjuste(ev)
+                {/* celular: só os ícones; tela grande: ícone + nome */}
+                <div className="mt-1 flex flex-wrap gap-0.5 sm:hidden" aria-hidden>
+                  {eventos.slice(0, 4).map((ev, i) => {
+                    const Icone = iconeDoEvento(ev)
+                    return (
+                      <span key={i} className={`inline-flex h-4 w-4 items-center justify-center rounded ${estiloChip(ev)}`}>
+                        <Icone size={10} />
+                      </span>
+                    )
+                  })}
+                </div>
+                <div className="mt-1 hidden w-full flex-col gap-1 sm:flex" aria-hidden>
+                  {eventos.slice(0, 3).map((ev, i) => {
+                    const Icone = iconeDoEvento(ev)
+                    return (
+                      <span
+                        key={i}
+                        title={
+                          (ev.descricao ? `${ev.titulo} — ${ev.descricao}` : ev.titulo) +
+                          (ev.ajustado && ev.data_original ? ` (data ajustada; original ${dataBR(ev.data_original)})` : "")
                         }
-                      }}
-                      className={`truncate rounded px-1.5 py-0.5 text-[11px] font-medium ${estiloChip(ev)} ${ev.ajustado ? "italic" : ""}`}
-                    >
-                      {ev.ajustado && <RotateCcw size={9} className="mr-0.5 inline -translate-y-px" />}
-                      {ev.tipo === "manual" ? ev.titulo : (ev.apelido ?? ev.titulo)}
-                      {ev.valor != null && <span className="ml-1 opacity-70">{formatBRL(ev.valor)}</span>}
-                    </div>
-                  ))}
-                  {eventos.length > 3 && <span className="text-[11px] text-slate-400 dark:text-slate-500">+{eventos.length - 3} mais</span>}
+                        className={`flex min-w-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${estiloChip(ev)} ${ev.ajustado ? "italic" : ""}`}
+                      >
+                        <Icone size={11} className="shrink-0" />
+                        <span className="truncate">{ev.tipo === "manual" ? ev.titulo : (ev.apelido ?? ev.titulo)}</span>
+                        {ev.ajustado && <RotateCcw size={9} className="shrink-0" />}
+                      </span>
+                    )
+                  })}
+                  {eventos.length > 3 && <span className="text-[11px] font-medium text-primary-600 dark:text-primary-300">+{eventos.length - 3} mais</span>}
                 </div>
-              </div>
+              </button>
             )
           })}
         </div>
@@ -236,28 +293,129 @@ export function CalendarioPage() {
 
       {carregando && !calendario && <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>}
 
+      {diaAberto !== null && (
+        <DiaModal
+          dia={diaAberto}
+          eventos={eventosPorDia.get(diaAberto) ?? []}
+          onClose={() => setDiaAberto(null)}
+          onEditar={editarDoDia}
+          onNovo={() => {
+            setVoltarAoDia(diaAberto)
+            setDiaAberto(null)
+            setModalEvento(diaAberto)
+          }}
+        />
+      )}
       {modalEvento !== null && (
         <EventoModal
           alvo={modalEvento}
           vinculos={vinculos}
-          onClose={() => setModalEvento(null)}
+          onClose={fecharEdicao}
           onSalvo={() => {
-            setModalEvento(null)
             setRecarregarToken((t) => t + 1)
+            fecharEdicao()
           }}
         />
       )}
       {modalAjuste !== null && (
         <AjusteModal
           evento={modalAjuste}
-          onClose={() => setModalAjuste(null)}
+          onClose={fecharEdicao}
           onSalvo={() => {
-            setModalAjuste(null)
             setRecarregarToken((t) => t + 1)
+            fecharEdicao()
           }}
         />
       )}
     </div>
+  )
+}
+
+/** Tudo o que está marcado num dia: cada evento com o que dá pra fazer —
+ * editar (meus eventos), mover/ocultar/mudar a regra (alertas calculados;
+ * o ajuste vale também em Próximos passos da Visão geral) e ir pra tela onde
+ * ele se resolve. */
+function DiaModal({
+  dia,
+  eventos,
+  onClose,
+  onEditar,
+  onNovo,
+}: {
+  dia: string
+  eventos: EventoCalendario[]
+  onClose: () => void
+  onEditar: (ev: EventoCalendario) => void
+  onNovo: () => void
+}) {
+  const [a, m, d] = dia.split("-").map(Number)
+  const titulo = new Date(a, m - 1, d).toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })
+  return (
+    <Modal titulo={titulo.charAt(0).toUpperCase() + titulo.slice(1)} onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        {eventos.length === 0 ? (
+          <p className="rounded-lg bg-slate-50 px-4 py-6 text-center text-sm text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
+            Nada marcado neste dia.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {eventos.map((ev, i) => {
+              const Icone = iconeDoEvento(ev)
+              const editavel = ev.tipo === "manual" || AJUSTAVEIS.includes(ev.tipo)
+              const acao = acaoDoEvento(ev)
+              const rotuloTipo = ev.tipo === "manual" && ev.categoria ? ESTILO_CATEGORIA[ev.categoria].label : ESTILO_EVENTO[ev.tipo].label
+              return (
+                <li key={ev.id ?? ev.chave ?? i} className="flex items-start gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                  <span className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${estiloChip(ev)}`} aria-hidden>
+                    <Icone size={16} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    {nomeDoEvento(ev) !== rotuloTipo && <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{rotuloTipo}</p>}
+                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{nomeDoEvento(ev)}</p>
+                    {(ev.valor != null || ev.descricao || (ev.ajustado && ev.data_original)) && (
+                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                        {[
+                          ev.valor != null ? formatBRL(ev.valor) : null,
+                          ev.descricao || null,
+                          ev.ajustado && ev.data_original ? `data mudada (era ${dataBR(ev.data_original)})` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    )}
+                    {(editavel || acao) && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {editavel && (
+                          <Button type="button" variant="outline" className="!px-2.5 !py-1 text-xs" onClick={() => onEditar(ev)}>
+                            <Pencil size={12} /> {ev.tipo === "manual" ? "Editar" : "Mudar data ou regra"}
+                          </Button>
+                        )}
+                        {acao && (
+                          <Link
+                            to={acao.link}
+                            className="inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50 dark:text-primary-300 dark:hover:bg-primary-900/30"
+                          >
+                            {acao.rotulo} →
+                          </Link>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+        <div className="flex justify-between gap-3">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Fechar
+          </Button>
+          <Button type="button" variant="accent" onClick={onNovo}>
+            <Plus size={16} /> Novo evento neste dia
+          </Button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 

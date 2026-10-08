@@ -28,7 +28,16 @@ type Parte = "notas" | "extrato"
 const nomeDoMes = (competencia: string) => NOMES_MESES[Number(competencia.slice(5)) - 1]
 const plural = (n: number, um: string, varios: string) => `${n.toLocaleString("pt-BR")} ${n === 1 ? um : varios}`
 
-function Fechamento({ mes, comNotas, onIr }: { mes: FechamentoDoMes; comNotas: boolean; onIr: (parte: Parte) => void }) {
+function Fechamento({
+  mes,
+  comNotas,
+  onIr,
+}: {
+  mes: FechamentoDoMes
+  comNotas: boolean
+  /** Com `competencia`: abre a parte já naquele mês (e nas notas que faltam). */
+  onIr: (parte: Parte, competencia?: string, filtro?: FiltroNotas) => void
+}) {
   const ESTADOS = {
     fechado: { rotulo: "Fechado", cor: "text-success-700 dark:text-success-300", fundo: "border-success-100 bg-success-50/60 dark:border-success-900/40 dark:bg-success-900/20", Icone: CheckCircle2 },
     aguardando: { rotulo: "Aguardando pagamento", cor: "text-primary-700 dark:text-primary-300", fundo: "border-primary-100 bg-primary-50/60 dark:border-primary-900/40 dark:bg-primary-900/20", Icone: Clock },
@@ -51,8 +60,15 @@ function Fechamento({ mes, comNotas, onIr }: { mes: FechamentoDoMes; comNotas: b
       : mes.extrato_pendentes === 0
         ? `${plural(mes.extrato_linhas, "linha classificada", "linhas classificadas")}`
         : `${plural(mes.extrato_pendentes, "linha", "linhas")} sem classificar`
+  // "Quando clicar na pendência, já abra aparecendo ela" (08/10/2026): o clique
+  // nas notas leva pro mês do cartão, filtrado no que falta conferir.
+  const filtroDoMes: FiltroNotas =
+    mes.notas_atrasadas > 0 ? "atrasadas" : mes.diferencas > 0 ? "diferenca" : mes.notas_pagas < mes.notas ? "abertas" : "todas"
   const linha = (rotulo: string, texto: string, ok: boolean, parte: Parte) => (
-    <button type="button" onClick={() => onIr(parte)} className="flex w-full items-baseline gap-1.5 text-left text-xs hover:underline">
+    <button
+      type="button"
+      onClick={() => (parte === "notas" ? onIr(parte, mes.competencia, filtroDoMes) : onIr(parte))}
+      className="flex w-full items-baseline gap-1.5 text-left text-xs hover:underline">
       <span className={`h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full ${ok ? "bg-success-600" : "bg-warning-600"}`} aria-hidden />
       <span className="text-slate-500 dark:text-slate-400">{rotulo}:</span>
       <span className="text-slate-700 dark:text-slate-200">{texto}</span>
@@ -107,8 +123,15 @@ export function ConciliacaoPage() {
   const semNotas = resumo !== null && !resumo.notas.aplica
   const parte: Parte = pedida === "extrato" || pedida === "notas" ? pedida : semNotas ? "extrato" : "notas"
   const filtroInicial = ehFiltroNotas(params.get("filtro")) ? (params.get("filtro") as FiltroNotas) : undefined
+  const mesPedido = /^\d{4}-\d{2}$/.test(params.get("mes") ?? "") ? params.get("mes")! : undefined
 
-  function irPara(nova: Parte) {
+  function irPara(nova: Parte, competencia?: string, filtro?: FiltroNotas) {
+    if (nova === "notas" && competencia) {
+      setParams({ parte: "notas", mes: competencia, ...(filtro && filtro !== "todas" ? { filtro } : {}) }, { replace: true })
+      // desce até a lista, que fica embaixo dos cartões
+      window.setTimeout(() => document.getElementById("parte-notas")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80)
+      return
+    }
     setParams(nova === "notas" ? { parte: "notas" } : { parte: "extrato" }, { replace: true })
   }
 
@@ -226,8 +249,11 @@ export function ConciliacaoPage() {
           <p className="py-10 text-center text-sm text-slate-400">Carregando...</p>
         ) : parte === "notas" ? (
           <ConciliacaoNotas
+            // muda o mês/filtro pelo cartão: a lista recomeça já nele
+            key={`${mesPedido ?? ""}:${filtroInicial ?? ""}`}
             recarga={recarga}
             filtroInicial={filtroInicial}
+            mesInicial={mesPedido}
             onMudou={() => void carregarResumo()}
             onImportar={() => setImportando(true)}
           />

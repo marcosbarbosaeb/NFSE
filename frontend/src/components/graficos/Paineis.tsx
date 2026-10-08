@@ -8,6 +8,7 @@ import type { DashboardResumo, Despesa, Pagamento, ResumoFinanceiro } from "../.
 import { BarrasHorizontais, type ItemBarra } from "./BarrasHorizontais"
 import { CHAVE_LINHA, ColunasMensais } from "./ColunasMensais"
 import { CartaoGrafico, GraficoVazio } from "./base"
+import { RankingEmGrafico, SeletorDeGrafico, useTipoDeGrafico } from "./Fatias"
 
 /** Os gráficos que entram como cards na Visão geral e no Financeiro
  * (05/10/2026). Cada um é uma seção do PainelCards: a pessoa muda de lugar,
@@ -280,6 +281,7 @@ export function GraficoEntrouSaiu({
 /** "Para onde vai o dinheiro": despesas do período por categoria (sem as
  * retiradas — distribuição de lucro não é gasto). Acompanha o mês escolhido. */
 export function GraficoParaOndeVai({ despesas, rotuloPeriodo }: { despesas: Despesa[] | null; rotuloPeriodo: string }) {
+  const [tipo, setTipo] = useTipoDeGrafico("para-onde-vai")
   const porCategoria = new Map<string, number>()
   for (const d of despesas ?? []) {
     if (d.tipo === "retirada") continue
@@ -291,6 +293,7 @@ export function GraficoParaOndeVai({ despesas, rotuloPeriodo }: { despesas: Desp
   return (
     <CartaoGrafico
       periodo={`despesas de ${rotuloPeriodo}, por categoria · sem as retiradas`}
+      acao={itens.length > 0 ? <SeletorDeGrafico tipo={tipo} onTipo={setTipo} /> : undefined}
       resumo={
         maior && total > 0 ? (
           <>
@@ -305,7 +308,7 @@ export function GraficoParaOndeVai({ despesas, rotuloPeriodo }: { despesas: Desp
       ) : itens.length === 0 ? (
         <GraficoVazio>Nenhuma despesa em {rotuloPeriodo} ainda.</GraficoVazio>
       ) : (
-        <BarrasHorizontais titulo={`Despesas de ${rotuloPeriodo} por categoria, da maior pra menor`} itens={itens} maximo={7} rotuloOutros="Outras" total={total} />
+        <RankingEmGrafico tipo={tipo} titulo={`Despesas de ${rotuloPeriodo} por categoria, da maior pra menor`} itens={itens} maximo={7} rotuloOutros="Outras" total={total} />
       )}
     </CartaoGrafico>
   )
@@ -314,6 +317,7 @@ export function GraficoParaOndeVai({ despesas, rotuloPeriodo }: { despesas: Desp
 /** "Recebido por cliente": os recebimentos do período somados por cliente —
  * os mesmos da lista "Recebimentos" da tela (pelo dia em que o dinheiro caiu). */
 export function GraficoRecebidoPorCliente({ pagamentos, rotuloPeriodo }: { pagamentos: Pagamento[] | null; rotuloPeriodo: string }) {
+  const [tipo, setTipo] = useTipoDeGrafico("recebido-por-cliente")
   const porCliente = new Map<string, { nome: string; valor: number; vezes: number }>()
   for (const p of pagamentos ?? []) {
     const chave = p.vinculo_id ?? p.apelido
@@ -330,6 +334,7 @@ export function GraficoRecebidoPorCliente({ pagamentos, rotuloPeriodo }: { pagam
   return (
     <CartaoGrafico
       periodo={`recebimentos de ${rotuloPeriodo}, por cliente · pelo dia em que o dinheiro caiu`}
+      acao={itens.length > 0 ? <SeletorDeGrafico tipo={tipo} onTipo={setTipo} /> : undefined}
       resumo={
         maior && total > 0 ? (
           <>
@@ -344,7 +349,7 @@ export function GraficoRecebidoPorCliente({ pagamentos, rotuloPeriodo }: { pagam
       ) : itens.length === 0 ? (
         <GraficoVazio>Nenhum recebimento em {rotuloPeriodo} ainda.</GraficoVazio>
       ) : (
-        <BarrasHorizontais titulo={`Recebido de ${rotuloPeriodo} por cliente, do maior pro menor`} itens={itens} maximo={6} total={total} />
+        <RankingEmGrafico tipo={tipo} titulo={`Recebido de ${rotuloPeriodo} por cliente, do maior pro menor`} itens={itens} maximo={6} total={total} />
       )}
     </CartaoGrafico>
   )

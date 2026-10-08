@@ -50,10 +50,13 @@ function consultaDoPeriodo(periodo: string): string {
 export function ConciliacaoNotas({
   recarga,
   filtroInicial,
+  mesInicial,
   onMudou,
   onImportar,
   onFiltro,
 }: {
+  /** AAAA-MM: abre só naquele mês (veio do cartão do "Fechamento do mês"). */
+  mesInicial?: string
   /** Muda quando um extrato novo foi importado: recarrega (as sugestões vêm dele). */
   recarga: number
   filtroInicial?: FiltroNotas
@@ -66,7 +69,7 @@ export function ConciliacaoNotas({
   const [erro, setErro] = useState<string | null>(null)
   const [feito, setFeito] = useState<string | null>(null)
   const [ocupado, setOcupado] = useState(false)
-  const [periodo, setPeriodo] = useState("3m")
+  const [periodo, setPeriodo] = useState(mesInicial ? `mes:${mesInicial}` : "3m")
   const [filtro, setFiltroLocal] = useState<FiltroNotas>(filtroInicial ?? "todas")
   const [busca, setBusca] = useState("")
   const [aberta, setAberta] = useState<string | null>(null)
@@ -197,8 +200,13 @@ export function ConciliacaoNotas({
       <option value="6m">Últimos 6 meses</option>
       <option value="ano">Este ano</option>
       <optgroup label="Um mês só">
-        {[0, 1, 2, 3, 4, 5].map((n) => {
-          const c = deslocarCompetencia(competenciaAtual(), -n)
+        {[
+          ...[0, 1, 2, 3, 4, 5].map((n) => deslocarCompetencia(competenciaAtual(), -n)),
+          // mês mais antigo pedido pelo cartão do fechamento
+          ...(periodo.startsWith("mes:") && !Array.from({ length: 6 }, (_, n) => deslocarCompetencia(competenciaAtual(), -n)).includes(periodo.slice(4))
+            ? [periodo.slice(4)]
+            : []),
+        ].map((c) => {
           return (
             <option key={c} value={`mes:${c}`}>
               {formatCompetenciaLonga(c)}

@@ -18,8 +18,23 @@ migração e variáveis novas anotadas abaixo.
 
 ## 2026.10.5 — 08/10/2026
 
-Três dúvidas que apareceram num concorrente, avaliadas na Ana.
+Lista de ajustes do Marcos + três dúvidas que apareceram num concorrente.
 
+- **Calendário** (`pages/CalendarioPage.tsx`): clicar no dia abre `DiaModal` com todos os eventos do dia — editar (manual),
+  "Mudar data ou regra" (calculados, o mesmo `AjusteModal`; o ajuste de `prazo_emissao` já valia nos Próximos passos) e um
+  link pra tela onde o evento se resolve. Ícone por tipo (legenda, grade e painel); no celular a grade mostra só os ícones.
+- **Gráficos com tipo escolhível** (`components/graficos/Fatias.tsx`): "Para onde vai o dinheiro" e "Recebido por cliente"
+  em barras, rosca ou faixa (no máximo 6 fatias, o resto vira Outros). Escolha guardada no navegador
+  (`agenteana:grafico:<id>`). Cores: 6 primeiras da paleta categórica de referência, validadas para vizinhas (claro/escuro).
+- **Conciliação**: o cartão do Fechamento do mês leva pra `?parte=notas&mes=AAAA-MM&filtro=...` (atrasadas, diferença ou
+  abertas); `ConciliacaoNotas` ganhou `mesInicial`.
+- **NFS-e / Notas em lote**: 10 notas por vez + "Carregar mais"/"Mostrar todas" (`NfsePage.POR_PAGINA`); seleção e ações
+  continuam valendo pro filtro inteiro.
+- **Visão geral**: a linha dos vendedores ganhou `total_grupo`, `assinadas`, `autorizadas`, `recusadas`
+  (`dashboard.resumo_mes`) e mostra Assinadas / Autorizadas / Enviadas como as outras linhas.
+- **Google Drive no real** (configuração, sem código): "Erro 400: redirect_uri_mismatch" = o endereço
+  `https://notas.agenteana.com.br/api/drive/callback` (o que o app manda, conferido em 08/10/2026) não está na lista de
+  URIs de redirecionamento autorizados do cliente OAuth no Google Cloud. Pro ambiente de teste vale o mesmo com o domínio dele.
 - **PDF da nota (DANFSe) com outros alfabetos** (`app/services/danfse.py`): a Helvetica só escreve o alfabeto latino e o
   nome do tomador em chinês/japonês/coreano/cirílico saía como quadrados. O que ela não escreve vai com DejaVu Sans, Droid
   Sans Fallback ou NanumGothic (`_FONTES_AMPLAS`), embutidas no PDF só com os caracteres usados; a quebra de linha entende
