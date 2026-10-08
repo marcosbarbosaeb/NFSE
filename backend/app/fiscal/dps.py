@@ -114,8 +114,12 @@ def _pessoa(tag: str, dados: dict):
         doc = _leaf("CNPJ", dados["CNPJ"])
     elif dados.get("CPF"):
         doc = _leaf("CPF", dados["CPF"])
-    else:
+    elif dados.get("NIF"):
         doc = _leaf("NIF", dados["NIF"])
+    else:
+        # De fora do Brasil e sem número fiscal (08/10/2026): o schema pede o
+        # motivo no lugar — "1" dispensado do NIF, "2" o país não exige.
+        doc = _leaf("cNaoNIF", dados["cNaoNIF"])
     end = None
     if not dados.get("CNPJ") and not dados.get("CPF") and dados.get("cPais"):
         # Estrangeiro (NIF): endereço no exterior. Só o país é conhecido — o
@@ -217,7 +221,7 @@ def montar_dps_xml(
     # mesmos valores das notas pra vendedores estrangeiros já autorizadas
     # (o ISS continua tributável aqui: tribISSQN=1).
     com_ext = None
-    if toma.get("NIF") and toma.get("cPais"):
+    if (toma.get("NIF") or toma.get("cNaoNIF")) and toma.get("cPais"):
         com_ext = _el("comExt", [
             _leaf("mdPrestacao", "1"), _leaf("vincPrest", "0"), _leaf("tpMoeda", "986"), _leaf("vServMoeda", f"{valor:.2f}"),
             _leaf("mecAFComexP", "01"), _leaf("mecAFComexT", "01"), _leaf("movTempBens", "1"), _leaf("mdic", "0"),

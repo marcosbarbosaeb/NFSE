@@ -231,6 +231,10 @@ Quem paga é uma empresa estrangeira, sem CNPJ (plataformas de fora, por exemplo
 
 O NIF é o número que identifica a empresa no imposto do país dela — como o CNPJ é aqui. Ele vem no contrato ou no extrato de pagamento, às vezes escrito como "Tax ID", "VAT number" ou "Registration number". Copie igual está lá.
 
+A empresa não tem esse número? Marque "Esta empresa não tem número fiscal" e escolha o motivo ("O país dela não exige esse número" ou "Ela é dispensada de ter o número"). A nota sai com o nome e o país da empresa. Só marque se ela realmente não tem o número — na dúvida, pergunte ao seu contador.
+
+Nome em outro alfabeto (chinês, japonês, coreano, russo...): pode escrever do jeito que está no contrato. Ele sai certo no XML e no PDF da nota.
+
 A nota pra empresa de fora sai com a identificação fiscal estrangeira e o país. Na primeira vez, confirme com seu contador.
 
 ---

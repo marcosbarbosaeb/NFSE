@@ -1507,11 +1507,14 @@ export interface Tomador {
   /** Empresa de fora do Brasil: país (ISO, 2 letras) e identificação fiscal de lá. */
   pais?: string | null
   nif?: string | null
+  /** Empresa de fora sem número fiscal: "1" dispensada, "2" o país não exige. */
+  motivo_sem_nif?: string | null
 }
 
 export interface VinculoResumo {
   tomador_pais?: string | null
   tomador_nif?: string | null
+  tomador_motivo_sem_nif?: string | null
 }
 
 export interface IdentificarTomadorResposta {

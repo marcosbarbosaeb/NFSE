@@ -89,6 +89,11 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
 - Passeio "o que mudou" (`components/tour/PasseioNovidades.tsx`): convida quando há versão nova pro perfil; item de
   `novidades.VERSOES` pode ter `link` (tela) e `alvo` (um `data-tour`). Conta nova nasce em dia (`novidades.marcar_em_dia`).
   Enquanto o passeio está aberto, as dicas de primeira visita esperam (`tutorial.passeioEmAndamento`).
+- DANFSe e alfabetos (08/10/2026): a Helvetica só escreve latino; o resto vai pelas fontes de `danfse._FONTES_AMPLAS`, que o
+  `Dockerfile` instala (tirar o `apt-get` de lá = voltar a sair quadradinho). Texto novo no PDF vindo de cadastro passa por
+  `_escrever`/`_quebrar`, nunca `drawString` direto.
+- Tomador de fora do Brasil: país + NIF, ou país + `motivo_sem_nif` (vira `<cNaoNIF>` na DPS). `Tomador.estrangeiro` cobre os
+  dois; no frontend use `identificadaDeFora()` em vez de testar `pais && nif`.
 - Dados da empresa: obrigatório é só o regime tributário (`prontidao._dados_que_faltam`, `obrigatorio`). Endereço e alíquota
   são opcionais — não use pra travar nada.
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.

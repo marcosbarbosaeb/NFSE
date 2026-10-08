@@ -327,6 +327,10 @@ class Tomador(Base):
     # conta) — com os dois, a nota sai com NIF + endereço no exterior.
     pais: Mapped[str | None] = mapped_column(String(2))
     nif: Mapped[str | None] = mapped_column(String(40))
+    # Empresa de fora que NÃO tem número fiscal (08/10/2026): o motivo, com os
+    # códigos do campo cNaoNIF da nota — "1" dispensada, "2" o país não exige.
+    # Só vale com `nif` vazio.
+    motivo_sem_nif: Mapped[str | None] = mapped_column(String(1))
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -342,9 +346,16 @@ class Tomador(Base):
 
     @property
     def estrangeiro(self) -> bool:
-        """De fora do Brasil e com tudo o que a nota precisa: país + NIF."""
+        """De fora do Brasil e com tudo o que a nota precisa: país + NIF (ou o
+        motivo de não ter NIF)."""
         pais = (self.pais or "").strip().upper()
-        return self.status == "interno" and bool(pais and pais != "BR") and bool((self.nif or "").strip())
+        return self.status == "interno" and bool(pais and pais != "BR") and bool((self.nif or "").strip() or self.sem_nif)
+
+    @property
+    def sem_nif(self) -> str | None:
+        """"1"/"2" quando a empresa de fora não tem número fiscal; senão None."""
+        motivo = (self.motivo_sem_nif or "").strip()
+        return motivo if motivo in ("1", "2") and not (self.nif or "").strip() else None
 
 
 class PrestadorTomador(Base):

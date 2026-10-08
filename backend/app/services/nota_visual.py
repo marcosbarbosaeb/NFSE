@@ -173,7 +173,11 @@ def montar_nota_visual(emissao: Emissao) -> dict:
             "razao_social": snap.get("razao_social"),
             # De fora do Brasil: o documento é o NIF (não tem máscara de CNPJ)
             # e no lugar do endereço daqui vai o país.
-            "cnpj": f"NIF {snap.get('cnpj')}" if de_fora and snap.get("cnpj") else _fmt_cnpj(snap.get("cnpj")),
+            "cnpj": (
+                f"NIF {snap.get('cnpj')}" if de_fora and snap.get("cnpj")
+                else "Sem número fiscal (NIF)" if de_fora and str(snap.get("motivo_sem_nif") or "") in ("1", "2")
+                else _fmt_cnpj(snap.get("cnpj"))
+            ),
             "endereco": _fmt_endereco(
                 endereco_toma.get("xLgr"), endereco_toma.get("nro"), endereco_toma.get("xCpl"),
                 endereco_toma.get("xBairro"), endereco_toma.get("cMun"), endereco_toma.get("CEP"),

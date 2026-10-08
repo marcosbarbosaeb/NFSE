@@ -220,7 +220,9 @@ def criar_rascunho(
         # autorizou (`_montar_xml` põe o endExt só com o país e o grupo
         # comExt). É uma nota normal do vínculo: não é avulsa.
         snapshot.update({
-            "cnpj": vinculo.tomador.nif.strip(),
+            # Sem número fiscal: `cnpj` fica vazio e vai o motivo (cNaoNIF na nota).
+            "cnpj": (vinculo.tomador.nif or "").strip() or None,
+            "motivo_sem_nif": vinculo.tomador.sem_nif,
             "tipo_documento": "NIF",
             "pais": vinculo.tomador.pais.strip().upper(),
             "endereco": {"cMun": None, "CEP": None, "xLgr": None, "nro": None, "xCpl": None, "xBairro": None},
@@ -406,6 +408,10 @@ def _montar_xml(db: Session, emissao: Emissao) -> Emissao:
     }
     if tipo_doc == "NIF" and snap.get("pais") and str(snap["pais"]).upper() != "BR":
         toma["cPais"] = snap["pais"]
+        if not snap.get("cnpj") and str(snap.get("motivo_sem_nif") or "") in ("1", "2"):
+            # Empresa de fora sem número fiscal: no lugar do NIF vai o motivo.
+            toma.pop("NIF", None)
+            toma["cNaoNIF"] = str(snap["motivo_sem_nif"])
     serv = {**snap["codigo_servico_usado"], "descricao": snap["descricao_renderizada"]}
 
     dps_el = montar_dps_xml(

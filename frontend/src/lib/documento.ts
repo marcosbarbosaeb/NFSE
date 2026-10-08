@@ -7,9 +7,15 @@ export function soDigitos(texto: string | null | undefined): string {
 /** O documento de um tomador, como a pessoa lê: CNPJ com máscara ou, pra
  * empresa de fora do Brasil, "NIF 123 · Irlanda". Vazio = sem identificação
  * (cliente só de controle). */
-export function documentoDoTomador(t: { cnpj?: string | null; nif?: string | null; pais?: string | null }): string {
+export function documentoDoTomador(t: {
+  cnpj?: string | null
+  nif?: string | null
+  pais?: string | null
+  motivo_sem_nif?: string | null
+}): string {
   if (t.cnpj) return formatarDocumento(t.cnpj)
-  return [t.nif ? `NIF ${t.nif}` : "", t.pais ? nomeDoPais(t.pais) : ""].filter(Boolean).join(" · ")
+  const numero = t.nif ? `NIF ${t.nif}` : t.motivo_sem_nif ? "sem número fiscal" : ""
+  return [numero, t.pais ? nomeDoPais(t.pais) : ""].filter(Boolean).join(" · ")
 }
 
 /** 12345678000190 -> 12.345.678/0001-90 (CPF: 123.456.789-01). Outro tamanho volta como veio. */

@@ -16,6 +16,25 @@ Numeração: `ano.mês.sequência`. Versão nova = bloco novo no topo de `novida
 Antes de publicar no real, sempre: testes passando (`pytest`), `tsc` e build do frontend, telas conferidas no teste,
 migração e variáveis novas anotadas abaixo.
 
+## 2026.10.5 — 08/10/2026
+
+Três dúvidas que apareceram num concorrente, avaliadas na Ana.
+
+- **PDF da nota (DANFSe) com outros alfabetos** (`app/services/danfse.py`): a Helvetica só escreve o alfabeto latino e o
+  nome do tomador em chinês/japonês/coreano/cirílico saía como quadrados. O que ela não escreve vai com DejaVu Sans, Droid
+  Sans Fallback ou NanumGothic (`_FONTES_AMPLAS`), embutidas no PDF só com os caracteres usados; a quebra de linha entende
+  texto sem espaço. Texto latino segue exatamente como antes.
+  - **Dockerfile**: instala `fonts-dejavu-core fonts-droid-fallback fonts-nanum`. Sem as fontes (máquina de desenvolvimento)
+    cai na fonte chinesa do leitor de PDF.
+  - Não cobre árabe/hebraico (escrita da direita pra esquerda).
+- **Aviso `mes_pulado`** (`conferencia._checar_mes_pulado`): nota com competência no mês corrente + tomador com nota de dois
+  meses atrás e sem a do mês passado. É aviso, não trava. Não vale pra notas de vendedores da Shopee (sem histórico por vendedor).
+- **Empresa de fora sem NIF**: `tomador.motivo_sem_nif` ("1" dispensada, "2" o país não exige) — **migração `c9f1b3d5e7a8`**.
+  A DPS sai com `<cNaoNIF>` no lugar de `<NIF>` (o XSD já previa), com `endExt` e `comExt` como nas outras notas pro exterior.
+  Cadastro: “Esta empresa não tem número fiscal” em Dados do tomador. Relatório da Shopee continua pulando vendedor sem documento.
+  - **Conferir antes de publicar no real**: o XML passa no XSD, mas nenhuma nota com `cNaoNIF` foi enviada à Sefin ainda —
+    emitir uma em homologação pelo ambiente de teste.
+
 ## 2026.10.4 — 08/10/2026
 
 **Situação:** no ambiente de teste. Ainda não está no real.

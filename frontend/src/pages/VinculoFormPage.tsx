@@ -7,7 +7,7 @@ import { CampoCodigoUsado, type CodigoUsado } from "../components/tomador/CampoC
 import { DadosTomador } from "../components/tomador/DadosTomador"
 import { DescricaoNota, previaDescricao } from "../components/tomador/DescricaoNota"
 import { EmitirNotaCliente } from "../components/tomador/EmitirNotaCliente"
-import { AvisoNotaExterior } from "../components/tomador/EmpresaDeFora"
+import { AvisoNotaExterior, identificadaDeFora } from "../components/tomador/EmpresaDeFora"
 import { EnvioTomador } from "../components/tomador/EnvioTomador"
 import { type DadosNotaAntiga, NotaAntiga, ResumoNotaAntiga } from "../components/tomador/NotaAntiga"
 import { CaixaBusca } from "../components/ui/CaixaBusca"
@@ -259,7 +259,7 @@ export function VinculoFormPage() {
   const tomadorCarregadoId = tomadorSelecionado?.id
   useEffect(() => {
     if (!editando || carregando || !tomadorSelecionado || searchParams.get("emitir") !== "1") return
-    if (tomadorSelecionado.cnpj || (tomadorSelecionado.pais && tomadorSelecionado.nif)) irParaComoANotaSai()
+    if (tomadorSelecionado.cnpj || identificadaDeFora(tomadorSelecionado)) irParaComoANotaSai()
     // só quando a ficha termina de carregar
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carregando, tomadorCarregadoId])
@@ -519,10 +519,10 @@ export function VinculoFormPage() {
       setErro("Falta a cidade onde o serviço é prestado (em “Mais opções”).")
       return
     }
-    if (editando && !form.sem_nota && tomadorSelecionado && !tomadorSelecionado.cnpj && !(tomadorSelecionado.pais && tomadorSelecionado.nif)) {
+    if (editando && !form.sem_nota && tomadorSelecionado && !tomadorSelecionado.cnpj && !identificadaDeFora(tomadorSelecionado)) {
       setErro(
         tomadorSelecionado.pais || tomadorSelecionado.nif
-          ? "Pra eu gerar nota pra esta empresa de fora do Brasil faltam o país e o NIF dela: preencha em “Dados do tomador”. Se você não emite nota pra ela, ligue “Não emito nota pra este cliente por aqui”."
+          ? "Pra eu gerar nota pra esta empresa de fora do Brasil faltam o país e o NIF dela (ou marcar que ela não tem número fiscal): preencha em “Dados do tomador”. Se você não emite nota pra ela, ligue “Não emito nota pra este cliente por aqui”."
           : "Pra eu gerar nota, preciso saber quem é este cliente: responda em “Quer emitir nota pra este cliente?”, no começo desta tela. Se você não emite nota pra ele, ligue “Não emito nota pra este cliente por aqui”."
       )
       setGuiaAberto(true)
@@ -669,7 +669,7 @@ export function VinculoFormPage() {
                 setConferenciaVersao((n) => n + 1)
               }}
               onTrocarParaCnpj={() => setTrocandoParaCnpj(true)}
-              key={`${tomadorSelecionado.id}-${tomadorSelecionado.pais ?? ""}-${tomadorSelecionado.nif ?? ""}`}
+              key={`${tomadorSelecionado.id}-${tomadorSelecionado.pais ?? ""}-${tomadorSelecionado.nif ?? ""}-${tomadorSelecionado.motivo_sem_nif ?? ""}`}
             />
           )
         ) : (
@@ -859,7 +859,7 @@ export function VinculoFormPage() {
               </span>
             </span>
           </label>
-          {editando && form.sem_nota && (tomadorSelecionado?.cnpj || (deFora && tomadorSelecionado?.pais && tomadorSelecionado?.nif)) && (
+          {editando && form.sem_nota && (tomadorSelecionado?.cnpj || (deFora && tomadorSelecionado && identificadaDeFora(tomadorSelecionado))) && (
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-accent-50 px-4 py-3 text-sm text-slate-700 dark:bg-accent-900/20 dark:text-slate-200">
               <p className="min-w-0 flex-1">
                 <strong>Falta configurar a nota deste tomador.</strong> Eu preencho o código do serviço e a descrição com base na última

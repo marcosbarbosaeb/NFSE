@@ -21,6 +21,13 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+# Fontes pro PDF da nota (DANFSe) escrever nome de tomador de fora do Brasil em
+# chinês, japonês, coreano, cirílico, grego... — sem elas sai um quadradinho no
+# lugar de cada caractere (app/services/danfse.py, _FONTES_AMPLAS).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-dejavu-core fonts-droid-fallback fonts-nanum \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY backend/requirements.txt backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 

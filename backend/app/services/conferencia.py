@@ -102,7 +102,7 @@ def cpf_valido(cpf: str | None) -> bool:
 
 def _checar_pessoa(
     *, tipo: str, documento: str | None, nome: str | None, endereco: dict, onde: str,
-    conferir_digitos: bool = True, como_corrigir: str, como_documento: str | None = None,
+    conferir_digitos: bool = True, como_corrigir: str, como_documento: str | None = None, sem_nif: bool = False,
 ) -> list[dict]:
     """Quem recebe a nota: documento, nome e endereço do jeito que vão pro
     XML (ver `_pessoa` em app/fiscal/dps.py)."""
@@ -110,7 +110,8 @@ def _checar_pessoa(
     documento = (documento or "").strip()
     como_documento = como_documento or como_corrigir
     if tipo == "NIF":
-        if not documento:
+        # `sem_nif`: a empresa de fora não tem número fiscal e a nota diz o motivo (cNaoNIF).
+        if not documento and not sem_nif:
             pontos.append(_ponto("erro", "documento_vazio", "Falta o número de identificação (NIF) de quem recebe a nota.", como_documento, campo="cnpj", onde=onde))
     elif not documento:
         pontos.append(_ponto("erro", "documento_vazio", f"Falta o {tipo} de quem recebe a nota.", como_documento, campo="cnpj", onde=onde))
@@ -282,10 +283,11 @@ def _conferir_vinculo(vinculo: PrestadorTomador, ultimas: list[dict], *, demo: b
             ))
         elif not pais_valido(pais):
             pontos.append(_ponto("erro", "pais_invalido", f"Não reconheci o país “{pais}” desta empresa.", _DADOS_DE_FORA, campo="pais"))
-        if not (tomador.nif or "").strip():
+        if not (tomador.nif or "").strip() and not tomador.sem_nif:
             pontos.append(_ponto(
                 "erro", "documento_vazio", "Falta o número fiscal desta empresa no país dela (NIF). Sem ele a nota não pode ser emitida.",
-                f"Ele aparece no contrato ou no extrato de pagamento (às vezes como “Tax ID” ou “VAT number”). {_DADOS_DE_FORA}", campo="nif",
+                f"Ele aparece no contrato ou no extrato de pagamento (às vezes como “Tax ID” ou “VAT number”). Se a empresa não tem "
+                f"esse número, marque “Esta empresa não tem número fiscal”. {_DADOS_DE_FORA}", campo="nif",
             ))
     else:
         if interno:
@@ -451,6 +453,32 @@ def _competencia_menos(competencia: str, meses: int) -> str:
     return f"{total // 12:04d}-{total % 12 + 1:02d}"
 
 
+_MESES = ("janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro")
+
+
+def _checar_mes_pulado(mes_nota: str | None, historico: list[tuple[str, Decimal]] | None, hoje: datetime.date) -> list[dict]:
+    """Virou o mês e a pessoa foi gerar a nota do mês que passou, mas a data
+    ficou no mês novo (08/10/2026: dúvida que aparece todo começo de mês).
+    Só avisa quando o costume deixa claro: o tomador tem nota de dois meses
+    atrás, não tem a do mês passado e esta está saindo no mês corrente."""
+    if not historico or not mes_nota or not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", mes_nota):
+        return []
+    if mes_nota != f"{hoje.year:04d}-{hoje.month:02d}":
+        return []
+    meses = {c for c, _ in historico if c}
+    passado, retrasado = _competencia_menos(mes_nota, 1), _competencia_menos(mes_nota, 2)
+    if mes_nota in meses or passado in meses or retrasado not in meses:
+        return []
+    nome_passado, nome_atual = _MESES[int(passado[5:7]) - 1], _MESES[int(mes_nota[5:7]) - 1]
+    return [_ponto(
+        "aviso", "mes_pulado",
+        f"Este tomador tem nota de {_MESES[int(retrasado[5:7]) - 1]} e ainda não tem a de {nome_passado} — e esta está saindo com a data em {nome_atual}.",
+        f"Se o serviço é de {nome_passado}, troque a data de competência para um dia de {nome_passado} "
+        f"(o último dia do mês, por exemplo). Se é mesmo de {nome_atual}, pode seguir.",
+        campo="data_competencia", onde="nota",
+    )]
+
+
 def _checar_valor_e_datas(
     *, valor, data_competencia: datetime.date | None, competencia: str | None, historico: list[tuple[str, Decimal]] | None,
 ) -> list[dict]:
@@ -476,6 +504,8 @@ def _checar_valor_e_datas(
                 f"A competência da nota é {mes_nota[5:7]}/{mes_nota[:4]}, de {atraso} meses atrás. Nota de mês antigo pode gerar multa e juros no imposto.",
                 "Confira se a data é essa mesmo. Na dúvida, pergunte ao seu contador.", campo="data_competencia", onde="nota",
             ))
+
+    pontos += _checar_mes_pulado(mes_nota, historico, hoje)
 
     if not valor_ok or not historico:
         return pontos
@@ -578,6 +608,7 @@ def conferir_emissao(db: Session, emissao: Emissao) -> list[dict]:
     pontos = _checar_pessoa(
         tipo=tipo, documento=snap.get("cnpj") or emissao.tomador_documento, nome=snap.get("razao_social"),
         endereco=endereco, onde=onde, conferir_digitos=not demo, como_corrigir=como,
+        sem_nif=str(snap.get("motivo_sem_nif") or "") in ("1", "2"),
     )
     pontos += _checar_servico(
         cod_local=servico.get("cLocPrestacao"), cod_nacional=servico.get("cTribNac"), cod_nbs=servico.get("cNBS"),
@@ -644,7 +675,8 @@ def _cadastro_mudou(emissao: Emissao, snap: dict, endereco: dict, servico: dict)
     mudou = []
     if tomador.de_fora:
         # De fora do Brasil: o documento da nota é o NIF, e ela não leva endereço daqui.
-        if not igual(snap.get("cnpj"), tomador.nif) or not igual(str(snap.get("pais") or "").upper(), (tomador.pais or "").upper()) \
+        if not igual(snap.get("cnpj"), tomador.nif) or not igual(snap.get("motivo_sem_nif"), tomador.sem_nif) \
+                or not igual(str(snap.get("pais") or "").upper(), (tomador.pais or "").upper()) \
                 or not igual(snap.get("razao_social"), tomador.razao_social):
             mudou.append("os dados do tomador")
         pares = ()

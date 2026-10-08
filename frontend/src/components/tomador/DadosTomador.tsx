@@ -7,7 +7,7 @@ import { Button } from "../ui/Button"
 import { CampoCidade } from "../ui/CampoCidade"
 import { Card } from "../ui/Card"
 import { Field } from "../ui/Field"
-import { AvisoNotaExterior, CamposEmpresaDeFora, type DadosEmpresaDeFora, corpoEmpresaDeFora, empresaDeForaCompleta } from "./EmpresaDeFora"
+import { AvisoNotaExterior, CamposEmpresaDeFora, type DadosEmpresaDeFora, corpoEmpresaDeFora, empresaDeForaCompleta, identificadaDeFora, motivoSemNif } from "./EmpresaDeFora"
 
 /** Dados do tomador (nome e endereço) com edição (05/10/2026: "o CEP deu
  * errado e ao entrar em tomador não aparece pra editar"). O CNPJ não muda.
@@ -51,6 +51,7 @@ const foraDeTomador = (t: Tomador): DadosEmpresaDeFora => ({
   razao_social: t.razao_social,
   pais: t.pais ?? "",
   nif: t.nif ?? "",
+  motivo_sem_nif: motivoSemNif(t.motivo_sem_nif),
   endereco: t.logradouro ?? "",
 })
 
@@ -220,7 +221,7 @@ export function DadosTomador({
               <p className="text-sm text-slate-500 dark:text-slate-400">
                 Empresa de fora do Brasil{documentoDoTomador(tomador) && ` · ${documentoDoTomador(tomador)}`}
               </p>
-              {(!tomador.pais || !tomador.nif) && (
+              {!identificadaDeFora(tomador) && (
                 <p className="mt-1 text-sm font-medium text-warning-700 dark:text-warning-300">
                   Falta {!tomador.pais ? "o país" : "o NIF (número fiscal no país dela)"} — sem isso eu não consigo gerar a nota. Clique em “Editar”.
                 </p>

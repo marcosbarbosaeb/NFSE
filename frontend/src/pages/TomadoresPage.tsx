@@ -25,7 +25,7 @@ type Aba = "meus" | "todos"
  * Quem não tem nada disso nasceu "só controle" (um recebimento lançado no
  * financeiro, por exemplo) e ainda precisa dizer quem é. */
 function identificado(v: VinculoResumo): boolean {
-  return Boolean(v.tomador_cnpj) || Boolean(v.tomador_pais && v.tomador_nif)
+  return Boolean(v.tomador_cnpj) || Boolean(v.tomador_pais && (v.tomador_nif || v.tomador_motivo_sem_nif))
 }
 
 function ordenar(lista: VinculoResumo[]): VinculoResumo[] {
@@ -381,8 +381,8 @@ export function TomadoresPage() {
                         ) : null}
                         <p className="text-xs text-slate-400 dark:text-slate-500">
                           {v.tomador_razao_social}
-                          {documentoDoTomador({ cnpj: v.tomador_cnpj, nif: v.tomador_nif, pais: v.tomador_pais }) &&
-                            ` · ${documentoDoTomador({ cnpj: v.tomador_cnpj, nif: v.tomador_nif, pais: v.tomador_pais })}`}
+                          {documentoDoTomador({ cnpj: v.tomador_cnpj, nif: v.tomador_nif, pais: v.tomador_pais, motivo_sem_nif: v.tomador_motivo_sem_nif }) &&
+                            ` · ${documentoDoTomador({ cnpj: v.tomador_cnpj, nif: v.tomador_nif, pais: v.tomador_pais, motivo_sem_nif: v.tomador_motivo_sem_nif })}`}
                         </p>
                       </td>
                       <td className="py-2.5 pr-3">

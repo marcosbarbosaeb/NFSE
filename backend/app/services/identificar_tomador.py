@@ -137,6 +137,7 @@ def identificar_com_cnpj(
 
 def identificar_do_exterior(
     db: Session, vinculo: PrestadorTomador, *, razao_social: str, pais: str, nif: str, endereco: str | None = None,
+    motivo_sem_nif: str | None = None,
 ) -> None:
     """Empresa de fora do Brasil: nome, país e a identificação fiscal de lá
     ficam no tomador interno desta conta. `endereco` (cidade/endereço lá
@@ -152,12 +153,14 @@ def identificar_do_exterior(
     if not pais_valido(codigo):
         raise IdentificacaoError("Escolha o país da empresa na lista.")
     numero = _limpo(nif, 40)
-    if not numero:
+    # Sem número fiscal (08/10/2026): a nota aceita, desde que diga o motivo.
+    motivo = motivo_sem_nif if motivo_sem_nif in ("1", "2") and not numero else None
+    if not numero and not motivo:
         raise IdentificacaoError(
             "Falta o número fiscal da empresa no país dela (NIF). Ele aparece no contrato ou no extrato de pagamento — "
-            "às vezes como “Tax ID” ou “VAT number”."
+            "às vezes como “Tax ID” ou “VAT number”. Se ela não tem esse número, marque “Esta empresa não tem número fiscal”."
         )
-    tomador.razao_social, tomador.pais, tomador.nif = nome, codigo, numero
+    tomador.razao_social, tomador.pais, tomador.nif, tomador.motivo_sem_nif = nome, codigo, numero or None, motivo
     # Endereço no Brasil não se aplica a quem é de fora.
     tomador.cep = tomador.numero = tomador.complemento = tomador.bairro = None
     tomador.logradouro = _limpo(endereco, 200)

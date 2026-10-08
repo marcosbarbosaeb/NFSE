@@ -12,6 +12,8 @@ da consulta pública pela chave de acesso. Tudo sai do XML que a Sefin
 devolveu (`xml_resposta`); o que o XML não traz vem do cadastro/snapshot.
 """
 import io
+import os
+import unicodedata
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
@@ -24,6 +26,9 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfbase.ttfonts import TTFError, TTFont
 
 from app.models import Emissao
 from app.services.municipios import rotulo_municipio
@@ -103,6 +108,15 @@ def _pct(valor) -> str:
         return f"{Decimal(str(valor)):.2f}".replace(".", ",") + "%"
     except InvalidOperation:
         return str(valor)
+
+
+# O que aparece no campo do documento quando o tomador de fora não tem NIF
+# (os códigos são os do campo cNaoNIF da DPS).
+_MOTIVO_SEM_NIF = {
+    "0": "NIF não informado",
+    "1": "Sem NIF (dispensado)",
+    "2": "Sem NIF (não exigido no país)",
+}
 
 
 def _doc(numero: str | None) -> str:
@@ -187,6 +201,11 @@ def dados_do_danfse(emissao: Emissao) -> dict:
     cod_mun_toma = _t(end_nac, "cMun") or end_snap.get("cMun")
     # Tomador de fora do Brasil: NIF e país (do XML; antes dele, do retrato da nota).
     nif_toma = _t(toma, "NIF") or (snap.get("cnpj") if str(snap.get("tipo_documento") or "").upper() == "NIF" else None)
+    # Empresa de fora sem número fiscal: a nota leva o motivo (cNaoNIF) no lugar.
+    de_fora_snap = str(snap.get("tipo_documento") or "").upper() == "NIF"
+    sem_nif = _t(toma, "cNaoNIF") or (str(snap.get("motivo_sem_nif") or "") if de_fora_snap and not nif_toma else "")
+    if not nif_toma and sem_nif in _MOTIVO_SEM_NIF:
+        nif_toma = _MOTIVO_SEM_NIF[sem_nif]
     pais_toma = _t(end_toma, "endExt/cPais") or (snap.get("pais") if nif_toma else None)
 
     v_serv = _t(dps, "valores/vServPrest/vServ") or str(emissao.valor)
@@ -292,6 +311,137 @@ def dados_do_danfse(emissao: Emissao) -> dict:
 # --- desenho ---
 
 
+
+# --- Texto fora do alfabeto latino (08/10/2026) -------------------------------
+# Tomador da China, do Japão, da Coreia, da Rússia: o nome vem no XML em
+# caracteres próprios, e a Helvetica do PDF só conhece o alfabeto latino — saía
+# um quadrado preto no lugar de cada caractere (o mesmo defeito do PDF do
+# Emissor Nacional). O que a Helvetica não escreve vai com a primeira fonte
+# abaixo que tiver o desenho; elas são instaladas na imagem (ver Dockerfile) e
+# embutidas no PDF só com os caracteres usados. Sem nenhuma instalada (máquina
+# de desenvolvimento), cai na fonte chinesa padrão do leitor de PDF.
+
+_FONTES_AMPLAS = (
+    # (nome no PDF, arquivo, o que cobre)
+    ("AnaLatinoAmplo", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),  # cirílico, grego, vietnamita, leste europeu
+    ("AnaCJK", "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf"),  # chinês e japonês
+    ("AnaCoreano", "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"),  # coreano
+)
+_FONTE_DO_LEITOR = "STSong-Light"
+# [(nome, glifos)] — glifos None = não dá pra saber (fonte do leitor de PDF).
+_amplas: list[tuple[str, set[int] | None]] | None = None
+
+
+def _fontes_amplas() -> list[tuple[str, set[int] | None]]:
+    global _amplas
+    if _amplas is None:
+        achadas: list[tuple[str, set[int] | None]] = []
+        for nome, caminho in _FONTES_AMPLAS:
+            if not os.path.exists(caminho):
+                continue
+            try:
+                fonte = TTFont(nome, caminho)
+                pdfmetrics.registerFont(fonte)
+                achadas.append((nome, set(fonte.face.charToGlyph)))
+            except TTFError:
+                continue
+        if not achadas:
+            pdfmetrics.registerFont(UnicodeCIDFont(_FONTE_DO_LEITOR))
+            achadas.append((_FONTE_DO_LEITOR, None))
+        _amplas = achadas
+    return _amplas
+
+
+def _fonte_para(ch: str) -> str | None:
+    for nome, glifos in _fontes_amplas():
+        if glifos is None or ord(ch) in glifos:
+            return nome
+    return None
+
+
+def _latino(ch: str) -> bool:
+    """A Helvetica do PDF escreve este caractere? (o conjunto dela é o cp1252)"""
+    try:
+        ch.encode("cp1252")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+def _so_latino(texto: str) -> bool:
+    return all(_latino(ch) for ch in texto)
+
+
+def _trechos(texto: str, fonte: str) -> list[tuple[str, str]]:
+    """[(fonte, pedaço)] — o que a `fonte` não escreve vai com uma fonte ampla
+    (ou vira "?" se nenhuma tiver o desenho)."""
+    saida: list[tuple[str, str]] = []
+    for ch in texto:
+        if _latino(ch):
+            f = fonte
+        else:
+            f = _fonte_para(ch)
+            if f is None:
+                f, ch = fonte, "?"
+        if saida and saida[-1][0] == f:
+            saida[-1] = (f, saida[-1][1] + ch)
+        else:
+            saida.append((f, ch))
+    return saida
+
+
+def _largura_do_texto(texto: str, fonte: str, tamanho: float) -> float:
+    return sum(pdfmetrics.stringWidth(pedaco, f, tamanho) for f, pedaco in _trechos(texto, fonte))
+
+
+def _escrever(c: canvas.Canvas, x: float, y: float, texto: str, fonte: str, tamanho: float) -> None:
+    """drawString que aguenta qualquer alfabeto. Texto latino segue igual a antes."""
+    if _so_latino(texto):
+        c.setFont(fonte, tamanho)
+        c.drawString(x, y, texto)
+        return
+    for f, pedaco in _trechos(texto, fonte):
+        c.setFont(f, tamanho)
+        c.drawString(x, y, pedaco)
+        x += pdfmetrics.stringWidth(pedaco, f, tamanho)
+    c.setFont(fonte, tamanho)
+
+
+def _quebrar(texto: str, fonte: str, tamanho: float, largura: float) -> list[str]:
+    """Quebra em linhas que cabem. Latino: a quebra de sempre (por palavra).
+    Com caracteres de fora: chinês/japonês não têm espaço entre as palavras,
+    então cada um deles pode ir pra linha de baixo."""
+    if _so_latino(texto):
+        return simpleSplit(texto, fonte, tamanho, largura)
+    pedacos: list[str] = []
+    atual = ""
+    for ch in texto:
+        if ch == " ":
+            if atual:
+                pedacos.append(atual)
+            pedacos.append(" ")
+            atual = ""
+        elif unicodedata.east_asian_width(ch) in ("W", "F"):
+            if atual:
+                pedacos.append(atual)
+            pedacos.append(ch)
+            atual = ""
+        else:
+            atual += ch
+    if atual:
+        pedacos.append(atual)
+    linhas: list[str] = []
+    linha = ""
+    for pedaco in pedacos:
+        if _largura_do_texto(linha + pedaco, fonte, tamanho) <= largura or not linha.strip():
+            linha += pedaco
+        else:
+            linhas.append(linha.rstrip())
+            linha = "" if pedaco == " " else pedaco
+    if linha.strip():
+        linhas.append(linha.rstrip())
+    return linhas
+
 class _Pagina:
     def __init__(self, c: canvas.Canvas):
         self.c = c
@@ -314,7 +464,7 @@ class _Pagina:
         largura = UTIL / colunas
         for inicio in range(0, len(campos), colunas):
             faixa = campos[inicio : inicio + colunas]
-            quebras = [simpleSplit(str(valor or "-"), "Helvetica", 8.5, largura - 3 * mm)[:3] or ["-"] for _, valor in faixa]
+            quebras = [_quebrar(str(valor or "-"), "Helvetica", 8.5, largura - 3 * mm)[:3] or ["-"] for _, valor in faixa]
             altura = 4.2 * mm + max(len(q) for q in quebras) * 3.7 * mm
             for i, ((rotulo, _), linhas) in enumerate(zip(faixa, quebras)):
                 x = MARGEM + i * largura + 1.5 * mm
@@ -322,9 +472,8 @@ class _Pagina:
                 c.setFont("Helvetica", 6.2)
                 c.drawString(x, self.y - 3.2 * mm, rotulo)
                 c.setFillColor(colors.black)
-                c.setFont("Helvetica", 8.5)
                 for n, linha in enumerate(linhas):
-                    c.drawString(x, self.y - 7 * mm - n * 3.7 * mm, linha)
+                    _escrever(c, x, self.y - 7 * mm - n * 3.7 * mm, linha, "Helvetica", 8.5)
             self.y -= altura
         self.linha()
 
@@ -332,14 +481,13 @@ class _Pagina:
         c = self.c
         linhas = []
         for paragrafo in str(texto or "-").splitlines() or ["-"]:
-            linhas.extend(simpleSplit(paragrafo, "Helvetica", 8.5, UTIL - 3 * mm) or [""])
+            linhas.extend(_quebrar(paragrafo, "Helvetica", 8.5, UTIL - 3 * mm) or [""])
         if len(linhas) > max_linhas:
             linhas = linhas[:max_linhas]
             linhas[-1] = linhas[-1][:-3] + "..."
         c.setFillColor(colors.black)
-        c.setFont("Helvetica", 8.5)
         for n, linha in enumerate(linhas):
-            c.drawString(MARGEM + 1.5 * mm, self.y - 4.2 * mm - n * 3.7 * mm, linha)
+            _escrever(c, MARGEM + 1.5 * mm, self.y - 4.2 * mm - n * 3.7 * mm, linha, "Helvetica", 8.5)
         self.y -= 2.5 * mm + len(linhas) * 3.7 * mm
         self.linha()
 

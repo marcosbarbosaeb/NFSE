@@ -35,6 +35,7 @@ class VinculoResumo(BaseModel):
     # identificação fiscal de lá — no lugar do CNPJ, que ele não tem.
     tomador_pais: str | None = None
     tomador_nif: str | None = None
+    tomador_motivo_sem_nif: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -624,6 +625,8 @@ class TomadorResponse(BaseModel):
     # de lá. Em tomador de fora, `logradouro` guarda a cidade/endereço no exterior.
     pais: str | None = None
     nif: str | None = None
+    # Empresa de fora sem número fiscal: "1" dispensada, "2" o país não exige.
+    motivo_sem_nif: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -687,7 +690,8 @@ class IdentificarTomadorRequest(BaseModel):
     `tipo="cnpj"`: empresa do Brasil. Só o `cnpj` é obrigatório; nome, cidade
     e endereço são o que a pessoa digitou quando a consulta à Receita não
     respondeu (se o CNPJ já está no catálogo, são ignorados).
-    `tipo="exterior"`: empresa de fora — `razao_social`, `pais` e `nif`."""
+    `tipo="exterior"`: empresa de fora — `razao_social`, `pais` e `nif` (ou,
+    se ela não tem número fiscal, `motivo_sem_nif`)."""
     tipo: Literal["cnpj", "exterior"]
     cnpj: str | None = Field(default=None, max_length=20)
     razao_social: str | None = Field(default=None, max_length=200)
@@ -699,6 +703,8 @@ class IdentificarTomadorRequest(BaseModel):
     bairro: str | None = Field(default=None, max_length=100)
     pais: str | None = Field(default=None, max_length=2)
     nif: str | None = Field(default=None, max_length=40)
+    # Sem número fiscal: "1" = dispensada do NIF, "2" = o país dela não exige.
+    motivo_sem_nif: Literal["1", "2"] | None = None
     # Cidade/endereço lá fora — opcional, só pra consulta (não vai na nota).
     endereco_exterior: str | None = Field(default=None, max_length=200)
 

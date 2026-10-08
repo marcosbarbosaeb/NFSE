@@ -7,7 +7,7 @@ import { Button } from "../ui/Button"
 import { CampoCidade } from "../ui/CampoCidade"
 import { Card } from "../ui/Card"
 import { Field } from "../ui/Field"
-import { AvisoNotaExterior, CamposEmpresaDeFora, type DadosEmpresaDeFora, corpoEmpresaDeFora, empresaDeForaCompleta } from "./EmpresaDeFora"
+import { AvisoNotaExterior, CamposEmpresaDeFora, type DadosEmpresaDeFora, corpoEmpresaDeFora, empresaDeForaCompleta, motivoSemNif } from "./EmpresaDeFora"
 
 /** "Quer emitir nota pra este cliente?" (05/10/2026) — o caminho pra quem
  * começou a vida no sistema como "só controle" (um recebimento lançado no
@@ -73,6 +73,7 @@ export function EmitirNotaCliente({
     razao_social: tomador.razao_social ?? "",
     pais: tomador.pais ?? "",
     nif: tomador.nif ?? "",
+    motivo_sem_nif: motivoSemNif(tomador.motivo_sem_nif),
     endereco: tomador.pais || tomador.nif ? (tomador.logradouro ?? "") : "",
   })
   const [salvando, setSalvando] = useState(false)

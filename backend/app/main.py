@@ -1344,6 +1344,7 @@ def api_listar_vinculos(todos: bool = False, competencia: str | None = None, db:
             id=v.id, apelido=v.apelido, tomador_razao_social=v.tomador.razao_social,
             tomador_cnpj="" if v.tomador.status == "interno" else v.tomador.cnpj, serie=v.serie, template_descricao=v.template_descricao,
             tomador_pais=v.tomador.pais if v.tomador.de_fora else None, tomador_nif=v.tomador.nif if v.tomador.de_fora else None,
+            tomador_motivo_sem_nif=v.tomador.sem_nif if v.tomador.de_fora else None,
             requer_revisao=v.requer_revisao, ativo=v.ativo, tomador_id=v.tomador_id,
             cod_trib_nacional=v.cod_trib_nacional, cod_local_prestacao=v.cod_local_prestacao,
             dia_limite_emissao=v.dia_limite_emissao, dias_para_recebimento=v.dias_para_recebimento,
@@ -1642,6 +1643,7 @@ def api_identificar_tomador(vinculo_id: uuid.UUID, req: IdentificarTomadorReques
         else:
             identificar_tomador.identificar_do_exterior(
                 db, vinculo, razao_social=req.razao_social or "", pais=req.pais or "", nif=req.nif or "", endereco=req.endereco_exterior,
+                motivo_sem_nif=req.motivo_sem_nif,
             )
     except identificar_tomador.IdentificacaoError as exc:
         raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
