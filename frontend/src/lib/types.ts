@@ -97,6 +97,16 @@ export interface ClienteAtendido {
   alertas?: AlertaDoCliente[]
   /** Quem cuida da empresa (o dono que convidou), pra falar com ele. */
   dono?: { nome: string | null; email: string; telefone: string | null } | null
+  /** Pasta do mês (do mês passado): o que falta e o que a empresa mandou de novo. */
+  pasta?: ResumoPasta | null
+}
+
+export interface ResumoPasta {
+  competencia: string
+  itens: number
+  pendentes: number
+  prontos: number
+  novidades: { mensagens: number; arquivos: number }
 }
 
 export interface RaioX {
@@ -1461,6 +1471,57 @@ export interface StatusDrive {
   disponivel: boolean
   conectado: boolean
   email: string | null
+  /** Qual nuvem está conectada (hoje só "google"). */
+  provedor?: string | null
+}
+
+// --- Pasta do mês (08/10/2026, backend/app/services/pasta.py) ---
+
+export interface ArquivoPasta {
+  id: string
+  nome: string
+  tamanho: number
+  tipo_mime: string
+  pedido_id: string | null
+  papel: "empresa" | "contador"
+  enviado_por: string | null
+  criado_em: string
+}
+
+export interface ItemPasta {
+  id: string
+  titulo: string
+  descricao: string | null
+  tipo: "arquivo" | "extrato"
+  situacao: "pendente" | "entregue" | "nao_tem" | "conferido"
+  arquivos: ArquivoPasta[]
+  extrato_linhas: number | null
+  marcado_por: string | null
+}
+
+export interface MensagemPasta {
+  id: string
+  texto: string
+  papel: "empresa" | "contador"
+  autor_nome: string
+  competencia: string | null
+  criado_em: string
+}
+
+export interface PastaDoMes {
+  papel: "empresa" | "contador"
+  empresa: string
+  mes: {
+    competencia: string
+    itens: ItemPasta[]
+    avulsos: ArquivoPasta[]
+    resumo: { itens: number; pendentes: number; prontos: number }
+    limite_arquivo: number
+  }
+  mensagens: MensagemPasta[]
+  novidades: { mensagens: number; arquivos: number }
+  tem_contador: boolean
+  sugestoes: { titulo: string; descricao: string; tipo: string }[]
 }
 
 /** Outro destinatário do tomador que recebe a nota num e-mail próprio. */

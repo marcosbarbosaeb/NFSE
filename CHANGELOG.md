@@ -32,6 +32,19 @@ Lista de ajustes do Marcos + três dúvidas que apareceram num concorrente.
   continuam valendo pro filtro inteiro.
 - **Visão geral**: a linha dos vendedores ganhou `total_grupo`, `assinadas`, `autorizadas`, `recusadas`
   (`dashboard.resumo_mes`) e mostra Assinadas / Autorizadas / Enviadas como as outras linhas.
+- **Pasta do mês** (`app/services/pasta.py`, `app/pasta_rotas.py`, `components/pasta/PastaDoMes.tsx`): pedidos recorrentes do
+  contador, arquivos por mês (no banco nesta fase: 15 MB por arquivo, 300 MB por empresa), marcas "não teve"/"conferido" e
+  uma conversa por empresa. As mesmas rotas em `/api/pasta/...` (empresa aberta) e `/api/contador/atendimentos/{id}/pasta/...`
+  (painel do contador, sem entrar). Pedido tipo "extrato" conta sozinho pelo evento `extrato_do_mes` (financeiro).
+  Tela `/app/pasta` com selo no menu; ficha da empresa no painel do contador; tarefas em "Hoje".
+  **Migração `d0b2c4e6f8a1`** (tabelas `pasta_*` com RLS e `assinatura_agenda` sem RLS).
+- **Link de assinatura da agenda** (`app/services/agenda_ics.py`): `GET /api/agenda/<token>.ics` sem login (um mês pra trás,
+  seis pra frente), `GET /api/calendario/assinatura`, `POST /api/calendario/assinatura/novo`. Em Empresa › Integrações e no
+  Calendário. O endereço usa `APP_BASE_URL`.
+- **Integrações** (Empresa › Integrações): Drive (Google; OneDrive/Dropbox "em breve"), agenda e WhatsApp ("em breve").
+  "Enviar para o Drive" no lugar de "Google Drive" nas opções de envio, na nota e no lote; conectar só nas Integrações.
+  Conectar o Drive manda `login_hint` com o e-mail do login (a conta do Google já vem escolhida).
+- Política de Privacidade: Pasta do mês e link da agenda.
 - **Google Drive no real** (configuração, sem código): "Erro 400: redirect_uri_mismatch" = o endereço
   `https://notas.agenteana.com.br/api/drive/callback` (o que o app manda, conferido em 08/10/2026) não está na lista de
   URIs de redirecionamento autorizados do cliente OAuth no Google Cloud. Pro ambiente de teste vale o mesmo com o domínio dele.

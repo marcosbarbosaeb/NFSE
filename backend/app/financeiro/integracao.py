@@ -100,9 +100,27 @@ def _pendencias_da_empresa(r: dict) -> list[dict]:
     return itens
 
 
+def _extrato_do_mes(db: Session, prestador_id: uuid.UUID, competencia: str) -> int:
+    """Pasta do mês (app/services/pasta.py): quantas linhas de extrato do mês
+    já foram importadas — o pedido "Extrato do banco" conta como entregue."""
+    import datetime as _dt
+
+    from app.models import LancamentoBancario
+
+    ano, mes = int(competencia[:4]), int(competencia[5:7])
+    inicio = _dt.date(ano, mes, 1)
+    fim = _dt.date(ano + (mes == 12), mes % 12 + 1, 1)
+    return (
+        db.query(LancamentoBancario.id)
+        .filter(LancamentoBancario.prestador_id == prestador_id, LancamentoBancario.data >= inicio, LancamentoBancario.data < fim)
+        .count()
+    )
+
+
 def registrar() -> None:
     eventos.ouvir("nota_criada", _nota_criada)
     eventos.ouvir("antes_de_trocar_nota", _antes_de_trocar_nota)
     eventos.ouvir("tomador_em_uso", _tomador_em_uso)
     eventos.ouvir("agenda", eventos_da_agenda)
     eventos.ouvir("resumo_pro_contador", _resumo_pro_contador)
+    eventos.ouvir("extrato_do_mes", _extrato_do_mes)

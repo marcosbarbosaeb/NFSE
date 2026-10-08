@@ -10,6 +10,7 @@ import { BriefcaseBusiness,
   Mail,
   MailPlus,
   Percent,
+  Plug,
   ReceiptText,
   ShieldAlert,
   Trash2,
@@ -20,6 +21,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import { CHAMADA_NACIONAL, useEmpresaVazia } from "../components/ComecarPeloNacional"
 import { EditorModeloEmail, type ValorModeloEmail } from "../components/EditorModeloEmail"
 import { ContadorCard } from "../components/ContadorCard"
+import { Integracoes } from "../components/integracoes/Integracoes"
 import { ImportacoesFeitas } from "../components/ImportacoesFeitas"
 import { ImportarEmissorModal } from "../components/ImportarEmissorModal"
 import { PaginaAbas, TituloSecao } from "../components/PaginaAbas"
@@ -187,6 +189,8 @@ export function EmpresaPage() {
           ),
         }),
         ...soEmissor({ id: "certificado", rotulo: "Certificado", icone: FileBadge, conteudo: () => <CertificadoCard /> }),
+        // Integrações (08/10/2026): Drive, Google Agenda e (em breve) WhatsApp.
+        { id: "integracoes", rotulo: "Integrações", icone: Plug, conteudo: () => <Integracoes /> },
         // Contador (06/10/2026): quem mais entra na empresa e o que pode fazer.
         { id: "contador", rotulo: "Contador", icone: BriefcaseBusiness, conteudo: () => <ContadorCard /> },
         // Módulos e exclusão são só do dono: o contador nem vê a aba.

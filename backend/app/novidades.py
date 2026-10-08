@@ -23,8 +23,20 @@ VERSOES: list[dict] = [
     {
         "versao": "2026.10.5",
         "data": "2026-10-08",
-        "resumo": "Calendário novo, gráficos que mudam de forma, listas mais curtas e notas pra empresas de fora.",
+        "resumo": "Pasta do mês com o contador, Integrações, agenda no Google, calendário novo e gráficos que mudam de forma.",
         "itens": [
+            {"perfil": "empresa", "titulo": "Pasta do mês (com o seu contador)", "link": "/app/pasta",
+             "texto": "Um lugar só pro que o contador precisa todo mês: a lista do que mandar, os arquivos de cada mês e uma conversa "
+                      "pra deixar tudo combinado por escrito. O extrato que você importa na Conciliação já conta como enviado."},
+            {"perfil": "contador", "titulo": "Pasta do mês de cada cliente", "link": "/app/atendimentos",
+             "texto": "Na ficha de cada empresa: monte a lista do que você precisa todo mês, baixe os arquivos, marque como conferido "
+                      "e converse com o cliente — sem entrar na empresa. O que chegar de novo aparece em “Hoje”."},
+            {"perfil": "empresa", "titulo": "Empresa › Integrações", "link": "/app/empresa?aba=integracoes",
+             "texto": "O Drive agora se conecta num lugar só. Nas opções de envio fica só “Enviar para o Drive”, e as notas vão pro Drive "
+                      "que você conectou (Google Drive hoje; OneDrive e Dropbox em breve)."},
+            {"perfil": "todos", "titulo": "Seu calendário no Google Agenda", "link": "/app/calendario",
+             "texto": "Copie o link da sua agenda (no Calendário ou em Empresa › Integrações) e cole no Google Agenda, Outlook ou Apple: "
+                      "os dias de gerar nota, as previsões de recebimento e os seus lembretes aparecem lá."},
             {"perfil": "todos", "titulo": "Calendário: tudo do dia num clique", "link": "/app/calendario",
              "texto": "Clique num dia e veja tudo o que está marcado nele: dá pra editar seus eventos, mudar a data de um prazo (vale também "
                       "em Próximos passos) e ir direto pra tela onde ele se resolve. Cada tipo de evento ganhou um ícone, além da cor."},

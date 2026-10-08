@@ -56,7 +56,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import get_settings
-from app.deps import MENSAGEM_DEMO, MODULOS, db_sessao, exige_modulo, exigir_conta_real, ler_upload as _ler_upload, modulos_da_empresa, prestador_atual_id  # noqa: F401
+from app.deps import MENSAGEM_DEMO, MODULOS, db_sessao, exige_modulo, exigir_conta_real, ler_upload as _ler_upload, modulos_da_empresa, prestador_atual_id, usuario_logado  # noqa: F401
 from app import eventos as integracao
 from app.database import definir_prestador_atual, get_db
 from app.fiscal.dps import DescricaoIncompletaError
@@ -1768,6 +1768,51 @@ def api_calendario(
     return {"inicio": data_inicio, "fim": data_fim, "eventos": eventos}
 
 
+# --- Link de assinatura do calendário (08/10/2026, app/services/agenda_ics.py) ---
+
+
+@app.get("/api/calendario/assinatura")
+def api_link_da_agenda(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """O endereço .ics desta empresa (cria na primeira vez)."""
+    from app.services import agenda_ics
+
+    endereco = agenda_ics.link(db, prestador_id)
+    db.commit()
+    return {"url": endereco}
+
+
+@app.post("/api/calendario/assinatura/novo")
+def api_trocar_link_da_agenda(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Troca o endereço: o antigo para de funcionar (ex.: o link vazou)."""
+    from app.services import agenda_ics
+
+    endereco = agenda_ics.trocar_link(db, prestador_id)
+    db.commit()
+    return {"url": endereco}
+
+
+@app.get("/api/agenda/{token}.ics", include_in_schema=False)
+def api_agenda_ics(token: str, db: Session = Depends(get_db)):
+    """Lido pelo Google Agenda/Outlook/Apple, sem login: o token é a chave."""
+    from fastapi.responses import Response
+
+    from app.services import agenda_ics
+
+    prestador_id = agenda_ics.empresa_do_token(db, token)
+    if prestador_id is None:
+        raise HTTPException(status_code=404, detail="Link de agenda não encontrado (pode ter sido trocado).")
+    definir_prestador_atual(db, prestador_id)
+    empresa = db.get(Prestador, prestador_id)
+    inicio, fim = agenda_ics.intervalo()
+    eventos = eventos_calendario(db, prestador_id, inicio, fim)
+    nome = (empresa.nome_fantasia or empresa.razao_social or "").strip() if empresa else ""
+    conteudo = agenda_ics.montar_ics(eventos, nome_empresa=nome or "sua empresa")
+    return Response(
+        content=conteudo, media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": 'inline; filename="agente-ana.ics"', "Cache-Control": "private, max-age=900"},
+    )
+
+
 def _vinculo_do_evento(db: Session, vinculo_id: uuid.UUID | None):
     """Fornecedor opcional de um evento manual — RLS garante que só acha
     vínculo do próprio prestador."""
@@ -2502,7 +2547,10 @@ def _voltar_do_drive(caminho: str | None) -> str:
 
 
 @app.post("/api/drive/conectar", dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
-def api_drive_conectar(request: Request, voltar: str | None = None, prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+def api_drive_conectar(
+    request: Request, voltar: str | None = None, prestador_id: uuid.UUID = Depends(prestador_atual_id),
+    usuario: Usuario = Depends(usuario_logado),
+):
     """Devolve a URL do Google pra pessoa autorizar. O `state` (anti-CSRF)
     e a empresa ficam na sessão e são conferidos no retorno."""
     state = gerar_state()
@@ -2510,7 +2558,7 @@ def api_drive_conectar(request: Request, voltar: str | None = None, prestador_id
     request.session["drive_prestador"] = str(prestador_id)
     request.session["drive_voltar"] = _voltar_do_drive(voltar)
     try:
-        return {"url": drive.url_de_conexao(state)}
+        return {"url": drive.url_de_conexao(state, usuario.email)}
     except drive.DriveNaoConfiguradoError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -3687,6 +3735,11 @@ app.include_router(_rotas_ajuda)
 from app.contador import rotas as _rotas_contador  # noqa: E402
 
 app.include_router(_rotas_contador)
+
+# Pasta do mês (08/10/2026): arquivos e conversa entre a empresa e o contador.
+from app.pasta_rotas import rotas as _rotas_pasta  # noqa: E402
+
+app.include_router(_rotas_pasta)
 
 
 @app.get("/", include_in_schema=False)

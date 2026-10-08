@@ -1179,3 +1179,111 @@ class EventoUso(Base):
     nome: Mapped[str] = mapped_column(String(120), nullable=False)
     detalhe: Mapped[str | None] = mapped_column(String(60))
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AssinaturaAgenda(Base):
+    """Link de assinatura do calendário (08/10/2026): o Google Agenda (ou
+    Outlook, Apple) lê `GET /api/agenda/<token>.ics` sem login. Sem RLS de
+    propósito — a busca é pelo token, antes de saber a empresa. Gerar um novo
+    link troca o token e o antigo para de funcionar."""
+
+    __tablename__ = "assinatura_agenda"
+
+    prestador_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# --- Pasta do mês (08/10/2026) -------------------------------------------------
+# "Como poderíamos fazer para o contador e o cliente se falarem e trocarem
+# arquivos — organizando os arquivos que o contador precisa mensalmente" +
+# "seria interessante se tivesse tipo um chat". Tudo com RLS por empresa.
+
+
+class PastaPedido(Base):
+    """O que o contador precisa todo mês (extrato, notas tomadas...). Vale pra
+    todos os meses enquanto `ativo`. `tipo="extrato"`: conta como entregue
+    quando o mês tem extrato importado no Financeiro."""
+
+    __tablename__ = "pasta_pedido"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False)
+    titulo: Mapped[str] = mapped_column(String(120), nullable=False)
+    descricao: Mapped[str | None] = mapped_column(String(300))
+    tipo: Mapped[str] = mapped_column(String(10), nullable=False, server_default="arquivo")
+    ativo: Mapped[bool] = mapped_column(nullable=False, server_default="true")
+    ordem: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="0")
+    criado_por: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("usuario.id", ondelete="SET NULL"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (CheckConstraint("tipo IN ('arquivo', 'extrato')", name="ck_pasta_pedido_tipo"),)
+
+
+class PastaArquivo(Base):
+    """Arquivo enviado na pasta de um mês (de um pedido ou avulso). O conteúdo
+    fica no banco nesta fase de teste — limite por arquivo em app/services/pasta.py."""
+
+    __tablename__ = "pasta_arquivo"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False)
+    competencia: Mapped[str] = mapped_column(String(7), nullable=False)
+    pedido_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("pasta_pedido.id", ondelete="SET NULL"))
+    nome: Mapped[str] = mapped_column(String(200), nullable=False)
+    tipo_mime: Mapped[str] = mapped_column(String(100), nullable=False)
+    tamanho: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    conteudo: Mapped[bytes] = mapped_column(LargeBinary, nullable=False, deferred=True)
+    enviado_por: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("usuario.id", ondelete="SET NULL"))
+    papel: Mapped[str] = mapped_column(String(10), nullable=False)  # empresa | contador
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("ix_pasta_arquivo_mes", "prestador_id", "competencia"),)
+
+
+class PastaMarca(Base):
+    """Situação de um pedido num mês, marcada à mão: "nao_tem" (não teve neste
+    mês, pela empresa) ou "conferido" (pelo contador)."""
+
+    __tablename__ = "pasta_marca"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False)
+    pedido_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("pasta_pedido.id", ondelete="CASCADE"), nullable=False)
+    competencia: Mapped[str] = mapped_column(String(7), nullable=False)
+    situacao: Mapped[str] = mapped_column(String(10), nullable=False)
+    por: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("usuario.id", ondelete="SET NULL"))
+    em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("pedido_id", "competencia", name="uq_pasta_marca"),
+        CheckConstraint("situacao IN ('nao_tem', 'conferido')", name="ck_pasta_marca_situacao"),
+    )
+
+
+class PastaMensagem(Base):
+    """A conversa entre a empresa e o contador (uma só por empresa; cada
+    mensagem lembra o mês que estava aberto)."""
+
+    __tablename__ = "pasta_mensagem"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False)
+    competencia: Mapped[str | None] = mapped_column(String(7))
+    autor: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("usuario.id", ondelete="SET NULL"))
+    autor_nome: Mapped[str] = mapped_column(String(200), nullable=False)
+    papel: Mapped[str] = mapped_column(String(10), nullable=False)  # empresa | contador
+    texto: Mapped[str] = mapped_column(Text, nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("ix_pasta_mensagem_empresa", "prestador_id", "criado_em"),)
+
+
+class PastaLeitura(Base):
+    """Até quando cada pessoa já viu a pasta/conversa desta empresa (pros avisos de "novo")."""
+
+    __tablename__ = "pasta_leitura"
+
+    prestador_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), primary_key=True)
+    usuario_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("usuario.id", ondelete="CASCADE"), primary_key=True)
+    lido_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

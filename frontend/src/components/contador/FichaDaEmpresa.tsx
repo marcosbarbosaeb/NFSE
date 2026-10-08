@@ -1,3 +1,4 @@
+import { PastaDoMes } from "../pasta/PastaDoMes"
 import { ArrowLeft, Loader2, LogIn, MessageCircle } from "lucide-react"
 import type { ReactNode } from "react"
 import { resumoPermissoes } from "../../lib/contador"
@@ -212,6 +213,12 @@ export function FichaDaEmpresa({
           </Card>
         </div>
       </div>
+
+      {/* Pasta do mês (08/10/2026): arquivos e conversa com a empresa, sem entrar nela. */}
+      <section id="pasta" className="flex scroll-mt-24 flex-col gap-3">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Pasta do mês</h3>
+        <PastaDoMes base={`/contador/atendimentos/${c.id}/pasta`} />
+      </section>
     </div>
   )
 }

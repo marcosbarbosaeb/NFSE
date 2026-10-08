@@ -79,6 +79,16 @@ export function PrivacidadePage() {
         </p>
 
         <p>
+          <b>Pasta do mês e conversa com o contador:</b> os arquivos que você ou o seu contador enviam na Pasta do mês e as
+          mensagens trocadas ali. Só a sua empresa e o contador que você convidou enxergam; ficam guardados enquanto a conta
+          existir, e você pode apagar os arquivos quando quiser.
+        </p>
+        <p>
+          <b>Link da agenda:</b> se você usar o link de assinatura da agenda (Google Agenda, Outlook, Apple), o app de agenda
+          lê por esse link as datas e os títulos dos seus eventos. Quem tiver o link consegue ver esses eventos; você pode
+          gerar um link novo a qualquer momento, e o antigo para de funcionar.
+        </p>
+        <p>
           <b>Uso do painel:</b> registramos quais telas você abre, quais ações faz (por exemplo, "gerou uma nota") e quando
           uma ação é recusada por erro — apenas o nome da tela ou da ação, a data e a conta, nunca o conteúdo das suas notas
           ou do seu financeiro. Serve para entendermos o que é usado e onde as pessoas encontram dificuldade. Esses registros

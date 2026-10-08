@@ -1,3 +1,4 @@
+import { LINK_INTEGRACOES } from "../components/integracoes/Integracoes"
 import { CaixaBusca } from "../components/ui/CaixaBusca"
 import {
   ArrowLeftRight,
@@ -44,7 +45,7 @@ const CANAIS: { value: CanalEnvio; label: string }[] = [
   { value: "email_geral", label: "E-mail geral (contador)" },
   { value: "whatsapp", label: "WhatsApp" },
   { value: "direto_fornecedor", label: "Marcada como enviada" },
-  { value: "drive", label: "Guardada no Google Drive" },
+  { value: "drive", label: "Enviada para o Drive" },
 ]
 
 function badgeStatusEnvio(status: string) {
@@ -184,9 +185,8 @@ export function EmissaoDetalhePage() {
     setGuardando(true)
     try {
       if (!drive.conectado) {
-        // Abre o Google pra autorizar e volta pra esta nota.
-        const { url } = await api.post<{ url: string }>(`/drive/conectar?voltar=${encodeURIComponent(`/app/nfse/${id}`)}`, {})
-        window.location.href = url
+        // 08/10/2026: o Drive se conecta em Empresa › Integrações.
+        navigate(LINK_INTEGRACOES)
         return
       }
       await api.post<{ link: string }>(`/dps/${id}/drive${naPastaDoDrive ? "?de_novo=true" : ""}`, {})
@@ -497,7 +497,7 @@ export function EmissaoDetalhePage() {
           </Button>
           {nota.estado === "confirmado" && drive?.disponivel && (
             <Button variant="outline" onClick={guardarNoDrive} disabled={guardando}>
-              <FolderUp size={15} /> {guardando ? "Guardando..." : naPastaDoDrive ? "Guardar de novo no Drive" : drive.conectado ? "Guardar no Google Drive" : "Conectar o Google Drive"}
+              <FolderUp size={15} /> {guardando ? "Enviando..." : naPastaDoDrive ? "Enviar de novo para o Drive" : drive.conectado ? "Enviar para o Drive" : "Enviar para o Drive (conectar)"}
             </Button>
           )}
           {naPastaDoDrive && (

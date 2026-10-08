@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom"
+import { LINK_INTEGRACOES } from "../integracoes/Integracoes"
 import { Ban, ExternalLink, FileDown, FolderUp, Mail, MessageCircle, Plus, Trash2 } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { api } from "../../lib/api"
@@ -26,7 +28,7 @@ const FORMAS: { valor: FormaDeEnvio; titulo: string; dica: string; icone: typeof
   { valor: "whatsapp", titulo: "WhatsApp", dica: "Abro a conversa com a mensagem e o link da nota — você só aperta enviar.", icone: MessageCircle },
   { valor: "portal", titulo: "Portal do tomador", dica: "Você sobe o PDF/XML no sistema dele e marca como enviada.", icone: ExternalLink },
   { valor: "download", titulo: "Baixar o PDF ao finalizar", dica: "Quando a prefeitura autorizar, o PDF já baixa no seu computador.", icone: FileDown },
-  { valor: "drive", titulo: "Guardar no meu Google Drive", dica: "Quando a prefeitura autorizar, eu guardo o PDF e o XML numa pasta do seu Drive.", icone: FolderUp },
+  { valor: "drive", titulo: "Enviar para o Drive", dica: "Quando a prefeitura autorizar, eu guardo o PDF e o XML no Drive que você conectou em Empresa › Integrações.", icone: FolderUp },
 ]
 
 const MAXIMO_EXTRAS = 5
@@ -50,21 +52,10 @@ export function EnvioTomador({ valor, onChange, prestador }: { valor: ValorEnvio
   const mudarExtra = (i: number, parte: Partial<EmailExtra>) => mudar({ extras: valor.extras.map((e, j) => (j === i ? { ...e, ...parte } : e)) })
   // Google Drive: só aparece como opção onde está disponível (ou se já estava marcado).
   const [drive, setDrive] = useState<StatusDrive | null>(null)
-  const [conectando, setConectando] = useState(false)
   useEffect(() => {
     api.get<StatusDrive>("/drive").then(setDrive).catch(() => setDrive(null))
   }, [])
   const formasVisiveis = FORMAS.filter((f) => f.valor !== "drive" || drive?.disponivel || tem("drive"))
-  async function conectarDrive() {
-    setConectando(true)
-    try {
-      const voltar = encodeURIComponent(window.location.pathname)
-      const { url } = await api.post<{ url: string }>(`/drive/conectar?voltar=${voltar}`, {})
-      window.location.href = url
-    } catch {
-      setConectando(false)
-    }
-  }
 
   return (
     <>
@@ -131,18 +122,18 @@ export function EnvioTomador({ valor, onChange, prestador }: { valor: ValorEnvio
           <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-900/40 dark:text-slate-300">
             {drive.conectado ? (
               <>
-                Google Drive conectado{drive.email ? ` (${drive.email})` : ""}. Cada nota vai pra pasta <strong>Agente Ana › nome do tomador › mês</strong>.
+                Vai pro Google Drive{drive.email ? ` (${drive.email})` : ""}, na pasta <strong>Agente Ana › nome do tomador › mês</strong>.
               </>
             ) : drive.disponivel ? (
               <>
-                Falta conectar o seu Google Drive. <strong>Salve este tomador primeiro</strong> e depois{" "}
-                <button type="button" onClick={conectarDrive} disabled={conectando} className="font-semibold text-primary-600 underline disabled:opacity-60 dark:text-primary-300">
-                  {conectando ? "abrindo o Google..." : "conecte o Google Drive"}
-                </button>
+                Falta conectar o seu Drive. <strong>Salve este tomador primeiro</strong> e depois conecte em{" "}
+                <Link to={LINK_INTEGRACOES} className="font-semibold text-primary-600 underline dark:text-primary-300">
+                  Empresa › Integrações
+                </Link>
                 . Eu só enxergo a pasta que eu mesma crio lá.
               </>
             ) : (
-              <>O Google Drive ainda não está disponível por aqui.</>
+              <>O envio pro Drive ainda não está disponível por aqui.</>
             )}
           </p>
         )}

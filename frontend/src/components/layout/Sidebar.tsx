@@ -1,4 +1,4 @@
-import { ArrowLeftRight, BriefcaseBusiness, Building2, CalendarDays, CircleHelp, Contact, FileText, Gift, Home, Layers, ShieldCheck, UserRound, Users, Wallet } from "lucide-react"
+import { ArrowLeftRight, BriefcaseBusiness, Building2, CalendarDays, CircleHelp, Contact, FileText, FolderOpen, Gift, Home, Layers, ShieldCheck, UserRound, Users, Wallet } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link, NavLink, useLocation } from "react-router-dom"
 import { api } from "../../lib/api"
@@ -29,7 +29,11 @@ const FINANCEIRO = [
 const CLIENTES = { to: "/app/financeiro/clientes", label: "Clientes", icon: Contact }
 // "Configurações" virou "Empresa" (dados do CNPJ ativo) + "Minha conta"
 // (no pé da barra e no menu do usuário) — 29/09/2026.
-const GERAL = [{ to: "/app/empresa", label: "Empresa", icon: Building2 }]
+const GERAL = [
+  { to: "/app/empresa", label: "Empresa", icon: Building2 },
+  // Pasta do mês (08/10/2026): arquivos e conversa com o contador.
+  { to: "/app/pasta", label: "Pasta do mês", icon: FolderOpen },
+]
 
 const classeItem = (ativo: boolean) =>
   `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 ${
@@ -83,6 +87,19 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
     return () => window.removeEventListener("agenteana:conciliacao", ouvir)
   }, [])
   const totalConciliar = conciliar ? conciliar.notas + conciliar.extrato : 0
+  // Selo da Pasta do mês: mensagens e arquivos que o contador mandou e a pessoa ainda não viu.
+  const [pastaNova, setPastaNova] = useState(0)
+  useEffect(() => {
+    if (soContador) return
+    const buscar = () =>
+      api
+        .get<{ mensagens: number; arquivos: number }>("/pasta/novidades")
+        .then((r) => setPastaNova(r.mensagens + r.arquivos))
+        .catch(() => undefined)
+    buscar()
+    window.addEventListener("agenteana:pasta-lida", buscar)
+    return () => window.removeEventListener("agenteana:pasta-lida", buscar)
+  }, [soContador, pathname])
   // "Gestão" (06/10/2026): só pra administração da plataforma. Enquanto a
   // resposta não chega — ou se a consulta falhar — o item não aparece.
   const [gestor, setGestor] = useState(false)
@@ -151,6 +168,11 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
                       aria-label={`${totalConciliar} pendências na conciliação: ${conciliar.notas} nas notas e ${conciliar.extrato} no extrato`}
                     >
                       {totalConciliar}
+                    </span>
+                  )}
+                  {to === "/app/pasta" && pastaNova > 0 && (
+                    <span className="ml-auto rounded-full bg-accent-500 px-1.5 text-xs font-semibold text-white" aria-label={`${pastaNova} novidades do contador`}>
+                      {pastaNova}
                     </span>
                   )}
                 </NavLink>

@@ -61,12 +61,14 @@ def _redirect_uri() -> str:
     return f"{get_settings().app_base_url.rstrip('/')}/api/drive/callback"
 
 
-def url_de_conexao(state: str) -> str:
+def url_de_conexao(state: str, email: str | None = None) -> str:
     if not configurado():
         raise DriveNaoConfiguradoError("A conexão com o Google Drive ainda não está ativa neste servidor.")
     return f"{_URL_AUTORIZACAO}?" + urlencode({
         "client_id": get_settings().google_oauth_client_id, "redirect_uri": _redirect_uri(), "response_type": "code",
         "scope": _ESCOPO, "state": state, "access_type": "offline", "prompt": "consent", "include_granted_scopes": "false",
+        # quem entrou com o Google já cai na mesma conta (08/10/2026)
+        **({"login_hint": email} if email else {}),
     })
 
 
@@ -113,7 +115,10 @@ def desconectar(db: Session, prestador_id: uuid.UUID) -> None:
 
 def status(db: Session, prestador_id: uuid.UUID) -> dict:
     prestador = db.get(Prestador, prestador_id)
-    return {"disponivel": configurado(), "conectado": bool(prestador and prestador.drive_token), "email": prestador.drive_email if prestador else None}
+    conectado = bool(prestador and prestador.drive_token)
+    # "provedor": hoje só o Google; OneDrive/Dropbox entram em Empresa › Integrações.
+    return {"disponivel": configurado(), "conectado": conectado, "email": prestador.drive_email if prestador else None,
+            "provedor": "google" if conectado else None}
 
 
 class ClienteDrive:

@@ -816,3 +816,21 @@ O e-mail do suporte é suporte@agenteana.com.br.
 | Assinar, mudar de plano ou cancelar | "Minha conta" › "Assinatura" |
 | Tema escuro e dicas | "Minha conta" › "Preferências" |
 | Falar com uma pessoa | "Ajuda" › "Falar com o suporte" |
+
+## Pasta do mês (com o seu contador)
+
+No menu, "Pasta do mês" junta tudo o que o seu contador precisa em cada mês:
+
+- **A lista**: o que mandar todo mês (por exemplo, extrato do banco, notas de serviços tomados, comprovantes de pagamento). Você ou o contador montam; ela vale pros próximos meses. Pra começar rápido, use a lista sugerida.
+- **Os arquivos**: em cada item, clique em "Enviar arquivo" (PDF, imagem, planilha, XML, OFX, documento ou ZIP, até 15 MB cada). Se num mês não teve, marque "Não teve neste mês".
+- **O extrato**: se você importa o extrato na Conciliação, o item "Extrato do banco" já conta como enviado.
+- **A conversa**: à direita, escreva o que quiser deixar combinado. O contador responde pelo painel dele, e o número no menu avisa quando chegou algo novo.
+
+O contador vê a mesma pasta na ficha da sua empresa, no painel dele, e marca cada item como conferido.
+
+## Integrações (Empresa › Integrações)
+
+- **Drive**: conecte o Google Drive uma vez. Depois, em qualquer lugar, é só escolher "Enviar para o Drive" — no cadastro do tomador (envio automático), na nota ou no lote. OneDrive e Dropbox estão a caminho.
+- **Google Agenda**: copie o link da sua agenda e clique em "Adicionar no Google Agenda" (ou cole em Outras agendas › + › Do URL). Os dias de gerar nota, as previsões de recebimento e os seus lembretes aparecem lá. O Google atualiza sozinho, com algumas horas de atraso. Se o link vazar, gere um novo — o antigo para de funcionar.
+- **WhatsApp**: lembretes das tarefas, em breve.
+

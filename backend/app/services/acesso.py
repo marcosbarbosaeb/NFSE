@@ -106,7 +106,10 @@ _REGRAS_BRUTAS: list[tuple[str, str, str, str]] = [
     (_MUDA, r"/api/financeiro/rotinas(/.*)?", "financeiro", "Alterou as rotinas do mês"),
     (_MUDA, r"/api/financeiro/anotacoes(/[^/]+)?", "financeiro", "Alterou uma anotação"),
     ("POST", r"/api/importar/planilha", "financeiro", "Importou uma planilha de controle"),
+    ("POST", r"/api/calendario/assinatura/novo", "empresa", "Trocou o link da agenda"),
     (_MUDA, r"/api/calendario/.*", "financeiro", "Alterou a agenda"),
+    # Pasta do mês: é justamente o lugar de troca com o contador
+    (_MUDA, r"/api/pasta(/.*)?", LIVRE, ""),
     ("POST", r"/api/painel/pendencias/ignorar", "financeiro", "Marcou uma pendência como resolvida"),
     # dados da empresa
     ("PATCH", r"/api/prestador(/.*)?", "empresa", "Alterou os dados da empresa"),
@@ -369,6 +372,7 @@ def do_contador(db: Session, usuario: Usuario, voltar_para: uuid.UUID) -> dict:
             pendencias = _pendencias_da_empresa(db, a.prestador_id, modulos, do_financeiro)
             sit = situacao(db, a.prestador_id)
             raio = _raio_x(db, a.prestador_id, do_financeiro)
+            pasta_do_mes = _pasta_da_empresa(db, a.prestador_id, usuario.id)
             clientes.append({
                 "raio_x": raio, "alertas": raio_x.alertas(raio, bloqueada=bool(sit.get("bloqueado"))) if raio else [],
                 "pendencias": pendencias, "total_pendencias": sum(x["quantidade"] for x in pendencias),
@@ -377,6 +381,7 @@ def do_contador(db: Session, usuario: Usuario, voltar_para: uuid.UUID) -> dict:
                 "pode_emitir": bool(pronta.get("pode_emitir")), "aviso": pronta.get("motivo"),
                 "situacao": sit,
                 "dono": _dono_da_empresa(db, a.prestador_id),
+                "pasta": pasta_do_mes,
             })
     finally:
         definir_prestador_atual(db, voltar_para)
@@ -391,6 +396,24 @@ def _dono_da_empresa(db: Session, prestador_id: uuid.UUID) -> dict | None:
         .filter(UsuarioPrestador.prestador_id == prestador_id).order_by(Usuario.criado_em).first()
     )
     return {"nome": dono.nome, "email": dono.email, "telefone": dono.telefone} if dono is not None else None
+
+
+def _pasta_da_empresa(db: Session, prestador_id: uuid.UUID, usuario_id: uuid.UUID) -> dict | None:
+    """Pasta do mês (app/services/pasta.py) pro painel do contador: quantos
+    itens do mês passado faltam e o que a empresa mandou de novo."""
+    import logging
+
+    from app.services import pasta
+
+    try:
+        with db.begin_nested():
+            definir_prestador_atual(db, prestador_id)
+            comp = pasta.competencia_padrao()
+            mes = pasta.do_mes(db, prestador_id, comp)
+            return {"competencia": comp, **mes["resumo"], "novidades": pasta.novidades(db, prestador_id, usuario_id, "contador")}
+    except Exception:  # noqa: BLE001
+        logging.getLogger("agenteana.contador").exception("Falha na pasta da empresa %s", prestador_id)
+        return None
 
 
 def _raio_x(db: Session, prestador_id: uuid.UUID, do_financeiro: dict) -> dict | None:

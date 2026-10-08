@@ -96,6 +96,12 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
   `_escrever`/`_quebrar`, nunca `drawString` direto.
 - Tomador de fora do Brasil: país + NIF, ou país + `motivo_sem_nif` (vira `<cNaoNIF>` na DPS). `Tomador.estrangeiro` cobre os
   dois; no frontend use `identificadaDeFora()` em vez de testar `pais && nif`.
+- Pasta do mês (`app/services/pasta.py`): arquivos ficam no banco (`pasta_arquivo.conteudo`, deferred) nesta fase — se crescer,
+  trocar por bucket mantendo as rotas. Rotas registradas duas vezes em `app/pasta_rotas.py` (empresa aberta e painel do contador);
+  o papel (empresa/contador) é decidido no servidor. Nas rotas de leitura não use `db.rollback()` (os testes compartilham a transação).
+- Link da agenda (`app/services/agenda_ics.py`): token em `assinatura_agenda` (sem RLS); a rota .ics é pública.
+- Drive: conecta só em Empresa › Integrações (`components/integracoes/Integracoes.tsx`, `LINK_INTEGRACOES`); no resto do painel o
+  rótulo é "Enviar para o Drive" (vale pra qualquer nuvem que entrar depois).
 - Dados da empresa: obrigatório é só o regime tributário (`prontidao._dados_que_faltam`, `obrigatorio`). Endereço e alíquota
   são opcionais — não use pra travar nada.
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.

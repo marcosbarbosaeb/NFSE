@@ -1,6 +1,7 @@
+import { AgendaAssinatura } from "../components/integracoes/AgendaAssinatura"
 import { CaixaBusca } from "../components/ui/CaixaBusca"
 import { MoedaField } from "../components/ui/CampoMoeda"
-import { Bell, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, FileText, type LucideIcon, Pencil, Percent, Plus, RotateCcw, Wallet } from "lucide-react"
+import { Bell, CalendarClock, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, FileText, type LucideIcon, Pencil, Percent, Plus, RotateCcw, Wallet } from "lucide-react"
 import { type FormEvent, useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { Button } from "../components/ui/Button"
@@ -102,6 +103,8 @@ export function CalendarioPage() {
   // os eventos marcados para aquele dia". Clicar no dia abre o painel do dia;
   // editar um evento fecha o painel e, ao terminar, volta pra ele.
   const [diaAberto, setDiaAberto] = useState<string | null>(null)
+  // Link de assinatura (08/10/2026): o mesmo de Empresa › Integrações.
+  const [modalAgenda, setModalAgenda] = useState(false)
   const [voltarAoDia, setVoltarAoDia] = useState<string | null>(null)
   function editarDoDia(ev: EventoCalendario) {
     setVoltarAoDia(ev.data)
@@ -194,6 +197,9 @@ export function CalendarioPage() {
               <ChevronRight size={16} />
             </button>
           </div>
+          <Button type="button" variant="outline" onClick={() => setModalAgenda(true)} title="Ver estes eventos no Google Agenda (ou Outlook/Apple)">
+            <CalendarPlus size={16} /> <span className="hidden sm:inline">No Google Agenda</span>
+          </Button>
           <Button type="button" variant="accent" onClick={() => setModalEvento(paraISO(new Date()))}>
             <Plus size={16} /> Novo evento
           </Button>
@@ -293,6 +299,14 @@ export function CalendarioPage() {
 
       {carregando && !calendario && <p className="text-sm text-slate-400 dark:text-slate-500">Carregando...</p>}
 
+      {modalAgenda && (
+        <Modal titulo="Ver no Google Agenda" onClose={() => setModalAgenda(false)}>
+          <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">
+            Cole este link uma vez na sua agenda e os eventos daqui aparecem lá (o Google atualiza sozinho, com algumas horas de atraso).
+          </p>
+          <AgendaAssinatura />
+        </Modal>
+      )}
       {diaAberto !== null && (
         <DiaModal
           dia={diaAberto}

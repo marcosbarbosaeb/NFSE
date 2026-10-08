@@ -514,8 +514,10 @@ def test_google_drive_conectar_e_subir_as_notas(client, db, prestador_teste, vin
     s = get_settings()
     monkeypatch.setattr(s, "google_oauth_client_id", "id-teste")
     monkeypatch.setattr(s, "google_oauth_client_secret", "segredo-teste")
-    assert client.get("/api/drive").json() == {"disponivel": True, "conectado": False, "email": None}
+    assert client.get("/api/drive").json() == {"disponivel": True, "conectado": False, "email": None, "provedor": None}
     assert "drive.file" in drive.url_de_conexao("abc") and "access_type=offline" in drive.url_de_conexao("abc")
+    # quem entrou com o Google já cai na mesma conta (08/10/2026)
+    assert "login_hint=dono%40gmail.com" in drive.url_de_conexao("abc", "dono@gmail.com") and "login_hint" not in drive.url_de_conexao("abc")
 
     pedidos = []
 
@@ -541,7 +543,7 @@ def test_google_drive_conectar_e_subir_as_notas(client, db, prestador_teste, vin
     monkeypatch.setattr(drive.requests, "get", lambda url, **kw: R(200, {"email": "dono@gmail.com"}))
     assert drive.concluir_conexao(db, prestador_teste.id, "code") == "dono@gmail.com"
     assert prestador_teste.drive_token and b"rt-secreto" not in prestador_teste.drive_token  # cifrado
-    assert client.get("/api/drive").json() == {"disponivel": True, "conectado": True, "email": "dono@gmail.com"}
+    assert client.get("/api/drive").json() == {"disponivel": True, "conectado": True, "email": "dono@gmail.com", "provedor": "google"}
 
     nota = _avulsa(db, vinculo_teste, "11222333000601", "g@x.com")
     pendente = _avulsa(db, vinculo_teste, "11222333000602", "h@x.com")

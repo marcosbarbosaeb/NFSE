@@ -151,6 +151,25 @@ export function tarefasDe(clientes: ClienteAtendido[]): TarefaDoContador[] {
       if (p.tipo === "erro" || p.tipo === "indisponivel") return
       fila.push({ chave: `${c.id}-p-${p.tipo}-${i}`, cliente: c, texto: p.titulo, link: p.link, peso: p.atrasada ? 1 : 3 })
     })
+    // Pasta do mês (08/10/2026): o que a empresa mandou e o que ainda falta.
+    const pasta = c.pasta
+    if (pasta) {
+      const novos = pasta.novidades.arquivos + pasta.novidades.mensagens
+      if (novos > 0) {
+        const partes = [
+          pasta.novidades.arquivos ? `${pasta.novidades.arquivos} ${pasta.novidades.arquivos === 1 ? "arquivo" : "arquivos"}` : "",
+          pasta.novidades.mensagens ? `${pasta.novidades.mensagens} ${pasta.novidades.mensagens === 1 ? "mensagem" : "mensagens"}` : "",
+        ].filter(Boolean)
+        fila.push({ chave: `${c.id}-pasta-nova`, cliente: c, texto: `Mandou ${partes.join(" e ")} na pasta do mês`, link: "/app/pasta", peso: 2 })
+      }
+      if (pasta.pendentes > 0) {
+        const mes = formatCompetenciaLonga(pasta.competencia).toLowerCase()
+        fila.push({
+          chave: `${c.id}-pasta-falta`, cliente: c, link: "/app/pasta", peso: 3,
+          texto: `Falta${pasta.pendentes === 1 ? "" : "m"} ${pasta.pendentes} ${pasta.pendentes === 1 ? "item" : "itens"} da pasta de ${mes}`,
+        })
+      }
+    }
   }
   return fila.sort((a, b) => a.peso - b.peso)
 }

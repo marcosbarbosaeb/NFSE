@@ -1,3 +1,4 @@
+import { LINK_INTEGRACOES } from "./integracoes/Integracoes"
 import { AlertTriangle, Check, CheckCircle2, Clock, Download, FolderUp, Loader2, Mail, PlayCircle } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
@@ -105,7 +106,7 @@ export function LoteAndamento({
     api.get<{ disponivel: boolean; conectado: boolean; email: string | null }>("/drive").then(setDrive).catch(() => setDrive(null))
     // Volta do Google (?drive=conectado|recusado|falhou)
     const retorno = new URLSearchParams(window.location.search).get("drive")
-    if (retorno === "conectado") setAviso("Google Drive conectado. Agora é só clicar em “Guardar no Google Drive”.")
+    if (retorno === "conectado") setAviso("Drive conectado. Agora é só clicar em “Enviar para o Drive”.")
     else if (retorno) setErro("Não consegui conectar o Google Drive. Tente de novo e aceite o acesso que o Google pedir.")
   }, [])
 
@@ -191,25 +192,13 @@ export function LoteAndamento({
     }
   }
 
-  async function conectarDrive() {
-    setOcupado("conectar")
-    setErro(null)
-    try {
-      const { url } = await api.post<{ url: string }>("/drive/conectar", {})
-      window.location.href = url
-    } catch (err) {
-      setErro(msg(err))
-      setOcupado("")
-    }
-  }
-
   async function guardarNoDrive() {
     setOcupado("drive")
     setErro(null)
     setAviso(null)
     try {
       onLote(await api.post<Lote>("/lotes", { acao: "drive", vinculo_id: d.vinculo_id, competencia: mes, so_avulsas: true, conteudo }))
-      setAviso("Estou guardando os arquivos no seu Google Drive, na pasta Agente Ana. Pode fechar a página — o link da pasta aparece no relatório.")
+      setAviso("Estou enviando os arquivos pro seu Drive, na pasta Agente Ana. Pode fechar a página — o link da pasta aparece no relatório.")
       void marcarPacote(true)
     } catch (err) {
       setErro(msg(err))
@@ -391,12 +380,12 @@ export function LoteAndamento({
             {drive?.disponivel &&
               (drive.conectado ? (
                 <button type="button" className={botaoPacote} disabled={ocupado !== "" || rodando} onClick={guardarNoDrive} title={drive.email ? `Drive de ${drive.email}` : undefined}>
-                  {ocupado === "drive" ? <Loader2 size={15} className="animate-spin" /> : <FolderUp size={15} />} Guardar no Google Drive
+                  {ocupado === "drive" ? <Loader2 size={15} className="animate-spin" /> : <FolderUp size={15} />} Enviar para o Drive
                 </button>
               ) : (
-                <button type="button" className={botaoPacote} disabled={ocupado !== ""} onClick={conectarDrive}>
-                  <FolderUp size={15} /> {ocupado === "conectar" ? "Abrindo o Google..." : "Conectar o Google Drive"}
-                </button>
+                <Link to={LINK_INTEGRACOES} className={botaoPacote} title="Conecte o seu Drive em Empresa › Integrações">
+                  <FolderUp size={15} /> Enviar para o Drive (conectar)
+                </Link>
               ))}
           </div>
           <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
@@ -435,14 +424,10 @@ export function LoteAndamento({
           )}
           {drive?.conectado && drive.email && (
             <p className="mt-2 text-xs text-slate-400">
-              Google Drive conectado ({drive.email}) — os arquivos vão pra pasta “Agente Ana”.{" "}
-              <button
-                type="button"
-                className="underline hover:text-slate-600"
-                onClick={() => api.delete("/drive").then(() => setDrive({ disponivel: true, conectado: false, email: null })).catch(() => undefined)}
-              >
-                desconectar
-              </button>
+              Drive: Google Drive ({drive.email}) — os arquivos vão pra pasta “Agente Ana”.{" "}
+              <Link to={LINK_INTEGRACOES} className="underline hover:text-slate-600">
+                trocar
+              </Link>
             </p>
           )}
         </div>

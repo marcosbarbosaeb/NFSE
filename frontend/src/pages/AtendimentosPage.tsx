@@ -92,6 +92,12 @@ export function AtendimentosPage() {
 
   /** Abre a empresa já na tela onde a pendência se resolve. */
   async function abrir(c: ClienteAtendido, destino = "/app") {
+    // A pasta do mês o contador vê na ficha da empresa, sem entrar nela.
+    if (destino === "/app/pasta") {
+      setParams({ empresa: c.id })
+      window.setTimeout(() => document.getElementById("pasta")?.scrollIntoView({ behavior: "smooth", block: "start" }), 150)
+      return
+    }
     setFazendo(c.id)
     setErro(null)
     try {
