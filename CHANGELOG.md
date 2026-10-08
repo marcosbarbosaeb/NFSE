@@ -44,6 +44,8 @@ Modo demonstração (pra gravar vídeos de anúncio) em cima da simulação, sem
 - **Catálogo pré-cadastrado em banco novo**: `scripts/semear_catalogo.py` roda no start (entrypoint) e cria, só se
   faltar, os tomadores de `app/data/catalogo_inicial.json` (11 do catálogo de produção, só dado público + modelo de
   nota; sem textos de e-mail). Em produção não muda nada.
+- **Busca pela marca** (`lib/marcas.ts`): no catálogo a Shopee é "SHPS..."; a lista de Tomadores e a busca do
+  cadastro mostram e acham pela marca (Shopee, Mercado Livre, Amazon, Magalu...), que também vira o apelido sugerido.
 - **Catálogo sem nome de pessoa**: a limpeza (`services/sugestoes.py`) tira a assinatura depois de
   "Atenciosamente/Att/Cordialmente/Abraços", pedaços do nome da empresa e dos usuários (duplas de palavras; primeiro
   nome em razão social de pessoa) e cupons de desconto. Migração `e1c3d5f7a9b2` limpa o que já estava gravado.

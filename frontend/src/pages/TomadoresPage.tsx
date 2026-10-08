@@ -1,4 +1,5 @@
 import { CalendarDays, FilePlus2, Pencil, Plus, Search, Trash2 } from "lucide-react"
+import { nomeComMarca } from "../lib/marcas"
 import { useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { Badge } from "../components/ui/Badge"
@@ -215,7 +216,7 @@ export function TomadoresPage() {
     const termo = busca.trim().toLowerCase()
     if (!termo) return tomadores
     const digitos = termo.replace(/\D/g, "")
-    return tomadores.filter((t) => t.razao_social.toLowerCase().includes(termo) || (digitos !== "" && t.cnpj.includes(digitos)))
+    return tomadores.filter((t) => nomeComMarca(t.razao_social, t.cnpj).toLowerCase().includes(termo) || (digitos !== "" && t.cnpj.includes(digitos)))
   }, [tomadores, busca])
 
   const resumo = useMemo(() => {
@@ -467,7 +468,7 @@ export function TomadoresPage() {
               <tbody>
                 {tomadoresFiltrados.map((t) => (
                   <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 dark:border-slate-700/40 dark:hover:bg-slate-700/50">
-                    <td className="py-3 font-medium text-slate-800 dark:text-slate-200">{t.razao_social}</td>
+                    <td className="py-3 font-medium text-slate-800 dark:text-slate-200">{nomeComMarca(t.razao_social, t.cnpj)}</td>
                     <td className="py-3 text-slate-500 dark:text-slate-400">{t.cnpj ? formatarDocumento(t.cnpj) : "—"}</td>
                     <td className="py-3 text-right">
                       <Link to={`/app/tomadores/novo?tomador_id=${t.id}`} className="text-sm font-medium text-primary-600 hover:text-primary-700">

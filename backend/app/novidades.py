@@ -35,6 +35,9 @@ VERSOES: list[dict] = [
             {"perfil": "todos", "titulo": "Consulta de CNPJ mais firme",
              "texto": "Quando a fonte de sempre dos dados da Receita está fora do ar, eu tento outras duas antes de pedir pra você preencher à mão. "
                       "E, se você trocar o CNPJ e a consulta não der, os dados do CNPJ anterior saem do formulário."},
+            {"perfil": "empresa", "titulo": "Ache o tomador pelo nome da marca", "link": "/app/tomadores",
+             "texto": "Procure “Shopee”, “Mercado Livre”, “Amazon” ou “Magalu” na lista de tomadores: aparece a empresa certa, "
+                      "mesmo com outra razão social no cadastro da Receita."},
             {"perfil": "todos", "titulo": "Simulação mais completa", "link": "/simulacao",
              "texto": "Na simulação, “Gerar e fazer tudo” vai até o fim (de mentira: nada sai pra Receita nem pra ninguém) e as notas de "
                       "exemplo já aparecem autorizadas e entregues, com os números da Visão geral e do financeiro andando juntos."},

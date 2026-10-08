@@ -11,6 +11,7 @@ import { AvisoNotaExterior, identificadaDeFora } from "../components/tomador/Emp
 import { EnvioTomador } from "../components/tomador/EnvioTomador"
 import { type DadosNotaAntiga, NotaAntiga, ResumoNotaAntiga } from "../components/tomador/NotaAntiga"
 import { CaixaBusca } from "../components/ui/CaixaBusca"
+import { marcaDe, nomeComMarca } from "../lib/marcas"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
 import { CampoCidade } from "../components/ui/CampoCidade"
@@ -297,7 +298,7 @@ export function VinculoFormPage() {
   const sugestoes: Sugestao[] = useMemo(() => {
     if (editando || !tomadorSelecionado) return []
     const t = tomadorSelecionado
-    const lista: Sugestao[] = [{ campo: "apelido", rotulo: "Apelido", valor: apelidoDe(t.razao_social) }]
+    const lista: Sugestao[] = [{ campo: "apelido", rotulo: "Apelido", valor: marcaDe(t.cnpj) ?? apelidoDe(t.razao_social) }]
     const codigo = t.sug_cod_trib_nacional || meusCodigos[0]
     if (codigo) lista.push({ campo: "cod_trib_nacional", rotulo: "Código do serviço", valor: codigo, exibicao: formatarCodigoServico(codigo) })
     const modelo = modelosDescricao[0] || MODELOS_PADRAO[0]
@@ -720,7 +721,7 @@ export function VinculoFormPage() {
                 <FieldWrap label="Tomador do catálogo">
                   <CaixaBusca
                     valor={tomadorExistenteId ?? ""}
-                    opcoes={tomadores.map((t) => ({ id: t.id, rotulo: `${t.razao_social} — ${formatarDocumento(t.cnpj)}` }))}
+                    opcoes={tomadores.map((t) => ({ id: t.id, rotulo: `${nomeComMarca(t.razao_social, t.cnpj)} — ${formatarDocumento(t.cnpj)}` }))}
                     onEscolher={(v) => setTomadorExistenteId(v || null)}
                     placeholder="Digite o nome ou o CNPJ pra buscar"
                     ariaLabel="Tomador do catálogo"
