@@ -45,6 +45,8 @@ Lista de ajustes do Marcos + três dúvidas que apareceram num concorrente.
   "Enviar para o Drive" no lugar de "Google Drive" nas opções de envio, na nota e no lote; conectar só nas Integrações.
   Conectar o Drive manda `login_hint` com o e-mail do login (a conta do Google já vem escolhida).
 - Política de Privacidade: Pasta do mês e link da agenda.
+- Correção (no ar em 08/10/2026): os campos novos da linha dos vendedores não estavam no `response_model` do resumo do mês
+  (`EmissaoResumoLinha` em `schemas.py`) e sumiam no caminho; teste novo passa pela API.
 - **Google Drive no real** (configuração, sem código): "Erro 400: redirect_uri_mismatch" = o endereço
   `https://notas.agenteana.com.br/api/drive/callback` (o que o app manda, conferido em 08/10/2026) não está na lista de
   URIs de redirecionamento autorizados do cliente OAuth no Google Cloud. Pro ambiente de teste vale o mesmo com o domínio dele.

@@ -361,6 +361,11 @@ class EmissaoResumoLinha(BaseModel):
     # ...e quantas dessas notas já foram entregues ao vendedor (de quantas autorizadas).
     enviadas: int | None = None
     a_enviar: int | None = None
+    # Linha de vendedores: a conta do grupo pras colunas Assinatura e Prefeitura (08/10/2026).
+    total_grupo: int | None = None
+    assinadas: int | None = None
+    autorizadas: int | None = None
+    recusadas: int | None = None
 
 
 class AtencaoItem(BaseModel):

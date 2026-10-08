@@ -231,3 +231,32 @@ def test_linha_dos_vendedores_conta_assinadas_autorizadas_e_recusadas(db, presta
     # a substituída não conta; montado = ainda não assinada
     assert (linha["total_grupo"], linha["assinadas"], linha["autorizadas"], linha["recusadas"]) == (5, 4, 2, 1)
     assert (linha["a_enviar"], linha["enviadas"]) == (2, 0)
+
+
+def test_linha_dos_vendedores_chega_inteira_pela_api(db, prestador_teste, vinculo_teste):
+    """O resumo passa pelo response_model: campo novo que não está no schema some
+    no caminho (aconteceu no real em 08/10/2026)."""
+    from decimal import Decimal
+
+    from fastapi.testclient import TestClient
+
+    from app.database import get_db
+    from app.main import app, prestador_atual_id
+
+    db.add(Emissao(
+        id=uuid.uuid4(), prestador_id=prestador_teste.id, prestador_tomador_id=vinculo_teste.id, competencia=_competencia(0),
+        serie="5", n_dps=990, estado="confirmado", valor=Decimal("10.00"), origem="ana",
+        tomador_documento="00000000099", tomador_snapshot={"razao_social": "Vendedor"},
+    ))
+    db.flush()
+    db.commit = db.flush
+    app.dependency_overrides[get_db] = lambda: (yield db)
+    app.dependency_overrides[prestador_atual_id] = lambda: prestador_teste.id
+    try:
+        r = TestClient(app).get(f"/api/painel/resumo-mes?competencia={_competencia(0)}")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(prestador_atual_id, None)
+    assert r.status_code == 200, r.text
+    linha = next(l for l in r.json()["emissoes"] if l.get("vendedores"))
+    assert (linha["total_grupo"], linha["assinadas"], linha["autorizadas"], linha["recusadas"]) == (1, 1, 1, 0)
