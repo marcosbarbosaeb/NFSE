@@ -3,8 +3,8 @@ e o que a Ana faz com cada uma:
 
 1. PDF da nota com nome de tomador em chinês/japonês/coreano/cirílico saía com
    quadradinhos (app/services/danfse.py).
-2. Virou o mês, a pessoa gera a nota do mês passado e a data fica no mês novo
-   (conferencia._checar_mes_pulado).
+2. Nota do mês passado saindo com a competência deste mês: é o normal, a Ana
+   não avisa nada (decisão do Marcos — data antiga é que gera multa).
 3. Empresa de fora do Brasil que não tem número fiscal (cNaoNIF na DPS).
 
 Dados sintéticos, Postgres real com rollback."""
@@ -23,7 +23,7 @@ from app.database import get_db
 from app.main import app, prestador_atual_id
 from app.models import Certificado, Emissao, PrestadorTomador
 from app.services import danfse
-from app.services.conferencia import _checar_mes_pulado, conferir_emissao, conferir_nota, conferir_vinculo
+from app.services.conferencia import conferir_emissao, conferir_nota, conferir_vinculo
 from app.services.motor_emissao import criar_rascunho, montar
 from app.services.nota_visual import montar_nota_visual
 from app.tempo import hoje as hoje_br
@@ -119,48 +119,21 @@ def test_caractere_que_nenhuma_fonte_desenha_vira_interrogacao(monkeypatch):
     assert danfse._trechos("a深圳", "Helvetica") == [("Helvetica", "a深?")]
 
 
-# --- 2. mês pulado ---------------------------------------------------------------
+# --- 2. competência no mês corrente é o normal -------------------------------------
+# A primeira ideia era avisar "mês pulado" (tomador com nota de dois meses atrás, sem
+# a do mês passado, e a nova saindo neste mês). O Marcos corrigiu: mesmo quando o
+# relatório é de meses atrás, a nota sai com a competência deste mês — data antiga é
+# que gera multa. Então NÃO há aviso, e este teste segura isso.
 
 
-def test_mes_pulado_regra():
-    hoje = datetime.date(2026, 10, 7)
-    costume = [("2026-08", 100), ("2026-07", 100)]
-    pontos = _checar_mes_pulado("2026-10", costume, hoje)
-    assert [p["codigo"] for p in pontos] == ["mes_pulado"] and pontos[0]["nivel"] == "aviso"
-    assert "agosto" in pontos[0]["mensagem"] and "setembro" in pontos[0]["mensagem"] and "outubro" in pontos[0]["mensagem"]
-    assert "setembro" in pontos[0]["como_corrigir"] and pontos[0]["campo"] == "data_competencia"
-    # já tem a do mês passado, ou já tem uma deste mês: nada a avisar
-    assert _checar_mes_pulado("2026-10", [("2026-09", 100), *costume], hoje) == []
-    assert _checar_mes_pulado("2026-10", [("2026-10", 100), *costume], hoje) == []
-    # tomador sem costume mensal (a última foi há tempos) ou sem histórico: não chuta
-    assert _checar_mes_pulado("2026-10", [("2026-05", 100)], hoje) == []
-    assert _checar_mes_pulado("2026-10", [], hoje) == []
-    assert _checar_mes_pulado("2026-10", None, hoje) == []
-    # a nota está saindo no mês passado (o certo): nada
-    assert _checar_mes_pulado("2026-09", costume, hoje) == []
-    # virada de ano
-    virada = _checar_mes_pulado("2027-01", [("2026-11", 100)], datetime.date(2027, 1, 5))
-    assert "novembro" in virada[0]["mensagem"] and "dezembro" in virada[0]["mensagem"] and "janeiro" in virada[0]["mensagem"]
-
-
-def test_mes_pulado_aparece_na_conferencia_da_nota(db, vinculo_teste, prestador_teste):
+def test_nota_no_mes_corrente_sem_a_do_mes_passado_nao_gera_aviso(db, vinculo_teste, prestador_teste):
     db.add(Certificado(
         id=uuid.uuid4(), prestador_id=prestador_teste.id, pfx_criptografado=b"x", senha_criptografada=b"x",
         validade=hoje_br() + datetime.timedelta(days=200),
     ))
     _nota(db, vinculo_teste, _competencia(2), 500)
     _nota(db, vinculo_teste, _competencia(3), 620)
-    hoje = hoje_br()
-    assert {p["codigo"] for p in conferir_nota(db, vinculo_teste, 550, hoje, None, None)} == {"mes_pulado"}
-    # com a data no mês passado, some
-    mes_passado = hoje.replace(day=1) - datetime.timedelta(days=1)
-    assert conferir_nota(db, vinculo_teste, 550, mes_passado, None, None) == []
-    # nota cancelada do mês passado não conta como "já tem"
-    _nota(db, vinculo_teste, _competencia(1), 550, estado="cancelada")
-    assert {p["codigo"] for p in conferir_nota(db, vinculo_teste, 551, hoje, None, None)} == {"mes_pulado"}
-    # é aviso: a nota já gerada mostra, mas nada trava
-    emissao = _nota(db, vinculo_teste, _competencia(0), 560, estado="rascunho")
-    assert "mes_pulado" in {p["codigo"] for p in conferir_emissao(db, emissao) if p["nivel"] == "aviso"}
+    assert conferir_nota(db, vinculo_teste, 550, hoje_br(), None, None) == []
 
 
 # --- 3. empresa de fora sem número fiscal ---------------------------------------

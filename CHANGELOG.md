@@ -27,8 +27,9 @@ Três dúvidas que apareceram num concorrente, avaliadas na Ana.
   - **Dockerfile**: instala `fonts-dejavu-core fonts-droid-fallback fonts-nanum`. Sem as fontes (máquina de desenvolvimento)
     cai na fonte chinesa do leitor de PDF.
   - Não cobre árabe/hebraico (escrita da direita pra esquerda).
-- **Aviso `mes_pulado`** (`conferencia._checar_mes_pulado`): nota com competência no mês corrente + tomador com nota de dois
-  meses atrás e sem a do mês passado. É aviso, não trava. Não vale pra notas de vendedores da Shopee (sem histórico por vendedor).
+- **Competência no mês corrente**: chegou a ser feito um aviso `mes_pulado` (nota neste mês sem a do mês passado) e foi
+  retirado antes de publicar — a prática é emitir com a competência do mês corrente mesmo quando o relatório é de meses
+  atrás (data antiga gera multa). Segue valendo só o aviso `competencia_antiga`. Há um teste segurando a ausência do aviso.
 - **Empresa de fora sem NIF**: `tomador.motivo_sem_nif` ("1" dispensada, "2" o país não exige) — **migração `c9f1b3d5e7a8`**.
   A DPS sai com `<cNaoNIF>` no lugar de `<NIF>` (o XSD já previa), com `endExt` e `comExt` como nas outras notas pro exterior.
   Cadastro: “Esta empresa não tem número fiscal” em Dados do tomador. Relatório da Shopee continua pulando vendedor sem documento.

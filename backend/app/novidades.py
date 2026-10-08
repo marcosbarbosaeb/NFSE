@@ -23,12 +23,8 @@ VERSOES: list[dict] = [
     {
         "versao": "2026.10.5",
         "data": "2026-10-08",
-        "resumo": "Notas pra empresas de fora do Brasil e um aviso na virada do mês.",
+        "resumo": "Notas pra empresas de fora do Brasil: nome em outro alfabeto e empresa sem número fiscal.",
         "itens": [
-            {"perfil": "empresa", "titulo": "Aviso quando a nota do mês passado sai com a data deste mês",
-             "texto": "Virou o mês e você foi gerar a nota do mês que passou? Se o tomador tem nota de dois meses atrás e ainda não tem a do "
-                      "mês passado, eu aviso antes de gerar e digo como acertar a data de competência. É só um aviso: se a nota é mesmo "
-                      "deste mês, é só seguir."},
             {"perfil": "empresa", "titulo": "PDF da nota com nome em chinês, japonês, coreano...",
              "texto": "Tomador de fora com o nome escrito em outro alfabeto agora sai certo no PDF da nota (antes apareciam quadradinhos "
                       "no lugar das letras). No XML sempre saiu certo."},

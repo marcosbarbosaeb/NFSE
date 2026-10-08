@@ -453,32 +453,6 @@ def _competencia_menos(competencia: str, meses: int) -> str:
     return f"{total // 12:04d}-{total % 12 + 1:02d}"
 
 
-_MESES = ("janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro")
-
-
-def _checar_mes_pulado(mes_nota: str | None, historico: list[tuple[str, Decimal]] | None, hoje: datetime.date) -> list[dict]:
-    """Virou o mês e a pessoa foi gerar a nota do mês que passou, mas a data
-    ficou no mês novo (08/10/2026: dúvida que aparece todo começo de mês).
-    Só avisa quando o costume deixa claro: o tomador tem nota de dois meses
-    atrás, não tem a do mês passado e esta está saindo no mês corrente."""
-    if not historico or not mes_nota or not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", mes_nota):
-        return []
-    if mes_nota != f"{hoje.year:04d}-{hoje.month:02d}":
-        return []
-    meses = {c for c, _ in historico if c}
-    passado, retrasado = _competencia_menos(mes_nota, 1), _competencia_menos(mes_nota, 2)
-    if mes_nota in meses or passado in meses or retrasado not in meses:
-        return []
-    nome_passado, nome_atual = _MESES[int(passado[5:7]) - 1], _MESES[int(mes_nota[5:7]) - 1]
-    return [_ponto(
-        "aviso", "mes_pulado",
-        f"Este tomador tem nota de {_MESES[int(retrasado[5:7]) - 1]} e ainda não tem a de {nome_passado} — e esta está saindo com a data em {nome_atual}.",
-        f"Se o serviço é de {nome_passado}, troque a data de competência para um dia de {nome_passado} "
-        f"(o último dia do mês, por exemplo). Se é mesmo de {nome_atual}, pode seguir.",
-        campo="data_competencia", onde="nota",
-    )]
-
-
 def _checar_valor_e_datas(
     *, valor, data_competencia: datetime.date | None, competencia: str | None, historico: list[tuple[str, Decimal]] | None,
 ) -> list[dict]:
@@ -504,8 +478,6 @@ def _checar_valor_e_datas(
                 f"A competência da nota é {mes_nota[5:7]}/{mes_nota[:4]}, de {atraso} meses atrás. Nota de mês antigo pode gerar multa e juros no imposto.",
                 "Confira se a data é essa mesmo. Na dúvida, pergunte ao seu contador.", campo="data_competencia", onde="nota",
             ))
-
-    pontos += _checar_mes_pulado(mes_nota, historico, hoje)
 
     if not valor_ok or not historico:
         return pontos
