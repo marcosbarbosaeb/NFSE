@@ -88,7 +88,7 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
 
     # Logins (sem RLS): quem acessa cada empresa e quando entrou pela última vez.
     usuarios = db.execute(text("""
-        SELECT u.id, u.email, u.nome, u.email_confirmado, u.ativo, u.prestador_id,
+        SELECT u.id, u.email, u.nome, u.telefone, u.email_confirmado, u.ativo, u.prestador_id,
                (SELECT max(s.ultimo_acesso) FROM sessao s WHERE s.usuario_id = u.id) AS ultimo_acesso
         FROM usuario u
     """)).mappings().all()
@@ -120,7 +120,7 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
             empresa = db.execute(text("""
                 SELECT p.razao_social, p.cpf_cnpj, p.cod_municipio, p.criado_em, p.demo, p.modo_teste, p.modulos, p.so_contador,
                        (p.drive_token IS NOT NULL) AS drive,
-                       a.status AS assinatura, a.plano, a.trial_termina_em, a.liberado_ate, a.liberado_sempre, a.liberado_obs, a.bloqueada_em, a.bloqueada_obs,
+                       a.status AS assinatura, a.plano, a.trial_termina_em, a.liberado_ate, a.liberado_sempre, a.liberado_obs, a.bloqueada_em, a.bloqueada_obs, a.liberacao_pedida_em,
                        p.telefone, p.email AS email_empresa,
                        c.validade AS certificado_validade, (c.id IS NOT NULL) AS tem_certificado,
                        (SELECT count(*) FROM indicacao i WHERE i.indicador_id = p.id) AS indicou,
@@ -152,11 +152,16 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
                 "acesso": acesso, "liberado_obs": empresa["liberado_obs"],
                 "bloqueada_em": _data(empresa["bloqueada_em"]), "bloqueada_obs": empresa["bloqueada_obs"],
                 # contato da empresa (cadastro dela) — pra falar com o cliente
-                "telefone": empresa["telefone"], "email_empresa": empresa["email_empresa"],
+                # o WhatsApp de quem criou a conta (cadastro) vale mais que o telefone
+                # da empresa, que vem da Receita e muitas vezes é o do contador
+                "telefone": next((u["telefone"] for u in pessoas if u["telefone"]), None) or empresa["telefone"],
+                "telefone_origem": "cadastro" if any(u["telefone"] for u in pessoas) else ("empresa" if empresa["telefone"] else None),
+                "email_empresa": empresa["email_empresa"],
+                "liberacao_pedida_em": _data(empresa["liberacao_pedida_em"]),
                 "contadores": contadores.get(prestador_id, 0),
                 "certificado": "falta" if not empresa["tem_certificado"] else ("vencido" if validade is not None and validade < hoje else "ok"),
                 "logins": [
-                    {"email": u["email"], "nome": u["nome"], "confirmado": bool(u["email_confirmado"]), "ativo": bool(u["ativo"]), "ultimo_acesso": _data(u["ultimo_acesso"])}
+                    {"email": u["email"], "nome": u["nome"], "telefone": u["telefone"], "confirmado": bool(u["email_confirmado"]), "ativo": bool(u["ativo"]), "ultimo_acesso": _data(u["ultimo_acesso"])}
                     for u in pessoas
                 ],
                 "email_confirmado": any(u["email_confirmado"] for u in pessoas),

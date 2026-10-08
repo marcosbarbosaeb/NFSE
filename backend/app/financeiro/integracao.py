@@ -74,6 +74,11 @@ def _resumo_pro_contador(db: Session, prestador_id: uuid.UUID) -> dict:
     return {
         "pendencias": _pendencias_da_empresa(r),
         "fechamento": {"competencia": anterior["competencia"], "estado": anterior["estado"]} if anterior else None,
+        # os três últimos meses (do mais antigo pro atual), pro quadro de fechamento
+        "fechamentos": [
+            {"competencia": f["competencia"], "estado": f["estado"], "notas_atrasadas": f["notas_atrasadas"], "extrato_pendentes": f["extrato_pendentes"]}
+            for f in r["fechamentos"]
+        ],
         "sem_nota": int(r["notas"].get("sem_nota") or 0) if r["notas"].get("aplica") else 0,
     }
 

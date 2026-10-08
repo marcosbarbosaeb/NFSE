@@ -1,7 +1,9 @@
-import { AlertTriangle, ArrowRight, BriefcaseBusiness, Building2, Check, CircleCheck, Gift, LayoutList, Loader2, Lock, LogIn, MailPlus, Table2 } from "lucide-react"
+import { ArrowRight, BriefcaseBusiness, Building2, CalendarCheck, Check, Gift, ListChecks, Loader2, MailPlus } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Link } from "react-router-dom"
-import { CardsDaCarteira, CentralDeAlertas, RaioXDoCliente, TabelaRaioX } from "../components/contador/PainelContador"
+import { Link, useSearchParams } from "react-router-dom"
+import { FichaDaEmpresa } from "../components/contador/FichaDaEmpresa"
+import { FaixaDaCarteira, FilaDeTarefas, ListaDaCarteira, QuadroDeFechamento, tarefasDe } from "../components/contador/PainelContador"
+import { CaixaBusca } from "../components/ui/CaixaBusca"
 import { nomeEmpresa } from "../components/TrocaEmpresa"
 import { Badge } from "../components/ui/Badge"
 import { Button } from "../components/ui/Button"
@@ -9,7 +11,7 @@ import { Card } from "../components/ui/Card"
 import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useAuth } from "../lib/auth"
-import { PERMISSOES_PADRAO, quando } from "../lib/contador"
+import { PERMISSOES_PADRAO } from "../lib/contador"
 import { formatarDocumento } from "../lib/documento"
 import type { Atendimentos, ClienteAtendido, ConviteContador, PermissaoContador, PermissaoInfo } from "../lib/types"
 
@@ -18,6 +20,13 @@ import type { Atendimentos, ClienteAtendido, ConviteContador, PermissaoContador,
 // aqui o contador aceita e abre cada empresa (a troca recarrega o painel).
 
 const erroDe = (err: unknown) => (err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
+
+const ABAS = [
+  { id: "hoje", rotulo: "Hoje", Icone: ListChecks },
+  { id: "fechamento", rotulo: "Fechamento do mês", Icone: CalendarCheck },
+  { id: "empresas", rotulo: "Empresas", Icone: Building2 },
+] as const
+type IdAba = (typeof ABAS)[number]["id"]
 
 export function AtendimentosPage() {
   const { usuario, recarregarUsuario } = useAuth()
@@ -67,12 +76,19 @@ export function AtendimentosPage() {
       .filter((c) => !soPendentes || (c.total_pendencias ?? 0) > 0 || (c.alertas ?? []).length > 0)
       .filter((c) => !termo || `${c.empresa} ${c.nome_fantasia ?? ""} ${c.cnpj}`.toLowerCase().includes(termo) || c.cnpj.includes(termo.replace(/\D/g, "") || "#"))
   }, [dados, soPendentes, busca])
-  // Tabela (a carteira inteira numa tela) ou cartões (o detalhe de cada uma).
-  // Com quatro empresas ou mais, já abre na tabela.
-  const [modo, setModo] = useState<"cartoes" | "tabela" | null>(null)
-  const emTabela = (modo ?? ((dados?.clientes.length ?? 0) >= 4 ? "tabela" : "cartoes")) === "tabela"
-  const totalPendencias = (dados?.clientes ?? []).reduce((soma, c) => soma + (c.total_pendencias ?? 0), 0)
-  const comPendencia = (dados?.clientes ?? []).filter((c) => (c.total_pendencias ?? 0) > 0).length
+  // 08/10/2026 — painel próprio: a aba e a empresa aberta ficam na URL (dá
+  // pra voltar com o botão do navegador e mandar o link).
+  const [params, setParams] = useSearchParams()
+  const aba = (ABAS.find((a) => a.id === params.get("aba"))?.id ?? "hoje") as IdAba
+  const ficha = (dados?.clientes ?? []).find((c) => c.id === params.get("empresa")) ?? null
+  const posicao = ficha ? (dados?.clientes ?? []).findIndex((c) => c.id === ficha.id) : -1
+  const mudarAba = (id: IdAba) => setParams(id === "hoje" ? {} : { aba: id })
+  const verEmpresa = (id: string | null) => {
+    setParams(id ? { empresa: id } : aba === "hoje" ? {} : { aba })
+    window.scrollTo({ top: 0 })
+  }
+  const tarefas = useMemo(() => tarefasDe(dados?.clientes ?? []), [dados])
+  const urgentes = tarefas.filter((t) => t.peso <= 1).length
 
   /** Abre a empresa já na tela onde a pendência se resolve. */
   async function abrir(c: ClienteAtendido, destino = "/app") {
@@ -96,6 +112,7 @@ export function AtendimentosPage() {
       if (c.prestador_id === dados?.ativa) window.location.assign("/app/atendimentos")
       else {
         setSaindo(null)
+        verEmpresa(null)
         await recarregarUsuario()
         carregar()
       }
@@ -107,13 +124,13 @@ export function AtendimentosPage() {
   }
 
   return (
-    <div className={`mx-auto flex flex-col gap-6 ${emTabela ? "max-w-6xl" : "max-w-4xl"}`}>
+    <div className="mx-auto flex max-w-6xl flex-col gap-6">
       <header>
         <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
-          <BriefcaseBusiness size={24} className="text-primary-600 dark:text-primary-400" aria-hidden="true" /> Empresas que atendo
+          <BriefcaseBusiness size={24} className="text-primary-600 dark:text-primary-400" aria-hidden="true" /> Painel do contador
         </h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-As empresas dos seus clientes num só lugar: os números do mês, o que pede atenção e o que cada uma tem pra fazer — sem entrar em nenhuma.
+          As empresas dos seus clientes num lugar só: o que fazer hoje, o fechamento do mês e os números de cada uma — sem precisar entrar em nenhuma.
         </p>
       </header>
 
@@ -156,127 +173,110 @@ As empresas dos seus clientes num só lugar: os números do mês, o que pede ate
         </section>
       )}
 
-      {dados && dados.clientes.length > 0 && dados.resumo && <CardsDaCarteira resumo={dados.resumo} />}
       {dados && dados.clientes.length > 0 && (
-        <CentralDeAlertas clientes={dados.clientes} desligado={fazendo !== null} aoAbrir={(c, link) => abrir(c, link)} />
-      )}
-
-      {dados && dados.clientes.length > 0 && (
-        <section className="flex flex-col gap-3" aria-label="Empresas atendidas">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              {dados.clientes.length === 1 ? "1 empresa" : `${dados.clientes.length} empresas`}
-              <span className="ml-2 normal-case tracking-normal text-slate-400 dark:text-slate-500">
-                {totalPendencias === 0
-                  ? "· tudo em dia"
-                  : `· ${totalPendencias} ${totalPendencias === 1 ? "pendência" : "pendências"} em ${comPendencia} ${comPendencia === 1 ? "empresa" : "empresas"}`}
+        <>
+          {/* Trocar de empresa sem sair do painel. */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="min-w-0 flex-1 basis-64 sm:max-w-sm">
+              <CaixaBusca
+                valor={ficha?.id ?? ""}
+                opcoes={dados.clientes.map((c) => ({ id: c.id, rotulo: `${nomeEmpresa({ nome_fantasia: c.nome_fantasia, razao_social: c.empresa })} · ${formatarDocumento(c.cnpj)}` }))}
+                onEscolher={(id) => verEmpresa(id)}
+                placeholder="Ver uma empresa (nome ou CNPJ)..."
+                ariaLabel="Escolher a empresa pra ver no painel"
+              />
+            </div>
+            {ficha && (
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {posicao + 1} de {dados.clientes.length}
+                <button type="button" className="ml-2 font-medium text-primary-700 hover:underline dark:text-primary-300" onClick={() => verEmpresa(dados.clientes[(posicao + 1) % dados.clientes.length].id)}>
+                  próxima →
+                </button>
               </span>
-            </h2>
-            <div className="flex flex-wrap items-center gap-3">
-              {dados.clientes.length > 3 && (
-                <input
-                  type="search"
-                  value={busca}
-                  onChange={(e) => setBusca(e.target.value)}
-                  placeholder="Buscar empresa ou CNPJ"
-                  aria-label="Buscar empresa ou CNPJ"
-                  className="w-52 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                />
-              )}
-              {dados.clientes.length > 1 && (
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-                    checked={soPendentes}
-                    onChange={(e) => setSoPendentes(e.target.checked)}
-                  />
-                  Só com alerta ou pendência
-                </label>
-              )}
-              <div className="hidden rounded-lg border border-slate-200 p-0.5 lg:flex dark:border-slate-700" role="group" aria-label="Como ver as empresas">
-                {([["tabela", "Tabela", Table2], ["cartoes", "Cartões", LayoutList]] as const).map(([id, rotulo, Icone]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    aria-pressed={emTabela === (id === "tabela")}
-                    onClick={() => setModo(id)}
-                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium ${
-                      emTabela === (id === "tabela")
-                        ? "bg-primary-600 text-white"
-                        : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700"
-                    }`}
-                  >
-                    <Icone size={14} aria-hidden /> {rotulo}
-                  </button>
-                ))}
-              </div>
-            </div>
+            )}
           </div>
-          {clientes.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">Nenhuma empresa com esse filtro.</p>}
-          {emTabela && clientes.length > 0 && (
-            <div className="hidden lg:block">
-              <TabelaRaioX clientes={clientes} ativa={dados.ativa} desligado={fazendo !== null} aoAbrir={(c, link) => abrir(c, link)} />
-            </div>
-          )}
-          <div className={`flex flex-col gap-3 ${emTabela ? "lg:hidden" : ""}`}>
-          {clientes.map((c) => {
-            const dentro = c.prestador_id === dados.ativa
-            return (
-              <Card key={c.id} className={`p-5 ${dentro ? "ring-2 ring-primary-500" : ""}`}>
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="flex flex-wrap items-center gap-2 text-base font-semibold text-slate-900 dark:text-slate-100">
-                      <Building2 size={18} className="shrink-0 text-slate-400" aria-hidden="true" />
-                      <span className="truncate">{nomeEmpresa({ nome_fantasia: c.nome_fantasia, razao_social: c.empresa })}</span>
-                      {dentro && <Badge variant="info">você está nela</Badge>}
-                    </p>
-                    <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-                      CNPJ {formatarDocumento(c.cnpj)}
-                      {c.desde && <> · desde {quando(c.desde).slice(0, 10)}</>}
-                    </p>
-                    <Permissoes catalogo={catalogo} marcadas={c.permissoes} />
-                    <PendenciasDoCliente cliente={c} desligado={fazendo !== null} aoAbrir={(link) => abrir(c, link)} />
-                    <RaioXDoCliente cliente={c} />
-                    {c.situacao.bloqueado && (
-                      <p className="mt-3 flex items-start gap-1.5 text-sm text-danger-700 dark:text-danger-300">
-                        <Lock size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-                        Empresa sem assinatura: só dá pra consultar. Avise o seu cliente.
-                      </p>
-                    )}
-                    {!c.situacao.bloqueado && c.aviso && c.modulos.includes("emissor") && (
-                      <p className="mt-3 flex items-start gap-1.5 text-sm text-warning-700 dark:text-warning-300">
-                        <AlertTriangle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-                        {c.aviso}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
-                    <Button type="button" variant={dentro ? "outline" : "primary"} disabled={fazendo !== null || dentro} onClick={() => abrir(c)}>
-                      {fazendo === c.id ? <Loader2 size={15} className="animate-spin" /> : <LogIn size={15} />}
-                      {dentro ? "Aberta" : "Abrir empresa"}
-                      {!dentro && (c.total_pendencias ?? 0) > 0 && (
-                        <span className="ml-1 rounded-full bg-white/25 px-1.5 text-xs font-semibold">{c.total_pendencias}</span>
-                      )}
-                    </Button>
+
+          {ficha ? (
+            <FichaDaEmpresa cliente={ficha} ativa={dados.ativa} fazendo={fazendo !== null} aoVoltar={() => verEmpresa(null)} aoAbrir={(c, link) => abrir(c, link)} aoSair={setSaindo} />
+          ) : (
+            <>
+              {dados.resumo && <FaixaDaCarteira resumo={dados.resumo} />}
+
+              <div role="tablist" aria-label="Partes do painel" className="flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-700">
+                {ABAS.map((a) => {
+                  const n = a.id === "hoje" ? tarefas.length : a.id === "empresas" ? dados.clientes.length : null
+                  return (
                     <button
+                      key={a.id}
                       type="button"
-                      onClick={() => setSaindo(c)}
-                      className="text-xs font-medium text-slate-400 underline-offset-2 hover:text-danger-600 hover:underline dark:text-slate-500"
+                      role="tab"
+                      aria-selected={aba === a.id}
+                      onClick={() => mudarAba(a.id)}
+                      className={`-mb-px inline-flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium ${
+                        aba === a.id
+                          ? "border-primary-600 text-primary-700 dark:border-primary-400 dark:text-primary-300"
+                          : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
+                      }`}
                     >
-                      Deixar de atender
+                      <a.Icone size={16} aria-hidden /> {a.rotulo}
+                      {n !== null && (
+                        <span className={`rounded-full px-1.5 text-xs tabular-nums ${a.id === "hoje" && urgentes > 0 ? "bg-danger-600 text-white" : "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300"}`}>
+                          {n}
+                        </span>
+                      )}
                     </button>
+                  )
+                })}
+              </div>
+
+              {aba === "hoje" && (
+                <Card className="p-5" data-painel="hoje">
+                  <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                    <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                      {tarefas.length === 0 ? "Tudo em dia" : urgentes > 0 ? `${urgentes} ${urgentes === 1 ? "coisa urgente" : "coisas urgentes"} e mais ${tarefas.length - urgentes} pra fazer` : `${tarefas.length} ${tarefas.length === 1 ? "coisa" : "coisas"} pra fazer`}
+                    </h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Das suas empresas, do mais urgente pro menos. “Resolver” abre a empresa já na tela certa.</p>
                   </div>
-                </div>
-              </Card>
-            )
-          })}
-          </div>
-          <p className="text-xs text-slate-400 dark:text-slate-500">
-            Faturamento = soma das notas autorizadas que passaram pela Ana (geradas aqui ou importadas do Emissor Nacional). Receita que não virou
-            NFS-e por aqui não entra, então trate como indicador, não como o RBT12 oficial. Limites: MEI R$ 81 mil e Simples R$ 4,8 milhões por ano.
-          </p>
-        </section>
+                  <FilaDeTarefas tarefas={tarefas} desligado={fazendo !== null} aoResolver={(c, link) => abrir(c, link)} aoVerEmpresa={(c) => verEmpresa(c.id)} />
+                </Card>
+              )}
+
+              {aba === "fechamento" && <QuadroDeFechamento clientes={dados.clientes} desligado={fazendo !== null} aoAbrir={(c, link) => abrir(c, link)} aoVerEmpresa={(c) => verEmpresa(c.id)} />}
+
+              {aba === "empresas" && (
+                <section className="flex flex-col gap-3" aria-label="Empresas atendidas">
+                  <div className="flex flex-wrap items-center gap-3">
+                    {dados.clientes.length > 3 && (
+                      <input
+                        type="search"
+                        value={busca}
+                        onChange={(e) => setBusca(e.target.value)}
+                        placeholder="Filtrar por nome ou CNPJ"
+                        aria-label="Filtrar por nome ou CNPJ"
+                        className="w-56 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                      />
+                    )}
+                    {dados.clientes.length > 1 && (
+                      <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                        <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500" checked={soPendentes} onChange={(e) => setSoPendentes(e.target.checked)} />
+                        Só com algo pra fazer
+                      </label>
+                    )}
+                  </div>
+                  {clientes.length === 0 ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">Nenhuma empresa com esse filtro.</p>
+                  ) : (
+                    <ListaDaCarteira clientes={clientes} ativa={dados.ativa} aoVerEmpresa={(c) => verEmpresa(c.id)} />
+                  )}
+                  <p className="text-xs text-slate-400 dark:text-slate-500">
+                    Faturamento = soma das notas autorizadas que passaram pela Ana (geradas aqui ou importadas do Emissor Nacional). Receita que não virou
+                    NFS-e por aqui não entra: é um indicador, não o RBT12 oficial. Limites: MEI R$ 81 mil e Simples R$ 4,8 milhões por ano.
+                  </p>
+                </section>
+              )}
+            </>
+          )}
+        </>
       )}
 
       {dados?.bonificacao && (
@@ -342,40 +342,6 @@ As empresas dos seus clientes num só lugar: os números do mês, o que pede ate
           </div>
         </Modal>
       )}
-    </div>
-  )
-}
-
-function PendenciasDoCliente({ cliente: c, desligado, aoAbrir }: { cliente: ClienteAtendido; desligado: boolean; aoAbrir: (link: string) => void }) {
-  const lista = c.pendencias ?? []
-  if (lista.length === 0) {
-    return (
-      <p className="mt-3 flex items-center gap-1.5 text-sm text-success-700 dark:text-success-300">
-        <CircleCheck size={15} aria-hidden="true" /> Nada pendente por aqui.
-      </p>
-    )
-  }
-  return (
-    <div className="mt-3">
-      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">O que tem pra fazer</p>
-      <ul className="flex flex-col">
-        {lista.map((p, i) => (
-          <li key={`${p.tipo}-${i}`}>
-            <button
-              type="button"
-              disabled={desligado || p.tipo === "indisponivel"}
-              onClick={() => aoAbrir(p.link)}
-              title="Abrir a empresa nesta tela"
-              className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:opacity-60 dark:text-slate-200 dark:hover:bg-slate-700/40"
-            >
-              <span className={`h-2 w-2 shrink-0 rounded-full ${p.atrasada ? "bg-danger-600" : "bg-warning-600"}`} aria-hidden="true" />
-              <span className="min-w-0 flex-1">{p.titulo}</span>
-              {p.atrasada && <Badge variant="danger">{p.tipo === "erro" ? "recusada" : "atrasada"}</Badge>}
-              <ArrowRight size={14} className="shrink-0 text-slate-300 group-hover:text-primary-600 dark:text-slate-600" aria-hidden="true" />
-            </button>
-          </li>
-        ))}
-      </ul>
     </div>
   )
 }

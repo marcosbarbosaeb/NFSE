@@ -531,6 +531,7 @@ class CadastroContadorRequest(BaseModel):
     senha: str = Field(min_length=8)
     nome: str = Field(min_length=2, max_length=120)
     escritorio: str | None = Field(default=None, max_length=200)
+    whatsapp: str = Field(min_length=8, max_length=25, description="WhatsApp com DDD")
 
 
 class CadastroRequest(BaseModel):
@@ -543,6 +544,9 @@ class CadastroRequest(BaseModel):
     razao_social: str = Field(min_length=1, max_length=200)
     cpf_cnpj: str = Field(pattern=r"^\d{14}$", description="CNPJ, só dígitos, 14 caracteres")
     cod_municipio: str = Field(pattern=r"^\d{7}$", description="Código IBGE do município, 7 dígitos")
+    # 08/10/2026 — "vamos cobrar no cadastro": o WhatsApp de quem está criando
+    # a conta (com DDD), pra equipe conseguir falar com a pessoa.
+    whatsapp: str = Field(min_length=8, max_length=25, description="WhatsApp com DDD")
     # Programa de indicação: código do link /cadastro?ref=CODIGO (opcional).
     codigo_indicacao: str | None = Field(default=None, max_length=20)
 
@@ -1381,6 +1385,8 @@ class EntrarComCodigoRequest(BaseModel):
 class ContaResponse(BaseModel):
     nome: str | None
     email: str
+    # WhatsApp (só dígitos, com DDD) — pedido no cadastro desde 08/10/2026.
+    telefone: str | None = None
     demo: bool
     tem_senha: bool
     google_conectado: bool
@@ -1388,6 +1394,7 @@ class ContaResponse(BaseModel):
 
 class ContaAtualizarRequest(BaseModel):
     nome: str | None = Field(default=None, max_length=120)
+    telefone: str | None = Field(default=None, max_length=25)
 
 
 class SessaoResponse(BaseModel):

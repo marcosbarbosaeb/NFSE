@@ -31,7 +31,7 @@ import { Modal } from "../ui/Modal"
 // Gestão › Contas (06/10/2026): quem tem conta, quem está ativo e quanto usa.
 // Só números de uso — o conteúdo das notas e do financeiro não chega aqui.
 
-type Filtro = "todas" | "ativas" | "sem-acesso" | "nao-confirmou" | "sem-certificado" | "teste" | "sem-assinatura" | "liberadas" | "bloqueadas" | "contadores"
+type Filtro = "todas" | "ativas" | "sem-acesso" | "nao-confirmou" | "sem-certificado" | "teste" | "sem-assinatura" | "liberadas" | "bloqueadas" | "contadores" | "pediram"
 const FILTROS: { id: Filtro; rotulo: string; vale: (c: ContaGestao) => boolean }[] = [
   { id: "todas", rotulo: "Todas", vale: () => true },
   { id: "ativas", rotulo: "Ativas 30 dias", vale: ativa30 },
@@ -40,7 +40,8 @@ const FILTROS: { id: Filtro; rotulo: string; vale: (c: ContaGestao) => boolean }
   { id: "sem-certificado", rotulo: "Sem certificado", vale: semCertificado },
   { id: "teste", rotulo: "Contas de teste", vale: (c) => c.modo_teste },
   // Quem o bloqueio trava (teste vencido, cancelada) e quem você liberou na mão.
-  { id: "sem-assinatura", rotulo: "Teste vencido / sem assinatura", vale: (c) => !c.demo && c.acesso?.liberado === false },
+  { id: "sem-assinatura", rotulo: "Aguardando sua autorização", vale: (c) => !c.demo && c.acesso?.liberado === false && c.acesso?.motivo !== "bloqueada" },
+  { id: "pediram", rotulo: "Pediram liberação", vale: (c) => Boolean(c.liberacao_pedida_em) },
   { id: "contadores", rotulo: "Contas de contador", vale: (c) => c.so_contador === true },
   { id: "liberadas", rotulo: "Liberadas por você", vale: (c) => c.acesso?.motivo === "liberacao" },
   { id: "bloqueadas", rotulo: "Bloqueadas por você", vale: (c) => c.acesso?.motivo === "bloqueada" },
@@ -426,6 +427,7 @@ function Empresa({ conta: c }: { conta: ContaGestao }) {
           className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium tabular-nums text-primary-700 hover:underline dark:text-primary-300"
         >
           <MessageCircle size={12} aria-hidden="true" /> {telefoneLegivel(c.telefone)}
+          {c.telefone_origem === "empresa" && <span className="font-normal text-slate-400 dark:text-slate-500" title="Telefone do cadastro da empresa (Receita) — pode ser o do contador">· da empresa</span>}
         </a>
       )}
       {(c.modo_teste || c.demo || c.so_contador) && (
@@ -482,6 +484,11 @@ function Assinatura({ conta: c, emLinha = false }: { conta: ContaGestao; emLinha
       ) : (
         <Badge variant={teste !== null && teste <= 0 ? "danger" : s.variante}>{s.rotulo}</Badge>
       )}
+      {c.liberacao_pedida_em && (
+        <span className={emLinha ? "" : "mt-1 block"}>
+          <Badge variant="warning">pediu liberação em {dia(c.liberacao_pedida_em)}</Badge>
+        </span>
+      )}
       {extra && <span className={emLinha ? "text-xs text-slate-400 dark:text-slate-500" : `${classeSub} mt-1`}>{extra}</span>}
     </span>
   )
@@ -529,7 +536,9 @@ function LiberarAcesso({ conta: c, aoMudar }: { conta: ContaGestao; aoMudar?: ()
         {!precisa && !bloqueada && "Esta conta já tem acesso (paga ou é cortesia). Não precisa liberar."}
         {precisa && liberada && (a.ate ? `Liberada por você até ${dia(a.ate)}.` : "Liberada por você, sem prazo.")}
         {precisa && !liberada && a?.motivo === "teste" && `Em teste grátis até ${dia(a.ate)}. Você pode liberar por mais tempo.`}
-        {precisa && !liberada && a && !a.liberado && "Sem acesso: o teste acabou ou a assinatura foi encerrada. Com o bloqueio ligado, ela só consulta."}
+        {precisa && !liberada && a && !a.liberado && (c.liberacao_pedida_em
+          ? `O teste acabou e a pessoa pediu a liberação em ${dia(c.liberacao_pedida_em)}. Escolha por quanto tempo autorizar.`
+          : "Sem acesso: o teste acabou ou a assinatura foi encerrada. Com o bloqueio ligado, ela só consulta até você autorizar.")}
       </p>
       {precisa && (
         <>

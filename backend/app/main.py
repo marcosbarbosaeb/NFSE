@@ -584,9 +584,15 @@ def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
     Cria Prestador+Usuario de verdade (ver app/services/cadastro.py), mas o
     Usuario nasce sem `email_confirmado` — não dá pra logar até confirmar
     (ver /api/cadastro/confirmar abaixo)."""
+    from app.services.cadastro import WhatsappInvalidoError, limpar_whatsapp
+
+    try:
+        telefone = limpar_whatsapp(req.whatsapp)
+    except WhatsappInvalidoError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         usuario = criar_cadastro(
-            db, email=req.email, senha=req.senha, razao_social=req.razao_social,
+            db, telefone=telefone, email=req.email, senha=req.senha, razao_social=req.razao_social,
             cpf_cnpj=req.cpf_cnpj, cod_municipio=req.cod_municipio,
             cep=req.cep, logradouro=req.logradouro, numero=req.numero,
             complemento=req.complemento, bairro=req.bairro, codigo_indicacao=req.codigo_indicacao,
@@ -616,8 +622,14 @@ def api_cadastro_contador(req: CadastroContadorRequest, db: Session = Depends(ge
     teste grátis nem assinatura — ele trabalha nas empresas dos clientes."""
     from app.services.cadastro import criar_cadastro_contador
 
+    from app.services.cadastro import WhatsappInvalidoError, limpar_whatsapp
+
     try:
-        usuario = criar_cadastro_contador(db, email=req.email, senha=req.senha, nome=req.nome, escritorio=req.escritorio)
+        telefone = limpar_whatsapp(req.whatsapp)
+    except WhatsappInvalidoError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        usuario = criar_cadastro_contador(db, email=req.email, senha=req.senha, nome=req.nome, escritorio=req.escritorio, telefone=telefone)
     except CadastroEmailJaCadastradoError:
         raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")
     db.commit()
@@ -783,7 +795,7 @@ def api_entrar_com_codigo(req: EntrarComCodigoRequest, request: Request, db: Ses
 def api_conta(request: Request, db: Session = Depends(get_db)):
     u = _usuario_logado(request, db)
     return {
-        "nome": u.nome, "email": u.email, "demo": eh_email_demo(u.email),
+        "nome": u.nome, "email": u.email, "telefone": u.telefone, "demo": eh_email_demo(u.email),
         "tem_senha": bool(u.senha_hash), "google_conectado": bool(u.google_sub),
     }
 
@@ -793,6 +805,13 @@ def api_atualizar_conta(req: ContaAtualizarRequest, request: Request, db: Sessio
     u = _usuario_logado(request, db)
     if req.nome is not None:
         u.nome = req.nome.strip()[:120] or None
+    if req.telefone is not None:
+        from app.services.cadastro import WhatsappInvalidoError, limpar_whatsapp
+
+        try:
+            u.telefone = limpar_whatsapp(req.telefone) if req.telefone.strip() else None
+        except WhatsappInvalidoError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     db.commit()
     return api_conta(request, db)
 
@@ -1124,6 +1143,63 @@ def api_ver_assinatura(prestador_id: uuid.UUID = Depends(prestador_atual_id), db
         planos=billing.listar_planos(assinatura.plano if assinatura else None),
         modulos_pelo_plano=billing.modulos_presos_ao_plano(assinatura),
     )
+
+
+@app.post("/api/assinatura/pedir-liberacao", dependencies=[Depends(exigir_conta_real), Depends(limite("pedir-liberacao", 5, 3600))])
+def api_pedir_liberacao(request: Request, prestador_id: uuid.UUID = Depends(prestador_atual_id), db: Session = Depends(get_db)):
+    """Depois do teste, enquanto a cobrança não está no ar, a pessoa pede pra
+    continuar usando e a administração autoriza na Gestão (08/10/2026). Fica
+    anotado na conta e a administração recebe um e-mail."""
+    usuario = _usuario_logado(request, db)
+    definir_prestador_atual(db, prestador_id)
+    assinatura = db.query(Assinatura).filter_by(prestador_id=prestador_id).one_or_none()
+    if assinatura is None:
+        assinatura = Assinatura(id=uuid.uuid4(), prestador_id=prestador_id, status="trial", trial_termina_em=datetime.datetime.now(datetime.timezone.utc))
+        db.add(assinatura)
+    if assinatura.bloqueada_em is not None:
+        raise HTTPException(status_code=400, detail="Esta conta está bloqueada. Fale com o suporte.")
+    primeira_vez = assinatura.liberacao_pedida_em is None
+    assinatura.liberacao_pedida_em = datetime.datetime.now(datetime.timezone.utc)
+    empresa = db.get(Prestador, prestador_id)
+    dados = {"empresa": empresa.razao_social, "cnpj": empresa.cpf_cnpj, "email": usuario.email, "nome": usuario.nome, "telefone": usuario.telefone or empresa.telefone}
+    resposta = {"liberacao_pedida_em": assinatura.liberacao_pedida_em.isoformat()}
+    db.commit()
+    if primeira_vez:
+        _avisar_administracao_do_pedido(dados)
+    return resposta
+
+
+def _avisar_administracao_do_pedido(d: dict) -> None:
+    """E-mail pra quem administra (ADMIN_EMAILS). Falhar não desfaz o pedido:
+    ele aparece na Gestão de qualquer jeito."""
+    from app.services import email_modelo as m
+
+    destinos = [e.strip() for e in get_settings().admin_emails.split(",") if e.strip()]
+    if not destinos:
+        return
+    esc = html.escape
+    quem = esc(d["nome"] or d["email"])
+    link = f"{get_settings().app_base_url.rstrip('/')}/app/gestao?aba=contas"
+    linhas = [f"Empresa: {d['empresa']}", f"CNPJ: {d['cnpj']}", f"Login: {d['email']}", f"WhatsApp: {d['telefone'] or 'não informado'}"]
+    corpo = m.moldura(
+        titulo="Pedido de liberação",
+        previa=f"{d['empresa']} pediu pra continuar usando a Agente Ana.",
+        motivo="Você recebeu este e-mail porque administra a Agente Ana.",
+        corpo_html=(
+            m.paragrafo(f"<strong>{quem}</strong> terminou o teste grátis e pediu pra continuar usando.")
+            + m.paragrafo("<br>".join(esc(x) for x in linhas))
+            + m.botao("Abrir a Gestão", link)
+            + m.paragrafo("Em Contas, o filtro “Aguardando sua autorização” mostra quem pediu. Você libera por um prazo ou sem prazo.", suave=True)
+        ),
+    )
+    try:
+        get_email_sender().enviar(
+            destinatario=destinos, assunto=f"Pedido de liberação: {d['empresa']}",
+            corpo_texto=f"{d['nome'] or d['email']} pediu pra continuar usando a Agente Ana.\n\n" + "\n".join(linhas) + f"\n\nGestão: {link}",
+            corpo_html=corpo, responder_para=d["email"],
+        )
+    except EmailEnvioError:
+        logger.exception("Falha ao avisar a administração do pedido de liberação")
 
 
 @app.post("/api/assinatura/checkout", response_model=CheckoutSessaoResponse, responses={400: {"model": ErroResponse}}, dependencies=[Depends(exigir_conta_real)])

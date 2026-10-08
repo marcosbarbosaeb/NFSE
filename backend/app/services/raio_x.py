@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import Certificado, Emissao, Prestador
+from app.services.municipios import municipio_por_codigo
 
 LIMITE_MEI = Decimal("81000")
 LIMITE_SIMPLES = Decimal("4800000")
@@ -76,7 +77,18 @@ def da_empresa(db: Session, prestador: Prestador, hoje: datetime.date, financeir
     recusadas = db.query(func.count(Emissao.id)).filter(Emissao.prestador_id == prestador.id, Emissao.estado == "erro").scalar() if emissor else 0
 
     financeiro = financeiro or {}
+    # Mês a mês (os 12 anteriores + o atual), pro gráfico e pra tabela da ficha.
+    serie = [
+        {"competencia": c, "notas": por_mes.get(c, (0, zero))[0], "valor": float(por_mes.get(c, (0, zero))[1])}
+        for c in (_mes(hoje, n) for n in range(12, -1, -1))
+    ]
+    cidade = municipio_por_codigo(prestador.cod_municipio)
     return {
+        "serie": serie,
+        "municipio": f"{cidade['nome']}/{cidade['uf']}" if cidade else None,
+        "inscricao_municipal": prestador.inscricao_municipal,
+        "aliquota": float(prestador.aliquota_atual) if prestador.aliquota_atual is not None else None,
+        "fechamentos": financeiro.get("fechamentos") or [],
         "regime": prestador.op_simples_nacional, "regime_nome": REGIMES.get(prestador.op_simples_nacional or "", "Não informado"),
         "competencia": atual,
         "notas_mes": por_mes.get(atual, (0, zero))[0], "faturado_mes": float(por_mes.get(atual, (0, zero))[1]),

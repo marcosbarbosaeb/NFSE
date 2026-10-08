@@ -13,6 +13,13 @@ from app.services.motor_emissao import LimiteDoPlanoError, criar_rascunho, subme
 HOJE = datetime.date(2026, 10, 7)
 
 
+@pytest.fixture(autouse=True)
+def _cobranca_no_ar(monkeypatch):
+    """Os limites dos planos só valem com a cobrança no ar (08/10/2026: sem o
+    Stripe, quem autoriza o uso é a Gestão e não há limite)."""
+    monkeypatch.setattr(get_settings(), "stripe_secret_key", "sk_test_sintetica")
+
+
 def _assinatura(db, prestador, **campos) -> Assinatura:
     base = dict(status="ativa", plano="basico", stripe_subscription_id="sub_teste", stripe_customer_id="cus_teste")
     a = Assinatura(id=uuid.uuid4(), prestador_id=prestador.id, **{**base, **campos})
@@ -115,6 +122,7 @@ def test_no_limite_trava_ate_subir_de_plano_ou_aceitar_o_excedente(db, prestador
     # com a trava desligada (antes de a cobrança estar no ar) nada é barrado
     planos.conferir(db, prestador_teste.id)
     monkeypatch.setattr(get_settings(), "bloqueio_ativo", True)
+    monkeypatch.setattr(get_settings(), "stripe_secret_key", "sk_test_sintetica")
     with pytest.raises(planos.LimiteDeNotasError) as erro:
         planos.conferir(db, prestador_teste.id)
     assert "30 de 30" in str(erro.value) and "Empreendedor" in str(erro.value) and "0,80" in str(erro.value)
@@ -138,6 +146,7 @@ def test_no_limite_trava_ate_subir_de_plano_ou_aceitar_o_excedente(db, prestador
 
 def test_teste_gratis_tem_limite_e_nao_tem_excedente(db, prestador_teste, vinculo_teste, monkeypatch):
     monkeypatch.setattr(get_settings(), "bloqueio_ativo", True)
+    monkeypatch.setattr(get_settings(), "stripe_secret_key", "sk_test_sintetica")
     monkeypatch.setattr(get_settings(), "trial_limite_notas", 2)
     db.add(Assinatura(id=uuid.uuid4(), prestador_id=prestador_teste.id, status="trial",
                       trial_termina_em=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=10)))
@@ -156,6 +165,7 @@ def test_enviar_a_prefeitura_respeita_o_limite(db, prestador_teste, vinculo_test
     _assinatura(db, prestador_teste, plano="basico")
     _notas(db, vinculo_teste, 30)
     monkeypatch.setattr(get_settings(), "bloqueio_ativo", True)
+    monkeypatch.setattr(get_settings(), "stripe_secret_key", "sk_test_sintetica")
     nota = _notas(db, vinculo_teste, 1, estado="assinado")[0]
     with pytest.raises(LimiteDoPlanoError):
         submeter(db, nota, cliente=None)

@@ -16,6 +16,35 @@ Numeração: `ano.mês.sequência`. Versão nova = bloco novo no topo de `novida
 Antes de publicar no real, sempre: testes passando (`pytest`), `tsc` e build do frontend, telas conferidas no teste,
 migração e variáveis novas anotadas abaixo.
 
+## 2026.10.3 — 08/10/2026
+
+**Situação:** no ambiente de teste. Ainda não está no real.
+
+Pro usuário (ver Novidades): painel do contador refeito (Hoje, Fechamento do mês, Empresas e a ficha de cada empresa), símbolo
+"A" no lugar da ilustração, WhatsApp obrigatório no cadastro, pedido de liberação depois do teste, marca do menu leva ao começo.
+
+Gestão (só administração):
+- **Autorização depois do teste (fase sem cobrança):** enquanto `STRIPE_SECRET_KEY` não existe, a empresa com teste vencido vê
+  "peça a liberação" em vez de "assine". `POST /api/assinatura/pedir-liberacao` anota `assinatura.liberacao_pedida_em` e manda
+  e-mail pra `ADMIN_EMAILS` (uma vez). Filtros novos em Contas: "Aguardando sua autorização" e "Pediram liberação". Liberar ou
+  bloquear limpa o pedido.
+- **Isso só trava no real quando `BLOQUEIO_ATIVO=true` for ligado lá** (decisão do Marcos; antes, liberar na Gestão quem deve continuar).
+- Sem cobrança no ar o limite de notas dos planos não vale nem avisa (`billing.cobranca_ativa`, `planos.uso`).
+- Telefone da lista de contas = WhatsApp do cadastro (`usuario.telefone`); sem ele, o da empresa, marcado "da empresa".
+
+Técnico:
+- Migração `a7d9f1b3c5e6` (`usuario.telefone`, `assinatura.liberacao_pedida_em`).
+- `POST /api/cadastro` e `/api/cadastro/contador` exigem `whatsapp` (10–11 dígitos com DDD; aceita +55). `PATCH /api/conta` aceita `telefone`.
+- `raio_x.da_empresa`: `serie` (13 meses), `municipio`, `inscricao_municipal`, `aliquota`, `fechamentos` (3 meses, do financeiro);
+  `acesso.do_contador` devolve `dono` (nome, e-mail, WhatsApp de quem cuida da empresa).
+- Frontend: `components/contador/PainelContador.tsx` (fila, quadro, carteira) e `FichaDaEmpresa.tsx`; aba e empresa ficam na URL
+  (`/app/atendimentos?aba=fechamento`, `?empresa=<id>`).
+- `frontend/public/ana.webp` removido; `ana-email.png` redesenhado (o "A"). `AnaAvatar` agora desenha o símbolo.
+- Variáveis novas: nenhuma.
+
+Conferir depois de publicar: `/api/versao` = 2026.10.3; criar uma conta de teste (pede WhatsApp); painel do contador com uma
+empresa convidada; e-mail de exemplo da Gestão com o logo novo.
+
 ## 2026.10.2 — 08/10/2026
 
 **Situação:** no ambiente de teste. Ainda não está no real.

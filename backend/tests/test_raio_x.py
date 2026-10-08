@@ -73,6 +73,10 @@ def test_raio_x_soma_so_nota_autorizada_de_verdade_e_compara_com_o_limite(db, ap
     assert c["alertas"][0]["nivel"] == "critico" and "86% do limite do MEI" in next(a["texto"] for a in c["alertas"] if a["tipo"] == "limite")
     assert dados["resumo"]["empresas"] == 1 and dados["resumo"]["notas_mes"] == 2 and dados["resumo"]["faturado_mes"] == 70000.0
     assert dados["resumo"]["alertas_criticos"] == 2
+    # a ficha da empresa no painel: mês a mês, cidade e com quem falar
+    assert len(r["serie"]) == 13 and r["serie"][-1] == {"competencia": _mes(), "notas": 2, "valor": 70000.0}
+    assert r["municipio"] == "Belo Horizonte/MG" and c["dono"]["email"] == "dona@cliente.example"
+    assert [f["competencia"] for f in r["fechamentos"]] == [_mes(2), _mes(1), _mes()]
     # ela continua na empresa dela
     assert da_contadora.get("/api/auth/me").json()["prestador_id"] == str(cenario["escritorio"].id)
 

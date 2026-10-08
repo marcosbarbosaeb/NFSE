@@ -145,3 +145,73 @@ def test_versoes_em_ordem_e_com_perfil_valido():
 
     registro = (Path(__file__).resolve().parents[2] / "CHANGELOG.md").read_text(encoding="utf-8")
     assert all(f"## {v['versao']}" in registro for v in novidades.VERSOES)
+
+
+# --- 08/10/2026 (tarde): WhatsApp no cadastro e autorização depois do teste ------
+
+
+def test_cadastro_pede_o_whatsapp_e_a_gestao_mostra(db, api, monkeypatch):
+    cliente = api()
+    base = {"email": "nova@cliente.example", "senha": "SenhaDeTeste123!", "razao_social": "NOVA LTDA", "cpf_cnpj": "00000000000787", "cod_municipio": "3106200"}
+    assert cliente.post("/api/cadastro", json=base).status_code == 422  # sem WhatsApp
+    r = cliente.post("/api/cadastro", json={**base, "whatsapp": "12345678"})
+    assert r.status_code == 422 and "WhatsApp com DDD" in r.json()["detail"]
+    assert cliente.post("/api/cadastro", json={**base, "whatsapp": "+55 (92) 99999-0000"}).status_code == 200
+    novo = db.query(Usuario).filter_by(email="nova@cliente.example").one()
+    assert novo.telefone == "92999990000"
+    novo.email_confirmado = True
+    db.flush()
+
+    gestor = _gestor(db, api, monkeypatch)
+    conta = _da_gestao(gestor, novo.prestador_id)
+    assert (conta["telefone"], conta["telefone_origem"]) == ("92999990000", "cadastro")
+    # e a pessoa corrige o número no perfil
+    dela = _entrar(api, "nova@cliente.example")
+    assert dela.patch("/api/conta", json={"telefone": "11 3333-4444"}).json()["telefone"] == "1133334444"
+    assert dela.patch("/api/conta", json={"telefone": "9"}).status_code == 422
+
+
+def test_depois_do_teste_a_pessoa_pede_e_a_gestao_autoriza(db, api, monkeypatch):
+    """"Podem começar direto no teste e, depois desse período, me permita
+    autorizar o uso" — sem cobrança no ar, o caminho é pedir a liberação."""
+    from app.services.email import get_email_sender
+
+    alvo, dona = _conta(db, "00000000000272", "dona@cliente.example", trial_dias=-1, nome="CLIENTE")
+    dona.telefone = "92988887777"
+    db.flush()
+    gestor = _gestor(db, api, monkeypatch)
+    monkeypatch.setattr(get_settings(), "bloqueio_ativo", True)
+    enviados = []
+    monkeypatch.setattr(type(get_email_sender()), "enviar", lambda self, **k: enviados.append(k))
+
+    cliente = _entrar(api, "dona@cliente.example")
+    r = cliente.post("/api/financeiro/anotacoes", json={"titulo": "x", "texto": "y"})
+    assert r.status_code == 402 and "peça a liberação" in r.json()["detail"]
+    eu = cliente.get("/api/auth/me").json()["acesso"]
+    assert (eu["bloqueado"], eu["cobranca_ativa"], eu["liberacao_pedida_em"]) == (True, False, None)
+
+    # pedir é permitido mesmo bloqueada, e avisa a administração (uma vez só)
+    assert cliente.post("/api/assinatura/pedir-liberacao").status_code == 200
+    assert cliente.post("/api/assinatura/pedir-liberacao").status_code == 200
+    assert len(enviados) == 1 and enviados[0]["destinatario"] == [GESTOR] and "CLIENTE LTDA" in enviados[0]["assunto"]
+    assert "92988887777" in enviados[0]["corpo_texto"]
+    assert cliente.get("/api/auth/me").json()["acesso"]["liberacao_pedida_em"] is not None
+    assert _da_gestao(gestor, alvo.id)["liberacao_pedida_em"] is not None
+
+    # a Gestão autoriza: volta a funcionar e o pedido sai da fila
+    assert gestor.post(f"/api/gestao/contas/{alvo.id}/liberar", json={"dias": 30}).status_code == 200
+    assert cliente.post("/api/financeiro/anotacoes", json={"titulo": "x", "texto": "y"}).status_code in (200, 201)
+    assert _da_gestao(gestor, alvo.id)["liberacao_pedida_em"] is None
+
+
+def test_sem_cobranca_o_limite_de_notas_dos_planos_nao_vale(db, api, monkeypatch):
+    from app.services import planos
+
+    alvo, _ = _conta(db, "00000000000272", "dona@cliente.example", nome="CLIENTE")
+    definir_prestador_atual(db, alvo.id)
+    monkeypatch.setattr(get_settings(), "bloqueio_ativo", True)
+    u = planos.uso(db, alvo.id)
+    assert (u["limite"], u["aviso"], u["travado"]) == (None, None, False)
+    planos.conferir(db, alvo.id, 9999)  # não levanta
+    monkeypatch.setattr(get_settings(), "stripe_secret_key", "sk_test_sintetica")
+    assert planos.uso(db, alvo.id)["limite"] == get_settings().trial_limite_notas

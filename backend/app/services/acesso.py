@@ -172,12 +172,28 @@ def eh_so_contador(db: Session, prestador_id: uuid.UUID) -> bool:
     return bool(db.query(Prestador.so_contador).filter(Prestador.id == prestador_id).scalar())
 
 
-MENSAGEM_SO_CONTADOR = "Esta é uma conta de contador: aqui não há notas nem lançamentos. Abra a empresa de um cliente em “Empresas que atendo”."
+# Fase sem cobrança (o Stripe ainda não recebe): depois do teste, quem
+# autoriza o uso é a equipe — a pessoa pede a liberação, não "assina".
+MENSAGEM_SEM_COBRANCA = (
+    "O teste grátis desta empresa terminou. Nesta fase, quem libera o uso é a equipe da Agente Ana: "
+    "peça a liberação em Minha conta › Assinatura (é um clique) e a gente te chama no WhatsApp."
+)
+
+
+def mensagem_do_bloqueio(motivo: str) -> str | None:
+    from app.services.billing import cobranca_ativa
+
+    if motivo != "bloqueada" and motivo in MENSAGEM_BLOQUEIO and not cobranca_ativa():
+        return MENSAGEM_SEM_COBRANCA
+    return MENSAGEM_BLOQUEIO.get(motivo)
+
+
+MENSAGEM_SO_CONTADOR = "Esta é uma conta de contador: aqui não há notas nem lançamentos. Abra a empresa de um cliente em “Painel do contador”."
 
 
 def situacao(db: Session, prestador_id: uuid.UUID) -> dict:
     """Situação da assinatura da empresa + se o bloqueio está valendo."""
-    from app.services.billing import situacao_do_acesso
+    from app.services.billing import cobranca_ativa, situacao_do_acesso
 
     if eh_so_contador(db, prestador_id):
         # Conta só de contador não tem teste nem assinatura: nunca "vence".
@@ -193,7 +209,10 @@ def situacao(db: Session, prestador_id: uuid.UUID) -> dict:
         "bloqueio_ativo": ligado,
         # Bloqueio manual da Gestão vale sempre; o de "sem assinatura", só com BLOQUEIO_ATIVO.
         "bloqueado": bloqueado,
-        "mensagem": MENSAGEM_BLOQUEIO.get(s["motivo"]) if bloqueado else None,
+        "mensagem": mensagem_do_bloqueio(s["motivo"]) if bloqueado else None,
+        # sem cobrança no ar, a saída do bloqueio é pedir a liberação à equipe
+        "cobranca_ativa": cobranca_ativa(),
+        "liberacao_pedida_em": assinatura.liberacao_pedida_em.isoformat() if assinatura is not None and assinatura.liberacao_pedida_em else None,
     }
 
 
@@ -316,7 +335,7 @@ def _empresa(db: Session, prestador_id: uuid.UUID) -> Prestador | None:
 
 
 def tem_algo(db: Session, usuario: Usuario) -> bool:
-    """Mostra "Empresas que atendo" no menu? (atende alguém ou tem convite)."""
+    """Mostra "Painel do contador" no menu? (atende alguém ou tem convite)."""
     return db.query(AcessoContador.id).filter(
         (AcessoContador.usuario_id == usuario.id) | ((AcessoContador.email == usuario.email) & (AcessoContador.status == "pendente"))
     ).first() is not None
@@ -356,10 +375,21 @@ def do_contador(db: Session, usuario: Usuario, voltar_para: uuid.UUID) -> dict:
                 "permissoes": _limpar_permissoes(a.permissoes), "desde": a.aceito_em, "modulos": list(p.modulos or []),
                 "pode_emitir": bool(pronta.get("pode_emitir")), "aviso": pronta.get("motivo"),
                 "situacao": sit,
+                "dono": _dono_da_empresa(db, a.prestador_id),
             })
     finally:
         definir_prestador_atual(db, voltar_para)
     return {"convites": convites, "clientes": clientes, "resumo": raio_x.resumo(clientes)}
+
+
+def _dono_da_empresa(db: Session, prestador_id: uuid.UUID) -> dict | None:
+    """Com quem o contador fala nesta empresa: o primeiro dono (nome, e-mail
+    e o WhatsApp do cadastro). Foi ele quem convidou o contador."""
+    dono = (
+        db.query(Usuario).join(UsuarioPrestador, UsuarioPrestador.usuario_id == Usuario.id)
+        .filter(UsuarioPrestador.prestador_id == prestador_id).order_by(Usuario.criado_em).first()
+    )
+    return {"nome": dono.nome, "email": dono.email, "telefone": dono.telefone} if dono is not None else None
 
 
 def _raio_x(db: Session, prestador_id: uuid.UUID, do_financeiro: dict) -> dict | None:

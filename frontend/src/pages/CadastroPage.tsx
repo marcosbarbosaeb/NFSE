@@ -12,6 +12,15 @@ import type { CadastroRequest, Compatibilidade, ConsultaCnpj } from "../lib/type
 import { AnaAvatar } from "../components/brand/Marca"
 import { urlLanding } from "../lib/dominios"
 
+/** 92999990000 -> (92) 99999-0000, enquanto a pessoa digita. */
+function mascararTelefone(texto: string): string {
+  const d = texto.replace(/\D/g, "").slice(0, 11)
+  if (d.length <= 2) return d
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
+}
+
 export function CadastroPage() {
   const { usuario, loginComGoogle } = useAuth()
   const [searchParams] = useSearchParams()
@@ -38,6 +47,9 @@ export function CadastroPage() {
   const [cnpj, setCnpj] = useState("")
   const [codMunicipio, setCodMunicipio] = useState("")
   const [email, setEmail] = useState(googleEmail ?? "")
+  // 08/10/2026 — "WhatsApp no cadastro: sim, vamos cobrar": é por onde a
+  // equipe fala com a pessoa (liberar a conta, tirar dúvida).
+  const [whatsapp, setWhatsapp] = useState("")
   const [senha, setSenha] = useState("")
   const [confirmacao, setConfirmacao] = useState("")
   const [enviando, setEnviando] = useState(false)
@@ -195,12 +207,18 @@ export function CadastroPage() {
       )
       return
     }
+    const digitosWhats = whatsapp.replace(/\D/g, "")
+    if (digitosWhats.length < 10 || digitosWhats.length > 11) {
+      setErro("Informe o seu WhatsApp com DDD (ex.: 92 99999-0000).")
+      return
+    }
     setEnviando(true)
     if (tipo === "contador") {
       try {
         const resp = await api.post<{ mensagem: string; email: string; email_enviado?: boolean }>("/cadastro/contador", {
           email,
           senha,
+          whatsapp,
           nome: nome.trim(),
           escritorio: escritorio.trim() || null,
         })
@@ -217,6 +235,7 @@ export function CadastroPage() {
       const payload: CadastroRequest = {
         email,
         senha,
+        whatsapp,
         razao_social: razaoSocial,
         cpf_cnpj: cnpj.replace(/\D/g, ""),
         cod_municipio: codMunicipio.replace(/\D/g, ""),
@@ -441,6 +460,17 @@ export function CadastroPage() {
               )}
 
               <Field label="E-mail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Field
+                label="WhatsApp"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                required
+                placeholder="(00) 00000-0000"
+                hint="Com DDD. É por onde a nossa equipe fala com você."
+                value={whatsapp}
+                onChange={(e) => setWhatsapp(mascararTelefone(e.target.value))}
+              />
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Senha" type="password" required value={senha} onChange={(e) => setSenha(e.target.value)} />
                 <Field label="Confirmar senha" type="password" required value={confirmacao} onChange={(e) => setConfirmacao(e.target.value)} />

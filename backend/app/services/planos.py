@@ -82,6 +82,10 @@ def uso(db: Session, prestador_id: uuid.UUID, hoje: datetime.date | None = None)
     hoje = hoje or hoje_br()
     assinatura = db.query(Assinatura).filter_by(prestador_id=prestador_id).one_or_none()
     limite, plano = limite_da_assinatura(assinatura)
+    if not billing.cobranca_ativa():
+        # Fase sem cobrança: não há plano pra subir nem nota excedente pra
+        # pagar — o limite não vale (nem aviso), quem controla é a Gestão.
+        limite, plano = None, None
     usadas = notas_do_mes(db, prestador_id, hoje)
     preco = get_settings().nota_excedente_centavos / 100
     paga = bool(assinatura and assinatura.stripe_subscription_id and assinatura.status in ("ativa", "inadimplente"))

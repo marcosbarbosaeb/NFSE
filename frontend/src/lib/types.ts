@@ -34,6 +34,9 @@ export interface SituacaoAcesso {
   /** Empresa só pra consulta: não gera, não envia, não lança. */
   bloqueado?: boolean
   mensagem?: string | null
+  /** A cobrança (Stripe) está no ar. Sem ela, depois do teste a pessoa pede a liberação à equipe. */
+  cobranca_ativa?: boolean
+  liberacao_pedida_em?: string | null
 }
 
 export interface PermissaoInfo {
@@ -92,9 +95,19 @@ export interface ClienteAtendido {
   /** Números da empresa pro painel do contador (backend/app/services/raio_x.py). */
   raio_x?: RaioX | null
   alertas?: AlertaDoCliente[]
+  /** Quem cuida da empresa (o dono que convidou), pra falar com ele. */
+  dono?: { nome: string | null; email: string; telefone: string | null } | null
 }
 
 export interface RaioX {
+  /** Mês a mês: os 12 anteriores + o atual (notas autorizadas e valor). */
+  serie?: { competencia: string; notas: number; valor: number }[]
+  municipio?: string | null
+  inscricao_municipal?: string | null
+  /** Alíquota de referência do Simples informada no cadastro. */
+  aliquota?: number | null
+  /** Conciliação dos três últimos meses (do mais antigo pro atual). */
+  fechamentos?: { competencia: string; estado: "fechado" | "pendente" | "aguardando" | "vazio"; notas_atrasadas: number; extrato_pendentes: number }[]
   /** "1" fora do Simples, "2" MEI, "3" Simples (ME/EPP); null = não informado */
   regime: string | null
   regime_nome: string
@@ -161,6 +174,8 @@ export interface Atendimentos {
 export interface CadastroRequest {
   email: string
   senha: string
+  /** WhatsApp com DDD (obrigatório desde 08/10/2026). */
+  whatsapp: string
   razao_social: string
   cpf_cnpj: string
   cod_municipio: string
@@ -1077,6 +1092,7 @@ export interface ResumoEnvios {
 
 // --- Conta e empresas (29/09/2026) ---
 export interface Conta {
+  telefone?: string | null
   nome: string | null
   email: string
   demo: boolean
@@ -1773,7 +1789,11 @@ export interface ContaGestao {
   bloqueada_obs?: string | null
   /** Contato que está no cadastro da empresa. */
   telefone?: string | null
-  email_empresa?: string | null
+/** De onde veio o telefone: o WhatsApp do cadastro ou o telefone da empresa (Receita). */
+  telefone_origem?: "cadastro" | "empresa" | null
+  /** A pessoa pediu pra continuar usando depois do teste. */
+  liberacao_pedida_em?: string | null
+    email_empresa?: string | null
   /** Conta só de contador: não é cliente (sem notas, sem assinatura). */
   so_contador?: boolean
   /** Contadores com acesso ativo a esta empresa. */

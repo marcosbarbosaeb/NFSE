@@ -1,12 +1,10 @@
-import { AlertTriangle, ArrowRight, Building2, CircleCheck, Download, FileText, Loader2, ShieldAlert, Wallet } from "lucide-react"
+import { ArrowRight, CircleCheck, Download, Loader2 } from "lucide-react"
 import { useState } from "react"
 import { ApiError, formatarErro } from "../../lib/api"
 import { formatarDocumento } from "../../lib/documento"
 import { deslocarCompetencia, formatBRL, formatCompetenciaAbrev, formatCompetenciaLonga } from "../../lib/format"
-import type { AlertaDoCliente, ClienteAtendido, RaioX, ResumoCarteira } from "../../lib/types"
+import type { ClienteAtendido, RaioX, ResumoCarteira } from "../../lib/types"
 import { nomeEmpresa } from "../TrocaEmpresa"
-import { Card } from "../ui/Card"
-import { StatCard } from "../ui/StatCard"
 
 // Painel do contador (07/10/2026) — a contraproposta à ideia que o Marcos
 // trouxe: números da carteira, central de alertas e o raio-x de cada empresa,
@@ -19,90 +17,6 @@ function curto(valor: number): string {
   if (valor >= 1_000_000) return `R$ ${(valor / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`
   if (valor >= 10_000) return `R$ ${(valor / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} mil`
   return formatBRL(valor)
-}
-
-export function CardsDaCarteira({ resumo }: { resumo: ResumoCarteira }) {
-  const mes = resumo.competencia ? formatCompetenciaLonga(resumo.competencia).toLowerCase() : "este mês"
-  return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      <StatCard icon={<Building2 size={18} />} label="Empresas que atendo" value={resumo.empresas} />
-      <StatCard icon={<FileText size={18} />} label="Notas autorizadas" value={resumo.notas_mes.toLocaleString("pt-BR")} sublabel={`em ${mes}`} />
-      <StatCard icon={<Wallet size={18} />} label="Faturado em notas" value={curto(resumo.faturado_mes)} sublabel={`em ${mes}, somando todas`} />
-      <StatCard
-        icon={<ShieldAlert size={18} />}
-        iconClassName={
-          resumo.alertas_criticos > 0
-            ? "bg-danger-50 text-danger-600 dark:bg-danger-900/40 dark:text-danger-300"
-            : resumo.alertas > 0
-              ? "bg-warning-50 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300"
-              : "bg-success-50 text-success-600 dark:bg-success-900/40 dark:text-success-300"
-        }
-        label="Alertas"
-        value={resumo.alertas}
-        sublabel={resumo.alertas === 0 ? "nada pedindo atenção" : resumo.alertas_criticos > 0 ? `${resumo.alertas_criticos} urgente${resumo.alertas_criticos === 1 ? "" : "s"}` : "nenhum urgente"}
-        sublabelClassName={resumo.alertas_criticos > 0 ? "text-danger-600 dark:text-danger-300" : undefined}
-      />
-    </div>
-  )
-}
-
-/** Central de alertas: o que é urgente em toda a carteira, primeiro. */
-export function CentralDeAlertas({
-  clientes,
-  desligado,
-  aoAbrir,
-}: {
-  clientes: ClienteAtendido[]
-  desligado: boolean
-  aoAbrir: (c: ClienteAtendido, link: string) => void
-}) {
-  const linhas = clientes
-    .flatMap((c) => (c.alertas ?? []).map((a) => ({ c, a })))
-    .sort((x, y) => Number(y.a.nivel === "critico") - Number(x.a.nivel === "critico"))
-  const [todos, setTodos] = useState(false)
-  if (linhas.length === 0) return null
-  const visiveis = todos ? linhas : linhas.slice(0, 6)
-  return (
-    <Card className="p-5" data-painel="alertas">
-      <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        <AlertTriangle size={16} aria-hidden /> Precisa da sua atenção
-      </h2>
-      <p className="mb-2 text-sm text-slate-500 dark:text-slate-400">Clique pra abrir a empresa já na tela onde isso se resolve.</p>
-      <ul className="flex flex-col">
-        {visiveis.map(({ c, a }, i) => (
-          <li key={`${c.id}-${a.tipo}-${i}`}>
-            <button
-              type="button"
-              disabled={desligado}
-              onClick={() => aoAbrir(c, a.link)}
-              className="group flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:opacity-60 dark:hover:bg-slate-700/40"
-            >
-              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${a.nivel === "critico" ? "bg-danger-600" : "bg-warning-600"}`} aria-hidden />
-              <span className="min-w-0 flex-1">
-                <span className="font-semibold text-slate-800 dark:text-slate-100">{nome(c)}</span>
-                <span className="text-slate-400"> · </span>
-                <span className="text-slate-600 dark:text-slate-300">{a.texto}</span>
-              </span>
-              <span className="sr-only">{a.nivel === "critico" ? "urgente" : "atenção"}</span>
-              <ArrowRight size={14} className="shrink-0 text-slate-300 group-hover:text-primary-600 dark:text-slate-600" aria-hidden />
-            </button>
-          </li>
-        ))}
-      </ul>
-      {linhas.length > 6 && (
-        <button type="button" onClick={() => setTodos((v) => !v)} className="mt-1 px-2 text-sm font-medium text-primary-700 hover:underline dark:text-primary-300">
-          {todos ? "Mostrar menos" : `Ver os ${linhas.length} alertas`}
-        </button>
-      )}
-    </Card>
-  )
-}
-
-const FECHAMENTO: Record<string, { texto: string; cor: string }> = {
-  fechado: { texto: "fechado", cor: "text-success-700 dark:text-success-300" },
-  pendente: { texto: "falta conferir", cor: "text-warning-700 dark:text-warning-300" },
-  aguardando: { texto: "aguardando pagamentos", cor: "text-slate-600 dark:text-slate-300" },
-  vazio: { texto: "nada lançado", cor: "text-slate-400 dark:text-slate-500" },
 }
 
 export function BarraDoLimite({ raio, compacta = false }: { raio: RaioX; compacta?: boolean }) {
@@ -135,22 +49,12 @@ export function BarraDoLimite({ raio, compacta = false }: { raio: RaioX; compact
   )
 }
 
-function Fechamento({ raio }: { raio: RaioX }) {
-  if (!raio.fechamento) return <span className="text-slate-400 dark:text-slate-500">—</span>
-  const f = FECHAMENTO[raio.fechamento.estado] ?? FECHAMENTO.vazio
-  return (
-    <span className={f.cor}>
-      {raio.fechamento.estado === "fechado" && <CircleCheck size={13} className="mr-1 inline align-[-2px]" aria-hidden />}
-      {formatCompetenciaAbrev(raio.fechamento.competencia)}: {f.texto}
-    </span>
-  )
-}
-
 /** Baixa o .zip (XML + PDF) das notas de um mês, sem entrar na empresa. */
-export function BaixarNotasDoMes({ cliente, compacto = false }: { cliente: ClienteAtendido; compacto?: boolean }) {
+export function BaixarNotasDoMes({ cliente, compacto = false, mesFixo }: { cliente: ClienteAtendido; compacto?: boolean; /** Baixa sempre este mês (sem seletor). */ mesFixo?: string }) {
   const atual = cliente.raio_x?.competencia ?? new Date().toISOString().slice(0, 7)
   const meses = [1, 0, 2, 3, 4, 5].map((n) => deslocarCompetencia(atual, -n)) // o mês passado primeiro: é o que se fecha
-  const [mes, setMes] = useState(meses[0])
+  const [mesEscolhido, setMes] = useState(meses[0])
+  const mes = mesFixo ?? mesEscolhido
   const [baixando, setBaixando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   async function baixar() {
@@ -179,7 +83,7 @@ export function BaixarNotasDoMes({ cliente, compacto = false }: { cliente: Clien
   return (
     <div className={compacto ? "" : "mt-3"}>
       <div className="flex flex-wrap items-center gap-2">
-        {!compacto && (
+        {!compacto && !mesFixo && (
           <>
         <label className="sr-only" htmlFor={`mes-${cliente.id}`}>
           Mês das notas de {nome(cliente)}
@@ -206,7 +110,7 @@ export function BaixarNotasDoMes({ cliente, compacto = false }: { cliente: Clien
           className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
         >
           {baixando ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <Download size={15} aria-hidden />}
-          {compacto ? <span className="sr-only">Notas de {formatCompetenciaAbrev(mes)}</span> : "Baixar notas do mês (XML + PDF)"}
+          {mesFixo ? "XML + PDF" : compacto ? <span className="sr-only">Notas de {formatCompetenciaAbrev(mes)}</span> : "Baixar notas do mês (XML + PDF)"}
         </button>
       </div>
       {erro && (
@@ -218,153 +122,290 @@ export function BaixarNotasDoMes({ cliente, compacto = false }: { cliente: Clien
   )
 }
 
-/** A faixa de números dentro do cartão de cada empresa. */
-export function RaioXDoCliente({ cliente }: { cliente: ClienteAtendido }) {
-  const r = cliente.raio_x
-  if (!r) return null
-  const mes = formatCompetenciaAbrev(r.competencia)
-  const cert = r.certificado
+// ---------------------------------------------------------------------------
+// 08/10/2026 — painel próprio do contador. "É válido ele entrar em cada
+// empresa, mas seria mais válido ele ter um painel próprio e trocar as empresas
+// e ver os dados que lhe interessa." Três telas em volta da rotina dele:
+// Hoje (uma fila só), Fechamento do mês (quadro) e Empresas (a carteira), mais
+// a ficha de cada empresa — tudo sem entrar em nenhuma.
+// ---------------------------------------------------------------------------
+
+export interface TarefaDoContador {
+  chave: string
+  cliente: ClienteAtendido
+  texto: string
+  link: string
+  /** 0 urgente · 1 atrasada · 2 atenção · 3 a fazer */
+  peso: number
+}
+
+/** Tudo o que pede ação, de todas as empresas (ou de uma), numa fila só. */
+export function tarefasDe(clientes: ClienteAtendido[]): TarefaDoContador[] {
+  const fila: TarefaDoContador[] = []
+  for (const c of clientes) {
+    ;(c.alertas ?? []).forEach((a, i) =>
+      fila.push({ chave: `${c.id}-a-${a.tipo}-${i}`, cliente: c, texto: a.texto, link: a.link, peso: a.nivel === "critico" ? 0 : 2 }),
+    )
+    ;(c.pendencias ?? []).forEach((p, i) => {
+      // nota recusada já está nos alertas: não repete
+      if (p.tipo === "erro" || p.tipo === "indisponivel") return
+      fila.push({ chave: `${c.id}-p-${p.tipo}-${i}`, cliente: c, texto: p.titulo, link: p.link, peso: p.atrasada ? 1 : 3 })
+    })
+  }
+  return fila.sort((a, b) => a.peso - b.peso)
+}
+
+const SELO_TAREFA = [
+  { texto: "urgente", cor: "bg-danger-50 text-danger-700 dark:bg-danger-900/40 dark:text-danger-300", ponto: "bg-danger-600" },
+  { texto: "atrasada", cor: "bg-danger-50 text-danger-700 dark:bg-danger-900/40 dark:text-danger-300", ponto: "bg-danger-600" },
+  { texto: "atenção", cor: "bg-warning-50 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300", ponto: "bg-warning-600" },
+  { texto: "a fazer", cor: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300", ponto: "bg-slate-400" },
+]
+
+export function FilaDeTarefas({
+  tarefas,
+  desligado,
+  aoResolver,
+  aoVerEmpresa,
+  semEmpresa = false,
+  limite = 12,
+}: {
+  tarefas: TarefaDoContador[]
+  desligado: boolean
+  aoResolver: (c: ClienteAtendido, link: string) => void
+  aoVerEmpresa?: (c: ClienteAtendido) => void
+  /** Dentro da ficha de uma empresa: não repete o nome dela em cada linha. */
+  semEmpresa?: boolean
+  limite?: number
+}) {
+  const [tudo, setTudo] = useState(false)
+  if (tarefas.length === 0) {
+    return (
+      <p className="flex items-center gap-2 rounded-xl bg-success-50 px-4 py-3 text-sm font-medium text-success-700 dark:bg-success-900/30 dark:text-success-300">
+        <CircleCheck size={16} aria-hidden /> Nada pedindo a sua atenção agora.
+      </p>
+    )
+  }
+  const visiveis = tudo ? tarefas : tarefas.slice(0, limite)
   return (
-    <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-900/30" data-raio-x>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">
-        <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Regime</dt>
-          <dd className="font-medium text-slate-800 dark:text-slate-100">{r.regime_nome}</dd>
-        </div>
-        <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Notas em {mes}</dt>
-          <dd className="font-medium text-slate-800 dark:text-slate-100">
-            {r.notas_mes} <span className="font-normal text-slate-500 dark:text-slate-400">· {formatBRL(r.faturado_mes)}</span>
-          </dd>
-        </div>
-        <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">12 meses anteriores</dt>
-          <dd className="font-medium text-slate-800 dark:text-slate-100" title="Soma das notas autorizadas nos 12 meses antes deste (a base do RBT12)">
-            {formatBRL(r.faturado_12m)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Fechamento</dt>
-          <dd className="font-medium">
-            <Fechamento raio={r} />
-          </dd>
-        </div>
-        <div className="col-span-2">
-          <dt className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            Faturado em notas no ano × limite do regime
-          </dt>
-          <dd>
-            <BarraDoLimite raio={r} />
-          </dd>
-        </div>
-        {cert && (
-          <div className="col-span-2">
-            <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Certificado digital</dt>
-            <dd
-              className={`font-medium ${
-                cert.situacao === "ok" ? "text-slate-800 dark:text-slate-100" : cert.situacao === "vencendo" && (cert.dias ?? 0) > 15 ? "text-warning-700 dark:text-warning-300" : "text-danger-600 dark:text-danger-300"
-              }`}
+    <>
+      <ul className="divide-y divide-slate-100 dark:divide-slate-700/60">
+        {visiveis.map((t) => {
+          const selo = SELO_TAREFA[t.peso]
+          return (
+            <li key={t.chave} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5">
+              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${selo.ponto}`} aria-hidden />
+              <div className="min-w-0 flex-1 basis-60">
+                <p className="text-sm text-slate-800 dark:text-slate-100">{t.texto}</p>
+                {!semEmpresa && (
+                  <button
+                    type="button"
+                    onClick={() => aoVerEmpresa?.(t.cliente)}
+                    className="text-xs font-medium text-slate-500 hover:text-primary-700 hover:underline dark:text-slate-400 dark:hover:text-primary-300"
+                  >
+                    {nome(t.cliente)}
+                  </button>
+                )}
+              </div>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${selo.cor}`}>{selo.texto}</span>
+              <button
+                type="button"
+                disabled={desligado}
+                onClick={() => aoResolver(t.cliente, t.link)}
+                title="Abre a empresa já na tela onde isso se resolve"
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+              >
+                Resolver <ArrowRight size={14} aria-hidden />
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+      {tarefas.length > limite && (
+        <button type="button" onClick={() => setTudo((v) => !v)} className="mt-2 text-sm font-medium text-primary-700 hover:underline dark:text-primary-300">
+          {tudo ? "Mostrar menos" : `Ver as ${tarefas.length} tarefas`}
+        </button>
+      )}
+    </>
+  )
+}
+
+/** A faixa de números da carteira, numa linha (no lugar dos quatro cartões). */
+export function FaixaDaCarteira({ resumo }: { resumo: ResumoCarteira }) {
+  const mes = resumo.competencia ? formatCompetenciaLonga(resumo.competencia).toLowerCase() : "este mês"
+  const item = (valor: string | number, rotulo: string, cor = "text-slate-900 dark:text-slate-100") => (
+    <div className="min-w-0">
+      <dd className={`text-xl font-semibold tabular-nums ${cor}`}>{valor}</dd>
+      <dt className="text-xs text-slate-500 dark:text-slate-400">{rotulo}</dt>
+    </div>
+  )
+  return (
+    <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-2xl border border-slate-200/70 bg-white px-5 py-4 sm:grid-cols-4 dark:border-slate-700/70 dark:bg-slate-800" data-painel="faixa">
+      {item(resumo.empresas, resumo.empresas === 1 ? "empresa" : "empresas")}
+      {item(resumo.notas_mes.toLocaleString("pt-BR"), `notas em ${mes}`)}
+      {item(curto(resumo.faturado_mes), `faturado em notas em ${mes}`)}
+      {item(
+        resumo.alertas_criticos > 0 ? resumo.alertas_criticos : resumo.alertas + resumo.pendencias,
+        resumo.alertas_criticos > 0 ? (resumo.alertas_criticos === 1 ? "coisa urgente" : "coisas urgentes") : "itens pra fazer",
+        resumo.alertas_criticos > 0 ? "text-danger-600 dark:text-danger-300" : undefined,
+      )}
+    </dl>
+  )
+}
+
+// --- Fechamento do mês -----------------------------------------------------
+
+const COLUNAS_FECHAMENTO = [
+  { id: "pendente", titulo: "Falta conferir", dica: "nota atrasada ou extrato sem classificar", cor: "border-warning-600", ponto: "bg-warning-600" },
+  { id: "aguardando", titulo: "Aguardando pagamento", dica: "só falta cair o que está no prazo", cor: "border-primary-500", ponto: "bg-primary-500" },
+  { id: "fechado", titulo: "Fechado", dica: "notas pagas e extrato classificado", cor: "border-success-600", ponto: "bg-success-600" },
+  { id: "sem", titulo: "Sem conciliação", dica: "não usa o Financeiro, ou nada lançado no mês", cor: "border-slate-300 dark:border-slate-600", ponto: "bg-slate-400" },
+] as const
+
+export function QuadroDeFechamento({
+  clientes,
+  desligado,
+  aoAbrir,
+  aoVerEmpresa,
+}: {
+  clientes: ClienteAtendido[]
+  desligado: boolean
+  aoAbrir: (c: ClienteAtendido, link: string) => void
+  aoVerEmpresa: (c: ClienteAtendido) => void
+}) {
+  const atual = clientes.find((c) => c.raio_x)?.raio_x?.competencia ?? new Date().toISOString().slice(0, 7)
+  const meses = [1, 0, 2].map((n) => deslocarCompetencia(atual, -n)) // o mês passado primeiro: é o que se fecha
+  const [mes, setMes] = useState(meses[0])
+  const linha = (c: ClienteAtendido) => {
+    const f = c.raio_x?.fechamentos?.find((x) => x.competencia === mes)
+    const doMes = c.raio_x?.serie?.find((x) => x.competencia === mes)
+    const coluna = !f || f.estado === "vazio" ? "sem" : f.estado
+    return { c, f, notas: doMes?.notas ?? 0, valor: doMes?.valor ?? 0, coluna }
+  }
+  const linhas = clientes.map(linha)
+  return (
+    <div className="flex flex-col gap-4" data-painel="fechamento">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Em que pé está o fechamento de cada empresa. Baixe as notas do mês (XML + PDF) direto do cartão.
+        </p>
+        <div className="flex rounded-lg border border-slate-200 p-0.5 dark:border-slate-700" role="group" aria-label="Mês do fechamento">
+          {[...meses].sort().map((m) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={m === mes}
+              onClick={() => setMes(m)}
+              className={`rounded-md px-3 py-1 text-sm font-medium ${m === mes ? "bg-primary-600 text-white" : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700"}`}
             >
-              {cert.situacao === "falta"
-                ? "Não enviado"
-                : cert.situacao === "vencido"
-                  ? "Vencido"
-                  : cert.validade
-                    ? `Vale até ${cert.validade.split("-").reverse().join("/")}${cert.situacao === "vencendo" ? ` (${cert.dias === 0 ? "vence hoje" : `faltam ${cert.dias} dia${cert.dias === 1 ? "" : "s"}`})` : ""}`
-                    : "Em dia"}
-            </dd>
-          </div>
-        )}
-      </dl>
-      {cliente.modulos.includes("emissor") && <BaixarNotasDoMes cliente={cliente} />}
+              {formatCompetenciaAbrev(m)}/{m.slice(2, 4)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {COLUNAS_FECHAMENTO.map((col) => {
+          const daColuna = linhas.filter((l) => l.coluna === col.id)
+          return (
+            <section key={col.id} aria-label={col.titulo} className={`rounded-2xl border-t-4 bg-slate-50/80 p-3 dark:bg-slate-900/30 ${col.cor}`}>
+              <h3 className="flex items-center gap-2 px-1 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                <span className={`h-2 w-2 rounded-full ${col.ponto}`} aria-hidden /> {col.titulo}
+                <span className="ml-auto rounded-full bg-white px-2 text-xs font-medium tabular-nums text-slate-500 dark:bg-slate-800 dark:text-slate-300">{daColuna.length}</span>
+              </h3>
+              <p className="mb-2 px-1 text-xs text-slate-500 dark:text-slate-400">{col.dica}</p>
+              <ul className="flex flex-col gap-2">
+                {daColuna.map(({ c, f, notas, valor }) => (
+                  <li key={c.id} className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+                    <button type="button" onClick={() => aoVerEmpresa(c)} className="block max-w-full truncate text-left text-sm font-semibold text-slate-900 hover:text-primary-700 hover:underline dark:text-slate-100 dark:hover:text-primary-300">
+                      {nome(c)}
+                    </button>
+                    <p className="text-xs tabular-nums text-slate-500 dark:text-slate-400">
+                      {notas === 0 ? "nenhuma nota no mês" : `${notas} nota${notas === 1 ? "" : "s"} · ${formatBRL(valor)}`}
+                    </p>
+                    {f && f.estado === "pendente" && (
+                      <p className="mt-1 text-xs text-warning-700 dark:text-warning-300">
+                        {[
+                          f.notas_atrasadas > 0 && `${f.notas_atrasadas} nota${f.notas_atrasadas === 1 ? "" : "s"} atrasada${f.notas_atrasadas === 1 ? "" : "s"}`,
+                          f.extrato_pendentes > 0 && `${f.extrato_pendentes} linha${f.extrato_pendentes === 1 ? "" : "s"} do extrato`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || "diferença por conferir"}
+                      </p>
+                    )}
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {notas > 0 && c.modulos.includes("emissor") && <BaixarNotasDoMes cliente={c} mesFixo={mes} compacto />}
+                      {f && f.estado !== "fechado" && f.estado !== "vazio" && (
+                        <button
+                          type="button"
+                          disabled={desligado}
+                          onClick={() => aoAbrir(c, "/app/financeiro/conciliacao")}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-primary-700 hover:underline disabled:opacity-60 dark:text-primary-300"
+                        >
+                          Conferir <ArrowRight size={12} aria-hidden />
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+                {daColuna.length === 0 && <li className="px-1 py-2 text-xs text-slate-400 dark:text-slate-500">Nenhuma empresa aqui.</li>}
+              </ul>
+            </section>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
-/** Raio-X em tabela: a carteira inteira numa tela (pra quem atende várias). */
-export function TabelaRaioX({
-  clientes,
-  ativa,
-  desligado,
-  aoAbrir,
-}: {
-  clientes: ClienteAtendido[]
-  ativa: string
-  desligado: boolean
-  aoAbrir: (c: ClienteAtendido, link?: string) => void
-}) {
-  const th = "px-2.5 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500"
-  const td = "px-2.5 py-3 align-top text-sm text-slate-700 dark:text-slate-200"
+// --- Empresas (a carteira) --------------------------------------------------
+
+export function ListaDaCarteira({ clientes, ativa, aoVerEmpresa }: { clientes: ClienteAtendido[]; ativa: string; aoVerEmpresa: (c: ClienteAtendido) => void }) {
   return (
-    <Card className="overflow-hidden" data-painel="tabela">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[62rem] border-collapse">
-          <thead className="border-b border-slate-100 bg-slate-50/70 dark:border-slate-700 dark:bg-slate-900/30">
-            <tr>
-              <th scope="col" className={th}>Empresa</th>
-              <th scope="col" className={th}>Regime</th>
-              <th scope="col" className={`${th} whitespace-nowrap text-right`}>Notas no mês</th>
-              <th scope="col" className={th}>No ano × limite</th>
-              <th scope="col" className={`${th} whitespace-nowrap text-right`}>12 meses ant.</th>
-              <th scope="col" className={th}>Fechamento</th>
-              <th scope="col" className={th}>Situação</th>
-              <th scope="col" className={`${th} text-right`}>Baixar · abrir</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-            {clientes.map((c) => {
-              const r = c.raio_x
-              const criticos = (c.alertas ?? []).filter((a: AlertaDoCliente) => a.nivel === "critico").length
-              const avisos = (c.alertas ?? []).length - criticos
-              const pend = c.total_pendencias ?? 0
-              return (
-                <tr key={c.id} className={c.prestador_id === ativa ? "bg-primary-50/40 dark:bg-primary-900/10" : ""}>
-                  <th scope="row" className={`${td} max-w-[13rem] text-left font-normal`}>
-                    <span className="block truncate font-semibold text-slate-900 dark:text-slate-100">{nome(c)}</span>
-                    <span className="block text-xs text-slate-500 dark:text-slate-400">{formatarDocumento(c.cnpj)}</span>
-                  </th>
-                  <td className={`${td} whitespace-nowrap`}>{r?.regime_nome ?? "—"}</td>
-                  <td className={`${td} whitespace-nowrap text-right`}>
-                    {r ? (
-                      <>
-                        <span className="font-semibold">{r.notas_mes}</span>
-                        <span className="block text-xs text-slate-500 dark:text-slate-400">{formatBRL(r.faturado_mes)}</span>
-                      </>
-                    ) : "—"}
-                  </td>
-                  <td className={td}>{r ? <BarraDoLimite raio={r} compacta /> : "—"}</td>
-                  <td className={`${td} whitespace-nowrap text-right`}>{r ? formatBRL(r.faturado_12m) : "—"}</td>
-                  <td className={`${td} whitespace-nowrap text-xs`}>{r ? <Fechamento raio={r} /> : "—"}</td>
-                  <td className={`${td} whitespace-nowrap text-xs`}>
-                    {criticos + avisos + pend === 0 ? (
-                      <span className="text-success-700 dark:text-success-300">em dia</span>
-                    ) : (
-                      <span className="flex flex-col gap-0.5">
-                        {criticos > 0 && <span className="font-semibold text-danger-600 dark:text-danger-300">{criticos} urgente{criticos === 1 ? "" : "s"}</span>}
-                        {avisos > 0 && <span className="text-warning-700 dark:text-warning-300">{avisos} alerta{avisos === 1 ? "" : "s"}</span>}
-                        {pend > 0 && <span className="text-slate-600 dark:text-slate-300">{pend} pendência{pend === 1 ? "" : "s"}</span>}
-                      </span>
-                    )}
-                  </td>
-                  <td className={`${td} whitespace-nowrap`}>
-                    <div className="flex items-center justify-end gap-2">
-                      {c.modulos.includes("emissor") && <BaixarNotasDoMes cliente={c} compacto />}
-                      <button
-                        type="button"
-                        disabled={desligado || c.prestador_id === ativa}
-                        onClick={() => aoAbrir(c)}
-                        className="inline-flex items-center gap-1 rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-                      >
-                        {c.prestador_id === ativa ? "Aberta" : "Abrir"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    </Card>
+    <ul className="flex flex-col gap-2" data-painel="carteira">
+      {clientes.map((c) => {
+        const r = c.raio_x
+        const criticos = (c.alertas ?? []).filter((a) => a.nivel === "critico").length
+        const outros = (c.alertas ?? []).length - criticos + (c.total_pendencias ?? 0)
+        return (
+          <li key={c.id}>
+            <button
+              type="button"
+              onClick={() => aoVerEmpresa(c)}
+              className={`grid w-full grid-cols-2 items-center gap-x-4 gap-y-2 rounded-2xl border bg-white px-4 py-3 text-left transition-colors hover:border-primary-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.6fr)_minmax(0,1fr)_auto] dark:bg-slate-800 dark:hover:border-primary-600 ${
+                c.prestador_id === ativa ? "border-primary-400" : "border-slate-200/70 dark:border-slate-700/70"
+              }`}
+            >
+              <span className="col-span-2 min-w-0 lg:col-span-1">
+                <span className="block truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{nome(c)}</span>
+                <span className="block text-xs tabular-nums text-slate-500 dark:text-slate-400">{formatarDocumento(c.cnpj)}</span>
+              </span>
+              <span className="text-sm text-slate-700 dark:text-slate-200">
+                <span className="block text-[11px] uppercase tracking-wide text-slate-400 lg:hidden">Regime</span>
+                {r?.regime_nome ?? "—"}
+              </span>
+              <span className="text-sm tabular-nums text-slate-700 dark:text-slate-200">
+                <span className="block text-[11px] uppercase tracking-wide text-slate-400 lg:hidden">Notas no mês</span>
+                {r ? (
+                  <>
+                    <strong className="font-semibold">{r.notas_mes}</strong> <span className="text-slate-500 dark:text-slate-400">· {curto(r.faturado_mes)}</span>
+                  </>
+                ) : "—"}
+              </span>
+              <span className="col-span-2 lg:col-span-1">{r ? <BarraDoLimite raio={r} compacta /> : null}</span>
+              <span className="text-xs">
+                {criticos > 0 ? (
+                  <span className="font-semibold text-danger-600 dark:text-danger-300">{criticos} urgente{criticos === 1 ? "" : "s"}</span>
+                ) : outros > 0 ? (
+                  <span className="text-warning-700 dark:text-warning-300">{outros} pra fazer</span>
+                ) : (
+                  <span className="text-success-700 dark:text-success-300">em dia</span>
+                )}
+              </span>
+              <ArrowRight size={16} className="hidden text-slate-300 lg:block dark:text-slate-600" aria-hidden />
+            </button>
+          </li>
+        )
+      })}
+    </ul>
   )
 }

@@ -114,6 +114,10 @@ Quando está ligada, a tela de gerar nota avisa que a conta está gerando notas 
 
 Não precisa digitar endereço e regime tributário. Em "Empresa", aba "Dados da empresa", o botão "Preencher pelo CNPJ" busca os dados na Receita e preenche só o que estiver em branco (endereço, cidade, regime tributário, nome fantasia, telefone e e-mail). O que você já escreveu não é trocado. Na "Visão geral", o passo "Dados da empresa" dos primeiros passos tem o mesmo atalho: "Puxar pelo CNPJ". A alíquota do Simples a Receita não informa: essa você (ou o seu contador) preenche.
 
+### Depois do teste grátis (fase sem cobrança)
+
+Enquanto a cobrança pelo painel não está no ar, ninguém "assina": quando o teste grátis termina, a pessoa abre "Minha conta" › "Assinatura" e clica em "Pedir liberação". A equipe da Agente Ana recebe o pedido, fala com ela pelo WhatsApp e autoriza o uso. Até lá a empresa fica só pra consulta (nada é apagado). O cadastro pede o WhatsApp justamente pra isso; quem já tinha conta informa em "Minha conta" › "Perfil".
+
 ### Novidades e versão
 
 O sino no topo abre a tela "Novidades", com o que mudou em cada atualização (cada pessoa vê o que é do perfil dela: empresa, contador ou os dois). Uma bolinha no sino avisa quando saiu versão nova. O número da versão fica no rodapé do menu.
@@ -758,24 +762,25 @@ Em "Empresa" › "Contador" você convida o seu contador pelo e-mail dele e marc
 
 Clique em "Enviar convite". O contador entra com o login dele (você não passa a sua senha). Dá pra mudar as permissões a qualquer momento (vale na hora) ou tirar o acesso pela lixeira. A lista "O que o contador fez" mostra as últimas ações dele. Ficam sempre só com o dono: a assinatura, convidar ou tirar pessoas, ligar e desligar módulos e apagar a empresa ou os dados.
 
-### Para contadores: "Empresas que atendo"
+### Para contadores: "Painel do contador"
 
-O contador cria a própria conta em "Criar conta", na opção "Sou contador(a)": é grátis, não pede CNPJ e não tem período de teste nem assinatura — quem assina é o cliente. O e-mail tem que ser o mesmo que o cliente convidou. Essa conta mostra só "Empresas que atendo", "Minha conta" e "Ajuda"; pra emitir as próprias notas, o contador adiciona a empresa dele pelo seletor de empresas ("Adicionar empresa"). O convite aparece em "Empresas que atendo" (no menu): "Aceitar" e depois "Abrir empresa". Dentro da empresa do cliente aparece uma faixa azul no topo dizendo o que ele pode fazer ali. As empresas dos clientes ficam também no seletor de empresas, no topo do menu, no grupo "Empresas que atendo". Se o contador tentar algo que o cliente não liberou, a Ana avisa qual permissão falta. "Deixar de atender" tira a empresa da lista.
+O contador cria a própria conta em "Criar conta", na opção "Sou contador(a)": é grátis, não pede CNPJ e não tem período de teste nem assinatura — quem assina é o cliente. O e-mail tem que ser o mesmo que o cliente convidou. Essa conta mostra só "Painel do contador", "Minha conta" e "Ajuda"; pra emitir as próprias notas, o contador adiciona a empresa dele pelo seletor de empresas ("Adicionar empresa"). O convite aparece em "Painel do contador" (no menu): "Aceitar" e depois "Abrir empresa". Dentro da empresa do cliente aparece uma faixa azul no topo dizendo o que ele pode fazer ali. As empresas dos clientes ficam também no seletor de empresas, no topo do menu, no grupo "Painel do contador". Se o contador tentar algo que o cliente não liberou, a Ana avisa qual permissão falta. "Deixar de atender" tira a empresa da lista.
 
 Cada empresa da lista mostra "O que tem pra fazer": notas pra gerar, assinar, enviar, recusadas pela prefeitura e o que falta conferir na conciliação. Clicar numa pendência abre a empresa já na tela certa. "Só com pendência" esconde quem está em dia.
 
 **Bonificação do contador:** ele recebe 10% de cada mensalidade paga pelos clientes que atende, enquanto atender a empresa. O card "Sua bonificação" mostra quantos clientes estão pagando e quanto há a receber; "Ver extrato" abre o detalhe mês a mês. O repasse é feito pela equipe da Agente Ana.
 
-### Para contadores: o painel da carteira (números, alertas e raio-x)
+### Para contadores: o Painel do contador
 
-No topo de "Empresas que atendo" o contador vê a carteira inteira sem entrar em nenhuma empresa:
+No menu, "Painel do contador" mostra as empresas dos clientes sem precisar entrar em nenhuma. No topo, uma caixa de busca troca de empresa e uma faixa mostra os números da carteira (empresas, notas e faturado no mês, coisas urgentes). São três abas:
 
-- **Cartões**: quantas empresas atende, notas autorizadas e faturado em notas no mês (somando todas) e quantos alertas existem.
-- **"Precisa da sua atenção"**: os alertas de todas as empresas, os urgentes primeiro — certificado digital faltando, vencido ou vencendo (aviso a 30 dias, urgente a 15), notas recusadas esperando correção, faturamento chegando a 80% do limite do MEI (R$ 81 mil no ano) ou do Simples (R$ 4,8 milhões no ano), recebimento sem nota fiscal e empresa sem assinatura. Clicar abre a empresa já na tela onde aquilo se resolve.
-- **Raio-X de cada empresa** (em "Tabela" ou "Cartões"): regime, notas e faturado no mês, faturado no ano comparado com o limite do regime (barra), os 12 meses anteriores (a base do RBT12), se o mês passado está fechado na conciliação e a validade do certificado.
-- **"Baixar notas do mês (XML + PDF)"**: um .zip com as notas autorizadas da empresa naquele mês, pronto pra importar no sistema contábil. O dono vê no histórico que o contador baixou.
+- **"Hoje"**: uma fila só com o que fazer, do mais urgente pro menos — certificado digital faltando, vencido ou vencendo (aviso a 30 dias, urgente a 15), notas recusadas, faturamento chegando a 80% do limite do MEI (R$ 81 mil no ano) ou do Simples (R$ 4,8 milhões no ano), recebimento sem nota, notas pra gerar, assinar ou enviar e conciliação pendente. "Resolver" abre a empresa já na tela certa.
+- **"Fechamento do mês"**: as empresas em quatro colunas — "Falta conferir", "Aguardando pagamento", "Fechado" e "Sem conciliação" — para o mês escolhido (o passado, o atual ou o anterior). Cada cartão mostra as notas do mês e o botão "XML + PDF", que baixa o .zip das notas autorizadas daquele mês, pronto pro sistema contábil. O dono vê no histórico que o contador baixou.
+- **"Empresas"**: a carteira, com regime, notas do mês, faturado no ano comparado com o limite do regime e a situação de cada uma.
 
-O faturamento mostrado é a soma das notas autorizadas que passaram pela Ana (geradas aqui ou importadas do Emissor Nacional). Receita que não virou NFS-e por aqui não entra — é um indicador, não o RBT12 oficial. O regime é o que está no cadastro da empresa: quem não é do Simples aparece como "Fora do Simples" (a Ana não sabe se é Lucro Presumido ou Real).
+Clicar numa empresa (ou escolher na busca) abre a **ficha dela**: regime, alíquota de referência, notas mês a mês (gráfico e tabela dos últimos 12 meses), limite do regime, validade do certificado, fechamento dos três últimos meses, o que tem pra fazer, o download das notas do mês e o contato do responsável. "Entrar na empresa" continua existindo pra trabalhar nela.
+
+O faturamento mostrado é a soma das notas autorizadas que passaram pela Ana (geradas aqui ou importadas do Emissor Nacional). Receita que não virou NFS-e por aqui não entra — é um indicador, não o RBT12 oficial. O regime é o que está no cadastro da empresa: quem não é do Simples aparece como "Fora do Simples".
 
 ### Falar com o suporte
 

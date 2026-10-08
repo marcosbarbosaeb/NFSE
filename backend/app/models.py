@@ -211,6 +211,8 @@ class Usuario(Base):
     token_confirmacao_expira_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Nome de exibição e login por código enviado por e-mail (29/09/2026).
     nome: Mapped[str | None] = mapped_column(String(120))
+    # WhatsApp pedido no cadastro (08/10/2026), só dígitos com DDD.
+    telefone: Mapped[str | None] = mapped_column(String(20))
     login_codigo_hash: Mapped[str | None] = mapped_column(String(128))
     login_codigo_expira_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     login_codigo_tentativas: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
@@ -851,6 +853,9 @@ class Assinatura(Base):
     # desligado e passa por cima de teste, liberação e assinatura.
     bloqueada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     bloqueada_obs: Mapped[str | None] = mapped_column(String(200))
+    # A pessoa pediu pra continuar usando depois do teste (fase sem cobrança:
+    # quem autoriza é a Gestão). Limpa quando a Gestão libera ou bloqueia.
+    liberacao_pedida_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Planos por limite de notas (07/10/2026). `com_financeiro`: Financeiro
     # somado a um plano só de notas (Básico/Empreendedor).
     # `excedente_aceito_em`: a pessoa aceitou pagar por nota acima do limite.

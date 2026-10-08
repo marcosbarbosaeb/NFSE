@@ -315,6 +315,13 @@ def _dias_ate(fim: datetime.datetime, agora: datetime.datetime) -> int:
     return max(0, math.ceil((fim - agora).total_seconds() / 86400))
 
 
+def cobranca_ativa() -> bool:
+    """A cobrança (Stripe) já está no ar? Enquanto não está, quem autoriza o
+    uso depois do teste é a Gestão, na mão, e o limite de notas dos planos
+    não vale (08/10/2026: "depois desse período me permita autorizar o uso")."""
+    return bool(get_settings().stripe_secret_key)
+
+
 def situacao_do_acesso(assinatura: Assinatura | None, agora: datetime.datetime | None = None) -> dict:
     """"Esta empresa pode usar tudo?" e por quê. `motivo`:
     cortesia | assinatura | pagamento_pendente | liberacao | teste (liberados)
@@ -359,6 +366,7 @@ def liberar_acesso(assinatura: Assinatura, *, dias: int | None, sempre: bool, ob
     assinatura.liberado_sempre = bool(sempre)
     assinatura.liberado_ate = None if sempre or not dias else datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=dias)
     assinatura.liberado_obs = (obs or "").strip()[:200] or None
+    assinatura.liberacao_pedida_em = None  # pedido atendido
 
 
 def tirar_liberacao(assinatura: Assinatura) -> None:
@@ -372,6 +380,7 @@ def bloquear(assinatura: Assinatura, obs: str | None = None) -> None:
     teste, liberação, assinatura. Não depende de `BLOQUEIO_ATIVO`."""
     assinatura.bloqueada_em = datetime.datetime.now(datetime.timezone.utc)
     assinatura.bloqueada_obs = (obs or "").strip()[:200] or None
+    assinatura.liberacao_pedida_em = None
 
 
 def desbloquear(assinatura: Assinatura) -> None:

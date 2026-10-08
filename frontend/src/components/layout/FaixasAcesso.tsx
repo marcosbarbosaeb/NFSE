@@ -6,6 +6,7 @@ import { useAuth } from "../../lib/auth"
 import { ehContador, resumoPermissoes } from "../../lib/contador"
 import { useModulos } from "../../lib/modulos"
 import { reais, useUsoDoPlano } from "../../lib/planos"
+import { PedirLiberacao } from "../PedirLiberacao"
 import { Button } from "../ui/Button"
 import { Modal } from "../ui/Modal"
 
@@ -24,7 +25,7 @@ export function FaixaContador() {
       </span>
       <span className="text-white/90">Pode: {resumoPermissoes(usuario?.permissoes ?? [])}.</span>
       <Link to="/app/atendimentos" className="rounded-full bg-white/95 px-3 py-0.5 text-xs font-semibold text-primary-700 hover:bg-white">
-        Empresas que atendo
+        Painel do contador
       </Link>
     </div>
   )
@@ -48,6 +49,21 @@ export function FaixaAssinatura() {
             Falar com o suporte
           </Link>
         )}
+      </div>
+    )
+  }
+  if (acesso.bloqueado && acesso.cobranca_ativa === false) {
+    // Fase sem cobrança: não é caso de "assinar" — é pedir a liberação à equipe.
+    return (
+      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-danger-600 px-4 py-2 text-center text-sm text-white">
+        <span className="flex items-center gap-1.5 font-semibold">
+          <Lock size={15} aria-hidden="true" /> O teste grátis desta empresa terminou
+        </span>
+        <span className="text-white/95">
+          Dá pra ver e baixar tudo, mas não pra gerar notas nem lançar.{" "}
+          {contador ? "Avise o dono da empresa: ele pede a liberação." : "Pra continuar, peça a liberação à nossa equipe."}
+        </span>
+        <PedirLiberacao claro />
       </div>
     )
   }
@@ -144,14 +160,15 @@ export function AvisoSemAssinatura() {
   // O mesmo aviso serve pro limite de notas do plano (a mensagem diz qual é o caso).
   const limite = /limite/i.test(mensagem)
   const bloqueada = /bloqueada/i.test(mensagem)
+  const semCobranca = usuario?.acesso?.cobranca_ativa === false && !limite && !bloqueada
   return (
-    <Modal titulo={limite ? "Limite de notas do plano" : bloqueada ? "Conta bloqueada" : "Pra continuar, é preciso assinar"} onClose={() => setMensagem(null)}>
+    <Modal titulo={limite ? "Limite de notas do plano" : bloqueada ? "Conta bloqueada" : semCobranca ? "O teste grátis terminou" : "Pra continuar, é preciso assinar"} onClose={() => setMensagem(null)}>
       <div className="flex flex-col gap-4">
         <p className="text-sm text-slate-600 dark:text-slate-300">{mensagem}</p>
         <p className="text-sm text-slate-500 dark:text-slate-400">
           {limite
             ? "As notas que já estão prontas continuam aqui, esperando: nada se perde."
-            : contador && !bloqueada
+            : contador && !bloqueada && !semCobranca
               ? "Quem assina é o dono da empresa. Enquanto isso, você continua vendo e baixando tudo o que já está aqui."
               : "Nada foi apagado: suas notas, tomadores e lançamentos continuam aqui, e você pode ver e baixar tudo."}
         </p>
@@ -159,7 +176,8 @@ export function AvisoSemAssinatura() {
           <Button type="button" variant="ghost" onClick={() => setMensagem(null)}>
             Agora não
           </Button>
-          {!contador && !bloqueada && (
+          {semCobranca && <PedirLiberacao aoPedir={() => setMensagem(null)} />}
+          {!contador && !bloqueada && !semCobranca && (
             <Button
               type="button"
               variant="accent"

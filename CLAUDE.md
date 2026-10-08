@@ -75,6 +75,13 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
   desligado; a trava leve fica em `acesso.conferir`) e excluir (pede o CNPJ). Nunca na própria conta de quem administra.
 - `envio` NÃO tem RLS (não carrega `prestador_id`): toda consulta nela tem que passar por `emissao` — a Gestão já contou os
   e-mails de todas as contas em cada conta por causa disso.
+- Fase sem cobrança (`billing.cobranca_ativa()` = existe `STRIPE_SECRET_KEY`): depois do teste a pessoa PEDE a liberação
+  (`POST /api/assinatura/pedir-liberacao`) e a Gestão autoriza; mensagens falam em "pedir", não em "assinar"; limite de
+  notas dos planos não vale. Tudo isso só trava com `BLOQUEIO_ATIVO=true`.
+- Cadastro exige WhatsApp (`usuario.telefone`, só dígitos com DDD). A identidade visual é o símbolo "A" (`SimboloAna`);
+  não existe mais ilustração/mascote (`AnaAvatar` desenha o símbolo).
+- Painel do contador (`/app/atendimentos`): Hoje / Fechamento do mês / Empresas + ficha da empresa (`?empresa=<id do acesso>`).
+  Tudo sai de `GET /api/contador/atendimentos` (sem entrar na empresa); `raio_x.py` faz as contas.
 - Dados da empresa: obrigatório é só o regime tributário (`prontidao._dados_que_faltam`, `obrigatorio`). Endereço e alíquota
   são opcionais — não use pra travar nada.
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.

@@ -101,7 +101,7 @@ export function ContadorCard() {
       setAviso(
         r.email_enviado
           ? `Convite enviado pra ${r.acesso.email}. Assim que ele aceitar, a sua empresa aparece na conta dele.`
-          : `Convite criado, mas o e-mail pra ${r.acesso.email} não saiu. Avise ele: é só entrar na Ana com esse e-mail e abrir “Empresas que atendo”.`,
+          : `Convite criado, mas o e-mail pra ${r.acesso.email} não saiu. Avise ele: é só entrar na Ana com esse e-mail e abrir “Painel do contador”.`,
       )
       setEmail("")
       carregar()

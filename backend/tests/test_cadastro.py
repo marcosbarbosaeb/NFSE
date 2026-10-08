@@ -139,7 +139,7 @@ def test_endpoint_cadastro_sucesso(client_publico):
     resp = client_publico.post(
         "/api/cadastro",
         json={
-            "email": "http@exemplo.com", "senha": "senhaforte123", "razao_social": "EMPRESA HTTP LTDA",
+            "email": "http@exemplo.com", "senha": "senhaforte123", "whatsapp": "92999990000", "razao_social": "EMPRESA HTTP LTDA",
             "cpf_cnpj": "99999999000199", "cod_municipio": "3106200",
         },
     )
@@ -150,7 +150,7 @@ def test_endpoint_cadastro_sucesso(client_publico):
 def test_endpoint_cadastro_email_invalido_ou_senha_curta_da_422(client_publico):
     resp = client_publico.post(
         "/api/cadastro",
-        json={"email": "x@exemplo.com", "senha": "curta", "razao_social": "X", "cpf_cnpj": "12345678000199", "cod_municipio": "3106200"},
+        json={"email": "x@exemplo.com", "senha": "curta", "whatsapp": "92999990000", "razao_social": "X", "cpf_cnpj": "12345678000199", "cod_municipio": "3106200"},
     )
     assert resp.status_code == 422
 
@@ -161,7 +161,7 @@ def test_endpoint_cadastro_cnpj_com_pontuacao_da_422(client_publico):
     resp = client_publico.post(
         "/api/cadastro",
         json={
-            "email": "x@exemplo.com", "senha": "senhaforte123", "razao_social": "X",
+            "email": "x@exemplo.com", "senha": "senhaforte123", "whatsapp": "92999990000", "razao_social": "X",
             "cpf_cnpj": "12.345.678/0001-99", "cod_municipio": "3106200",
         },
     )
@@ -176,7 +176,7 @@ def test_endpoint_cadastro_salva_endereco_opcional_do_autopreenchimento(client_p
     resp = client_publico.post(
         "/api/cadastro",
         json={
-            "email": "comendereco@exemplo.com", "senha": "senhaforte123", "razao_social": "EMPRESA COM ENDEREÇO LTDA",
+            "email": "comendereco@exemplo.com", "senha": "senhaforte123", "whatsapp": "92999990000", "razao_social": "EMPRESA COM ENDEREÇO LTDA",
             "cpf_cnpj": "88888888000188", "cod_municipio": "1302603",
             "cep": "69000000", "logradouro": "RUA DAS FLORES", "numero": "123",
             "complemento": "SALA 4", "bairro": "CENTRO",
@@ -195,7 +195,7 @@ def test_endpoint_cadastro_sem_endereco_continua_funcionando(client_publico):
     resp = client_publico.post(
         "/api/cadastro",
         json={
-            "email": "semendereco@exemplo.com", "senha": "senhaforte123", "razao_social": "X",
+            "email": "semendereco@exemplo.com", "senha": "senhaforte123", "whatsapp": "92999990000", "razao_social": "X",
             "cpf_cnpj": "77777777000177", "cod_municipio": "3106200",
         },
     )
@@ -213,7 +213,7 @@ def test_endpoint_consultar_cnpj_sucesso(client_publico, monkeypatch):
 
         def json(self):
             return {
-                "razao_social": "EMPRESA TESTE LTDA", "logradouro": "RUA X", "numero": "1",
+                "whatsapp": "92999990000", "razao_social": "EMPRESA TESTE LTDA", "logradouro": "RUA X", "numero": "1",
                 "bairro": "CENTRO", "cep": "69000-000", "municipio": "MANAUS", "uf": "am",
                 "codigo_municipio_ibge": 1302603, "descricao_situacao_cadastral": "ATIVA",
             }
@@ -259,7 +259,7 @@ def test_endpoint_consultar_cnpj_indisponivel_da_503(client_publico, monkeypatch
 
 def test_endpoint_cadastro_email_duplicado_da_409(client_publico):
     payload = {
-        "email": "dupe@exemplo.com", "senha": "senhaforte123", "razao_social": "X",
+        "email": "dupe@exemplo.com", "senha": "senhaforte123", "whatsapp": "92999990000", "razao_social": "X",
         "cpf_cnpj": "10101010000110", "cod_municipio": "3106200",
     }
     client_publico.post("/api/cadastro", json=payload)
@@ -272,7 +272,7 @@ def test_endpoint_login_recusa_antes_de_confirmar(client_publico):
     client_publico.post(
         "/api/cadastro",
         json={
-            "email": "semconfirmar@exemplo.com", "senha": "senhaforte123", "razao_social": "X",
+            "email": "semconfirmar@exemplo.com", "senha": "senhaforte123", "whatsapp": "92999990000", "razao_social": "X",
             "cpf_cnpj": "30303030000130", "cod_municipio": "3106200",
         },
     )
@@ -284,7 +284,7 @@ def test_endpoint_confirmar_email_loga_direto(client_publico, db):
     client_publico.post(
         "/api/cadastro",
         json={
-            "email": "confirmahttp@exemplo.com", "senha": "senhaforte123", "razao_social": "X",
+            "email": "confirmahttp@exemplo.com", "senha": "senhaforte123", "whatsapp": "92999990000", "razao_social": "X",
             "cpf_cnpj": "40404040000140", "cod_municipio": "3106200",
         },
     )
@@ -405,7 +405,7 @@ def test_endpoint_callback_conta_existente_confirmada_loga_e_manda_pro_app(clien
     client_publico.post(
         "/api/cadastro",
         json={
-            "email": "jalogada@exemplo.com", "senha": "senhaforte123", "razao_social": "X",
+            "email": "jalogada@exemplo.com", "senha": "senhaforte123", "whatsapp": "92999990000", "razao_social": "X",
             "cpf_cnpj": "50505050000150", "cod_municipio": "3106200",
         },
     )
@@ -436,7 +436,7 @@ def test_endpoint_callback_conta_existente_nao_confirmada_redireciona_com_erro(c
     client_publico.post(
         "/api/cadastro",
         json={
-            "email": "naoconfirmada@exemplo.com", "senha": "senhaforte123", "razao_social": "X",
+            "email": "naoconfirmada@exemplo.com", "senha": "senhaforte123", "whatsapp": "92999990000", "razao_social": "X",
             "cpf_cnpj": "60606060000160", "cod_municipio": "3106200",
         },
     )

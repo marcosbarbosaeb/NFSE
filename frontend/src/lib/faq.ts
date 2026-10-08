@@ -601,7 +601,7 @@ export const FAQ: PerguntaFaq[] = [
     tema: "conta",
     pergunta: "Sou contador. Ganho alguma coisa por atender meus clientes aqui?",
     resposta:
-      "Sim: 10% de cada mensalidade que os clientes que você atende pagam, todo mês, enquanto você atender a empresa. Em “Empresas que atendo” aparece o card “Sua bonificação”, com quantos clientes estão pagando e quanto você tem a receber. Clique em “Ver extrato” pra ver mês a mês.",
+      "Sim: 10% de cada mensalidade que os clientes que você atende pagam, todo mês, enquanto você atender a empresa. Em “Painel do contador” aparece o card “Sua bonificação”, com quantos clientes estão pagando e quanto você tem a receber. Clique em “Ver extrato” pra ver mês a mês.",
     link: "/app/atendimentos",
   },
   {
@@ -609,7 +609,7 @@ export const FAQ: PerguntaFaq[] = [
     tema: "conta",
     pergunta: "Sou contador. Como entro na empresa de um cliente?",
     resposta:
-      "Crie a sua conta de contador em “Criar conta”, na opção “Sou contador(a)”: é grátis e não pede CNPJ. Depois peça pro cliente te convidar pelo mesmo e-mail em Empresa, aba “Contador”. O convite aparece em “Empresas que atendo”, no menu: clique em “Aceitar” e depois em “Abrir empresa”. As empresas dos clientes também ficam no seletor de empresas, no topo do menu, separadas das suas.",
+      "Crie a sua conta de contador em “Criar conta”, na opção “Sou contador(a)”: é grátis e não pede CNPJ. Depois peça pro cliente te convidar pelo mesmo e-mail em Empresa, aba “Contador”. O convite aparece em “Painel do contador”, no menu: clique em “Aceitar” e depois em “Abrir empresa”. As empresas dos clientes também ficam no seletor de empresas, no topo do menu, separadas das suas.",
     link: "/app/atendimentos",
   },
   {

@@ -101,9 +101,15 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
       }`}
     >
       <div>
-        <div className="mb-5 flex items-center gap-2 px-2">
+        {/* 08/10/2026: clicar na marca volta pro começo (Visão geral; no caso do contador, o painel dele). */}
+        <Link
+          to={soContador ? "/app/atendimentos" : "/app"}
+          onClick={onFechar}
+          title={soContador ? "Ir para o painel do contador" : "Ir para a Visão geral"}
+          className="mb-5 flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-brand-800/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400"
+        >
           <Marca escuro subtitulo={soContador ? "Conta de contador" : doisProdutos ? "Notas e financeiro" : modulos.financeiro ? "Financeiro" : "Emissor de notas"} />
-        </div>
+        </Link>
 
         <div className="mb-5">
           <TrocaEmpresa />
@@ -113,7 +119,7 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
           {soContador ? (
             <NavLink to="/app/atendimentos" onClick={onFechar} className={({ isActive }) => classeItem(isActive)}>
               <BriefcaseBusiness size={18} />
-              Empresas que atendo
+              Painel do contador
             </NavLink>
           ) : (
             <NavLink to={INICIO_ITEM.to} end onClick={onFechar} className={({ isActive }) => classeItem(isActive)}>
@@ -163,7 +169,7 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
           {usuario?.atende_empresas && !soContador && (
             <NavLink to="/app/atendimentos" onClick={onFechar} className={({ isActive }) => `mt-1 ${classeItem(isActive)}`}>
               <BriefcaseBusiness size={18} aria-hidden="true" />
-              Empresas que atendo
+              Painel do contador
             </NavLink>
           )}
           {gestor && (

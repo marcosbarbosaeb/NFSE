@@ -15,6 +15,7 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react"
+import { PedirLiberacao } from "../components/PedirLiberacao"
 import { type FormEvent, useCallback, useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { PaginaAbas, TituloSecao } from "../components/PaginaAbas"
@@ -84,6 +85,7 @@ export function ContaPage() {
 function AbaPerfil({ conta, onAtualizada, demo }: { conta: Conta; onAtualizada: (c: Conta) => void; demo: boolean }) {
   const { recarregarUsuario } = useAuth()
   const [nome, setNome] = useState(conta.nome ?? "")
+  const [whats, setWhats] = useState(conta.telefone ?? "")
   const [salvando, setSalvando] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null)
 
@@ -92,11 +94,12 @@ function AbaPerfil({ conta, onAtualizada, demo }: { conta: Conta; onAtualizada: 
     setSalvando(true)
     setMsg(null)
     try {
-      const nova = await api.patch<Conta>("/conta", { nome: nome.trim() })
+      const nova = await api.patch<Conta>("/conta", { nome: nome.trim(), telefone: whats.trim() })
       onAtualizada(nova)
       setNome(nova.nome ?? "")
+      setWhats(nova.telefone ?? "")
       await recarregarUsuario()
-      setMsg({ ok: true, texto: "Nome salvo." })
+      setMsg({ ok: true, texto: "Dados salvos." })
     } catch (err) {
       setMsg({ ok: false, texto: erroDe(err) })
     } finally {
@@ -118,6 +121,17 @@ function AbaPerfil({ conta, onAtualizada, demo }: { conta: Conta; onAtualizada: 
             placeholder="Como você quer ser chamado(a)"
             onChange={(e) => setNome(e.target.value)}
           />
+          <Field
+            label="WhatsApp"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            value={whats}
+            maxLength={25}
+            placeholder="(00) 00000-0000"
+            hint="Com DDD. É por onde a nossa equipe fala com você."
+            onChange={(e) => setWhats(e.target.value)}
+          />
           <div>
             <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">E-mail de acesso</span>
             <p className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
@@ -129,7 +143,7 @@ function AbaPerfil({ conta, onAtualizada, demo }: { conta: Conta; onAtualizada: 
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" variant="accent" disabled={salvando || nome.trim() === (conta.nome ?? "")}>
+            <Button type="submit" variant="accent" disabled={salvando || (nome.trim() === (conta.nome ?? "") && whats.trim() === (conta.telefone ?? ""))}>
               {salvando ? "Salvando..." : "Salvar"}
             </Button>
             {msg && (
@@ -712,6 +726,10 @@ function AssinaturaCard({ assinatura, aoMudar }: { assinatura: Assinatura; aoMud
 
   // Liberação feita pela Gestão da plataforma (vale mesmo com o teste vencido).
   const liberadaNaMao = assinatura.situacao === "liberacao"
+  // Fase sem cobrança: depois do teste, quem autoriza o uso é a equipe.
+  const { usuario } = useAuth()
+  const semCobranca = usuario?.acesso?.cobranca_ativa === false
+  const testeAcabou = ["teste_acabou", "cancelada", "sem_assinatura"].includes(assinatura.situacao ?? "")
 
   return (
     <Card className="p-5">
@@ -730,6 +748,7 @@ function AssinaturaCard({ assinatura, aoMudar }: { assinatura: Assinatura; aoMud
             : "A equipe da Agente Ana liberou o uso desta empresa, sem prazo. ")}
         {assinatura.status === "trial" &&
           !liberadaNaMao &&
+          !semCobranca &&
           (diasRestantesTrial !== null && diasRestantesTrial > 0
             ? `Você está no período de teste gratuito — ${diasRestantesTrial} dia${diasRestantesTrial === 1 ? "" : "s"} restante${diasRestantesTrial === 1 ? "" : "s"}.${
                 assinatura.bloqueio_ativo ? " Quando ele acabar, a empresa fica só pra consulta até você assinar." : ""
@@ -741,6 +760,26 @@ function AssinaturaCard({ assinatura, aoMudar }: { assinatura: Assinatura; aoMud
         {assinatura.status === "inadimplente" && "O último pagamento não foi confirmado — atualize a forma de pagamento pra evitar interrupção."}
         {assinatura.status === "cancelada" && "Sua assinatura foi cancelada. Assine de novo pra recuperar o acesso completo."}
       </p>
+
+      {semCobranca && !liberadaNaMao && assinatura.status !== "cortesia" && assinatura.situacao !== "bloqueada" && (
+        <div className="mb-4 rounded-xl border border-primary-200 bg-primary-50/60 px-4 py-3 text-sm text-slate-700 dark:border-primary-800 dark:bg-primary-900/20 dark:text-slate-200">
+          {testeAcabou ? (
+            <>
+              <p className="font-semibold text-slate-900 dark:text-slate-100">Seu teste grátis terminou.</p>
+              <p className="mb-3 mt-0.5">
+                Nesta fase não há cobrança por aqui: quem libera o uso é a nossa equipe. Peça a liberação e a gente te chama no WhatsApp pra combinar.
+                {assinatura.bloqueio_ativo ? " Enquanto isso, a empresa fica só pra consulta — nada é apagado." : ""}
+              </p>
+              <PedirLiberacao />
+            </>
+          ) : (
+            <p>
+              Você está no teste grátis{diasRestantesTrial !== null && diasRestantesTrial > 0 ? ` — ${diasRestantesTrial} dia${diasRestantesTrial === 1 ? "" : "s"} restante${diasRestantesTrial === 1 ? "" : "s"}` : ""}.
+              Quando ele acabar, é só pedir a liberação aqui e a nossa equipe autoriza o uso. Nada é cobrado por enquanto.
+            </p>
+          )}
+        </div>
+      )}
 
       {erro && <p className="mb-4 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
 

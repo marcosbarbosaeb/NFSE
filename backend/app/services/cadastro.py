@@ -50,6 +50,20 @@ def _gerar_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+class WhatsappInvalidoError(Exception):
+    pass
+
+
+def limpar_whatsapp(texto: str | None) -> str:
+    """Só os dígitos, com DDD (10 ou 11); aceita o +55 na frente."""
+    digitos = "".join(c for c in (texto or "") if c.isdigit())
+    if len(digitos) in (12, 13) and digitos.startswith("55"):
+        digitos = digitos[2:]
+    if len(digitos) not in (10, 11) or digitos[0] == "0":
+        raise WhatsappInvalidoError("Informe o seu WhatsApp com DDD (ex.: 92 99999-0000).")
+    return digitos
+
+
 def criar_cadastro(
     db: Session,
     *,
@@ -64,6 +78,7 @@ def criar_cadastro(
     complemento: str | None = None,
     bairro: str | None = None,
     codigo_indicacao: str | None = None,
+    telefone: str | None = None,
     modo_teste: bool = False,
     modulos: list[str] | None = None,
 ) -> Usuario:
@@ -136,6 +151,7 @@ def criar_cadastro(
         prestador_id=prestador.id,
         email=email_norm,
         senha_hash=hash_senha(senha),
+        telefone=telefone,
         email_confirmado=False,
         token_confirmacao=token,
         token_confirmacao_expira_em=datetime.datetime.now(datetime.timezone.utc) + _VALIDADE_TOKEN,
@@ -150,7 +166,9 @@ def criar_cadastro(
     return usuario
 
 
-def criar_cadastro_contador(db: Session, *, email: str, senha: str, nome: str, escritorio: str | None = None) -> Usuario:
+def criar_cadastro_contador(
+    db: Session, *, email: str, senha: str, nome: str, escritorio: str | None = None, telefone: str | None = None,
+) -> Usuario:
     """Conta só de contador: sem CNPJ, sem teste, sem assinatura. Cria a
     empresa de fachada (`so_contador`) que serve de "casa" do login — nela
     não se emite nem se lança nada; o contador trabalha nas empresas dos
@@ -169,7 +187,7 @@ def criar_cadastro_contador(db: Session, *, email: str, senha: str, nome: str, e
     token = _gerar_token()
     usuario = Usuario(
         id=uuid.uuid4(), prestador_id=prestador_id, email=email_norm, senha_hash=hash_senha(senha),
-        nome=nome.strip()[:120] or None, email_confirmado=False, token_confirmacao=token,
+        nome=nome.strip()[:120] or None, telefone=telefone, email_confirmado=False, token_confirmacao=token,
         token_confirmacao_expira_em=datetime.datetime.now(datetime.timezone.utc) + _VALIDADE_TOKEN,
     )
     db.add(usuario)
@@ -188,7 +206,7 @@ def _enviar_email_confirmacao(email: str, token: str, contador: bool | None = No
     link = f"{get_settings().app_base_url}/confirmar-email?token={token}"
     if contador:
         abertura = "Oi! Eu sou a Ana. Sua conta de contador está quase pronta."
-        depois = "Depois de confirmar, você já vê os convites dos seus clientes em “Empresas que atendo” e entra na empresa de cada um."
+        depois = "Depois de confirmar, você já vê os convites dos seus clientes em “Painel do contador” e entra na empresa de cada um."
     else:
         abertura = "Oi! Eu sou a Ana, sua agente de notas fiscais. Que bom ter você aqui!"
         depois = "Depois de confirmar, eu te mostro os primeiros passos: certificado digital, dados da empresa e seus tomadores."

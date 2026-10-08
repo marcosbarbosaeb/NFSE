@@ -1,24 +1,19 @@
 import { useId } from "react"
 
-// Identidade da Agente Ana: o avatar (rosto da marca, usado onde a Ana
-// "fala" — landing, avisos, telas de entrada) e o símbolo "A" (ícone
-// compacto: favicon, logotipo). Os dois usam o gradiente accent→primary da
-// paleta (index.css). O símbolo é SVG inline com useId pros ids de
-// gradiente não colidirem quando aparece várias vezes na mesma página.
+// Identidade da Agente Ana: o símbolo "A" com o gradiente accent→primary da
+// paleta (index.css). 08/10/2026 — saiu a ilustração 3D da "bonequinha"
+// ("meio cara de coisa amadora"): onde a Ana "fala" (avisos, telas de
+// entrada, e-mails) agora aparece o mesmo "A" do logotipo. O símbolo é SVG
+// inline com useId pros ids de gradiente não colidirem quando aparece várias
+// vezes na mesma página.
 
+/** A Ana "falando": o símbolo da marca, no tamanho pedido. (O nome ficou do
+ * tempo em que era um rosto; quem usa não precisa mudar.) */
 export function AnaAvatar({ size = 40, className = "" }: { size?: number; className?: string }) {
-  // Ilustração 3D da Ana (gerada no Higgsfield, recortada em 256px webp —
-  // nítida até ~85px em telas 3x). O fundo rosa→azul já vem na imagem.
   return (
-    <img
-      src="/ana.webp"
-      width={size}
-      height={size}
-      alt="Ana, a agente"
-      draggable={false}
-      className={`shrink-0 rounded-full object-cover ring-2 ring-white/70 dark:ring-white/10 ${className}`}
-      style={{ width: size, height: size }}
-    />
+    <span role="img" aria-label="Agente Ana" className={`inline-flex shrink-0 ${className}`} style={{ width: size, height: size }}>
+      <SimboloAna size={size} />
+    </span>
   )
 }
 

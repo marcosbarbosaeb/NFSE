@@ -23,7 +23,7 @@ _SUAVE = "#64748b"
 
 # (rótulo, caminho) — o menu no topo do e-mail.
 MENU_CLIENTE = (("Entrar", "/entrar"), ("Convide seu contador", "/app/empresa?aba=contador"), ("Ajuda", "/app/ajuda"))
-MENU_CONTADOR = (("Entrar", "/entrar"), ("Empresas que atendo", "/app/atendimentos"), ("Ajuda", "/app/ajuda"))
+MENU_CONTADOR = (("Entrar", "/entrar"), ("Painel do contador", "/app/atendimentos"), ("Ajuda", "/app/ajuda"))
 
 
 def _base() -> str:
@@ -65,7 +65,7 @@ def moldura(*, titulo: str, corpo_html: str, previa: str = "", menu: tuple[tuple
         # topo: marca + menu
         f'<tr><td bgcolor="{_AZUL}" style="padding:22px 28px 16px;border-radius:16px 16px 0 0">'
         '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>'
-        f'<td style="padding-right:12px"><img src="{base}/ana-email.png" width="48" height="48" alt="Ana" style="display:block;border-radius:24px;border:0"></td>'
+        f'<td style="padding-right:12px"><img src="{base}/ana-email.png" width="48" height="48" alt="Agente Ana" style="display:block;border-radius:12px;border:0"></td>'
         '<td style="font-family:Arial,Helvetica,sans-serif;font-size:20px;color:#ffffff">Agente <strong style="color:#f9a8d4">Ana</strong>'
         '<div style="font-size:12px;color:#a5b4fc;padding-top:2px">Notas fiscais e financeiro no automático</div></td>'
         "</tr></table></td></tr>"

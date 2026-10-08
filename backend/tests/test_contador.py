@@ -334,9 +334,9 @@ def test_conta_so_de_contador_sem_cnpj_sem_teste_e_so_trabalha_no_cliente(db, ap
 
 def test_cadastro_de_contador_pela_api(db, api):
     cliente = api()
-    r = cliente.post("/api/cadastro/contador", json={"email": "novo@escritorio.example", "senha": SENHA, "nome": "Novo Contador"})
+    r = cliente.post("/api/cadastro/contador", json={"whatsapp": "(92) 99999-0000", "email": "novo@escritorio.example", "senha": SENHA, "nome": "Novo Contador"})
     assert r.status_code == 200 and r.json()["email"] == "novo@escritorio.example"
-    assert cliente.post("/api/cadastro/contador", json={"email": "novo@escritorio.example", "senha": SENHA, "nome": "De novo"}).status_code == 409
+    assert cliente.post("/api/cadastro/contador", json={"whatsapp": "(92) 99999-0000", "email": "novo@escritorio.example", "senha": SENHA, "nome": "De novo"}).status_code == 409
     usuario = db.query(Usuario).filter_by(email="novo@escritorio.example").one()
     assert usuario.email_confirmado is False and usuario.nome == "Novo Contador"
 

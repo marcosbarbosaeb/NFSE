@@ -21,6 +21,26 @@ PERFIS = ("todos", "empresa", "contador")
 # A mais nova primeiro.
 VERSOES: list[dict] = [
     {
+        "versao": "2026.10.3",
+        "data": "2026-10-08",
+        "resumo": "Painel próprio do contador, cara nova da Ana e WhatsApp no cadastro.",
+        "itens": [
+            {"perfil": "contador", "titulo": "Painel do contador, refeito", "link": "/app/atendimentos",
+             "texto": "Três telas em volta da sua rotina: “Hoje” (uma fila só com o que fazer, do mais urgente pro menos), “Fechamento do mês” "
+                      "(as empresas em colunas: falta conferir, aguardando pagamento, fechado) e “Empresas” (a carteira com os números)."},
+            {"perfil": "contador", "titulo": "Ficha de cada empresa, sem entrar nela", "link": "/app/atendimentos",
+             "texto": "Escolha a empresa no topo do painel e veja o que te interessa: notas mês a mês, limite do regime, fechamento, certificado, "
+                      "o que tem pra fazer e o contato do responsável. “Entrar na empresa” continua lá pra quando for trabalhar nela."},
+            {"perfil": "todos", "titulo": "A Ana de cara nova",
+             "texto": "Saiu a ilustração e ficou só o “A” da marca, no painel e nos e-mails. Clicar na marca, no topo do menu, volta pro começo."},
+            {"perfil": "todos", "titulo": "WhatsApp no cadastro e no perfil", "link": "/app/conta",
+             "texto": "Agora o cadastro pede o seu WhatsApp, pra nossa equipe conseguir falar com você. Quem já tem conta pode informar em Minha conta › Perfil."},
+            {"perfil": "empresa", "titulo": "Depois do teste grátis", "link": "/app/conta?aba=assinatura",
+             "texto": "Nesta fase não há cobrança pelo painel: quando o teste termina, você pede a liberação em Minha conta › Assinatura "
+                      "(um clique) e a nossa equipe autoriza o uso."},
+        ],
+    },
+    {
         "versao": "2026.10.2",
         "data": "2026-10-08",
         "resumo": "Painel do contador, importação mais fácil de escolher e menos coisa obrigatória pra começar.",
@@ -28,7 +48,7 @@ VERSOES: list[dict] = [
             {"perfil": "todos", "titulo": "Novidades e número da versão",
              "texto": "Esta tela: a cada atualização eu conto aqui o que mudou. O número da versão fica no rodapé do menu."},
             {"perfil": "contador", "titulo": "Painel da carteira", "link": "/app/atendimentos",
-             "texto": "Em “Empresas que atendo”: notas e faturamento do mês de todas as empresas, o que pede atenção (certificado vencendo, "
+             "texto": "Em “Painel do contador”: notas e faturamento do mês de todas as empresas, o que pede atenção (certificado vencendo, "
                       "nota recusada, limite do MEI ou do Simples chegando) e o raio-x de cada uma, sem entrar em nenhuma."},
             {"perfil": "contador", "titulo": "Baixar as notas do mês de cada cliente", "link": "/app/atendimentos",
              "texto": "Um arquivo .zip com os XMLs e PDFs do mês, direto do painel. O dono da empresa vê no histórico que você baixou."},
