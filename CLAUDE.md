@@ -107,6 +107,17 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.
 - Segredos (Stripe, Resend, Google) só nas variáveis do Railway — nunca no código nem em conversa.
 
+## Checagem antes de publicar (combinada em 08/10/2026 — "antes de subir uma atualização faça sempre um check")
+1. `pytest` inteiro — inclui `tests/test_contrato_respostas.py`, que falha se uma rota com `response_model` descartar campo
+   que o serviço montou (foi o que escondeu "Assinadas/Autorizadas" no real). Rota nova de leitura com `response_model` →
+   acrescentar nela.
+2. `npx tsc -b && npm run build`.
+3. Tela nova ou alterada: abrir no navegador local (Playwright) com dados e conferir que os números aparecem — pela API, não
+   só pelo serviço. Limpar depois as linhas de teste (`evento_uso`, `registro_contador`, pasta) do banco local.
+4. Depois do deploy no teste: deploy SUCCESS no commit certo, logs de build/migração, `GET /api/versao`, as rotas novas
+   respondendo e os campos novos chegando na resposta. Só então pedir o push da `main`.
+5. Depois do deploy no real: a mesma conferência, com os dados de verdade da conta do Marcos.
+
 ## Como rodar
 ```
 service postgresql start            # o banco local às vezes para
