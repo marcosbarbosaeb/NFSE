@@ -69,3 +69,13 @@ export function aoMudarTutorial(callback: (e: Event) => void): () => void {
   window.addEventListener(EVENTO, callback)
   return () => window.removeEventListener(EVENTO, callback)
 }
+
+// Passeio das novidades (08/10/2026): enquanto ele está aberto, as dicas de
+// primeira visita de cada tela esperam — senão abririam as duas juntas.
+let passeio = false
+export function definirPasseio(aberto: boolean) {
+  passeio = aberto
+}
+export function passeioEmAndamento(): boolean {
+  return passeio
+}

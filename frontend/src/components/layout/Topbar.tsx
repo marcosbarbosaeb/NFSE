@@ -67,6 +67,7 @@ export function Topbar({ onAbrirMenu }: { onAbrirMenu?: () => void }) {
         </button>
         <Link
           to="/app/novidades"
+          data-tour="novidades-sino"
           className="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-accent-600 dark:text-slate-400 dark:hover:bg-slate-700"
           title={novas > 0 ? "Tem novidade na Agente Ana" : "Novidades"}
           aria-label={novas > 0 ? `Novidades: ${novas} ${novas === 1 ? "versão nova" : "versões novas"}` : "Novidades"}

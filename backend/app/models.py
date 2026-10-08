@@ -1150,3 +1150,21 @@ class RegistroContador(Base):
     quando: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (Index("ix_registro_contador_empresa", "prestador_id", "quando"),)
+
+
+class EventoUso(Base):
+    """Uso da plataforma (08/10/2026): qual tela a pessoa abriu, qual ação
+    fez e onde apareceu erro — só o NOME (ex.: "/app/nfse", "POST
+    /api/dps/{emissao_id}/assinar"), nunca o conteúdo. Serve pra Gestão ver o
+    que é usado e onde as pessoas travam. Sem RLS e sem chave estrangeira; o
+    que tem mais de 180 dias é apagado (app/services/uso.py)."""
+
+    __tablename__ = "evento_uso"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    usuario_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    prestador_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    tipo: Mapped[str] = mapped_column(String(8), nullable=False)  # tela | acao | erro
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    detalhe: Mapped[str | None] = mapped_column(String(60))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

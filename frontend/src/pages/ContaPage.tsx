@@ -121,6 +121,7 @@ function AbaPerfil({ conta, onAtualizada, demo }: { conta: Conta; onAtualizada: 
             placeholder="Como você quer ser chamado(a)"
             onChange={(e) => setNome(e.target.value)}
           />
+          <div data-tour="conta-whatsapp">
           <Field
             label="WhatsApp"
             type="tel"
@@ -132,6 +133,7 @@ function AbaPerfil({ conta, onAtualizada, demo }: { conta: Conta; onAtualizada: 
             hint="Com DDD. É por onde a nossa equipe fala com você."
             onChange={(e) => setWhats(e.target.value)}
           />
+          </div>
           <div>
             <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">E-mail de acesso</span>
             <p className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">

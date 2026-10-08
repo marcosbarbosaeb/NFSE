@@ -10,6 +10,8 @@ export interface ItemNovidade {
   titulo: string
   texto: string
   link?: string
+  /** Elemento da tela (data-tour) que o passeio aponta. */
+  alvo?: string
 }
 
 export interface VersaoNovidades {
@@ -38,7 +40,7 @@ export function useNovidades(): { dados: Novidades | null; marcarVistas: () => v
       .get<Novidades>("/novidades")
       .then((d) => vivo && setDados(d))
       .catch(() => vivo && setDados(null))
-    const zerar = () => setDados((d) => (d ? { ...d, novas: 0 } : d))
+    const zerar = () => setDados((d) => (d ? { ...d, novas: 0, versoes: d.versoes.map((v) => ({ ...v, nova: false })) } : d))
     window.addEventListener(EVENTO_NOVIDADES_VISTAS, zerar)
     return () => {
       vivo = false

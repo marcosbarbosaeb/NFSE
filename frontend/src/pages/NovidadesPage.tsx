@@ -1,5 +1,5 @@
 import { ArrowRight, Sparkles } from "lucide-react"
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { Badge } from "../components/ui/Badge"
 import { Card } from "../components/ui/Card"
@@ -24,9 +24,11 @@ export function NovidadesPage() {
   const { dados, marcarVistas } = useNovidades()
   // Guarda quais eram novas ao abrir: a etiqueta "nova" fica até sair da tela.
   const marcou = useRef(false)
+  const [eramNovas, setEramNovas] = useState<Set<string>>(() => new Set())
   useEffect(() => {
     if (dados && dados.novas > 0 && !marcou.current) {
       marcou.current = true
+      setEramNovas(new Set(dados.versoes.filter((v) => v.nova).map((v) => v.versao)))
       marcarVistas()
     }
   }, [dados, marcarVistas])
@@ -53,7 +55,7 @@ export function NovidadesPage() {
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h2 className="text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-100">Versão {v.versao}</h2>
             <span className="text-sm text-slate-500 dark:text-slate-400">{dataPorExtenso(v.data)}</span>
-            {v.nova && <Badge variant="warning">nova</Badge>}
+            {(v.nova || eramNovas.has(v.versao)) && <Badge variant="warning">nova</Badge>}
           </div>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{v.resumo}</p>
           <ul className="mt-4 flex flex-col gap-4">

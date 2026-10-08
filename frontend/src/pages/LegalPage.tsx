@@ -10,7 +10,7 @@ import { EMAIL_SUPORTE, MAILTO_SUPORTE } from "../lib/contato"
 // advogado antes de crescer a base de clientes (especialmente o
 // controlador dos dados, que ainda não tem CNPJ próprio).
 
-const ATUALIZADO_EM = "27 de setembro de 2026"
+const ATUALIZADO_EM = "8 de outubro de 2026"
 
 function Secao({ titulo, children }: { titulo: string; children: ReactNode }) {
   return (
@@ -60,7 +60,8 @@ export function PrivacidadePage() {
 
       <Secao titulo="1. Dados que coletamos">
         <p>
-          <b>Conta:</b> seu e-mail e sua senha (guardada só em forma criptografada, que nem nós conseguimos ler). Se você
+          <b>Conta:</b> seu e-mail, o WhatsApp que você informa no cadastro (para a nossa equipe falar com você) e sua
+          senha (guardada só em forma criptografada, que nem nós conseguimos ler). Se você
           entrar com o Google, recebemos do Google apenas seu nome, e-mail e um identificador da conta — nunca sua senha
           do Google nem acesso a Gmail, Drive ou outros serviços.
         </p>
@@ -75,6 +76,13 @@ export function PrivacidadePage() {
         <p>
           <b>Extratos bancários:</b> quando você envia um PDF de extrato, ele é lido só para sugerir quais pagamentos
           correspondem às suas notas. Guardamos apenas os recebimentos que você confirmar.
+        </p>
+
+        <p>
+          <b>Uso do painel:</b> registramos quais telas você abre, quais ações faz (por exemplo, "gerou uma nota") e quando
+          uma ação é recusada por erro — apenas o nome da tela ou da ação, a data e a conta, nunca o conteúdo das suas notas
+          ou do seu financeiro. Serve para entendermos o que é usado e onde as pessoas encontram dificuldade. Esses registros
+          são apagados depois de 180 dias.
         </p>
       </Secao>
 

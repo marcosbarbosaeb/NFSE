@@ -21,19 +21,29 @@ PERFIS = ("todos", "empresa", "contador")
 # A mais nova primeiro.
 VERSOES: list[dict] = [
     {
+        "versao": "2026.10.4",
+        "data": "2026-10-08",
+        "resumo": "Eu te mostro o que mudou desde a sua última visita.",
+        "itens": [
+            {"perfil": "todos", "titulo": "Passeio pelas novidades", "alvo": "novidades-sino",
+             "texto": "Quando sair uma atualização, eu aviso ao entrar e ofereço um passeio rápido pelo que mudou. Não quer agora? É só fechar: "
+                      "o sino aqui em cima guarda tudo."},
+        ],
+    },
+    {
         "versao": "2026.10.3",
         "data": "2026-10-08",
         "resumo": "Painel próprio do contador, cara nova da Ana e WhatsApp no cadastro.",
         "itens": [
-            {"perfil": "contador", "titulo": "Painel do contador, refeito", "link": "/app/atendimentos",
+            {"perfil": "contador", "titulo": "Painel do contador, refeito", "link": "/app/atendimentos", "alvo": "contador-abas",
              "texto": "Três telas em volta da sua rotina: “Hoje” (uma fila só com o que fazer, do mais urgente pro menos), “Fechamento do mês” "
                       "(as empresas em colunas: falta conferir, aguardando pagamento, fechado) e “Empresas” (a carteira com os números)."},
-            {"perfil": "contador", "titulo": "Ficha de cada empresa, sem entrar nela", "link": "/app/atendimentos",
+            {"perfil": "contador", "titulo": "Ficha de cada empresa, sem entrar nela", "link": "/app/atendimentos", "alvo": "contador-busca",
              "texto": "Escolha a empresa no topo do painel e veja o que te interessa: notas mês a mês, limite do regime, fechamento, certificado, "
                       "o que tem pra fazer e o contato do responsável. “Entrar na empresa” continua lá pra quando for trabalhar nela."},
-            {"perfil": "todos", "titulo": "A Ana de cara nova",
+            {"perfil": "todos", "titulo": "A Ana de cara nova", "alvo": "marca",
              "texto": "Saiu a ilustração e ficou só o “A” da marca, no painel e nos e-mails. Clicar na marca, no topo do menu, volta pro começo."},
-            {"perfil": "todos", "titulo": "WhatsApp no cadastro e no perfil", "link": "/app/conta",
+            {"perfil": "todos", "titulo": "WhatsApp no cadastro e no perfil", "link": "/app/conta", "alvo": "conta-whatsapp",
              "texto": "Agora o cadastro pede o seu WhatsApp, pra nossa equipe conseguir falar com você. Quem já tem conta pode informar em Minha conta › Perfil."},
             {"perfil": "empresa", "titulo": "Depois do teste grátis", "link": "/app/conta?aba=assinatura",
              "texto": "Nesta fase não há cobrança pelo painel: quando o teste termina, você pede a liberação em Minha conta › Assinatura "
@@ -95,7 +105,13 @@ def _numero(versao: str) -> tuple[int, ...]:
 
 def para(perfis: set[str], vista: str | None = None) -> dict:
     """As versões com o que interessa a quem está logado. `vista` = a última
-    versão que a pessoa já abriu (pra bolinha do sino)."""
+    versão que a pessoa já viu (pra bolinha do sino e pro passeio "o que
+    mudou desde a sua última visita"). Quem nunca abriu as novidades (conta de
+    antes de existir a tela) é tratado como quem viu até a penúltima: só a
+    versão mais nova aparece como nova. Conta nova já nasce em dia
+    (`marcar_em_dia`) — pra ela vale o tutorial normal."""
+    if vista is None and len(VERSOES) > 1:
+        vista = VERSOES[1]["versao"]
     quero = perfis | {"todos"}
     versoes = []
     for v in VERSOES:
@@ -103,3 +119,9 @@ def para(perfis: set[str], vista: str | None = None) -> dict:
         if itens:
             versoes.append({**v, "itens": itens, "nova": vista is None or _numero(v["versao"]) > _numero(vista)})
     return {"versao": VERSAO, "versoes": versoes, "novas": sum(1 for v in versoes if v["nova"])}
+
+
+def marcar_em_dia(preferencias: dict | None) -> dict:
+    """Preferências de quem acabou de criar a conta: nada é "novidade" pra
+    quem está chegando agora."""
+    return {**(preferencias or {}), "novidades": {"vista": VERSAO}}

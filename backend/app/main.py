@@ -313,6 +313,32 @@ _SO_EMISSOR = Depends(exige_modulo("emissor"))
 # verdade é obrigatório (cookie de sessão sem isso pode vazar em rede
 # insegura).
 _EM_HTTPS = get_settings().app_base_url.startswith("https://")
+
+
+@app.middleware("http")
+async def _anotar_uso(request: Request, call_next):
+    """Anota o uso (08/10/2026, ver app/services/uso.py): o NOME da ação que
+    deu certo ou do erro, e quem fez — sem conteúdo. Fica declarado ANTES do
+    middleware de sessão de propósito: assim roda por dentro dele e enxerga
+    `request.session`."""
+    resposta = await call_next(request)
+    try:
+        from app.services import uso
+
+        tipo = uso.interessa(request.method, request.url.path, resposta.status_code)
+        usuario_id = request.session.get("usuario_id") if tipo else None
+        if tipo and usuario_id:
+            rota = request.scope.get("route")
+            nome = f"{request.method.upper()} {getattr(rota, 'path', None) or uso._UUID.sub('{id}', request.url.path)}"
+            await run_in_threadpool(
+                uso.gravar, usuario_id, request.session.get("prestador_id"), tipo, nome,
+                str(resposta.status_code) if tipo == "erro" else None,
+            )
+    except Exception:  # noqa: BLE001 — estatística nunca atrapalha a resposta
+        pass
+    return resposta
+
+
 # Revisão de segurança (28/09/2026): em produção (APP_BASE_URL https) o
 # cookie só trafega em HTTPS; sessão dura 14 dias.
 app.add_middleware(
@@ -2991,6 +3017,36 @@ def api_gestao_excluir_conta(
     logger.warning("Gestão: conta %s (%s) excluída por %s", alvo, nome, _usuario_logado(request, db).email)
     db.commit()
     return {"ok": True, "excluida": nome}
+
+
+class TelaVistaRequest(BaseModel):
+    caminho: str = Field(min_length=1, max_length=300)
+
+
+@app.post("/api/uso/tela", dependencies=[Depends(limite("uso-tela", 240, 600))])
+def api_uso_tela(req: TelaVistaRequest, request: Request):
+    """O painel avisa qual tela a pessoa abriu (só o caminho, sem ids)."""
+    from app.services import uso
+
+    nome = uso.normalizar_tela(req.caminho)
+    if nome:
+        uso.gravar(request.session.get("usuario_id"), request.session.get("prestador_id"), "tela", nome)
+    return {"ok": True}
+
+
+@app.get("/api/gestao/uso", dependencies=[Depends(exigir_gestor)])
+def api_gestao_uso(dias: int = 30, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Uso da plataforma: telas, ações, erros, o caminho da conta nova até a
+    primeira nota e onde olhar primeiro. Só nomes e contagens."""
+    from app.services import gestao, uso
+
+    dias = max(1, min(dias, uso.DIAS_GUARDADOS))
+    uso.limpar_antigos(db)
+    dados = uso.painel(db, dias)
+    etapas = uso.funil(gestao.painel(db, prestador_id)["contas"])
+    resposta = {**dados, "funil": etapas, "sugestoes": uso.sugestoes(dados, etapas)}
+    db.commit()
+    return resposta
 
 
 @app.post("/api/gestao/emails-de-exemplo", dependencies=[Depends(exigir_gestor), Depends(limite("emails-exemplo", 5, 600))])

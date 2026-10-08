@@ -16,6 +16,32 @@ Numeração: `ano.mês.sequência`. Versão nova = bloco novo no topo de `novida
 Antes de publicar no real, sempre: testes passando (`pytest`), `tsc` e build do frontend, telas conferidas no teste,
 migração e variáveis novas anotadas abaixo.
 
+## 2026.10.4 — 08/10/2026
+
+**Situação:** no ambiente de teste. Ainda não está no real.
+
+Pro usuário (ver Novidades): passeio "o que mudou desde a sua última visita" com o assistente do tutorial.
+
+Gestão (só administração):
+- **Uso da plataforma** (aba nova "Uso"): telas abertas, ações feitas e erros dos últimos 30 dias (vezes e pessoas), o caminho da
+  conta nova até a primeira nota (onde param) e "Onde olhar primeiro" (regras simples em cima dos números).
+- O que é anotado: só o NOME da tela/rota e quem fez (`evento_uso`: usuario_id, prestador_id, tipo, nome, detalhe = código do
+  erro). Nunca conteúdo nem ids de nota/tomador. Contas de simulação ficam de fora. Guarda 180 dias. A Política de Privacidade
+  ganhou o parágrafo correspondente.
+
+Técnico:
+- Migração `b8e0a2c4d6f7` (tabela `evento_uso`, sem RLS e sem FK).
+- `app/services/uso.py`; middleware `_anotar_uso` em `app/main.py` — declarado ANTES do `SessionMiddleware` de propósito (roda por
+  dentro dele e enxerga a sessão). `POST /api/uso/tela` (o painel avisa a tela), `GET /api/gestao/uso`.
+- Novidades: item pode ter `alvo` (um `data-tour` da tela) pro passeio; conta nova nasce com `preferencias.novidades.vista` = versão
+  atual (`novidades.marcar_em_dia`); quem nunca viu é tratado como quem viu até a penúltima.
+- Frontend: `components/tour/PasseioNovidades.tsx` (pergunta "Ver o que mudou / Agora não" e percorre os itens),
+  `lib/uso.ts` (avisa a tela a cada navegação).
+- Variáveis novas: nenhuma.
+
+Conferir depois de publicar: `/api/versao` = 2026.10.4; entrar com uma conta antiga (aparece o convite do passeio) e com uma conta
+nova (só o tutorial normal); Gestão › Uso mostrando as telas depois de navegar um pouco.
+
 ## 2026.10.3 — 08/10/2026
 
 **Situação:** no ambiente de teste. Ainda não está no real.

@@ -125,6 +125,10 @@ def _sem_rede_e_sem_limites(monkeypatch):
     monkeypatch.setattr(main_mod, "_dados_oficiais_cnpj", lambda cnpj: None)
     # ...nem ao criar a conta (o cadastro completa a empresa pela Receita, 08/10/2026).
     monkeypatch.setattr(main_mod, "_completar_pela_receita", lambda db, prestador_id: None)
+    # ...nem anotam o uso (grava em outra transação: sujaria o banco de teste).
+    import app.services.uso as uso_mod
+
+    monkeypatch.setattr(uso_mod, "gravar", lambda *a, **k: None)
     limitador = getattr(main_mod, "limitador", None)
     if limitador is not None:
         limitador.limpar()

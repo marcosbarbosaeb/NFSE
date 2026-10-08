@@ -120,7 +120,7 @@ Enquanto a cobrança pelo painel não está no ar, ninguém "assina": quando o t
 
 ### Novidades e versão
 
-O sino no topo abre a tela "Novidades", com o que mudou em cada atualização (cada pessoa vê o que é do perfil dela: empresa, contador ou os dois). Uma bolinha no sino avisa quando saiu versão nova. O número da versão fica no rodapé do menu.
+Quando sai uma atualização, ao entrar eu aviso ("Tem novidade desde a sua última visita") e ofereço um passeio rápido: "Ver o que mudou" passa por cada novidade, abrindo a tela e apontando o lugar; "Agora não" fecha. Quem acabou de criar a conta não recebe esse convite — vê as dicas normais de primeira visita. O sino no topo abre a tela "Novidades", com o que mudou em cada atualização (cada pessoa vê o que é do perfil dela: empresa, contador ou os dois). Uma bolinha no sino avisa quando saiu versão nova. O número da versão fica no rodapé do menu.
 
 ### Escolher o que importar do Emissor Nacional
 

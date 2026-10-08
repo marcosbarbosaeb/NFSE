@@ -82,6 +82,13 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
   não existe mais ilustração/mascote (`AnaAvatar` desenha o símbolo).
 - Painel do contador (`/app/atendimentos`): Hoje / Fechamento do mês / Empresas + ficha da empresa (`?empresa=<id do acesso>`).
   Tudo sai de `GET /api/contador/atendimentos` (sem entrar na empresa); `raio_x.py` faz as contas.
+- Uso da plataforma (`app/services/uso.py`, tabela `evento_uso` sem RLS/FK): só NOME de tela/rota + quem; nunca conteúdo nem
+  ids. Ações e erros são anotados pelo middleware `_anotar_uso`, que fica declarado ANTES do `SessionMiddleware` (precisa da
+  sessão — não mude a ordem); telas vêm de `POST /api/uso/tela`. Simulação não é anotada; guarda 180 dias. Mudou o que é
+  coletado → atualizar a Política de Privacidade (`LegalPage.tsx`). Nos testes `uso.gravar` é desligado no conftest.
+- Passeio "o que mudou" (`components/tour/PasseioNovidades.tsx`): convida quando há versão nova pro perfil; item de
+  `novidades.VERSOES` pode ter `link` (tela) e `alvo` (um `data-tour`). Conta nova nasce em dia (`novidades.marcar_em_dia`).
+  Enquanto o passeio está aberto, as dicas de primeira visita esperam (`tutorial.passeioEmAndamento`).
 - Dados da empresa: obrigatório é só o regime tributário (`prontidao._dados_que_faltam`, `obrigatorio`). Endereço e alíquota
   são opcionais — não use pra travar nada.
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.

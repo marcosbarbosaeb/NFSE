@@ -177,7 +177,7 @@ export function AtendimentosPage() {
         <>
           {/* Trocar de empresa sem sair do painel. */}
           <div className="flex flex-wrap items-center gap-3">
-            <div className="min-w-0 flex-1 basis-64 sm:max-w-sm">
+            <div className="min-w-0 flex-1 basis-64 sm:max-w-sm" data-tour="contador-busca">
               <CaixaBusca
                 valor={ficha?.id ?? ""}
                 opcoes={dados.clientes.map((c) => ({ id: c.id, rotulo: `${nomeEmpresa({ nome_fantasia: c.nome_fantasia, razao_social: c.empresa })} · ${formatarDocumento(c.cnpj)}` }))}
@@ -202,7 +202,7 @@ export function AtendimentosPage() {
             <>
               {dados.resumo && <FaixaDaCarteira resumo={dados.resumo} />}
 
-              <div role="tablist" aria-label="Partes do painel" className="flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-700">
+              <div role="tablist" aria-label="Partes do painel" data-tour="contador-abas" className="flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-700">
                 {ABAS.map((a) => {
                   const n = a.id === "hoje" ? tarefas.length : a.id === "empresas" ? dados.clientes.length : null
                   return (

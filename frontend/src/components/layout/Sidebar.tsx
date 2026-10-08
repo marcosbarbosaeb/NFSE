@@ -106,6 +106,7 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
           to={soContador ? "/app/atendimentos" : "/app"}
           onClick={onFechar}
           title={soContador ? "Ir para o painel do contador" : "Ir para a Visão geral"}
+          data-tour="marca"
           className="mb-5 flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-brand-800/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400"
         >
           <Marca escuro subtitulo={soContador ? "Conta de contador" : doisProdutos ? "Notas e financeiro" : modulos.financeiro ? "Financeiro" : "Emissor de notas"} />

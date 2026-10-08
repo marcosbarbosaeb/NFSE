@@ -1,4 +1,5 @@
-import { Bot, Building2, EyeOff, Handshake, LayoutDashboard, Lock, Mail, RefreshCw } from "lucide-react"
+import { UsoGestao } from "../components/gestao/UsoGestao"
+import { Activity, Bot, Building2, EyeOff, Handshake, LayoutDashboard, Lock, Mail, RefreshCw } from "lucide-react"
 import { type ReactNode, useCallback, useEffect, useState } from "react"
 import { PaginaAbas } from "../components/PaginaAbas"
 import { ParceirasAdmin } from "../components/ParceirasAdmin"
@@ -101,6 +102,7 @@ export function GestaoPage() {
         { id: "visao", rotulo: "Visão geral", icone: LayoutDashboard, conteudo: comPainel((p) => <VisaoGeralGestao painel={p} />) },
         { id: "contas", rotulo: "Contas", icone: Building2, conteudo: comPainel((p) => <ContasGestao painel={p} aoMudar={carregar} />) },
         { id: "emails", rotulo: "E-mails", icone: Mail, conteudo: comPainel((p) => <EmailsGestao painel={p} />) },
+        { id: "uso", rotulo: "Uso", icone: Activity, conteudo: () => <UsoGestao key={versao} /> },
         {
           id: "parceiras",
           rotulo: "Parceiras",

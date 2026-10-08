@@ -2,7 +2,9 @@ import { FlaskConical } from "lucide-react"
 import { Suspense, useState } from "react"
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom"
 import { useAuth } from "../../lib/auth"
+import { PasseioNovidades } from "../tour/PasseioNovidades"
 import { TourDaPagina } from "../tour/Tour"
+import { useRegistrarTela } from "../../lib/uso"
 import { AvisoSemAssinatura, FaixaAssinatura, FaixaContador, FaixaUsoDoPlano } from "./FaixasAcesso"
 import { Sidebar } from "./Sidebar"
 import { Topbar } from "./Topbar"
@@ -56,6 +58,7 @@ export function AppShell() {
   const [menuAberto, setMenuAberto] = useState(false)
   const { usuario } = useAuth()
   const { pathname } = useLocation()
+  useRegistrarTela()
   if (usuario?.so_contador && !TELAS_DA_CONTA_DE_CONTADOR.some((t) => pathname === t || pathname.startsWith(t + "/"))) {
     return <Navigate to="/app/atendimentos" replace />
   }
@@ -75,6 +78,7 @@ export function AppShell() {
           </Suspense>
         </main>
         <TourDaPagina />
+        <PasseioNovidades />
         <AvisoSemAssinatura />
       </div>
     </div>

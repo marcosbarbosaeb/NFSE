@@ -124,7 +124,7 @@ def test_novidades_por_perfil_e_bolinha_do_sino(db, api, cenario):
     assert api().get("/api/novidades").status_code == 401
     d = da_dona.get("/api/novidades").json()
     perfis = {i["perfil"] for v in d["versoes"] for i in v["itens"]}
-    assert d["versao"] == novidades.VERSAO and perfis == {"todos", "empresa"} and d["novas"] == len(d["versoes"])
+    assert d["versao"] == novidades.VERSAO and perfis == {"todos", "empresa"} and d["novas"] == 1
     assert da_dona.post("/api/conta/novidades-vistas").json() == {"vista": novidades.VERSAO}
     assert da_dona.get("/api/novidades").json()["novas"] == 0
 

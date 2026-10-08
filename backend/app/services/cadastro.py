@@ -21,6 +21,7 @@ import uuid
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import novidades
 from app.auth import hash_senha
 from app.config import get_settings
 from app.database import definir_prestador_atual
@@ -152,6 +153,7 @@ def criar_cadastro(
         email=email_norm,
         senha_hash=hash_senha(senha),
         telefone=telefone,
+        preferencias=novidades.marcar_em_dia(None),  # conta nova: tutorial normal, sem "o que mudou"
         email_confirmado=False,
         token_confirmacao=token,
         token_confirmacao_expira_em=datetime.datetime.now(datetime.timezone.utc) + _VALIDADE_TOKEN,
@@ -187,7 +189,8 @@ def criar_cadastro_contador(
     token = _gerar_token()
     usuario = Usuario(
         id=uuid.uuid4(), prestador_id=prestador_id, email=email_norm, senha_hash=hash_senha(senha),
-        nome=nome.strip()[:120] or None, telefone=telefone, email_confirmado=False, token_confirmacao=token,
+        nome=nome.strip()[:120] or None, telefone=telefone, preferencias=novidades.marcar_em_dia(None),
+        email_confirmado=False, token_confirmacao=token,
         token_confirmacao_expira_em=datetime.datetime.now(datetime.timezone.utc) + _VALIDADE_TOKEN,
     )
     db.add(usuario)
