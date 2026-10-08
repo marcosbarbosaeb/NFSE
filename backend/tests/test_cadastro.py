@@ -218,7 +218,7 @@ def test_endpoint_consultar_cnpj_sucesso(client_publico, monkeypatch):
                 "codigo_municipio_ibge": 1302603, "descricao_situacao_cadastral": "ATIVA",
             }
 
-    monkeypatch.setattr(requests, "get", lambda url, timeout: _RespostaFake())
+    monkeypatch.setattr(requests, "get", lambda url, timeout, **kw: _RespostaFake())
     resp = client_publico.get("/api/cnpj/12345678000199")
     assert resp.status_code == 200, resp.text
     dados = resp.json()
@@ -241,7 +241,7 @@ def test_endpoint_consultar_cnpj_nao_encontrado_da_404(client_publico, monkeypat
         def json(self):
             return {}
 
-    monkeypatch.setattr(requests, "get", lambda url, timeout: _RespostaFake())
+    monkeypatch.setattr(requests, "get", lambda url, timeout, **kw: _RespostaFake())
     resp = client_publico.get("/api/cnpj/12345678000199")
     assert resp.status_code == 404
 
@@ -249,7 +249,7 @@ def test_endpoint_consultar_cnpj_nao_encontrado_da_404(client_publico, monkeypat
 def test_endpoint_consultar_cnpj_indisponivel_da_503(client_publico, monkeypatch):
     import requests
 
-    def _fake_get(url, timeout):
+    def _fake_get(url, timeout, **kw):
         raise requests.exceptions.ConnectionError("rede fora do ar")
 
     monkeypatch.setattr(requests, "get", _fake_get)

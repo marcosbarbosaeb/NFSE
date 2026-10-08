@@ -102,7 +102,7 @@ def test_regime_vem_da_receita(monkeypatch):
         ({"opcao_pelo_mei": False, "opcao_pelo_simples": False}, "1"),
         ({"opcao_pelo_mei": None, "opcao_pelo_simples": None}, None),
     ):
-        monkeypatch.setattr(cnpj_lookup.requests, "get", lambda url, timeout, c=corpo: Resp({**base, **c}))
+        monkeypatch.setattr(cnpj_lookup.requests, "get", lambda url, timeout, c=corpo, **kw: Resp({**base, **c}))
         assert cnpj_lookup.consultar_cnpj("00000000000191").regime == esperado
 
 

@@ -109,6 +109,8 @@ export function EmitirNotaCliente({
     }
     if (consultaAtual.current === digitos) return
     consultaAtual.current = digitos
+    // CNPJ novo: nada do anterior fica no formulário (08/10/2026)
+    setManual(MANUAL_VAZIO)
     const noCatalogo = (catalogo ?? []).find((t) => t.cnpj === digitos)
     if (noCatalogo) {
       setConsulta({ estado: "achou", nome: noCatalogo.razao_social, onde: "já está no meu cadastro de tomadores" })

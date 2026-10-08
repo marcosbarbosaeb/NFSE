@@ -22,8 +22,11 @@ em tudo sem cadastrar CNPJ, sem certificado e sem risco:
   `usuario` (sem RLS), pelo domínio fixo de e-mail das contas demo.
 """
 import datetime
+import json
+import re
 import secrets
 import uuid
+from pathlib import Path
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -53,19 +56,29 @@ VALIDADE = datetime.timedelta(hours=24)
 # São Paulo (IBGE) — só pra ter uma cidade válida nas notas de exemplo.
 _MUNICIPIO_DEMO = "3550308"
 
-# CNPJs com dígito verificador inválido de propósito: não podem pertencer
-# a nenhuma empresa real.
-_TOMADORES_DEMO = [
-    {"cnpj": "11222333000100", "razao_social": "Rede de Afiliados Exemplo LTDA (fictícia)", "apelido": "Rede Exemplo",
-     "dia": 5, "dias_receber": 30, "template": "Comissão de vendas - {mes_nome_upper}/{ano}", "base": 1850.0},
-    {"cnpj": "22333444000100", "razao_social": "Loja Parceira Modelo S.A. (fictícia)", "apelido": "Loja Modelo",
-     "dia": 10, "dias_receber": 15, "template": "Divulgação de produtos - {mes_nome_upper}/{ano}", "base": 920.0},
-    {"cnpj": "33444555000100", "razao_social": "Plataforma de Cursos Teste LTDA (fictícia)", "apelido": "Cursos Teste",
-     "dia": 20, "dias_receber": 45, "template": "Comissão sobre vendas de cursos - {mes_nome_upper}/{ano}", "base": 2430.0},
-    {"cnpj": "44555666000100", "razao_social": "Marketplace Simulado LTDA (fictícia)", "apelido": "Marketplace Simulado",
-     "dia": None, "dias_receber": None, "template": "Comissão de vendas - {mes_nome_upper}/{ano}", "base": 400.0,
-     "inativo": True},
-]
+# Cenários (08/10/2026, modo demonstração): os dados de exemplo moram em
+# app/data/cenarios/<nome>.json — empresa, tomadores, valores, meses — pra
+# trocar o nicho sem mexer em código nem em cadastro. Ver o LEIA-ME de lá.
+# Os CNPJs dos tomadores de lá têm dígito verificador inválido de propósito:
+# não podem pertencer a nenhuma empresa real.
+PASTA_CENARIOS = Path(__file__).resolve().parents[1] / "data" / "cenarios"
+CENARIO_PADRAO = "afiliados"
+_NOME_CENARIO = re.compile(r"^[a-z0-9_-]{1,40}$")
+
+
+class CenarioInexistenteError(Exception):
+    pass
+
+
+def cenarios() -> list[str]:
+    return sorted(p.stem for p in PASTA_CENARIOS.glob("*.json"))
+
+
+def carregar_cenario(nome: str | None) -> dict:
+    nome = (nome or CENARIO_PADRAO).strip().lower()
+    if not _NOME_CENARIO.match(nome) or not (PASTA_CENARIOS / f"{nome}.json").is_file():
+        raise CenarioInexistenteError(f"Cenário “{nome}” não existe. Os que existem: {', '.join(cenarios())}.")
+    return json.loads((PASTA_CENARIOS / f"{nome}.json").read_text(encoding="utf-8"))
 
 
 def eh_email_demo(email: str | None) -> bool:
@@ -101,27 +114,49 @@ def _tomador_demo(db: Session, dados: dict) -> Tomador:
     tomador = db.query(Tomador).filter_by(cnpj=dados["cnpj"]).one_or_none()
     if tomador is None:
         tomador = Tomador(
-            id=uuid.uuid4(), cnpj=dados["cnpj"], razao_social=dados["razao_social"], cod_municipio=_MUNICIPIO_DEMO,
-            logradouro="Rua de Exemplo", numero="100", bairro="Centro", cep="01000000", status="pendente",
+            id=uuid.uuid4(), cnpj=dados["cnpj"], razao_social=dados["razao_social"],
+            cod_municipio=dados.get("cod_municipio") or _MUNICIPIO_DEMO,
+            logradouro=dados.get("logradouro") or "Rua de Exemplo", numero=dados.get("numero") or "100",
+            bairro=dados.get("bairro") or "Centro", cep=dados.get("cep") or "01000000", status="pendente",
         )
         db.add(tomador)
         db.flush()
     return tomador
 
 
-def criar_conta_demo(db: Session) -> Usuario:
-    """Não dá commit. Deixa a variável de RLS apontando pro prestador novo."""
+def _valores_do_tomador(cenario: dict, dados: dict, indice: int, hoje: datetime.date) -> dict[int, float]:
+    """{mês relativo: valor} das notas que este tomador já tem."""
+    if dados.get("valores"):
+        return {int(k): float(v) for k, v in dados["valores"].items()}
+    variacao = float(cenario.get("variacao_por_mes", 0.07))
+    meses = list(range(-int(cenario.get("meses_passados", 3)), 0))
+    # Mês atual: só pra quem já passou do dia de gerar (e não pediu pra ficar sem).
+    if not dados.get("sem_nota_no_mes") and (dados.get("dia") or 31) <= hoje.day:
+        meses.append(0)
+    return {d: round(float(dados["base"]) * (1 + variacao * (d + indice)), 2) for d in meses}
+
+
+def criar_conta_demo(db: Session, cenario: str | None = None) -> Usuario:
+    """Não dá commit. Deixa a variável de RLS apontando pro prestador novo.
+    `cenario`: nome de um arquivo de app/data/cenarios (padrão: afiliados)."""
+    from app.services import demo_emissao
+
+    dados_cenario = carregar_cenario(cenario)
     apagar_demos_expiradas(db)
 
     hoje = hoje_br()
+    empresa = dados_cenario.get("empresa") or {}
+    municipio = empresa.get("cod_municipio") or _MUNICIPIO_DEMO
     prestador_id = uuid.uuid4()
     definir_prestador_atual(db, prestador_id)
     prestador = Prestador(
         modulos=["emissor", "financeiro"],  # a simulação mostra os dois produtos
-        id=prestador_id, cpf_cnpj=_cnpj_ficticio(), razao_social="Sua Empresa de Exemplo LTDA",
-        cod_municipio=_MUNICIPIO_DEMO, logradouro="Avenida Simulação", numero="1", bairro="Centro", cep="01000000",
+        id=prestador_id, cpf_cnpj=_cnpj_ficticio(), razao_social=empresa.get("razao_social") or "Sua Empresa de Exemplo LTDA",
+        nome_fantasia=empresa.get("nome_fantasia") or None,
+        cod_municipio=municipio, logradouro=empresa.get("logradouro") or "Avenida Simulação", numero=empresa.get("numero") or "1",
+        bairro=empresa.get("bairro") or "Centro", cep=empresa.get("cep") or "01000000",
         op_simples_nacional="3", regime_apuracao_sn="1", regime_especial_trib="0",
-        aliquota_atual=6, aliquota_atualizada_em=hoje, demo=True,
+        aliquota_atual=empresa.get("aliquota", 6), aliquota_atualizada_em=hoje, demo=True,
     )
     db.add(prestador)
     db.flush()
@@ -140,14 +175,16 @@ def criar_conta_demo(db: Session) -> Usuario:
     db.add(UsuarioPrestador(usuario_id=usuario.id, prestador_id=prestador_id))
     db.flush()
 
-    for indice, dados in enumerate(_TOMADORES_DEMO):
+    aliquota = float(empresa.get("aliquota", 6))
+    for indice, dados in enumerate(dados_cenario.get("tomadores") or []):
         tomador = _tomador_demo(db, dados)
+        email = dados.get("email") or "financeiro@exemplo.com.br"
         vinculo = PrestadorTomador(
             id=uuid.uuid4(), prestador_id=prestador_id, tomador_id=tomador.id, apelido=dados["apelido"],
-            cod_local_prestacao=_MUNICIPIO_DEMO, cod_trib_nacional="170601", template_descricao=dados["template"],
-            serie="1", requer_revisao=True, ativo=not dados.get("inativo", False),
-            dia_limite_emissao=dados["dia"], dias_para_recebimento=dados["dias_receber"],
-            email_contato="financeiro@exemplo.com.br",
+            cod_local_prestacao=municipio, cod_trib_nacional=dados.get("cod_trib_nacional") or "170601",
+            template_descricao=dados["template"], serie="1", requer_revisao=True, ativo=not dados.get("inativo", False),
+            dia_limite_emissao=dados.get("dia"), dias_para_recebimento=dados.get("dias_receber"),
+            email_contato=email,
         )
         db.add(vinculo)
         db.flush()
@@ -155,20 +192,16 @@ def criar_conta_demo(db: Session) -> Usuario:
         if dados.get("inativo"):
             continue
 
-        # Notas dos 3 meses anteriores (e a do mês atual pra quem já passou
-        # do dia de emitir), recebimentos das mais antigas.
-        for delta in (-3, -2, -1, 0):
-            # Mês atual: uma fica de propósito sem gerar, pra lista de
-            # Tomadores mostrar o "falta gerar" e o botão Gerar.
-            if delta == 0 and ((dados["dia"] or 31) > hoje.day or indice == 1):
-                continue
+        recebidos = {int(m) for m in dados.get("recebidos") or []}
+        for delta, valor in sorted(_valores_do_tomador(dados_cenario, dados, indice, hoje).items()):
             competencia = _competencia(delta, hoje)
-            valor = round(dados["base"] * (1 + 0.07 * (delta + indice)), 2)
-            emissao = criar_rascunho(db, vinculo, competencia=competencia, valor=valor, aliq_sn=6.0, tpAmb="2")
+            emissao = criar_rascunho(db, vinculo, competencia=competencia, valor=valor, aliq_sn=aliquota, tpAmb="2")
             montar(db, emissao)
-            if delta <= -2 or (delta == -1 and indice == 0):
+            # Já autorizada e entregue (de mentira — conta de simulação, nota de homologação).
+            demo_emissao.fazer_tudo(db, emissao, email)
+            if delta in recebidos:
                 ano, mes = (int(p) for p in competencia.split("-"))
-                recebido_em = datetime.date(ano, mes, min(28, (dados["dia"] or 1) + 3)) + datetime.timedelta(days=dados["dias_receber"] or 30)
+                recebido_em = datetime.date(ano, mes, min(28, (dados.get("dia") or 1) + 3)) + datetime.timedelta(days=dados.get("dias_receber") or 30)
                 # (dados de exemplo dos dois produtos, gravados direto — a
                 # simulação não depende do código de nenhum dos módulos)
                 db.add(PagamentoRecebido(
@@ -176,13 +209,17 @@ def criar_conta_demo(db: Session) -> Usuario:
                     valor=valor, data_recebimento=min(recebido_em, hoje), emissao_id=emissao.id,
                 ))
 
-    for delta, categoria, valor in ((-2, "Contador", 350.0), (-1, "Contador", 350.0), (-1, "Ferramentas de marketing", 189.9), (0, "Contador", 350.0)):
-        db.add(Despesa(id=uuid.uuid4(), prestador_id=prestador_id, categoria=categoria, competencia=_competencia(delta, hoje), valor=valor))
+    for d in dados_cenario.get("despesas") or []:
+        db.add(Despesa(
+            id=uuid.uuid4(), prestador_id=prestador_id, categoria=d["categoria"],
+            competencia=_competencia(int(d["mes"]), hoje), valor=float(d["valor"]),
+        ))
 
-    db.add(EventoManual(
-        id=uuid.uuid4(), prestador_id=prestador_id, data=hoje + datetime.timedelta(days=3), categoria="lembrete",
-        titulo="Conferir comissões do mês (exemplo)", descricao="Evento criado à mão — dá pra editar ou apagar.",
-    ))
+    for ev in dados_cenario.get("eventos") or []:
+        db.add(EventoManual(
+            id=uuid.uuid4(), prestador_id=prestador_id, data=hoje + datetime.timedelta(days=int(ev.get("daqui_a_dias", 3))),
+            categoria=ev.get("categoria") or "lembrete", titulo=ev["titulo"], descricao=ev.get("descricao"),
+        ))
     db.flush()
     return usuario
 

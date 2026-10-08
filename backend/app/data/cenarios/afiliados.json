@@ -1,0 +1,35 @@
+{
+  "titulo": "Afiliados (o cenário de sempre da simulação)",
+  "empresa": {
+    "razao_social": "Sua Empresa de Exemplo LTDA",
+    "nome_fantasia": null,
+    "cod_municipio": "3550308",
+    "logradouro": "Avenida Simulação",
+    "numero": "1",
+    "bairro": "Centro",
+    "cep": "01000000",
+    "aliquota": 6
+  },
+  "meses_passados": 3,
+  "variacao_por_mes": 0.07,
+  "tomadores": [
+    {"cnpj": "11222333000100", "razao_social": "Rede de Afiliados Exemplo LTDA (fictícia)", "apelido": "Rede Exemplo",
+     "dia": 5, "dias_receber": 30, "template": "Comissão de vendas - {mes_nome_upper}/{ano}", "base": 1850.0, "recebidos": [-3, -2, -1]},
+    {"cnpj": "22333444000100", "razao_social": "Loja Parceira Modelo S.A. (fictícia)", "apelido": "Loja Modelo",
+     "dia": 10, "dias_receber": 15, "template": "Divulgação de produtos - {mes_nome_upper}/{ano}", "base": 920.0, "recebidos": [-3, -2],
+     "sem_nota_no_mes": true},
+    {"cnpj": "33444555000100", "razao_social": "Plataforma de Cursos Teste LTDA (fictícia)", "apelido": "Cursos Teste",
+     "dia": 20, "dias_receber": 45, "template": "Comissão sobre vendas de cursos - {mes_nome_upper}/{ano}", "base": 2430.0, "recebidos": [-3, -2]},
+    {"cnpj": "44555666000100", "razao_social": "Marketplace Simulado LTDA (fictícia)", "apelido": "Marketplace Simulado",
+     "dia": null, "dias_receber": null, "template": "Comissão de vendas - {mes_nome_upper}/{ano}", "base": 400.0, "inativo": true}
+  ],
+  "despesas": [
+    {"mes": -2, "categoria": "Contador", "valor": 350.0},
+    {"mes": -1, "categoria": "Contador", "valor": 350.0},
+    {"mes": -1, "categoria": "Ferramentas de marketing", "valor": 189.9},
+    {"mes": 0, "categoria": "Contador", "valor": 350.0}
+  ],
+  "eventos": [
+    {"daqui_a_dias": 3, "titulo": "Conferir comissões do mês (exemplo)", "descricao": "Evento criado à mão — dá pra editar ou apagar."}
+  ]
+}

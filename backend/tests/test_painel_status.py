@@ -177,8 +177,9 @@ def test_endpoint_status_sem_parametro_ano_da_422(client, vinculo_teste):
 
 
 def test_resumo_mes_separa_emitidas_de_aguardando(db, prestador_teste, vinculo_teste):
-    """Um vínculo ativo sem emissão na competência conta como 'aguardando';
-    com emissão ativa (não cancelada), conta como 'emitida'."""
+    """Um vínculo ativo sem nota AUTORIZADA na competência conta como
+    'aguardando'; com nota autorizada, como 'emitida'. Gerada, a assinar e
+    recusada ainda não são "emitida" (08/10/2026)."""
     from app.services.dashboard import resumo_mes
 
     resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
@@ -187,7 +188,14 @@ def test_resumo_mes_separa_emitidas_de_aguardando(db, prestador_teste, vinculo_t
     assert resumo["emitidas"] == 0
     assert resumo["emissoes"] == []
 
-    montar(db, criar_rascunho(db, vinculo_teste, competencia="2026-08", valor=150.0))
+    emissao = montar(db, criar_rascunho(db, vinculo_teste, competencia="2026-08", valor=150.0))
+    for estado in ("montado", "erro"):
+        emissao.estado = estado
+        db.flush()
+        resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
+        assert (resumo["emitidas"], resumo["aguardando"], resumo["faturado_no_mes"]) == (0, 1, 0.0), estado
+    emissao.estado = "confirmado"
+    db.flush()
     resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
     assert resumo["emitidas"] == 1
     assert resumo["aguardando"] == 0
@@ -213,8 +221,9 @@ def test_resumo_mes_faturado_e_delta_vs_anterior(db, prestador_teste, vinculo_te
     de recebimento — isso é do módulo financeiro (05/10/2026)."""
     from app.services.dashboard import resumo_mes
 
-    montar(db, criar_rascunho(db, vinculo_teste, competencia="2026-07", valor=100.0))
-    montar(db, criar_rascunho(db, vinculo_teste, competencia="2026-08", valor=150.0))
+    for comp, valor in (("2026-07", 100.0), ("2026-08", 150.0)):
+        montar(db, criar_rascunho(db, vinculo_teste, competencia=comp, valor=valor)).estado = "confirmado"
+    db.flush()
     registrar_pagamento(db, vinculo_teste, competencia="2026-08", valor=150.0)  # não muda nada aqui
 
     resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")
@@ -326,7 +335,7 @@ def test_endpoint_resumo_mes(client, vinculo_teste):
     assert resp.status_code == 200, resp.text
     dados = resp.json()
     assert dados["competencia"] == "2026-08"
-    assert dados["emitidas"] == 1
+    assert dados["emitidas"] == 0 and dados["aguardando"] == 1  # gerada, ainda não autorizada
     assert dados["emissoes"][0]["valor"] == 100.0
 
 

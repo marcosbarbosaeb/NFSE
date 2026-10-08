@@ -104,6 +104,15 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
   rótulo é "Enviar para o Drive" (vale pra qualquer nuvem que entrar depois).
 - Dados da empresa: obrigatório é só o regime tributário (`prontidao._dados_que_faltam`, `obrigatorio`). Endereço e alíquota
   são opcionais — não use pra travar nada.
+- Simulação / modo demonstração: o caminho feliz de mentira (`app/services/demo_emissao.py`) só vale com as DUAS marcas
+  (e-mail do domínio da simulação + `Prestador.demo`) — rota nova que fala com o mundo de fora usa `_na_simulacao` ou
+  `exigir_conta_real`, nunca só uma das marcas. Dados de exemplo ficam nos cenários `app/data/cenarios/*.json` (CNPJ de
+  tomador sempre com verificador inválido). `?gravacao=1` só esconde avisos com `usuario.demo` (`lib/gravacao.ts`).
+- Catálogo de tomadores: tudo que vai pra `tomador.sug_*` passa por `sugestoes.limpar_texto` (com os nomes da empresa e dos
+  usuários). `app/data/catalogo_inicial.json` = só dado público + modelo de nota (nunca texto de e-mail); o
+  `scripts/semear_catalogo.py` cria o que faltar no start.
+- Consulta de CNPJ: várias fontes em `cnpj_lookup._FONTES` (só passa pra próxima se a anterior está fora; 404 encerra).
+  Formulário com consulta de CNPJ: trocar de CNPJ limpa o que veio da consulta anterior.
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.
 - Segredos (Stripe, Resend, Google) só nas variáveis do Railway — nunca no código nem em conversa.
 

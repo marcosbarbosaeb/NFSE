@@ -1,5 +1,5 @@
 import { Check, Loader2, Sparkles, Wand2 } from "lucide-react"
-import { type FormEvent, useEffect, useMemo, useState } from "react"
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { Conferencia } from "../components/Conferencia"
 import type { ValorModeloEmail } from "../components/EditorModeloEmail"
@@ -153,6 +153,9 @@ export function VinculoFormPage() {
   const [tomadores, setTomadores] = useState<Tomador[]>([])
   const [meusVinculos, setMeusVinculos] = useState<VinculoResumo[]>([])
   const [novoTomador, setNovoTomador] = useState(NOVO_TOMADOR_VAZIO)
+  const preenchidoPelaReceita = useRef(false)
+  const apelidoPelaReceita = useRef("")
+  const ultimoCnpj = useRef("")
   const [consultaCnpj, setConsultaCnpj] = useState<{ estado: "consultando" | "ok" | "aviso"; texto: string } | null>(null)
 
   const [carregando, setCarregando] = useState(editando)
@@ -467,6 +470,9 @@ export function VinculoFormPage() {
   async function consultarCnpj(valor: string) {
     const digitos = valor.replace(/\D/g, "")
     if (digitos.length !== 14) return
+    // Mesmo CNPJ (o onBlur depois do onChange): não consulta de novo.
+    if (ultimoCnpj.current === digitos) return
+    ultimoCnpj.current = digitos
     const noCatalogo = tomadores.find((t) => t.cnpj === digitos)
     if (noCatalogo) {
       setModoTomador("existente")
@@ -474,29 +480,46 @@ export function VinculoFormPage() {
       setConsultaCnpj({ estado: "ok", texto: `${noCatalogo.razao_social} já está cadastrado — usamos o cadastro existente.` })
       return
     }
+    // CNPJ novo: o que veio da consulta do CNPJ anterior sai do formulário
+    // (08/10/2026: com a consulta falhando, ficavam a razão social e o endereço do outro)
+    const apelidoAnterior = apelidoPelaReceita.current
+    if (preenchidoPelaReceita.current) {
+      preenchidoPelaReceita.current = false
+      apelidoPelaReceita.current = ""
+      setNovoTomador((t) => ({ ...NOVO_TOMADOR_VAZIO, cnpj: t.cnpj }))
+      setForm((f) => (apelidoAnterior && f.apelido === apelidoAnterior ? { ...f, apelido: "" } : f))
+    }
     setConsultaCnpj({ estado: "consultando", texto: "Buscando os dados na Receita..." })
     try {
       const d = await api.get<ConsultaCnpj>(`/cnpj/${digitos}`)
+      preenchidoPelaReceita.current = true
       setNovoTomador((t) => ({
         ...t,
-        razao_social: d.razao_social || t.razao_social,
-        cod_municipio: d.cod_municipio_sugerido || t.cod_municipio,
-        cep: d.cep ?? t.cep,
-        logradouro: d.logradouro ?? t.logradouro,
-        numero: d.numero ?? t.numero,
-        complemento: d.complemento ?? t.complemento,
-        bairro: d.bairro ?? t.bairro,
+        razao_social: d.razao_social ?? "",
+        cod_municipio: d.cod_municipio_sugerido ?? "",
+        cep: d.cep ?? "",
+        logradouro: d.logradouro ?? "",
+        numero: d.numero ?? "",
+        complemento: d.complemento ?? "",
+        bairro: d.bairro ?? "",
       }))
-      setForm((f) => ({
+      const apelidoNovo = apelidoDe(d.razao_social)
+      setForm((f) => {
+        const usarNovo = !f.apelido || f.apelido === apelidoAnterior
+        if (usarNovo) apelidoPelaReceita.current = apelidoNovo
+        return {
         ...f,
         metodo_captura_valor: METODO_POR_CNPJ[digitos] ?? f.metodo_captura_valor,
-        apelido: f.apelido || apelidoDe(d.razao_social),
+        apelido: usarNovo ? apelidoNovo : f.apelido,
         cod_trib_nacional: f.cod_trib_nacional || meusCodigos[0] || "",
         template_descricao: f.template_descricao || MODELOS_PADRAO[0],
-      }))
+        }
+      })
       const situacao = d.situacao_cadastral && d.situacao_cadastral.toUpperCase() !== "ATIVA" ? ` Atenção: situação na Receita = ${d.situacao_cadastral}.` : ""
       setConsultaCnpj({ estado: situacao ? "aviso" : "ok", texto: `Dados preenchidos a partir do CNPJ (${d.municipio}/${d.uf}).${situacao}` })
     } catch (err) {
+      // Receita fora: deixa tentar de novo com o mesmo CNPJ.
+      if (!(err instanceof ApiError && err.status === 404)) ultimoCnpj.current = ""
       setConsultaCnpj({
         estado: "aviso",
         texto:

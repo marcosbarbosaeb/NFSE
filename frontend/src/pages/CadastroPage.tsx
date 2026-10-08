@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react"
-import { type FocusEvent, type FormEvent, useEffect, useState } from "react"
+import { type FocusEvent, type FormEvent, useEffect, useRef, useState } from "react"
 import { Link, Navigate, useSearchParams } from "react-router-dom"
 import { esquecerCodigoIndicacao, guardarCodigoIndicacao } from "../lib/indicacao"
 import { Button } from "../components/ui/Button"
@@ -44,6 +44,7 @@ export function CadastroPage() {
   const googleEmail = searchParams.get("google_email")
   const googleNome = searchParams.get("google_nome")
   const [razaoSocial, setRazaoSocial] = useState("")
+  const preenchidoPelaReceita = useRef(false)
   const [cnpj, setCnpj] = useState("")
   const [codMunicipio, setCodMunicipio] = useState("")
   const [email, setEmail] = useState(googleEmail ?? "")
@@ -148,13 +149,20 @@ export function CadastroPage() {
     setAvisoCnpj(null)
     setEnderecoResolvido(null)
     setEnderecoAutopreenchido(null)
+    // CNPJ novo: a razão social e a cidade do CNPJ anterior saem (08/10/2026)
+    if (preenchidoPelaReceita.current) {
+      preenchidoPelaReceita.current = false
+      setRazaoSocial("")
+      setCodMunicipio("")
+    }
     if (digitos.length !== 14) return
 
     setConsultandoCnpj(true)
     try {
       const dados = await api.get<ConsultaCnpj>(`/cnpj/${digitos}`)
-      setRazaoSocial(dados.razao_social || razaoSocial)
-      if (dados.cod_municipio_sugerido) setCodMunicipio(dados.cod_municipio_sugerido)
+      preenchidoPelaReceita.current = true
+      setRazaoSocial(dados.razao_social ?? "")
+      setCodMunicipio(dados.cod_municipio_sugerido ?? "")
       setEnderecoAutopreenchido({
         cep: dados.cep, logradouro: dados.logradouro, numero: dados.numero,
         complemento: dados.complemento, bairro: dados.bairro,

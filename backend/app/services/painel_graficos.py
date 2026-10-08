@@ -4,7 +4,7 @@ Só leitura, duas consultas agrupadas (nada de trazer nota por nota pra tela):
 
 - `serie`: o valor das notas de cada um dos últimos 12 meses, terminando na
   competência pedida — mesma regra do "Faturado no mês" da Visão geral
-  (`ESTADOS_FATURADOS`: gerada, assinada, enviada ou confirmada);
+  (`ESTADOS_FATURADOS`: só nota autorizada pela prefeitura);
 - `por_tomador`: quanto cada tomador somou em notas no ano da competência.
   As notas de vendedores (relatório do marketplace) são do vínculo do
   marketplace, então entram no nome dele — não viram centenas de linhas.

@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
+import { lerParametroGravacao } from './lib/gravacao'
+
+// ?gravacao=1 — tela limpa pra gravar vídeo na simulação (ver lib/gravacao.ts)
+lerParametroGravacao()
 
 // Depois de um deploy novo, uma aba aberta pode pedir um pedaço do app que
 // não existe mais: recarrega a página (uma vez) em vez de quebrar a tela.

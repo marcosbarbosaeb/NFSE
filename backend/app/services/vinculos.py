@@ -114,7 +114,14 @@ def registrar_sugestoes(db: Session, vinculo: PrestadorTomador, *, sobrescrever:
     # Nada pessoal vai pro catálogo: conta bancária, CNPJ, pedido, ID de
     # afiliado saem; o nome da empresa vira {prestador} nos textos de e-mail.
     prestador = db.get(Prestador, vinculo.prestador_id)
-    nomes = tuple(n for n in (getattr(prestador, "razao_social", None), getattr(prestador, "nome_fantasia", None)) if n)
+    # 08/10/2026: e o nome de quem usa a conta (assinatura do e-mail).
+    from app.models import Usuario, UsuarioPrestador
+
+    pessoas = [
+        n for (n,) in db.query(Usuario.nome).join(UsuarioPrestador, UsuarioPrestador.usuario_id == Usuario.id)
+        .filter(UsuarioPrestador.prestador_id == vinculo.prestador_id, Usuario.nome.isnot(None))
+    ]
+    nomes = tuple(n for n in (getattr(prestador, "razao_social", None), getattr(prestador, "nome_fantasia", None), *pessoas) if n)
     tem_modelo_de_envio = vinculo.envio_formas is not None
     novos = {
         "sug_cod_trib_nacional": vinculo.cod_trib_nacional,

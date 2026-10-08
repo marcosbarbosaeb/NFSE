@@ -238,7 +238,7 @@ export function DashboardPage() {
                 iconClassName="bg-accent-50 text-accent-600"
                 label="Faturado no mês"
                 value={formatBRL(resumo.faturado_no_mes)}
-                sublabel="valor das notas do mês"
+                sublabel="notas autorizadas no mês"
               />
             </Link>
           </div>

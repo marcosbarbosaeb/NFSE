@@ -474,7 +474,8 @@ def test_graficos_do_painel(client, db, prestador_teste, vinculo_teste):
     db.flush()
 
     _nota_grafico(db, vinculo_teste, "2026-10", 1000)
-    _nota_grafico(db, vinculo_teste, "2026-08", 500, estado="montado")
+    _nota_grafico(db, vinculo_teste, "2026-08", 500)
+    _nota_grafico(db, vinculo_teste, "2026-08", 4444, estado="montado")  # 08/10/2026: só autorizada é faturamento
     _nota_grafico(db, vinculo_teste, "2025-11", 300)       # primeiro mês da janela de 12
     _nota_grafico(db, vinculo_teste, "2025-10", 9999)      # fora da janela (13 meses atrás)
     _nota_grafico(db, vinculo_teste, "2026-09", 7777, estado="cancelada")  # não é faturamento

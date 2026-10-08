@@ -14,5 +14,9 @@ fi
 echo "[entrypoint] Rodando migrações (alembic upgrade head)..."
 python3 -m alembic upgrade head
 
+# Tomadores pré-cadastrados (Shopee, Amazon...): cria só os que faltam. Num
+# banco novo (ex.: teste) o catálogo começaria vazio.
+python3 scripts/semear_catalogo.py || true
+
 echo "[entrypoint] Subindo o servidor na porta ${PORT:-8000}..."
 exec python3 -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}"

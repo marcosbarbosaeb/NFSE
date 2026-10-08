@@ -435,10 +435,16 @@ def api_login(req: LoginRequest, request: Request, db: Session = Depends(get_db)
 
 
 @app.post("/api/demo", response_model=UsuarioResponse, dependencies=[Depends(limite("demo", 6, 3600))])
-def api_criar_demo(request: Request, db: Session = Depends(get_db)):
+def api_criar_demo(request: Request, cenario: str | None = None, db: Session = Depends(get_db)):
     """Ambiente de simulação — cria uma conta descartável com dados de
-    exemplo e já entra nela (ver app/services/demo.py)."""
-    usuario = criar_conta_demo(db)
+    exemplo e já entra nela (ver app/services/demo.py). `cenario`: o nicho
+    dos dados (app/data/cenarios/<nome>.json; padrão: afiliados)."""
+    from app.services.demo import CenarioInexistenteError
+
+    try:
+        usuario = criar_conta_demo(db, cenario)
+    except CenarioInexistenteError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     db.commit()
     contas.iniciar_sessao(db, request, usuario)
     db.commit()
@@ -2140,9 +2146,10 @@ def _tp_amb_da_conta(db: Session, prestador_id: uuid.UUID) -> str:
 
 
 def _tp_amb_da_nota(db: Session, prestador_id: uuid.UUID, pedido: str | None) -> str:
-    """Conta de teste é sempre homologação, mesmo se pedirem produção."""
+    """Conta de teste é sempre homologação, mesmo se pedirem produção. A
+    simulação também: nota de mentira nunca se passa por nota de produção."""
     prestador = db.get(Prestador, prestador_id)
-    if get_settings().ambiente_teste or (prestador is not None and prestador.modo_teste):
+    if get_settings().ambiente_teste or (prestador is not None and (prestador.modo_teste or prestador.demo)):
         return "2"
     return pedido or _tp_amb_da_conta(db, prestador_id)
 
@@ -2648,13 +2655,37 @@ def api_nota_visual(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
     return montar_nota_visual(emissao)
 
 
-@app.post("/api/dps/{emissao_id}/assinar", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
-def api_assinar_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+def _na_simulacao(request: Request, db: Session, prestador_id: uuid.UUID) -> bool:
+    """Modo demonstração (08/10/2026): na conta de SIMULAÇÃO (as duas marcas,
+    ver app/services/demo_emissao.py) assinar, enviar à prefeitura e entregar
+    dão certo de mentira. Qualquer outra conta com e-mail de simulação
+    continua recusada como antes (`exigir_conta_real`)."""
+    from app.services import demo_emissao
+
+    if demo_emissao.eh_simulacao(db, request.session.get("usuario_id"), prestador_id):
+        return True
+    exigir_conta_real(request, db)
+    return False
+
+
+@app.post("/api/dps/{emissao_id}/assinar", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
+def api_assinar_dps(emissao_id: uuid.UUID, request: Request, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     """montado -> assinado, com o certificado carregado (Marco 4). Não
     envia pra Sefin (ver docstring do módulo)."""
+    simulacao = _na_simulacao(request, db, prestador_id)
     emissao = db.query(Emissao).filter_by(id=emissao_id).one_or_none()
     if emissao is None:
         raise HTTPException(status_code=404, detail="Emissão não encontrada (ou não pertence ao prestador ativo)")
+    if simulacao:
+        from app.services import demo_emissao
+
+        try:
+            demo_emissao.assinar(db, emissao)
+        except TransicaoInvalidaError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        resposta = _para_resposta(emissao)
+        db.commit()
+        return resposta
 
     settings = get_settings()
     try:
@@ -2670,8 +2701,8 @@ def api_assinar_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), pre
     return _para_resposta(emissao)
 
 
-@app.post("/api/dps/{emissao_id}/submeter", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
-def api_submeter_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+@app.post("/api/dps/{emissao_id}/submeter", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
+def api_submeter_dps(emissao_id: uuid.UUID, request: Request, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     """Marco 16, item 7 — assinado/erro -> submetido -> confirmado (ou ->
     erro de novo, retentável), chamando a Sefin DE VERDADE (ver
     app/services/motor_emissao.submeter). NUNCA foi validado contra a API
@@ -2681,9 +2712,20 @@ def api_submeter_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao), pr
     a emissão volta com estado='erro' e `erro_detalhe` preenchido (200),
     porque não é um erro do NOSSO lado — é resposta de negócio da Sefin,
     e a pessoa pode tentar de novo depois de corrigir o que for."""
+    simulacao = _na_simulacao(request, db, prestador_id)
     emissao = db.query(Emissao).filter_by(id=emissao_id).one_or_none()
     if emissao is None:
         raise HTTPException(status_code=404, detail="Emissão não encontrada (ou não pertence ao prestador ativo)")
+    if simulacao:
+        from app.services import demo_emissao
+
+        try:
+            demo_emissao.autorizar(db, emissao)
+        except TransicaoInvalidaError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        resposta = _para_resposta(emissao)
+        db.commit()
+        return resposta
 
     settings = get_settings()
     try:
@@ -2847,7 +2889,7 @@ def api_previa_email(emissao_id: uuid.UUID, request: Request, db: Session = Depe
     return previa_email(db, emissao, base_url(str(request.base_url)))
 
 
-@app.post("/api/dps/{emissao_id}/enviar-email", response_model=EnvioResponse, responses={400: {"model": ErroResponse}, 404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR, Depends(exigir_conta_real)])
+@app.post("/api/dps/{emissao_id}/enviar-email", response_model=EnvioResponse, responses={400: {"model": ErroResponse}, 404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_enviar_email(
     emissao_id: uuid.UUID, request: Request, req: EnviarEmailRequest | None = None,
     db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id),
@@ -2855,7 +2897,17 @@ def api_enviar_email(
     """Marco 17 — manda a nota pro e-mail do fornecedor saindo do endereço
     da Agente Ana (PDF oficial + XML em anexo, resposta volta pro e-mail do
     prestador). Falha do provedor volta como envio com status 'falha'."""
+    simulacao = _na_simulacao(request, db, prestador_id)
     emissao = _emissao_ou_404(db, emissao_id)
+    if simulacao:
+        from app.services import demo_emissao
+
+        try:
+            envio = demo_emissao.entregar(db, emissao, ", ".join(req.para) if req and req.para else None)
+        except TransicaoInvalidaError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        db.commit()
+        return envio
     try:
         envio = enviar_email(
             db, emissao, prestador_id, base_url(str(request.base_url)),

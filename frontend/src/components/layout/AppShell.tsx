@@ -4,6 +4,7 @@ import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom"
 import { useAuth } from "../../lib/auth"
 import { PasseioNovidades } from "../tour/PasseioNovidades"
 import { TourDaPagina } from "../tour/Tour"
+import { useModoGravacao } from "../../lib/gravacao"
 import { useRegistrarTela } from "../../lib/uso"
 import { AvisoSemAssinatura, FaixaAssinatura, FaixaContador, FaixaUsoDoPlano } from "./FaixasAcesso"
 import { Sidebar } from "./Sidebar"
@@ -13,7 +14,8 @@ import { Topbar } from "./Topbar"
 function FaixaSimulacao() {
   const { usuario, logout } = useAuth()
   const navigate = useNavigate()
-  if (!usuario?.demo) return null
+  const gravacao = useModoGravacao()
+  if (!usuario?.demo || gravacao) return null
   return (
     <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-gradient-to-r from-accent-500 to-primary-600 px-4 py-2 text-center text-sm text-white">
       <span className="flex items-center gap-1.5 font-semibold">
@@ -58,6 +60,7 @@ export function AppShell() {
   const [menuAberto, setMenuAberto] = useState(false)
   const { usuario } = useAuth()
   const { pathname } = useLocation()
+  useModoGravacao() // liga/desliga as dicas antes das telas abrirem
   useRegistrarTela()
   if (usuario?.so_contador && !TELAS_DA_CONTA_DE_CONTADOR.some((t) => pathname === t || pathname.startsWith(t + "/"))) {
     return <Navigate to="/app/atendimentos" replace />

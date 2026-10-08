@@ -21,6 +21,26 @@ PERFIS = ("todos", "empresa", "contador")
 # A mais nova primeiro.
 VERSOES: list[dict] = [
     {
+        "versao": "2026.10.6",
+        "data": "2026-10-08",
+        "resumo": "Gerar a nota num clique só, Visão geral contando só notas autorizadas e consulta de CNPJ mais firme.",
+        "itens": [
+            {"perfil": "empresa", "titulo": "“Gerar e fazer tudo” num clique só", "link": "/app/nfse",
+             "texto": "Antes o primeiro clique só conferia os dados e o botão mudava de lugar. Agora um clique confere, gera, assina, "
+                      "envia à prefeitura e entrega ao tomador. Só para se a conferência achar algo em vermelho; os avisos amarelos "
+                      "continuam aparecendo, mas não pedem mais a caixinha de “conferi”."},
+            {"perfil": "empresa", "titulo": "Visão geral: “Emitida” é nota autorizada", "link": "/app",
+             "texto": "Nota recusada pela prefeitura, ou ainda a assinar, não conta mais como emitida: ela fica em “Aguardando emissão” "
+                      "até ser autorizada. “Faturado no mês” soma só as notas autorizadas."},
+            {"perfil": "todos", "titulo": "Consulta de CNPJ mais firme",
+             "texto": "Quando a fonte de sempre dos dados da Receita está fora do ar, eu tento outras duas antes de pedir pra você preencher à mão. "
+                      "E, se você trocar o CNPJ e a consulta não der, os dados do CNPJ anterior saem do formulário."},
+            {"perfil": "todos", "titulo": "Simulação mais completa", "link": "/simulacao",
+             "texto": "Na simulação, “Gerar e fazer tudo” vai até o fim (de mentira: nada sai pra Receita nem pra ninguém) e as notas de "
+                      "exemplo já aparecem autorizadas e entregues, com os números da Visão geral e do financeiro andando juntos."},
+        ],
+    },
+    {
         "versao": "2026.10.5",
         "data": "2026-10-08",
         "resumo": "Pasta do mês com o contador, Integrações, agenda no Google, calendário novo e gráficos que mudam de forma.",

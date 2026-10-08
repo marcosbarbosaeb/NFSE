@@ -84,7 +84,9 @@ def _status_envio(db: Session, emissao: Emissao) -> str | None:
 
 # O que já saiu como nota (montado = gerada, ainda sem assinar). Rascunho,
 # erro, cancelada e substituída não contam como faturamento.
-ESTADOS_FATURADOS = ("montado", "assinado", "submetido", "confirmado")
+# "Faturado" e "Emitidas" (08/10/2026): só nota AUTORIZADA pela prefeitura. Antes valia gerada/assinada
+# também — nota recusada e nota "A assinar" apareciam como "Emitida". Mesma regra do raio-x do contador.
+ESTADOS_FATURADOS = ("confirmado",)
 
 
 def _faturado(db: Session, competencia: str) -> Decimal:
@@ -275,11 +277,14 @@ def resumo_mes(
                 "homologacao": (vendedores[0].tomador_snapshot or {}).get("tpAmb") == "2", "envio_forma": "email",
                 "vendedores": True,
             })
-        if not do_mes:
+        # Emitida = tem nota autorizada no mês; gerada, a assinar, recusada... ainda está por fazer.
+        if any(e.estado in ESTADOS_FATURADOS for e in do_mes):
+            emitidas += 1
+        else:
             aguardando += 1
+        if not do_mes:
             continue
 
-        emitidas += 1
         # Uma linha por nota.
         for emissao in do_mes:
             emissoes.append({

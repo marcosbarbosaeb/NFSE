@@ -252,6 +252,7 @@ function CadastrarDoZeroModal({ onFechar, onVoltar }: { onFechar: () => void; on
 
   const [consultando, setConsultando] = useState(false)
   const [consultado, setConsultado] = useState<string | null>(null)
+  const preenchidoPelaReceita = useRef(false)
   const [resumo, setResumo] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
@@ -265,11 +266,24 @@ function CadastrarDoZeroModal({ onFechar, onVoltar }: { onFechar: () => void; on
     setConsultado(digitos)
     setAviso(null)
     setResumo(null)
+    // CNPJ novo: o que veio da consulta do CNPJ anterior sai do formulário
+    // (08/10/2026: com a consulta falhando, ficavam a razão social e o endereço do outro)
+    if (preenchidoPelaReceita.current) {
+      preenchidoPelaReceita.current = false
+      setRazaoSocial("")
+      setCodMunicipio("")
+      setCep("")
+      setLogradouro("")
+      setNumero("")
+      setComplemento("")
+      setBairro("")
+    }
     setConsultando(true)
     try {
       const d = await api.get<ConsultaCnpj>(`/cnpj/${digitos}`)
-      if (d.razao_social) setRazaoSocial(d.razao_social)
-      if (d.cod_municipio_sugerido) setCodMunicipio(d.cod_municipio_sugerido)
+      preenchidoPelaReceita.current = true
+      setRazaoSocial(d.razao_social ?? "")
+      setCodMunicipio(d.cod_municipio_sugerido ?? "")
       setCep(mascararCep(d.cep ?? ""))
       setLogradouro(d.logradouro ?? "")
       setNumero(d.numero ?? "")

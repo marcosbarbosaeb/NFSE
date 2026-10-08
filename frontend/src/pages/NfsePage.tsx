@@ -34,6 +34,8 @@ import { Field, FieldWrap } from "../components/ui/Field"
 import { Modal } from "../components/ui/Modal"
 import { StatCard } from "../components/ui/StatCard"
 import { ApiError, api, formatarErro } from "../lib/api"
+import { useAuth } from "../lib/auth"
+import { useModoGravacao } from "../lib/gravacao"
 import { dataPadraoDaCompetencia, hojeLocal } from "../lib/datas"
 import { LOTE_ESPERANDO, LOTE_RODANDO, NOME_ACAO, PENDENTES } from "../lib/lotes"
 import { formatBRL, formatCompetenciaLonga } from "../lib/format"
@@ -118,6 +120,7 @@ function badgeEstado(estado: string, label: string) {
  * em massa por relatório (Shopee: uma por vendedor, centenas por mês) têm
  * tela própria no menu, pra não poluírem a lista de NFS-e nem o painel. */
 export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
+  const gravacao = useModoGravacao()
   const emLote = modo === "lote"
   const [ano, setAno] = useState<string>(String(ANO_ATUAL))
   const [vinculoFiltro, setVinculoFiltro] = useState("")
@@ -783,7 +786,7 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
                     {e.competencia}
                     <p className="text-xs text-slate-400 dark:text-slate-500">
                       DPS {e.n_dps ?? "—"}
-                      {e.homologacao && " · teste"}
+                      {e.homologacao && !gravacao && " · teste"}
                     </p>
                   </td>
                   <td className="py-3 text-slate-600 dark:text-slate-300">{formatBRL(e.valor)}</td>
@@ -944,7 +947,7 @@ interface AoGerar {
   tomador: boolean
 }
 const CHAVE_AO_GERAR = "ana:nfse:ao-gerar"
-function lerAoGerar(): AoGerar {
+function lerAoGerar(simulacao = false): AoGerar {
   try {
     const d = JSON.parse(localStorage.getItem(CHAVE_AO_GERAR) ?? "null")
     if (d && typeof d.assinar === "boolean") {
@@ -955,7 +958,8 @@ function lerAoGerar(): AoGerar {
   } catch {
     // sem storage ou valor estragado: padrão
   }
-  return { assinar: true, prefeitura: false, tomador: false }
+  // Na simulação o caminho todo dá certo (de mentira): já vem "fazer tudo".
+  return simulacao ? { assinar: true, prefeitura: true, tomador: true } : { assinar: true, prefeitura: false, tomador: false }
 }
 
 function NovaEmissaoModal({
@@ -1054,12 +1058,22 @@ function NovaEmissaoModal({
 
   // Conferência (05/10/2026): assim que tem valor digitado, a Ana confere o
   // tomador, a empresa e a nota (POST /dps/conferir). "Erro" trava o Gerar
-  // (o backend também recusa); "aviso" pede um "conferi, pode gerar".
+  // (o backend também recusa); "aviso" só aparece — 08/10/2026: "Gerar e fazer
+  // tudo" num clique só (antes o primeiro clique só conferia e o botão descia).
   // `null` = nada a mostrar (sem valor ainda, ou a conferência falhou).
   const [pontosConferencia, setPontosConferencia] = useState<PontoConferencia[] | null>(null)
   const [conferindo, setConferindo] = useState(false)
-  const [confirmouAvisos, setConfirmouAvisos] = useState(false)
   const valorDigitado = Number(valor) > 0
+  const pedidoConferencia = {
+    vinculo_id: vinculoId,
+    valor: Number(valor),
+    data_competencia: dataEfetiva,
+    ordem: ordem || null,
+    aliq_sn: aliqSn,
+  }
+  const chaveConferencia = JSON.stringify(pedidoConferencia)
+  // Pra quais dados os pontos na tela valem (o clique em Gerar confere de novo se mudou).
+  const [conferidoPara, setConferidoPara] = useState<string | null>(null)
   // Trocou o tomador: o que foi conferido era do outro.
   useEffect(() => setPontosConferencia(null), [vinculoId])
   useEffect(() => {
@@ -1072,14 +1086,12 @@ function NovaEmissaoModal({
     setConferindo(true)
     const tempo = setTimeout(() => {
       api
-        .post<ConferenciaNota>("/dps/conferir", {
-          vinculo_id: vinculoId,
-          valor: Number(valor),
-          data_competencia: dataEfetiva,
-          ordem: ordem || null,
-          aliq_sn: aliqSn,
+        .post<ConferenciaNota>("/dps/conferir", pedidoConferencia)
+        .then((resp) => {
+          if (cancelado) return
+          setPontosConferencia(resp.pontos)
+          setConferidoPara(chaveConferencia)
         })
-        .then((resp) => !cancelado && setPontosConferencia(resp.pontos))
         // Se a conferência falhar, não trava: POST /dps confere de novo.
         .catch(() => !cancelado && setPontosConferencia(null))
         .finally(() => !cancelado && setConferindo(false))
@@ -1088,19 +1100,19 @@ function NovaEmissaoModal({
       cancelado = true
       clearTimeout(tempo)
     }
-  }, [vinculoId, ehRelatorio, valorDigitado, valor, dataEfetiva, ordem, aliqSn])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chaveConferencia resume os dados conferidos
+  }, [ehRelatorio, valorDigitado, chaveConferencia])
   const errosConferencia = (pontosConferencia ?? []).filter((p) => p.nivel === "erro")
   const avisosConferencia = (pontosConferencia ?? []).filter((p) => p.nivel === "aviso")
-  // Mudou o que há pra conferir: a confirmação anterior não vale mais.
-  const chaveAvisos = avisosConferencia.map((p) => `${p.codigo}:${p.mensagem}`).join("|")
-  useEffect(() => setConfirmouAvisos(false), [chaveAvisos, vinculoId])
-  const bloqueadoPorConferencia =
-    valorDigitado && !ehRelatorio && (conferindo || errosConferencia.length > 0 || (avisosConferencia.length > 0 && !confirmouAvisos))
+  // Só o que está em vermelho trava. Conferindo ainda? O clique espera a conferência.
+  const bloqueadoPorConferencia = valorDigitado && !ehRelatorio && !conferindo && errosConferencia.length > 0
 
   // "Processo completo" (05/10/2026): ao gerar, a Ana já assina, envia à
   // prefeitura e manda pro tomador — o que estiver marcado. A escolha fica
   // guardada neste navegador pra próxima nota.
-  const [aoGerar, setAoGerar] = useState<AoGerar>(lerAoGerar)
+  const { usuario } = useAuth()
+  const gravacao = useModoGravacao()
+  const [aoGerar, setAoGerar] = useState<AoGerar>(() => lerAoGerar(Boolean(usuario?.demo)))
   function mudarAoGerar(passo: keyof AoGerar, ligado: boolean) {
     // Cada passo depende do anterior: marcar um marca os de antes; desmarcar, os de depois.
     const nova: AoGerar = ligado
@@ -1132,6 +1144,22 @@ function NovaEmissaoModal({
     let criada: Emissao | null = null
     const feito = (texto: string) => setAndamento((a) => [...a, texto])
     const motivo = (err: unknown) => (err instanceof ApiError ? formatarErro(err.detail) : "falha de conexão")
+    // Clicou antes da conferência terminar (ou mudou algo depois): confere agora,
+    // no mesmo clique, e só para se tiver erro.
+    if (!ehRelatorio && valorDigitado && (conferindo || conferidoPara !== chaveConferencia)) {
+      try {
+        const resp = await api.post<ConferenciaNota>("/dps/conferir", pedidoConferencia)
+        setPontosConferencia(resp.pontos)
+        setConferidoPara(chaveConferencia)
+        setConferindo(false)
+        if (resp.pontos.some((p) => p.nivel === "erro")) {
+          setEnviando(false)
+          return
+        }
+      } catch {
+        // a conferência falhou: segue, o POST /dps confere de novo
+      }
+    }
     try {
       const payload: GerarDpsRequest = {
         vinculo_id: vinculoId,
@@ -1401,15 +1429,12 @@ function NovaEmissaoModal({
               <p className="text-xs text-slate-500 dark:text-slate-400">Corrija o que está em vermelho pra eu poder gerar a nota.</p>
             )}
             {errosConferencia.length === 0 && avisosConferencia.length > 0 && (
-              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-warning-300 px-3 py-2.5 text-sm font-medium text-slate-800 dark:border-warning-900 dark:text-slate-100">
-                <input type="checkbox" className="mt-0.5" checked={confirmouAvisos} onChange={(e) => setConfirmouAvisos(e.target.checked)} />
-                Conferi e está certo, pode gerar
-              </label>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Os avisos acima não impedem a nota: se estiver tudo certo, é só gerar.</p>
             )}
           </div>
         )}
 
-        {ambienteTeste && !ehRelatorio && !avisosConferencia.some((p) => p.codigo === "ambiente_teste") && (
+        {ambienteTeste && !gravacao && !ehRelatorio && !avisosConferencia.some((p) => p.codigo === "ambiente_teste") && (
           <p className="rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
             Sua conta está gerando notas de <strong>teste</strong> (homologação). Pra emitir de verdade, desligue em
             Empresa › Notas e e-mails.

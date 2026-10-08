@@ -1,3 +1,4 @@
+import { gravacaoLigada } from "./gravacao"
 // Tutorial de primeira visita — pedido do Marcos (28/09/2026): "crie um
 // tutorial com indicações para a primeira vez que a pessoa entrar em uma aba
 // nova, mostrando pra ela as funcionalidades que existem" + "na aba de
@@ -30,6 +31,8 @@ function gravar(chave: string, valor: string | null) {
 }
 
 export function tutorialAtivo(): boolean {
+  // Gravando vídeo na simulação (?gravacao=1): nenhuma dica abre sozinha.
+  if (gravacaoLigada()) return false
   return ler(CHAVE_ATIVO) !== "nao"
 }
 

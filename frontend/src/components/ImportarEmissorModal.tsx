@@ -94,6 +94,7 @@ export function ImportarEmissorModal({ modo, onFechar, onVoltar }: { modo: Modo;
   const [endereco, setEndereco] = useState({ cep: "", logradouro: "", numero: "", complemento: "", bairro: "" })
   const [consultando, setConsultando] = useState(false)
   const [consultado, setConsultado] = useState<string | null>(null)
+  const preenchidoPelaReceita = useRef(false)
   const [avisoConsulta, setAvisoConsulta] = useState<string | null>(null)
   const [desde, setDesde] = useState(() => `${new Date().getFullYear()}-01`)
 
@@ -198,12 +199,20 @@ export function ImportarEmissorModal({ modo, onFechar, onVoltar }: { modo: Modo;
     if (digitos.length !== 14 || digitos === consultado) return
     setConsultado(digitos)
     setAvisoConsulta(null)
+    // CNPJ novo: o que veio da consulta do CNPJ anterior sai do formulário (08/10/2026)
+    if (preenchidoPelaReceita.current) {
+      preenchidoPelaReceita.current = false
+      setRazaoSocial("")
+      setCodMunicipio("")
+      setEndereco({ cep: "", logradouro: "", numero: "", complemento: "", bairro: "" })
+    }
     setConsultando(true)
     try {
       const d = await api.get<ConsultaCnpj>(`/cnpj/${digitos}`)
       if (!montado.current) return
-      if (d.razao_social) setRazaoSocial(d.razao_social)
-      if (d.cod_municipio_sugerido) setCodMunicipio(d.cod_municipio_sugerido)
+      preenchidoPelaReceita.current = true
+      setRazaoSocial(d.razao_social ?? "")
+      setCodMunicipio(d.cod_municipio_sugerido ?? "")
       setEndereco({
         cep: mascararCep(d.cep ?? ""),
         logradouro: d.logradouro ?? "",

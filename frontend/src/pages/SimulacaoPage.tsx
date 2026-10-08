@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { AnaAvatar } from "../components/brand/Marca"
 import { ApiError, formatarErro } from "../lib/api"
 import { useAuth } from "../lib/auth"
+import { lerParametroGravacao } from "../lib/gravacao"
 
 // "Testar sem cadastro" — entra numa conta de simulação com dados de
 // exemplo (ver backend/app/services/demo.py) e cai direto no painel.
+// Modo demonstração (08/10/2026): `?cenario=beleza` escolhe o nicho dos dados
+// e `?gravacao=1` deixa a tela limpa pra gravar vídeo (ver lib/gravacao.ts).
 export function SimulacaoPage() {
+  const [params] = useSearchParams()
+  const cenario = params.get("cenario")
   const { usuario, carregando, entrarNaSimulacao } = useAuth()
   const navigate = useNavigate()
   const [erro, setErro] = useState<string | null>(null)
@@ -15,15 +20,16 @@ export function SimulacaoPage() {
   useEffect(() => {
     if (carregando || iniciado.current) return
     iniciado.current = true
+    lerParametroGravacao()
     // Quem já está logado numa conta de verdade não perde a sessão.
     if (usuario && !usuario.demo) {
       navigate("/app", { replace: true })
       return
     }
-    entrarNaSimulacao()
+    entrarNaSimulacao(cenario)
       .then(() => navigate("/app", { replace: true }))
       .catch((err) => setErro(err instanceof ApiError ? formatarErro(err.detail) : "Não deu pra abrir a simulação agora."))
-  }, [carregando, usuario, entrarNaSimulacao, navigate])
+  }, [carregando, usuario, entrarNaSimulacao, navigate, cenario])
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-canvas px-4 text-center dark:bg-canvas-dark">

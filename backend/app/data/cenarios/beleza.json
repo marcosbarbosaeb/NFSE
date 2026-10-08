@@ -1,0 +1,40 @@
+{
+  "titulo": "Beleza — criadora de conteúdo que divulga marcas de cosméticos",
+  "empresa": {
+    "razao_social": "Lumi Conteúdo Digital LTDA",
+    "nome_fantasia": "Lumi Conteúdo",
+    "cod_municipio": "3106200",
+    "logradouro": "Rua das Acácias",
+    "numero": "250",
+    "bairro": "Savassi",
+    "cep": "30140000",
+    "aliquota": 6
+  },
+  "meses_passados": 3,
+  "variacao_por_mes": 0.06,
+  "tomadores": [
+    {"cnpj": "55666777000100", "razao_social": "Bella Beauty Cosméticos LTDA", "apelido": "Bella Beauty",
+     "dia": 5, "dias_receber": 15, "email": "financeiro@bellabeauty.exemplo",
+     "template": "Divulgação dos produtos Bella Beauty nas redes sociais - {mes_nome_upper}/{ano}",
+     "valores": {"-3": 2850.0, "-2": 3120.0, "-1": 3480.0}, "recebidos": [-3, -2]},
+    {"cnpj": "66777888000100", "razao_social": "Glow Skin Dermocosméticos LTDA", "apelido": "Glow Skin",
+     "dia": 10, "dias_receber": 30, "email": "notas@glowskin.exemplo",
+     "template": "Comissão sobre vendas com cupom - {mes_nome_upper}/{ano}",
+     "valores": {"-3": 1240.0, "-2": 1385.5, "-1": 1512.9}, "recebidos": [-3, -2, -1]},
+    {"cnpj": "77888999000100", "razao_social": "Clube Beleza Afiliados LTDA", "apelido": "Clube Beleza",
+     "dia": 20, "dias_receber": 30, "email": "parceiros@clubebeleza.exemplo",
+     "template": "Comissão de vendas como afiliada - {mes_nome_upper}/{ano}",
+     "valores": {"-3": 690.0, "-2": 742.3, "-1": 815.6}, "recebidos": [-3, -2, -1]}
+  ],
+  "despesas": [
+    {"mes": -3, "categoria": "Contador", "valor": 380.0},
+    {"mes": -2, "categoria": "Contador", "valor": 380.0},
+    {"mes": -2, "categoria": "Produtos para gravação", "valor": 246.7},
+    {"mes": -1, "categoria": "Contador", "valor": 380.0},
+    {"mes": -1, "categoria": "Iluminação e equipamentos", "valor": 529.0},
+    {"mes": 0, "categoria": "Contador", "valor": 380.0}
+  ],
+  "eventos": [
+    {"daqui_a_dias": 2, "titulo": "Gravar os vídeos da campanha Bella Beauty", "descricao": "Entregar 3 vídeos e 5 stories até sexta."}
+  ]
+}

@@ -11,7 +11,7 @@ interface AuthState {
   /** Relê /auth/me (ex.: depois de trocar o nome em Minha conta). */
   recarregarUsuario: () => Promise<void>
   loginComGoogle: () => Promise<void>
-  entrarNaSimulacao: () => Promise<void>
+  entrarNaSimulacao: (cenario?: string | null) => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -71,8 +71,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Ambiente de simulação: cria uma conta descartável com dados de exemplo
   // e já entra nela (ver backend/app/services/demo.py).
-  async function entrarNaSimulacao() {
-    const dados = await api.post<Usuario>("/demo")
+  async function entrarNaSimulacao(cenario?: string | null) {
+    // cenário = o nicho dos dados de exemplo (backend/app/data/cenarios)
+    const dados = await api.post<Usuario>(cenario ? `/demo?cenario=${encodeURIComponent(cenario)}` : "/demo")
     setUsuario(await api.get<Usuario>("/auth/me").catch(() => dados))
   }
 

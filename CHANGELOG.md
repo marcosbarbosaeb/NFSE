@@ -16,6 +16,44 @@ Numeração: `ano.mês.sequência`. Versão nova = bloco novo no topo de `novida
 Antes de publicar no real, sempre: testes passando (`pytest`), `tsc` e build do frontend, telas conferidas no teste,
 migração e variáveis novas anotadas abaixo.
 
+## 2026.10.6 — 08/10/2026
+
+Modo demonstração (pra gravar vídeos de anúncio) em cima da simulação, sem ambiente novo, e as falhas achadas no teste.
+
+- **Caminho feliz simulado** (`services/demo_emissao.py`): na conta de simulação, assinar, enviar à prefeitura e
+  entregar ao tomador dão certo de mentira (sem certificado, Receita nem e-mail). Chave de 50 dígitos e número inventados,
+  `xml_resposta` mínimo em volta da DPS pro DANFSe; envio gravado como `enviado`. As rotas `/dps/{id}/assinar`,
+  `/submeter` e `/enviar-email` desviam via `_na_simulacao` (main.py). **Trava**: só com as duas marcas — usuário com
+  e-mail do domínio da simulação E `Prestador.demo`; e-mail de simulação sem a marca da empresa continua 403
+  (`exigir_conta_real`). Notas da simulação são sempre homologação (`_tp_amb_da_nota`).
+- **Cenários** (`app/data/cenarios/*.json`, LEIA-ME lá): empresa, tomadores, valores, meses, recebidos, despesas e
+  eventos. `POST /api/demo?cenario=<nome>` (404 se não existe; nome só `[a-z0-9_-]`); tela `/simulacao?cenario=beleza`.
+  Cenários: `afiliados` (o de antes, padrão) e `beleza` (tomador "Bella Beauty"). CNPJs de tomador sempre com
+  verificador inválido (teste confere). Notas passadas nascem autorizadas e entregues.
+- **Tela limpa** (`lib/gravacao.ts`): `?gravacao=1` (em `/simulacao` ou qualquer tela; `?gravacao=0` desliga; guardado
+  na aba) esconde a faixa "Modo simulação", o aviso amarelo de homologação, o "· teste" da lista e as dicas do tutorial.
+  Só vale com `usuario.demo`. Na simulação, "Ao gerar" vem com os três passos marcados.
+- **Um clique em "Gerar e fazer tudo"** (`NfsePage` › `NovaEmissaoModal`): o botão não fica mais desabilitado enquanto
+  confere; o clique confere de novo se os dados mudaram e só para em erro. Avisos amarelos não pedem mais a caixinha.
+- **Visão geral**: "Emitidas" e "Faturado no mês" só com nota `confirmado` (`dashboard.ESTADOS_FATURADOS`); recusada ou a
+  assinar fica em "Aguardando emissão".
+- **Consulta de CNPJ** (`services/cnpj_lookup.py`): BrasilAPI → CNPJ.ws (publica.cnpj.ws) → ReceitaWS, só quando a
+  anterior está fora (404 encerra). O motivo de cada falha vai pro log. No teste a BrasilAPI recusava a saída do servidor.
+- **Formulários de CNPJ** (tomador, cadastro, nova empresa, importar do Emissor, identificar cliente): trocar de CNPJ
+  limpa o que veio da consulta anterior, mesmo quando a nova consulta falha.
+- **Catálogo pré-cadastrado em banco novo**: `scripts/semear_catalogo.py` roda no start (entrypoint) e cria, só se
+  faltar, os tomadores de `app/data/catalogo_inicial.json` (11 do catálogo de produção, só dado público + modelo de
+  nota; sem textos de e-mail). Em produção não muda nada.
+- **Catálogo sem nome de pessoa**: a limpeza (`services/sugestoes.py`) tira a assinatura depois de
+  "Atenciosamente/Att/Cordialmente/Abraços", pedaços do nome da empresa e dos usuários (duplas de palavras; primeiro
+  nome em razão social de pessoa) e cupons de desconto. Migração `e1c3d5f7a9b2` limpa o que já estava gravado.
+
+Migração: `e1c3d5f7a9b2` (só dados do catálogo). Variáveis novas: nenhuma.
+
+Conferir depois de publicar: `/api/versao` = 2026.10.6; `/simulacao?cenario=beleza&gravacao=1` sem faixa, aviso e dicas,
+e Nova emissão pra Bella Beauty em um clique até "Enviada"; Tomadores › Adicionar com "Shopee" no catálogo e um CNPJ
+novo consultado; Visão geral sem nota recusada em "Emitidas".
+
 ## 2026.10.5 — 08/10/2026
 
 Lista de ajustes do Marcos + três dúvidas que apareceram num concorrente.

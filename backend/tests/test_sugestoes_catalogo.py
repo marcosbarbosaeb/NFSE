@@ -112,3 +112,19 @@ def test_catalogo_nunca_recebe_conta_bancaria_e_ganha_o_padrao_de_envio(db, pres
     assert tomador.sug_envio_formas == ["email", "drive"] and tomador.sug_email_anexos == "pdf"
     assert tomador.sug_email_assunto == "Nota {competencia} — {prestador}"
     assert not any("financeiro@cliente.com" in str(v) or "12345678" in str(v) for v in vars(tomador).values())
+
+
+def test_assinatura_com_nome_de_pessoa_e_cupom_nao_vao_pro_catalogo():
+    """08/10/2026: o catálogo de produção tinha "Atenciosamente, <nome>" e um
+    assunto com cupom de desconto."""
+    from app.services.sugestoes import limpar_texto
+
+    assert limpar_texto("Bom dia, seguem as NF.\nAtenciosamente, Maria Souza.", (), "{prestador}") == (
+        "Bom dia, seguem as NF.\nAtenciosamente, {prestador}"
+    )
+    assert limpar_texto("NF Codigo do Cupom_ FULANA10", (), "{prestador}") is None
+    # nome da pessoa (MEI) aparece pela metade no texto
+    assert limpar_texto("Segue a nota da Maria Souza", ("MARIA SOUZA LIMA",), "{prestador}") == "Segue a nota da {prestador}"
+    assert limpar_texto("Olá!\nAtt,\nMaria", ("MARIA SOUZA LIMA",), "{prestador}") == "Olá!\nAtt,\n{prestador}"
+    # palavra de empresa não derruba texto comum
+    assert limpar_texto("Comissão de vendas {mes}/{ano}", ("BELEZA COMERCIO LTDA",)) == "Comissão de vendas {mes}/{ano}"
