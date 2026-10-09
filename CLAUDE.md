@@ -12,7 +12,10 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
 
 ## Regras que já custaram caro
 - **RLS**: todas as tabelas de dados têm FORCE ROW LEVEL SECURITY por `app.current_prestador_id` (vale só na transação).
-  Depois de `db.commit()` o contexto some: **monte a resposta ANTES do commit**. UPDATE de dados em migração não enxerga linhas.
+  Depois de `db.commit()` o contexto some: **monte a resposta ANTES do commit**. Rede de proteção (09/10/2026):
+  `definir_prestador_atual` guarda a empresa na sessão e o `after_begin` de `SessionLocal` reaplica em toda transação nova —
+  por isso a variável da RLS só se define por `definir_prestador_atual` (teste trava). A suíte troca commit por flush e não
+  pega esse erro: `tests/test_rls_depois_do_commit.py` faz commit de verdade. UPDATE de dados em migração não enxerga linhas.
 - Tabelas sem RLS de propósito: `tomador` (catálogo compartilhado), `usuario`, `usuario_prestador`, `sessao`, `lote_fila`.
 - A Sefin compara `dhEmi` sem converter fuso: emitir em America/Sao_Paulo menos 2 min.
 - O PDF (DANFSe) é gerado aqui (`app/services/danfse.py`); a API do governo foi suspensa.
@@ -113,6 +116,12 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
   `scripts/semear_catalogo.py` cria o que faltar no start.
 - Consulta de CNPJ: várias fontes em `cnpj_lookup._FONTES` (só passa pra próxima se a anterior está fora; 404 encerra).
   Formulário com consulta de CNPJ: trocar de CNPJ limpa o que veio da consulta anterior.
+- E-mail: formato só por `app/services/emails.py` (entrada nos schemas e `email.preparar_destinos` antes de enviar).
+  Inválido vira frase pra pessoa ou aviso no lote — nunca recusa crua do provedor.
+- Registros: no Railway saem em JSON no stdout com `level` (`app/registro.py`). Ação de rotina é `logger.info`; `warning`
+  pra algo que alguém deveria olhar; `error`/`exception` só pra defeito de verdade.
+- Endereços: o catch-all do frontend só devolve o app pras telas de `App.tsx` (lista `_ROTAS_DO_PAINEL` em main.py) — tela
+  nova fora de /app tem que entrar lá, senão dá 404.
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.
 - Segredos (Stripe, Resend, Google) só nas variáveis do Railway — nunca no código nem em conversa.
 

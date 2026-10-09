@@ -12,7 +12,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -30,6 +30,13 @@ rotas = APIRouter()
 class ConvidarRequest(BaseModel):
     email: str = Field(min_length=5, max_length=200)
     permissoes: list[str] = Field(default_factory=list, max_length=10)
+
+    @field_validator("email")
+    @classmethod
+    def _formato(cls, v: str) -> str:
+        from app.services.emails import conferir_um
+
+        return conferir_um(v, "e-mail do contador")
 
 
 class PermissoesRequest(BaseModel):

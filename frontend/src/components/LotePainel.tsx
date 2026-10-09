@@ -528,7 +528,7 @@ export function RelatorioLoteModal({ lote, onClose, onRefazer }: { lote: Lote; o
         {avisos.length > 0 && (
           <details className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
             <summary className="cursor-pointer select-none text-slate-700 dark:text-slate-200">
-              {avisos.length} nota{avisos.length === 1 ? "" : "s"} não {avisos.length === 1 ? "foi enviada" : "foram enviadas"} porque o vendedor não informou e-mail{" "}
+              {avisos.length} nota{avisos.length === 1 ? "" : "s"} não {avisos.length === 1 ? "foi enviada" : "foram enviadas"} por falta de um e-mail válido{" "}
               <span className="text-slate-400">— não é pendência sua</span>
             </summary>
             <ul className="mt-2 max-h-40 overflow-y-auto">
@@ -537,10 +537,19 @@ export function RelatorioLoteModal({ lote, onClose, onRefazer }: { lote: Lote; o
                   <Link to={`/app/nfse/${a.emissao_id}`} className="text-primary-700 hover:underline dark:text-primary-300">
                     {a.nome || "Nota"}
                   </Link>
+                  {a.aviso && <span className="block text-xs text-slate-500 dark:text-slate-400">{a.aviso}</span>}
                 </li>
               ))}
             </ul>
           </details>
+        )}
+        {lote.aviso_conta && (
+          <p className="rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
+            {lote.aviso_conta}{" "}
+            <Link to="/app/conta" className="font-semibold underline">
+              Abrir Minha conta
+            </Link>
+          </p>
         )}
         {erro && (
           <p role="alert" className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">

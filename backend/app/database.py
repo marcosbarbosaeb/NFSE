@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_settings
@@ -65,3 +65,27 @@ def definir_prestador_atual(db: Session, prestador_id: uuid.UUID) -> None:
         text("SELECT set_config('app.current_prestador_id', :prestador_id, true)"),
         {"prestador_id": str(prestador_id)},
     )
+    # Lembrado na sessão pra valer também nas transações seguintes (ver
+    # _reaplicar_prestador_atual abaixo).
+    db.info[CHAVE_PRESTADOR_ATUAL] = str(prestador_id)
+
+
+CHAVE_PRESTADOR_ATUAL = "prestador_atual"
+
+
+@event.listens_for(SessionLocal, "after_begin")
+def _reaplicar_prestador_atual(session: Session, transaction, connection) -> None:
+    """09/10/2026 — conserto da família de erro "invalid input syntax for type
+    uuid: ''" (05/10, POST /api/dps e /submeter): `set_config(..., true)` vale
+    só na transação; depois de um commit, qualquer leitura (um atributo que o
+    banco preencheu, como `atualizado_em`, um `db.refresh`, uma consulta nova)
+    abre outra transação sem a variável da RLS e quebra. Aqui, toda transação
+    nova da mesma sessão já começa com a empresa que a sessão estava usando —
+    em qualquer rota, não só nas que deram erro. (O lote em segundo plano
+    fazia isso à mão desde antes, em app/services/lotes.py.)"""
+    prestador_id = session.info.get(CHAVE_PRESTADOR_ATUAL)
+    if prestador_id:
+        connection.execute(
+            text("SELECT set_config('app.current_prestador_id', :prestador_id, true)"),
+            {"prestador_id": prestador_id},
+        )

@@ -176,18 +176,12 @@ def _numero_whatsapp(telefone: str | None) -> str | None:
 # --- opções da tela ---
 
 
-_RE_EMAIL = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$")
-
-
 def lista_emails(texto: str | list[str] | None) -> list[str]:
-    """"a@x.com; b@y.com, invalido" -> ["a@x.com", "b@y.com"] (sem repetir)."""
-    partes = texto if isinstance(texto, list) else re.split(r"[,;\s]+", texto or "")
-    vistos: list[str] = []
-    for parte in partes:
-        email = (parte or "").strip().lower()
-        if _RE_EMAIL.match(email) and email not in vistos:
-            vistos.append(email)
-    return vistos[:20]
+    """"a@x.com; b@y.com, invalido" -> ["a@x.com", "b@y.com"] (sem repetir).
+    O formato é o de app/services/emails.py (o mesmo que o serviço de e-mail aceita)."""
+    from app.services.emails import separar
+
+    return separar(texto)[0][:20]
 
 
 def destinos_email(emissao: Emissao, vinculo: PrestadorTomador | None) -> list[str]:

@@ -36,6 +36,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
+from app.services.emails import email_valido, normalizar as normalizar_email
 from app.services.municipios import codigo_por_nome
 
 _MESES_EN = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
@@ -253,7 +254,10 @@ def tomador_avulso(v: VendedorShopee) -> dict:
         "razao_social": v.razao_social,
         "endereco": v.endereco,
         "pais": v.pais,
-        "email": v.email,
+        # E-mail fora do formato (09/10/2026: o serviço de e-mail recusava o
+        # envio inteiro): a nota sai sem e-mail e o lote avisa qual era.
+        "email": normalizar_email(v.email) if email_valido(v.email) else None,
+        "email_invalido": (v.email or "").strip()[:200] if v.email and not email_valido(v.email) else None,
         "lojas": v.lojas,
     }
 

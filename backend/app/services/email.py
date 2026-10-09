@@ -51,6 +51,27 @@ class EmailCotaEsgotadaError(EmailEnvioError):
         self.mensal = mensal
 
 
+class EmailDestinoInvalidoError(EmailEnvioError):
+    """Nenhum destinatário com formato de e-mail válido (09/10/2026: o Resend
+    recusava com 422 "Invalid `to` field"). A mensagem já é a frase pra pessoa."""
+
+
+def preparar_destinos(destinatario: str | list[str], copia: list[str] | None) -> tuple[list[str], list[str]]:
+    """Só e-mails no formato que o provedor aceita. Destinatário inválido no
+    meio de outros válidos sai da lista; se não sobra nenhum, é erro claro
+    (nunca uma recusa crua do provedor)."""
+    from app.services.emails import frase_invalido, separar
+
+    para, ruins = separar(destinatario if isinstance(destinatario, list) else [destinatario])
+    if not para:
+        raise EmailDestinoInvalidoError(frase_invalido(ruins[0]) if ruins else "O e-mail ficou sem destinatário.")
+    cc, ruins_cc = separar(copia or [])
+    if ruins or ruins_cc:
+        # sem o endereço no registro (é dado de alguém): só a quantidade
+        logger.warning("E-mail enviado sem %d destinatário(s) com formato inválido", len(ruins) + len(ruins_cc))
+    return para, [c for c in cc if c not in para]
+
+
 class EmailSender:
     def enviar(
         self, *, destinatario: str | list[str], assunto: str, corpo_texto: str, corpo_html: str,
@@ -71,6 +92,7 @@ class EmailSenderConsole(EmailSender):
         remetente: str | None = None, responder_para: str | None = None,
         anexos: list[tuple[str, bytes]] | None = None, copia: list[str] | None = None,
     ) -> None:
+        destinatario, copia = preparar_destinos(destinatario, copia)
         logger.info("=== E-MAIL (modo console — RESEND_API_KEY não configurada) ===")
         logger.info("Para: %s", destinatario)
         if copia:
@@ -94,9 +116,10 @@ class EmailSenderResend(EmailSender):
         remetente: str | None = None, responder_para: str | None = None,
         anexos: list[tuple[str, bytes]] | None = None, copia: list[str] | None = None,
     ) -> None:
+        destinatario, copia = preparar_destinos(destinatario, copia)
         corpo = {
             "from": remetente or self._remetente,
-            "to": destinatario if isinstance(destinatario, list) else [destinatario],
+            "to": destinatario,
             "subject": assunto,
             "text": corpo_texto,
             "html": corpo_html,

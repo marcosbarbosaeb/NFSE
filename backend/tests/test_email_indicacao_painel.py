@@ -345,7 +345,10 @@ def test_destinatario_configuravel_copia_propria_e_troca_na_hora(client, db, pre
     assert enviados[-1]["copia"] == ["gerente@tomador.com", "eu@minhaempresa.com"]
 
     # só neste envio: outro destinatário, sem cópia
+    # e-mail fora do formato é recusado na entrada, com a frase pra pessoa (09/10/2026)
     r = client.post(f"/api/dps/{emissao.id}/enviar-email", json={"para": ["outro@x.com", "lixo"], "copia": []})
+    assert r.status_code == 422 and "“lixo” não é um e-mail válido" in r.text
+    r = client.post(f"/api/dps/{emissao.id}/enviar-email", json={"para": ["outro@x.com"], "copia": []})
     assert r.json()["status"] == "enviado"
     assert enviados[-1]["destinatario"] == ["outro@x.com"] and enviados[-1]["copia"] is None
 

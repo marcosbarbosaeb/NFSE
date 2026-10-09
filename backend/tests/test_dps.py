@@ -19,8 +19,8 @@ from app.fiscal.dps import DescricaoIncompletaError, montar_dps_xml, montar_id_d
 from build_dps import FORNECEDORES, build_dps_xml  # noqa: E402  (via sys.path em conftest.py)
 
 NS = "http://www.sped.fazenda.gov.br/nfse"
-SCHEMAS_DIR = Path(__file__).resolve().parents[3] / "integracao" / "schemas"
-OUTPUT_DIR = Path(__file__).resolve().parents[3] / "integracao" / "output"
+SCHEMAS_DIR = Path(__file__).resolve().parents[2] / "integracao" / "schemas"
+OUTPUT_DIR = Path(__file__).resolve().parents[2] / "integracao" / "output"
 
 _INPUTS = {
     "squad_epoca": dict(competencia="2026-08", valor=17654.40, n_dps=1, aliq_sn=12.5, ordem=None),

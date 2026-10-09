@@ -1063,6 +1063,8 @@ export interface Lote {
   resolvidas?: number
   /** Não é falha: nota que não tinha como ser enviada (vendedor sem e-mail). */
   avisos?: { emissao_id: string; nome: string; aviso: string }[]
+  /** O resumo do fim do lote não foi pro e-mail da conta (formato inválido). */
+  aviso_conta?: string | null
   /** Lote "drive": link da pasta no Google Drive. */
   link?: string | null
   /** Lote aguardando: o limite que estourou foi o do mês (não o do dia). */

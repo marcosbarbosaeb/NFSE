@@ -135,7 +135,9 @@ def test_convite_aceite_e_o_que_o_contador_enxerga(db, api, cenario):
 def test_regras_do_convite(db, api, cenario):
     da_dona = _entrar(api, "dona@cliente.example")
     assert da_dona.post("/api/contador/acessos", json={"email": "dona@cliente.example", "permissoes": []}).status_code == 409
-    assert da_dona.post("/api/contador/acessos", json={"email": "sem-arroba", "permissoes": []}).status_code == 409
+    # 09/10/2026: formato de e-mail conferido na entrada, com a frase pra pessoa
+    ruim = da_dona.post("/api/contador/acessos", json={"email": "sem-arroba", "permissoes": []})
+    assert ruim.status_code == 422 and "não é um e-mail válido" in ruim.text
     assert da_dona.post("/api/contador/acessos", json={"email": "contadora@escritorio.example", "permissoes": ["emitir", "inventada"]}).status_code == 200
     assert da_dona.post("/api/contador/acessos", json={"email": "contadora@escritorio.example", "permissoes": []}).status_code == 409
     convite = db.query(AcessoContador).one()

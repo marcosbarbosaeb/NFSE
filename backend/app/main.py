@@ -287,6 +287,10 @@ from app.services.vinculos import (
 )
 from app.tempo import hoje as hoje_br
 
+from app import registro as _registro
+
+# No Railway: registros em JSON com o nível certo (ver app/registro.py).
+_registro.configurar()
 logger = logging.getLogger("agenteana.api")
 app = FastAPI(title="Painel NFS-e — Raiana (Marco 5/6/9/10)")
 
@@ -2697,8 +2701,9 @@ def api_assinar_dps(emissao_id: uuid.UUID, request: Request, db: Session = Depen
         emissao = assinar_emissao(db, emissao, private_key, cert)
     except TransicaoInvalidaError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    resposta = _para_resposta(emissao)  # antes do commit (RLS vale só na transação)
     db.commit()
-    return _para_resposta(emissao)
+    return resposta
 
 
 @app.post("/api/dps/{emissao_id}/submeter", response_model=EmissaoResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
@@ -2805,8 +2810,9 @@ def api_cancelar_dps(
     except RuntimeError as exc:
         db.commit()  # erro_detalhe já foi gravado por cancelar() antes de levantar
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    resposta = _para_resposta(emissao)  # antes do commit (RLS vale só na transação)
     db.commit()
-    return _para_resposta(emissao)
+    return resposta
 
 
 @app.get("/api/dps/{emissao_id}/mensagem-pronta", response_model=MensagemProntaResponse, responses={404: {"model": ErroResponse}, 409: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
@@ -3116,7 +3122,8 @@ def api_gestao_excluir_conta(
         contas.apagar_empresa(db, alvo)
     finally:
         definir_prestador_atual(db, prestador_id)
-    logger.warning("Gestão: conta %s (%s) excluída por %s", alvo, nome, _usuario_logado(request, db).email)
+    # ação de rotina da Gestão, registrada pra consulta — não é erro nem alerta
+    logger.info("Gestão: conta %s (%s) excluída por %s", alvo, nome, _usuario_logado(request, db).email)
     db.commit()
     return {"ok": True, "excluida": nome}
 
@@ -3815,10 +3822,50 @@ def frontend_catch_all(caminho_completo: str):
     dar 404."""
     if caminho_completo.startswith("api/"):
         raise HTTPException(status_code=404, detail="Rota não encontrada.")
+    partes = [p for p in caminho_completo.split("/") if p]
+    # 09/10/2026: robôs pedindo /.env, /.git/config... recebiam 200 (a página do
+    # app). Nada que comece com "." existe aqui: 404 sem nem olhar o disco.
+    if any(p.startswith(".") for p in partes):
+        return _nao_encontrado()
     candidato = (_FRONTEND_DIST / caminho_completo).resolve()
     if _FRONTEND_DIST.is_dir() and candidato.is_file() and _FRONTEND_DIST.resolve() in candidato.parents:
         # Arquivos do build com hash no nome nunca mudam: cache longo.
         if caminho_completo.startswith("assets/"):
             return FileResponse(candidato, headers={"Cache-Control": "public, max-age=31536000, immutable"})
         return FileResponse(candidato)
-    return _index_html()
+    if _rota_do_painel(partes):
+        return _index_html()
+    # Endereços antigos do painel (antes de ele morar em /app): leva pro novo.
+    if partes and partes[0] in _ROTAS_ANTIGAS_DO_PAINEL:
+        return RedirectResponse("/app/" + "/".join(partes), status_code=301)
+    return _nao_encontrado()
+
+
+# Telas do frontend (frontend/src/App.tsx). Fora delas e dos arquivos do build,
+# o endereço não existe — 404 de verdade (antes era sempre 200 com a página do app).
+_ROTAS_DO_PAINEL = {"privacidade", "termos", "entrar", "cadastro", "simulacao", "confirmar-email"}
+_ROTAS_ANTIGAS_DO_PAINEL = {
+    "nfse", "tomadores", "calendario", "financeiro", "recebimentos", "despesas", "empresa", "configuracoes",
+    "conta", "ajuda", "novidades", "indique", "pasta", "atendimentos", "gestao",
+}
+
+
+def _rota_do_painel(partes: list[str]) -> bool:
+    if not partes:
+        return True
+    if partes[0] == "app":  # dentro do painel quem decide é o próprio app
+        return True
+    if partes[0] == "parceira":
+        return len(partes) == 2
+    return len(partes) == 1 and partes[0] in _ROTAS_DO_PAINEL
+
+
+def _nao_encontrado() -> Response:
+    pagina = (
+        '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<meta name="robots" content="noindex"><title>Página não encontrada — Agente Ana</title></head>'
+        '<body style="font-family:system-ui,Arial,sans-serif;text-align:center;padding:64px 16px;color:#1e2a5e">'
+        '<h1 style="font-size:22px">Página não encontrada</h1>'
+        '<p>Esse endereço não existe por aqui.</p><p><a href="/">Ir para o início</a></p></body></html>'
+    )
+    return Response(content=pagina, status_code=404, media_type="text/html; charset=utf-8")

@@ -5,7 +5,23 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
+from app.services import emails as _emails
 from app.services.municipios import rotulo_municipio
+
+# Formato de e-mail conferido na entrada (09/10/2026 — ver app/services/emails.py).
+_ONDE_EMAIL = {
+    "email_contato": "e-mail de contato", "email_para": "Para", "email_copia": "Cópia",
+    "email_geral_para": "e-mails gerais", "para": "Para", "copia": "Cópia",
+}
+
+
+def _conferir_emails(cls, valor, info):
+    onde = _ONDE_EMAIL.get(info.field_name)
+    if isinstance(valor, list):
+        for item in valor:
+            _emails.conferir_lista(item, onde)
+        return valor
+    return _emails.conferir_lista(valor, onde)
 
 
 class VinculoResumo(BaseModel):
@@ -539,6 +555,8 @@ class CadastroContadorRequest(BaseModel):
     escritorio: str | None = Field(default=None, max_length=200)
     whatsapp: str = Field(min_length=8, max_length=25, description="WhatsApp com DDD")
 
+    _conferir_formato_email = field_validator("email")(_conferir_emails)
+
 
 class CadastroRequest(BaseModel):
     """Marco 15 — formulário público de cadastro (/cadastro no frontend).
@@ -570,6 +588,8 @@ class CadastroRequest(BaseModel):
     modo_teste: bool = False
     # Qual produto a pessoa veio contratar (05/10/2026): /cadastro?produto=financeiro
     produto: Literal["emissor", "financeiro", "ambos"] = "emissor"
+
+    _conferir_formato_email = field_validator("email")(_conferir_emails)
 
 
 class CadastroResponse(BaseModel):
@@ -729,6 +749,8 @@ class EmailExtra(BaseModel):
     mensagem: str | None = Field(default=None, max_length=5000)
     anexos: str | None = Field(default=None, pattern=r"^(pdf_xml|pdf|xml)$")
 
+    _conferir_formato_email = field_validator("email")(_conferir_emails)
+
 
 class VinculoCriarRequest(BaseModel):
     """Cobre os dois caminhos da tela de Tomadores com o MESMO request:
@@ -772,6 +794,8 @@ class VinculoCriarRequest(BaseModel):
             raise ValueError("Informe exatamente um dos dois: tomador_id (existente) ou novo_tomador (novo).")
         return self
 
+    _conferir_formato_email = field_validator("email_contato", "email_copia", "email_para")(_conferir_emails)
+
 
 class VinculoAtualizarRequest(BaseModel):
     """Todos os campos opcionais — PATCH parcial: só o que vier preenchido
@@ -805,6 +829,8 @@ class VinculoAtualizarRequest(BaseModel):
     descricao_meses_atras: int | None = Field(default=None, ge=0, le=12)
     portal_url: str | None = Field(default=None, max_length=400)
     sem_nota: bool | None = None
+
+    _conferir_formato_email = field_validator("email_contato", "email_copia", "email_para")(_conferir_emails)
 
 
 class PrestadorResponse(BaseModel):
@@ -867,6 +893,8 @@ class PreferenciasPrestadorRequest(BaseModel):
     email_geral_assunto: str | None = Field(default=None, max_length=300)
     email_geral_mensagem: str | None = Field(default=None, max_length=5000)
     email_geral_anexos: str | None = Field(default=None, pattern=r"^(pdf_xml|pdf|xml)$")
+
+    _conferir_formato_email = field_validator("email_geral_para")(_conferir_emails)
 
 
 class CodigoModeloResponse(BaseModel):
@@ -1253,6 +1281,8 @@ class MensagemSuporteRequest(BaseModel):
     # Campo escondido na tela: robô preenche, gente não.
     site: str | None = None
 
+    _conferir_formato_email = field_validator("email")(_conferir_emails)
+
 
 class IndicadoResponse(BaseModel):
     nome: str
@@ -1267,6 +1297,8 @@ class ParceiroRequest(BaseModel):
     comissao_pct: float = Field(ge=0, le=100)
     desconto_1_mes_pct: int = Field(default=0, ge=0, le=100)
 
+    _conferir_formato_email = field_validator("email")(_conferir_emails)
+
 
 class ParceiroAtualizarRequest(BaseModel):
     nome: str | None = Field(default=None, min_length=2, max_length=120)
@@ -1274,6 +1306,8 @@ class ParceiroAtualizarRequest(BaseModel):
     comissao_pct: float | None = Field(default=None, ge=0, le=100)
     desconto_1_mes_pct: int | None = Field(default=None, ge=0, le=100)
     ativo: bool | None = None
+
+    _conferir_formato_email = field_validator("email")(_conferir_emails)
 
 
 class ParceiroPagarRequest(BaseModel):
@@ -1305,6 +1339,8 @@ class EnviarEmailRequest(BaseModel):
     salvar_padrao: bool = False
     # Quais dos outros destinatários do tomador também recebem (None = todos).
     extras: list[str] | None = Field(default=None, max_length=5)
+
+    _conferir_formato_email = field_validator("para", "copia")(_conferir_emails)
 
 
 class WhatsappRequest(BaseModel):
@@ -1355,6 +1391,8 @@ class LoteResponse(BaseModel):
     pendentes: int = 0
     resolvidas: int = 0
     avisos: list[dict] = []
+    # O resumo do fim do lote não pôde ir pro e-mail da conta (formato inválido).
+    aviso_conta: str | None = None
     link: str | None = None
     cota_mensal: bool = False
 
@@ -1367,6 +1405,8 @@ class PacoteEmailRequest(BaseModel):
     vinculo_id: uuid.UUID | None = None
     competencia: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
     mensagem: str | None = Field(default=None, max_length=2000)
+
+    _conferir_formato_email = field_validator("para")(_conferir_emails)
 
 
 class PreviaLoteResponse(BaseModel):
@@ -1463,12 +1503,15 @@ class EmitenteAtualizarRequest(BaseModel):
     regime_apuracao_sn: str | None = Field(default=None, pattern=r"^[123]$")
     regime_especial_trib: str | None = Field(default=None, pattern=r"^[0-6]$")
 
+    _conferir_formato_email = field_validator("email")(_conferir_emails)
 
 
 class EnviarGeralRequest(BaseModel):
     para: list[str] | None = Field(default=None, max_length=20)
     assunto: str | None = Field(default=None, max_length=300)
     texto: str | None = Field(default=None, max_length=5000)
+
+    _conferir_formato_email = field_validator("para")(_conferir_emails)
 
 
 class MarcarEnviadaRequest(BaseModel):

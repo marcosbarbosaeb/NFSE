@@ -255,10 +255,12 @@ def test_formas_de_envio_e_destinatarios_com_email_proprio(client, db, vinculo_t
         "email_extras": [
             {"email": "contador@c.com", "rotulo": "Contador", "assunto": "Nota {competencia} pra lançar", "mensagem": "Segue a nota de {valor}."},
             {"email": "eu@t.com"},
-            {"email": "não é e-mail"},
         ],
     })
     assert r.status_code == 200, r.text
+    # e-mail fora do formato: recusado com a frase pra pessoa (09/10/2026)
+    ruim = client.patch(f"/api/vinculos/{vinculo_teste.id}", json={"email_extras": [{"email": "não é e-mail"}]})
+    assert ruim.status_code == 422 and "não é um e-mail válido" in ruim.text
     assert r.json()["envio_formas"] == ["email", "download"] and r.json()["envio_canal"] == "email"
     assert [x["email"] for x in r.json()["email_extras"]] == ["contador@c.com", "eu@t.com"]
     assert client.patch(f"/api/vinculos/{vinculo_teste.id}", json={"envio_formas": ["pombo"]}).status_code == 422
@@ -504,7 +506,7 @@ def test_pacote_zip_por_conteudo_e_por_email(client, db, vinculo_teste, pipeline
     assert r.status_code == 200, r.text
     assert r.json()["notas"] == 2 and pipeline.enviados[-1]["destinatario"] == ["contador@c.com"]
     assert pipeline.enviados[-1]["anexos"][0][0] == "notas_2026-09.zip" and len(pipeline.enviados) == 1  # um e-mail só
-    assert client.post("/api/pacote/email", json={"para": ["nada"], "competencia": "2026-09"}).status_code == 400
+    assert client.post("/api/pacote/email", json={"para": ["nada"], "competencia": "2026-09"}).status_code == 422
 
 
 def test_google_drive_conectar_e_subir_as_notas(client, db, prestador_teste, vinculo_teste, pipeline, monkeypatch):

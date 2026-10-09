@@ -241,6 +241,7 @@ def criar_rascunho(
             },
             "pais": tomador_avulso.get("pais"),
             "email": tomador_avulso.get("email"),
+            "email_invalido": tomador_avulso.get("email_invalido"),
             "lojas": tomador_avulso.get("lojas") or [],
             "avulso": True,
         })

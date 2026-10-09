@@ -58,7 +58,33 @@ Modo demonstração (pra gravar vídeos de anúncio) em cima da simulação, sem
   "Atenciosamente/Att/Cordialmente/Abraços", pedaços do nome da empresa e dos usuários (duplas de palavras; primeiro
   nome em razão social de pessoa) e cupons de desconto. Migração `e1c3d5f7a9b2` limpa o que já estava gravado.
 
-Migração: `e1c3d5f7a9b2` (só dados do catálogo). Variáveis novas: nenhuma.
+- **Conserto 1 — leitura depois do commit (erro 500 "invalid input syntax for type uuid: ''")**: em 05/10 a produção
+  teve 6 desses (POST /api/dps às 02:00 UTC e /dps/{id}/submeter às 12:17–12:46 UTC), todos em código antigo — o
+  /api/dps já tinha sido corrigido em e9e1022 e o /submeter em 9ed781d; nenhum desde então. Conserto da família inteira:
+  `definir_prestador_atual` guarda a empresa em `session.info` e um `after_begin` do `SessionLocal`
+  (`database._reaplicar_prestador_atual`) reaplica a variável da RLS em toda transação nova da mesma sessão — qualquer
+  leitura pós-commit, em qualquer rota, volta a funcionar. Revisão: rodei a suíte inteira com um vigia de leitura
+  pós-commit; das rotas, só o cancelamento (`/dps/{id}/cancelar`) ainda montava a resposta depois do commit (e o
+  `/assinar` também, sem gatilho hoje): os dois passaram a montar antes. Teste novo
+  `tests/test_rls_depois_do_commit.py`: commit DE VERDADE (fora da transação compartilhada da suíte), prova que sem o
+  conserto a armadilha aparece, passeia pelas rotas que gravam com commits reais e trava a variável da RLS a um só lugar.
+- **Conserto 2 — e-mail com formato inválido**: `services/emails.py` (regra única, a que o Resend aceita). Entrada:
+  validadores nos pedidos (tomador: contato/Para/Cópia/extras; e-mails gerais; envio avulso; pacote; emitente;
+  cadastro; convite do contador; suporte; parceira) com a frase pra pessoa (`formatarErro` mostra só a frase).
+  Relatório da Shopee: e-mail inválido do vendedor vira `email_invalido` no retrato da nota e aviso no lote. Envio:
+  `email.preparar_destinos` tira o inválido e, sem nenhum válido, levanta `EmailDestinoInvalidoError` (frase clara)
+  antes de chamar o provedor. Aviso de fim de lote com e-mail da conta inválido: não chama o provedor, grava
+  `opcoes.aviso_conta` e a tela do relatório mostra com link pra Minha conta.
+- **Conserto 3 — níveis no Railway** (`app/registro.py`): no Railway (variável `RAILWAY_ENVIRONMENT*` ou `LOG_JSON`),
+  uma linha JSON por registro no stdout com `level` (info/warn/error); traceback inteiro dentro do registro do erro;
+  uvicorn usa o mesmo formato. Alembic escreve no stdout (`alembic.ini`). "Gestão: conta ... excluída" virou `info`.
+- **Conserto 4 — endereços desconhecidos**: conferido em produção — /.env, /.git/config, /wp-json/..., /test/phpinfo.php,
+  /robots.txt e /sitemap.xml devolviam 200 com a página do app (index.html, 1.801 bytes), nenhum arquivo de verdade.
+  Agora o catch-all só devolve o app pras telas de `App.tsx` (/, /app/*, /entrar, /cadastro, /simulacao,
+  /confirmar-email, /privacidade, /termos, /parceira/<token>) e pros arquivos do build; pedaço que começa com "."
+  é 404 sem olhar o disco; o resto é 404 com página simples (noindex). Endereço antigo do painel sem /app → 301.
+
+Migração: `e1c3d5f7a9b2` (só dados do catálogo). Variáveis novas: nenhuma (o formato de registro liga sozinho no Railway).
 
 Conferir depois de publicar: `/api/versao` = 2026.10.6; `/simulacao?cenario=beleza&gravacao=1` sem faixa, aviso e dicas,
 e Nova emissão pra Bella Beauty em um clique até "Enviada"; Tomadores › Adicionar com "Shopee" no catálogo e um CNPJ

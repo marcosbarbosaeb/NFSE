@@ -23,7 +23,7 @@ VERSOES: list[dict] = [
     {
         "versao": "2026.10.6",
         "data": "2026-10-08",
-        "resumo": "Gerar a nota num clique só, Visão geral contando só notas autorizadas e consulta de CNPJ mais firme.",
+        "resumo": "Gerar a nota num clique só, Visão geral contando só notas autorizadas, consulta de CNPJ mais firme e e-mail conferido.",
         "itens": [
             {"perfil": "empresa", "titulo": "“Gerar e fazer tudo” num clique só", "link": "/app/nfse",
              "texto": "Antes o primeiro clique só conferia os dados e o botão mudava de lugar. Agora um clique confere, gera, assina, "
@@ -41,6 +41,16 @@ VERSOES: list[dict] = [
             {"perfil": "todos", "titulo": "Simulação mais completa", "link": "/simulacao",
              "texto": "Na simulação, “Gerar e fazer tudo” vai até o fim (de mentira: nada sai pra Receita nem pra ninguém) e as notas de "
                       "exemplo já aparecem autorizadas e entregues, com os números da Visão geral e do financeiro andando juntos."},
+            {"perfil": "empresa", "titulo": "Gerar, assinar e cancelar a nota sem erro no meio",
+             "texto": "Em alguns casos a nota era gravada, mas a tela mostrava erro na hora de devolver o resultado (gerar, enviar à "
+                      "prefeitura, cancelar). Isso foi corrigido de uma vez pra todas as telas, não só pras que deram erro."},
+            {"perfil": "todos", "titulo": "E-mail errado vira aviso, não erro",
+             "texto": "Eu confiro o formato do e-mail quando você cadastra (tomador, cópias, e-mails gerais, convite do contador) e "
+                      "digo qual está errado. No lote, vendedor com e-mail inválido no relatório aparece como aviso, e se o e-mail da "
+                      "sua conta estiver errado o relatório do lote te avisa pra corrigir em Minha conta."},
+            {"perfil": "todos", "titulo": "Endereço que não existe mostra “Página não encontrada”",
+             "texto": "Antes, qualquer endereço digitado errado abria o painel. Agora aparece “Página não encontrada”, com o link "
+                      "pro início. Links antigos do painel (sem o /app) levam pro lugar certo."},
         ],
     },
     {

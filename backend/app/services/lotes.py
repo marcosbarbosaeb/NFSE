@@ -67,6 +67,20 @@ def _tem_email(e: Emissao) -> bool:
     return bool(destinos_email(e, e.vinculo))
 
 
+def _motivo_sem_email(e: Emissao) -> str:
+    """Por que esta nota não tem pra onde mandar (aviso, não falha)."""
+    from app.services.emails import separar
+
+    if e.tomador_documento:
+        ruim = (e.tomador_snapshot or {}).get("email_invalido")
+        return f"O e-mail do vendedor no relatório (“{ruim}”) não é válido." if ruim else "O vendedor não informou e-mail no relatório."
+    v = e.vinculo
+    escritos = separar([v.email_para or "", v.email_contato or ""])[1] if v is not None else []
+    if escritos:
+        return f"O e-mail cadastrado no tomador (“{escritos[0]}”) não é válido. Corrija em Tomadores."
+    return "Tomador sem e-mail cadastrado."
+
+
 def _elegivel(acao: str, e: Emissao, ja_enviada: bool, passos: tuple[str, ...] = PASSOS) -> bool:
     if acao == "drive":
         return e.estado == "confirmado"
@@ -317,7 +331,7 @@ def _executor(db: Session, lote: LoteAcao, prestador_id: uuid.UUID, base_url: st
         if not _tem_email(e):
             # Cadastro sem e-mail não é erro do sistema nem falha do lote.
             contar("sem_email")
-            avisar(e, "O vendedor não informou e-mail no relatório." if e.tomador_documento else "Tomador sem e-mail cadastrado.")
+            avisar(e, _motivo_sem_email(e))
             return None
         try:
             envio = enviar_email(db, e, prestador_id, base_url)
@@ -570,6 +584,21 @@ def _avisar_por_email(db: Session, lote: LoteAcao, prestador_id: uuid.UUID, base
         prestador = db.get(Prestador, prestador_id)
         if usuario is None or not usuario.email:
             return
+        from app.services.emails import email_valido
+
+        if not email_valido(usuario.email):
+            # 09/10/2026: antes o serviço de e-mail recusava (422) e virava erro no
+            # registro. Agora o aviso aparece no relatório do lote, na tela.
+            logger.warning("Aviso de fim do lote %s não enviado: e-mail da conta com formato inválido", lote.id)
+            lote.opcoes = {
+                **(lote.opcoes or {}),
+                "aviso_conta": (
+                    f"Não consegui te mandar o resumo deste lote por e-mail: o e-mail da sua conta (“{usuario.email}”) "
+                    "não é um endereço válido. Corrija em Minha conta."
+                ),
+            }
+            db.commit()
+            return
         linhas = texto_do_relatorio(lote)
         falhas = (
             f"\n{lote.falhas} nota(s) precisam da sua atenção — o motivo de cada uma está no relatório."
@@ -589,8 +618,14 @@ def _avisar_por_email(db: Session, lote: LoteAcao, prestador_id: uuid.UUID, base
             corpo_texto=texto,
             corpo_html="<p>" + html.escape(texto).replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>",
         )
-    except Exception:  # noqa: BLE001
-        logger.exception("Não deu pra avisar por e-mail o fim do lote %s", lote.id)
+    except Exception as exc:  # noqa: BLE001
+        from app.services.email import EmailEnvioError
+
+        if isinstance(exc, EmailEnvioError):
+            # recusa do serviço de e-mail: não é defeito do sistema
+            logger.warning("Aviso de fim do lote %s não saiu por e-mail: %s", lote.id, exc)
+        else:
+            logger.exception("Não deu pra avisar por e-mail o fim do lote %s", lote.id)
 
 
 def falhas_resolvidas(db: Session, lote: LoteAcao) -> set[str]:
@@ -635,6 +670,7 @@ def resumo(lote: LoteAcao, db: Session | None = None) -> dict:
         # O que ainda está pendente de verdade (falhas menos as já resolvidas).
         "pendentes": len(erros), "resolvidas": len(lote.erros) - len(erros),
         "avisos": (opcoes.get("avisos") or [])[-200:],
+        "aviso_conta": opcoes.get("aviso_conta"),
         "link": opcoes.get("link"),
         "cota_mensal": bool(opcoes.get("cota_mensal")),
     }

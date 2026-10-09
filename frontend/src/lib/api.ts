@@ -23,6 +23,8 @@ export function formatarErro(detail: unknown): string {
   if (Array.isArray(detail)) {
     return detail
       .map((e) => {
+        // Validação escrita pra pessoa (ValueError no servidor): a frase já basta.
+        if (typeof e?.msg === "string" && e.msg.startsWith("Value error, ")) return e.msg.slice("Value error, ".length)
         const campo = Array.isArray(e?.loc) ? e.loc[e.loc.length - 1] : "campo"
         return `${campo}: ${e?.msg ?? "inválido"}`
       })
