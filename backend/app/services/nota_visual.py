@@ -143,7 +143,12 @@ def montar_nota_visual(emissao: Emissao) -> dict:
 
     return {
         "estado": emissao.estado,
-        "estado_label": ESTADO_LABEL.get(emissao.estado, emissao.estado),
+        # Homologação nunca é "nota fiscal válida" (08/10/2026: a tela dizia as duas coisas).
+        "estado_label": (
+            "Confirmada pela prefeitura (ambiente de teste)"
+            if emissao.estado == "confirmado" and ambiente == "2"
+            else ESTADO_LABEL.get(emissao.estado, emissao.estado)
+        ),
         "ambiente": ambiente,
         "ambiente_label": AMBIENTE_LABEL.get(ambiente, ambiente),
         "id_dps": inf.get("Id") if inf is not None else None,

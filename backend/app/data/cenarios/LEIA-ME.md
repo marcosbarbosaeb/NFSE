@@ -7,9 +7,10 @@ os dados e abra `/simulacao?cenario=<novo nome>` — nada de mexer em cadastro.
 - `empresa`: a empresa que emite (nome, cidade pelo código IBGE, endereço, alíquota).
 - `tomadores`: pra quem ela emite. **CNPJ sempre com os dois últimos dígitos "00"
   e verificador errado** (o teste confere): assim nunca é uma empresa de verdade.
-  `dia` = dia de gerar a nota; `dias_receber` = prazo de pagamento.
+  `dia` = dia de gerar a nota (número, `"hoje"` ou `"hoje+3"` — assim a gravação nunca começa com nota atrasada); `dias_receber` = prazo de pagamento.
   `valores` = o valor de cada mês (`"-1"` = mês passado, `"0"` = este mês);
   sem `valores`, usa `base` crescendo `variacao_por_mes` a cada mês.
+  `cod_municipio`, `logradouro`, `numero`, `bairro`, `cep` = endereço (inventado) do tomador.
   `recebidos` = meses já pagos. `inativo: true` = tomador desligado.
   `sem_nota_no_mes: true` = não gera a nota deste mês (pra mostrar o "Gerar").
 - `despesas`: gastos por mês (`mes` como acima).

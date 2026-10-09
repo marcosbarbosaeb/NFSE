@@ -21,6 +21,7 @@ em tudo sem cadastrar CNPJ, sem certificado e sem risco:
   tabela `prestador` tem RLS por id, a busca das contas vencidas parte de
   `usuario` (sem RLS), pelo domínio fixo de e-mail das contas demo.
 """
+import calendar
 import datetime
 import json
 import re
@@ -121,7 +122,28 @@ def _tomador_demo(db: Session, dados: dict) -> Tomador:
         )
         db.add(tomador)
         db.flush()
+    elif tomador.status != "aprovado":
+        # Tomador de simulação já criado por outra conta: o cenário manda
+        # (mudou o endereço ou o nome no arquivo, vale na próxima abertura).
+        tomador.razao_social = dados["razao_social"]
+        for campo in ("cod_municipio", "logradouro", "numero", "bairro", "cep"):
+            if dados.get(campo):
+                setattr(tomador, campo, dados[campo])
+        db.flush()
     return tomador
+
+
+def _dia(valor, hoje: datetime.date) -> int | None:
+    """Dia de gerar a nota no cenário: número fixo, "hoje" ou "hoje+N" (pra
+    gravação começar sem nada atrasado — 08/10/2026). Nunca passa do fim do mês."""
+    if valor is None or isinstance(valor, int):
+        return valor
+    texto = str(valor).strip().lower().replace(" ", "")
+    m = re.fullmatch(r"hoje(?:\+(\d{1,2}))?", texto)
+    if not m:
+        return int(texto)
+    ultimo = calendar.monthrange(hoje.year, hoje.month)[1]
+    return min(hoje.day + int(m.group(1) or 0), ultimo)
 
 
 def _valores_do_tomador(cenario: dict, dados: dict, indice: int, hoje: datetime.date) -> dict[int, float]:
@@ -177,6 +199,7 @@ def criar_conta_demo(db: Session, cenario: str | None = None) -> Usuario:
 
     aliquota = float(empresa.get("aliquota", 6))
     for indice, dados in enumerate(dados_cenario.get("tomadores") or []):
+        dados = {**dados, "dia": _dia(dados.get("dia"), hoje)}
         tomador = _tomador_demo(db, dados)
         email = dados.get("email") or "financeiro@exemplo.com.br"
         vinculo = PrestadorTomador(

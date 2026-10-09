@@ -33,6 +33,14 @@ Modo demonstração (pra gravar vídeos de anúncio) em cima da simulação, sem
 - **Tela limpa** (`lib/gravacao.ts`): `?gravacao=1` (em `/simulacao` ou qualquer tela; `?gravacao=0` desliga; guardado
   na aba) esconde a faixa "Modo simulação", o aviso amarelo de homologação, o "· teste" da lista e as dicas do tutorial.
   Só vale com `usuario.demo`. Na simulação, "Ao gerar" vem com os três passos marcados.
+  Também tira o "(ambiente de teste)" do selo e a coluna Ambiente da página da nota.
+- **/simulacao logado numa conta de verdade**: pergunta "Sair e abrir a simulação" (antes voltava pro painel sem
+  avisar). Cada abertura cria uma simulação nova, com os dados do cenário do zero.
+- **Cenário sem atraso**: `dia` aceita `"hoje"` e `"hoje+N"` (`demo._dia`, nunca passa do fim do mês); na beleza a
+  Bella Beauty vence hoje. Endereço inventado por tomador no cenário (atualiza o tomador de simulação já existente).
+- **Página da nota**: homologação confirmada diz "Confirmada pela prefeitura (ambiente de teste)", nunca "nota fiscal
+  válida" (`nota_visual`).
+- **Visão geral, "Precisa da sua atenção"**: fundo escuro no tema escuro (o título ficava branco sobre amarelo claro).
 - **Um clique em "Gerar e fazer tudo"** (`NfsePage` › `NovaEmissaoModal`): o botão não fica mais desabilitado enquanto
   confere; o clique confere de novo se os dados mudaram e só para em erro. Avisos amarelos não pedem mais a caixinha.
 - **Visão geral**: "Emitidas" e "Faturado no mês" só com nota `confirmado` (`dashboard.ESTADOS_FATURADOS`); recusada ou a

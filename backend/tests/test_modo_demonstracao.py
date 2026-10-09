@@ -126,3 +126,22 @@ def test_leia_me_cita_os_campos_do_cenario():
     campos = set(json.loads((demo.PASTA_CENARIOS / "beleza.json").read_text(encoding="utf-8")))
     for campo in campos - {"titulo", "meses_passados", "variacao_por_mes"}:
         assert f"`{campo}`" in texto
+
+
+def test_cenario_beleza_comeca_sem_nota_atrasada(db):
+    """08/10/2026: a gravação abria com "o dia de gerar a nota de Bella Beauty era 05/10"."""
+    usuario = criar_conta_demo(db, "beleza")
+    vinculos = {v.apelido: v for v in db.query(PrestadorTomador).filter_by(prestador_id=usuario.prestador_id)}
+    assert vinculos["Bella Beauty"].dia_limite_emissao == hoje().day
+    assert all(v.dia_limite_emissao >= hoje().day for v in vinculos.values())
+
+
+def test_dia_relativo_do_cenario():
+    import datetime
+
+    from app.services.demo import _dia
+
+    assert _dia(5, datetime.date(2026, 10, 9)) == 5
+    assert _dia("hoje", datetime.date(2026, 10, 9)) == 9
+    assert _dia("hoje+4", datetime.date(2026, 10, 9)) == 13
+    assert _dia("hoje+12", datetime.date(2026, 2, 25)) == 28  # nunca passa do fim do mês

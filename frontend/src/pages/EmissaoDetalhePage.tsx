@@ -27,6 +27,7 @@ import { Card } from "../components/ui/Card"
 import { FieldWrap } from "../components/ui/Field"
 import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
+import { useModoGravacao } from "../lib/gravacao"
 import { formatBRL } from "../lib/format"
 import type { CanalEnvio, ConferenciaNota, Emissao, Envio, NotaVisual, OpcoesEnvio, PontoConferencia, PreviaEmail, ProximaNota, StatusDrive, VinculoResumo } from "../lib/types"
 
@@ -55,6 +56,8 @@ function badgeStatusEnvio(status: string) {
 }
 
 export function EmissaoDetalhePage() {
+  // Gravando vídeo na simulação: sem as marcas de ambiente de teste (lib/gravacao.ts).
+  const gravacao = useModoGravacao()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
@@ -380,7 +383,7 @@ export function EmissaoDetalhePage() {
           </h1>
         </div>
         <Badge variant={nota.estado === "erro" ? "danger" : nota.estado === "rascunho" ? "neutral" : "success"}>
-          {nota.estado_label}
+          {gravacao ? nota.estado_label.replace(/ \(ambiente de teste\)$/, "") : nota.estado_label}
         </Badge>
       </div>
 
@@ -416,10 +419,12 @@ export function EmissaoDetalhePage() {
             <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">Competência</p>
             <p className="font-medium text-slate-800 dark:text-slate-200">{nota.competencia}</p>
           </div>
-          <div className="text-right">
-            <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">Ambiente</p>
-            <p className="font-medium text-slate-800 dark:text-slate-200">{nota.ambiente_label ?? "—"}</p>
-          </div>
+          {!gravacao && (
+            <div className="text-right">
+              <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">Ambiente</p>
+              <p className="font-medium text-slate-800 dark:text-slate-200">{nota.ambiente_label ?? "—"}</p>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
