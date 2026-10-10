@@ -401,6 +401,11 @@ export function LandingPage() {
                 ou teste antes num ambiente de simulação, sem cadastro
               </LinkEmissor>
             )}
+            {!logado && (
+              <LinkEmissor to="/cadastro?tipo=contador" className="mt-2 text-sm font-medium text-slate-500 underline-offset-4 hover:text-accent-600 hover:underline dark:text-slate-400">
+                É contador(a)? Crie a sua conta de contador
+              </LinkEmissor>
+            )}
           </div>
         </section>
       </main>

@@ -48,7 +48,7 @@ export function OrientacaoCertificado({ className = "" }: { className?: string }
             <span className="sr-only"> (abre em outra aba)</span>
           </a>
         )}
-        <BotaoSuporte logado className={`${LINK} border border-primary-300 text-primary-700 hover:bg-primary-50 dark:border-primary-700 dark:text-primary-200 dark:hover:bg-primary-900/40`}>
+        <BotaoSuporte logado inicio="equipe" className={`${LINK} border border-primary-300 text-primary-700 hover:bg-primary-50 dark:border-primary-700 dark:text-primary-200 dark:hover:bg-primary-900/40`}>
           Falar com a gente
         </BotaoSuporte>
       </div>

@@ -216,6 +216,7 @@ export function GradeDePlanos({
           </p>
           <BotaoSuporte
             logado
+            inicio="equipe"
             className="mt-3 inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
           >
             <MessagesSquare size={15} aria-hidden="true" /> Fale com a nossa equipe

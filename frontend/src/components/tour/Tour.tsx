@@ -79,13 +79,18 @@ export function BalaoDaAna({
   const vh = window.innerHeight
   const largura = Math.min(LARGURA_BALAO, vw - 2 * MARGEM)
   let estiloBalao: CSSProperties
+  const ALTURA_MINIMA = 220
   if (caixa) {
+    // 2026.10.7: com um alvo alto (o menu inteiro, por exemplo) o balão saía da
+    // tela e o "Próximo" ficava inalcançável. Agora: embaixo, em cima, ao lado
+    // ou no centro — sempre dentro da tela.
     const abaixo = caixa.top + caixa.height + MARGEM
-    const cabeAbaixo = abaixo + 200 < vh
     const left = Math.min(Math.max(MARGEM, caixa.left + caixa.width / 2 - largura / 2), vw - largura - MARGEM)
-    estiloBalao = cabeAbaixo
-      ? { top: abaixo, left, width: largura }
-      : { bottom: Math.max(MARGEM, vh - caixa.top + MARGEM), left, width: largura }
+    const aoLado = caixa.left + caixa.width + MARGEM
+    if (abaixo + ALTURA_MINIMA < vh) estiloBalao = { top: abaixo, left, width: largura }
+    else if (caixa.top - MARGEM > ALTURA_MINIMA) estiloBalao = { bottom: vh - caixa.top + MARGEM, left, width: largura }
+    else if (aoLado + largura + MARGEM <= vw) estiloBalao = { top: "50%", left: aoLado, width: largura, transform: "translateY(-50%)" }
+    else estiloBalao = { top: "50%", left: "50%", width: largura, transform: "translate(-50%, -50%)" }
   } else {
     estiloBalao = { top: "50%", left: "50%", width: largura, transform: "translate(-50%, -50%)" }
   }
@@ -135,7 +140,10 @@ export function TourDaPagina() {
     setPassos(null)
     // Durante o passeio das novidades as dicas da tela esperam (senão abririam as duas juntas).
     if (!tour || !tutorialAtivo() || jaViu(tour.tela) || passeioEmAndamento()) return
-    const t = setTimeout(abrir, 700) // espera a tela carregar os dados
+    // Confere de novo na hora de abrir: a conta pode ter dito que esta tela já foi vista.
+    const t = setTimeout(() => {
+      if (tutorialAtivo() && !jaViu(tour.tela) && !passeioEmAndamento()) abrir()
+    }, 700) // espera a tela carregar os dados
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname])
@@ -145,9 +153,10 @@ export function TourDaPagina() {
     () =>
       aoMudarTutorial((e) => {
         if ((e as CustomEvent).detail === "abrir") abrir()
-        else if (!tutorialAtivo()) setPassos(null)
+        // Desligado, ou a conta disse que esta tela já foi vista (outro navegador).
+        else if (!tutorialAtivo() || (tour && jaViu(tour.tela))) setPassos(null)
       }),
-    [abrir],
+    [abrir, tour],
   )
 
   const passo = passos?.[indice]

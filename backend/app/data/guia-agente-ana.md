@@ -54,6 +54,8 @@ Desde a versão 2026.10.7 a Ana consulta o CNPJ e mostra o resultado na hora, an
 
 ### Criar a conta
 
+A entrada é a mesma para todos: empresa e contador usam a mesma tela de entrar ("Entrar"), com o e-mail e a senha, o código por e-mail ou o Google. Para **criar** a conta, a tela de cadastro tem duas abas: "Tenho empresa" e "Sou contador(a)". Na tela de entrar, o link "crie a sua conta de contador" já abre a aba do contador.
+
 Na tela de cadastro você informa o CNPJ (o resto é preenchido sozinho), a razão social, a cidade, o e-mail e uma senha com pelo menos 8 caracteres. Também dá pra usar "Continuar com Google".
 
 Depois de "Criar conta", a Ana manda um link de confirmação pro seu e-mail. Abra a caixa de entrada e clique no link pra ativar a conta. Se não achar, olhe no spam. Se não chegou, use o botão "Não chegou? Reenviar e-mail". Se você digitou o e-mail errado, faça o cadastro de novo com o e-mail certo.
@@ -848,11 +850,11 @@ O dono recebe um convite por e-mail, válido por 14 dias, pra criar o acesso del
 
 ### Pergunte à Ana
 
-Na tela "Ajuda", quando estiver disponível, aparece o quadro **"Pergunte à Ana"**: escreva a dúvida do seu jeito e clique em "Perguntar". A resposta sai das explicações deste guia e aparece ali mesmo. Cada pessoa pode fazer um número limitado de perguntas por dia (o quadro mostra quantas faltam); se acabarem, amanhã tem mais. Dúvidas de imposto, de alíquota ou de qual código de serviço usar são com o seu contador. A resposta é escrita por inteligência artificial e pode errar: na dúvida, fale com o suporte.
+O "Pergunte à Ana" fica dentro do **"Fale com o suporte"** (no menu ou no fim da tela "Ajuda"). Primeiro você escreve a dúvida e a Ana procura nas respostas que já existem. Se não achar, clique em **"Não achei: perguntar à Ana"**, escreva do seu jeito e clique em "Perguntar à Ana". A resposta sai das explicações deste guia e aparece ali mesmo; se não resolver, "Falar com a equipe" leva a sua pergunta para o formulário. Na tela "Ajuda", quando a busca não acha nada, o botão "Perguntar à Ana" já leva o que você digitou. Cada pessoa pode fazer um número limitado de perguntas por dia (o quadro mostra quantas faltam); se acabarem, amanhã tem mais. Dúvidas de imposto, de alíquota ou de qual código de serviço usar são com o seu contador. A resposta é escrita por inteligência artificial e pode errar: na dúvida, fale com o suporte.
 
 ### Falar com o suporte
 
-No menu, clique em "Precisa de ajuda? Fale com o suporte" (ou use o botão da tela "Ajuda"). Abre um formulário: escreva o assunto e a mensagem e clique em "Enviar". A resposta chega no seu e-mail, normalmente no mesmo dia útil. Quando disponível, também aparece o botão "Chamar no WhatsApp".
+No menu, clique em "Precisa de ajuda? Fale com o suporte" (ou use o botão da tela "Ajuda"). Primeiro aparece a busca nas respostas prontas e depois o "Pergunte à Ana"; para falar com uma pessoa, use "Não achei" e depois "Falar com a equipe". Abre um formulário: escreva o assunto e a mensagem e clique em "Enviar". A resposta chega no seu e-mail, normalmente no mesmo dia útil. Quando disponível, também aparece o botão "Chamar no WhatsApp".
 
 O e-mail do suporte é suporte@agenteana.com.br.
 

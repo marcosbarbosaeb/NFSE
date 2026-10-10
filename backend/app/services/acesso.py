@@ -135,7 +135,8 @@ _LIVRE_SEM_ASSINATURA = re.compile(
 )
 
 # Na "casa" da conta só de contador só se mexe no nome do escritório e na exclusão.
-_LIVRE_NA_CONTA_DE_CONTADOR = re.compile(r"/api/(prestador|empresa|cep/buscar)/?")
+# 2026.10.7: "Pergunte à Ana" também vale na conta só de contador (não cria nada na empresa).
+_LIVRE_NA_CONTA_DE_CONTADOR = re.compile(r"/api/(prestador|empresa|cep/buscar|ajuda/perguntar)/?")
 
 MENSAGEM_BLOQUEIO = {
     "teste_acabou": "O teste grátis desta empresa terminou. Pra continuar gerando notas e lançando, assine um plano em Minha conta › Assinatura.",

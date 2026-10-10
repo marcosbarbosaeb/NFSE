@@ -25,9 +25,13 @@ VERSOES: list[dict] = [
         "data": "2026-10-10",
         "resumo": "Pergunte à Ana, nota de MEI certa, ISS retido, documentos da empresa, gestão dos clientes no painel do contador e o começo da reforma tributária (IBS e CBS).",
         "itens": [
-            {"perfil": "todos", "titulo": "Pergunte à Ana", "link": "/app/ajuda",
-             "texto": "Na Ajuda, escreva a sua dúvida do seu jeito e eu respondo com base no guia da Ana. Quando a pergunta é de "
+            {"perfil": "todos", "titulo": "Pergunte à Ana, dentro do suporte", "link": "/app/ajuda",
+             "texto": "Em “Fale com o suporte”, escreva a sua dúvida: primeiro eu procuro nas respostas que já tenho; se não achar, "
+                      "você pergunta pra mim do seu jeito; e, se ainda precisar, fala com a equipe. Quando a pergunta é de "
                       "contabilidade (imposto, regime, alíquota), eu digo que é com o seu contador. Há um número de perguntas por dia."},
+            {"perfil": "contador", "titulo": "Contador entra pela mesma tela",
+             "texto": "A entrada é a mesma para empresa e contador. Na tela de entrar e no site agora aparece o caminho para criar a "
+                      "conta de contador."},
             {"perfil": "empresa", "titulo": "Nota recusada explicada em palavras simples",
              "texto": "Quando a prefeitura recusa uma nota, a página dela ganha “Em palavras simples”: o que aconteceu e o que fazer, "
                       "passo a passo, sem o código da recusa."},
@@ -37,7 +41,7 @@ VERSOES: list[dict] = [
             {"perfil": "empresa", "titulo": "Certificado: aviso antes de vencer e trava quando venceu", "link": "/app/empresa?aba=certificado",
              "texto": "Eu mando um e-mail 30 dias antes de o certificado vencer. Certificado vencido, ou de outro CNPJ, não entra e não "
                       "assina nota — e a mensagem diz o que fazer. Quem ainda não tem certificado vê como conseguir um."},
-            {"perfil": "todos", "titulo": "Confiro a cidade e o regime no cadastro", "link": "/cadastro",
+            {"perfil": "todos", "titulo": "Confiro a cidade e o regime no cadastro",
              "texto": "Ao criar a conta, eu consulto o CNPJ e digo se já atendo a sua cidade e o seu regime. Se ainda não, você entra "
                       "na lista de espera e eu aviso por e-mail quando a sua cidade entrar."},
             {"perfil": "empresa", "titulo": "ISS retido pelo tomador", "link": "/app/tomadores",
@@ -86,7 +90,7 @@ VERSOES: list[dict] = [
             {"perfil": "empresa", "titulo": "Ache o tomador pelo nome da marca", "link": "/app/tomadores",
              "texto": "Procure “Shopee”, “Mercado Livre”, “Amazon” ou “Magalu” na lista de tomadores: aparece a empresa certa, "
                       "mesmo com outra razão social no cadastro da Receita."},
-            {"perfil": "todos", "titulo": "Simulação mais completa", "link": "/simulacao",
+            {"perfil": "todos", "titulo": "Simulação mais completa",
              "texto": "Na simulação, “Gerar e fazer tudo” vai até o fim (de mentira: nada sai pra Receita nem pra ninguém) e as notas de "
                       "exemplo já aparecem autorizadas e entregues, com os números da Visão geral e do financeiro andando juntos."},
             {"perfil": "empresa", "titulo": "Gerar, assinar e cancelar a nota sem erro no meio",

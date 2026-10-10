@@ -92,6 +92,9 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
 - Passeio "o que mudou" (`components/tour/PasseioNovidades.tsx`): convida quando há versão nova pro perfil; item de
   `novidades.VERSOES` pode ter `link` (tela) e `alvo` (um `data-tour`). Conta nova nasce em dia (`novidades.marcar_em_dia`).
   Enquanto o passeio está aberto, as dicas de primeira visita esperam (`tutorial.passeioEmAndamento`).
+  **Item de novidade nunca leva para fora de `/app`** (sair do painel no meio do passeio deu looping; teste trava).
+  Dicas vistas: por login no navegador e na conta (`PUT /api/conta/tutorial`). "Pergunte à Ana" mora no `SuporteModal`
+  (busca → Ana → equipe); `inicio="equipe"` pula direto pra equipe (contratar, certificado).
 - Competência: a prática é emitir com a data do mês corrente mesmo quando o relatório/serviço é de meses atrás (data antiga
   gera multa — a Ana só avisa `competencia_antiga`). Não crie aviso sugerindo voltar a data pro mês passado.
 - DANFSe e alfabetos (08/10/2026): a Helvetica só escreve latino; o resto vai pelas fontes de `danfse._FONTES_AMPLAS`, que o

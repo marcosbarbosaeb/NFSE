@@ -1191,6 +1191,15 @@ class ConciliarDespesaRequest(BaseModel):
     competencia: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
+class TutorialRequest(BaseModel):
+    """Dicas de primeira visita (2026.10.7): telas já vistas e liga/desliga,
+    guardados na conta pra valer em qualquer navegador."""
+    vistos: list[str] | None = Field(default=None, max_length=60)
+    ativo: bool | None = None
+    # "Rever todas as dicas": zera as telas vistas antes de somar.
+    limpar: bool = False
+
+
 class PreferenciasRequest(BaseModel):
     """Disposição dos cards de uma tela: ordem e quais estão fechados."""
     tela: Literal["financeiro", "visao_geral"]

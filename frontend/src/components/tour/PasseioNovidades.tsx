@@ -18,31 +18,40 @@ import { tourDoCaminho } from "./passos"
  * dia no servidor) — vale o tutorial de primeira visita. */
 
 const MAXIMO = 8
+// 2026.10.7 (o looping): se o painel for montado de novo no meio do passeio
+// (trocar de empresa, voltar de uma tela de fora), ele não convida outra vez.
+let jaConvidadoNestaAba = false
 
 export function PasseioNovidades() {
   const { usuario } = useAuth()
   const { dados, marcarVistas } = useNovidades()
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
   const navigate = useNavigate()
   // null = fechado; -1 = o convite; 0.. = cada novidade
   const [passo, setPasso] = useState<number | null>(null)
   const [dispensado, setDispensado] = useState(false)
 
-  const itens = useMemo<ItemNovidade[]>(() => (dados?.versoes ?? []).filter((v) => v.nova).flatMap((v) => v.itens).slice(0, MAXIMO), [dados])
+  const novas = useMemo<ItemNovidade[]>(() => (dados?.versoes ?? []).filter((v) => v.nova).flatMap((v) => v.itens).slice(0, MAXIMO), [dados])
+  // A lista do passeio fica congelada quando ele começa: marcar como vistas
+  // (logo no início) zera as "novas", mas o passeio continua até o fim.
+  const [congeladas, setCongeladas] = useState<ItemNovidade[] | null>(null)
+  const itens = congeladas ?? novas
   const versoesNovas = (dados?.versoes ?? []).filter((v) => v.nova)
 
   // Convida quando há novidade e a tela atual não está no meio das dicas de primeira visita.
   useEffect(() => {
-    if (passo !== null || dispensado || !usuario || usuario.demo || usuario.perguntar_perfil || itens.length === 0 || !tutorialAtivo()) return
+    if (passo !== null || dispensado || jaConvidadoNestaAba || !usuario || usuario.demo || usuario.perguntar_perfil || itens.length === 0 || !tutorialAtivo()) return
     if (pathname.startsWith("/app/novidades")) return // já está lendo
     const tour = tourDoCaminho(pathname)
     if (tour && !jaViu(tour.tela)) return
     const t = setTimeout(() => {
+      jaConvidadoNestaAba = true
+      setCongeladas(novas)
       definirPasseio(true)
       setPasso(-1)
     }, 900)
     return () => clearTimeout(t)
-  }, [passo, dispensado, usuario, itens.length, pathname])
+  }, [passo, dispensado, usuario, itens.length, pathname, novas])
 
   const fechar = useCallback(() => {
     definirPasseio(false)
@@ -55,10 +64,14 @@ export function PasseioNovidades() {
     (indice: number) => {
       const item = itens[indice]
       if (!item) return fechar()
-      if (item.link && item.link.split("?")[0] !== pathname) navigate(item.link)
+      // As novidades contam como vistas assim que a pessoa aceita o passeio.
+      if (indice === 0) marcarVistas()
+      // Só telas do painel: sair dele no meio do passeio era o que fazia o looping.
+      const destino = item.link?.split("#")[0]
+      if (destino && destino.startsWith("/app") && destino !== pathname + search) navigate(item.link as string)
       setPasso(indice)
     },
-    [itens, pathname, navigate, fechar],
+    [itens, pathname, search, navigate, fechar, marcarVistas],
   )
 
   if (passo === null || !dados) return null

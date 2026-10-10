@@ -1,10 +1,15 @@
-import { CheckCircle2, Mail, MessageCircle, Send } from "lucide-react"
-import { type FormEvent, type ReactNode, useEffect, useState } from "react"
+import { ArrowLeft, CheckCircle2, ChevronDown, Mail, MessageCircle, Search, Send, Sparkles } from "lucide-react"
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 import { createPortal } from "react-dom"
 import { useAuth } from "../lib/auth"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { EMAIL_SUPORTE, MAILTO_SUPORTE } from "../lib/contato"
-import type { CanaisSuporte } from "../lib/types"
+import { buscarDuvida } from "../lib/buscaFaq"
+import { FAQ, perguntaVisivel } from "../lib/faq"
+import { useModulos } from "../lib/modulos"
+import type { AjudaInfo, CanaisSuporte } from "../lib/types"
+import { PergunteAna } from "./ajuda/PergunteAna"
 import { Button } from "./ui/Button"
 import { Modal } from "./ui/Modal"
 
@@ -17,10 +22,33 @@ import { Modal } from "./ui/Modal"
 const classeCampo =
   "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
 
-export function SuporteModal({ onClose, logado: logadoProp }: { onClose: () => void; logado?: boolean }) {
+// Observações de teste (10/10/2026): "o 'Pergunte à Ana' vai para dentro do
+// fale com o suporte. A pessoa procura a dúvida primeiro e só depois, se não
+// achar, entra no chat com a IA." Logado, o suporte vira um funil:
+//   1. buscar — as perguntas da Ajuda (src/lib/faq.ts);
+//   2. ana — o "Pergunte à Ana" (só com a IA ligada);
+//   3. equipe — WhatsApp e o formulário de sempre.
+// Sem login (site, cadastro) ou com `inicio="equipe"` (contratar, comprar
+// certificado), vai direto pra equipe.
+export type EtapaSuporte = "buscar" | "ana" | "equipe"
+
+export function SuporteModal({
+  onClose,
+  logado: logadoProp,
+  inicio,
+  textoInicial = "",
+}: {
+  onClose: () => void
+  logado?: boolean
+  inicio?: EtapaSuporte
+  textoInicial?: string
+}) {
   const { usuario } = useAuth()
   // Conta de simulação não tem e-mail de verdade: pede o e-mail pra resposta.
   const logado = Boolean(logadoProp && usuario && !usuario.demo)
+  const [etapa, setEtapa] = useState<EtapaSuporte>(logado ? (inicio ?? "buscar") : "equipe")
+  const [duvida, setDuvida] = useState(textoInicial)
+  const [ia, setIa] = useState<{ restantes: number | null; limite: number | null } | null>(null)
   const [canais, setCanais] = useState<CanaisSuporte | null>(null)
   const [assunto, setAssunto] = useState("")
   const [mensagem, setMensagem] = useState("")
@@ -34,6 +62,20 @@ export function SuporteModal({ onClose, logado: logadoProp }: { onClose: () => v
   useEffect(() => {
     api.get<CanaisSuporte>("/suporte").then(setCanais).catch(() => setCanais({ email: EMAIL_SUPORTE, whatsapp: null, formulario: false }))
   }, [])
+  useEffect(() => {
+    if (!logado) return
+    api
+      .get<AjudaInfo>("/ajuda")
+      .then((r) => setIa(r.ia_ativa ? { restantes: r.ia_restantes ?? null, limite: r.ia_limite ?? null } : null))
+      .catch(() => setIa(null))
+  }, [logado])
+
+  function irParaEquipe(pergunta: string, resposta: string | null) {
+    const texto = pergunta.trim()
+    if (texto && !assunto) setAssunto(texto.slice(0, 150))
+    if (texto && !mensagem) setMensagem(resposta ? `${texto}\n\n(A Ana respondeu: ${resposta.slice(0, 1500)})` : texto)
+    setEtapa("equipe")
+  }
 
   async function enviar(e: FormEvent) {
     e.preventDefault()
@@ -60,9 +102,29 @@ export function SuporteModal({ onClose, logado: logadoProp }: { onClose: () => v
     ? `https://wa.me/${canais.whatsapp}?text=${encodeURIComponent("Olá! Preciso de ajuda com a Agente Ana.")}`
     : null
 
+  const titulo = etapa === "buscar" ? "Fale com o suporte" : etapa === "ana" ? "Pergunte à Ana" : "Fale com a equipe"
   return (
-    <Modal titulo="Fale com o suporte" onClose={onClose}>
-      {enviado ? (
+    <Modal titulo={titulo} onClose={onClose}>
+      {etapa === "buscar" ? (
+        <BuscarDuvida
+          duvida={duvida}
+          aoMudar={setDuvida}
+          temIa={ia !== null}
+          aoFechar={onClose}
+          aoNaoAchar={() => (ia ? setEtapa("ana") : irParaEquipe(duvida, null))}
+        />
+      ) : etapa === "ana" && ia ? (
+        <div className="flex flex-col gap-3">
+          <button type="button" onClick={() => setEtapa("buscar")} className="inline-flex items-center gap-1 self-start text-xs font-medium text-slate-500 hover:text-primary-600 dark:text-slate-400">
+            <ArrowLeft size={13} aria-hidden="true" /> Voltar pras perguntas
+          </button>
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            <Sparkles size={15} className="mr-1 inline align-[-2px] text-accent-500" aria-hidden="true" />
+            Eu respondo com base nas minhas explicações. Dúvida de imposto ou de qual código usar é com o seu contador.
+          </p>
+          <PergunteAna perguntaInicial={duvida} restantesIniciais={ia.restantes} limite={ia.limite} aoPrecisarDaEquipe={irParaEquipe} />
+        </div>
+      ) : enviado ? (
         <div className="flex flex-col items-center gap-3 py-6 text-center">
           <CheckCircle2 size={40} className="text-success-600" />
           <p className="font-medium text-slate-800 dark:text-slate-100">Mensagem enviada!</p>
@@ -73,6 +135,11 @@ export function SuporteModal({ onClose, logado: logadoProp }: { onClose: () => v
         </div>
       ) : (
         <div className="flex flex-col gap-4">
+          {logado && inicio !== "equipe" && (
+            <button type="button" onClick={() => setEtapa(ia ? "ana" : "buscar")} className="inline-flex items-center gap-1 self-start text-xs font-medium text-slate-500 hover:text-primary-600 dark:text-slate-400">
+              <ArrowLeft size={13} aria-hidden="true" /> {ia ? "Voltar pra Ana" : "Voltar pras perguntas"}
+            </button>
+          )}
           {whatsapp && (
             <a
               href={whatsapp}
@@ -138,8 +205,98 @@ function Rotulo({ texto, children }: { texto: string; children: ReactNode }) {
   )
 }
 
-/** Link/botão que abre o formulário de suporte. */
-export function BotaoSuporte({ className, children, logado }: { className?: string; children: ReactNode; logado?: boolean }) {
+/** Etapa 1 do suporte: a pessoa procura a dúvida nas perguntas da Ajuda. */
+function BuscarDuvida({
+  duvida,
+  aoMudar,
+  temIa,
+  aoFechar,
+  aoNaoAchar,
+}: {
+  duvida: string
+  aoMudar: (t: string) => void
+  temIa: boolean
+  aoFechar: () => void
+  aoNaoAchar: () => void
+}) {
+  const modulos = useModulos()
+  const visiveis = useMemo(() => FAQ.filter((p) => perguntaVisivel(p, { emissor: modulos.emissor, financeiro: modulos.financeiro })), [modulos.emissor, modulos.financeiro])
+  const achadas = useMemo(() => buscarDuvida(visiveis, duvida), [visiveis, duvida])
+  const [aberta, setAberta] = useState<string | null>(null)
+  const digitou = duvida.trim().length >= 2
+  return (
+    <div className="flex flex-col gap-3">
+      <label htmlFor="suporte-duvida" className="text-sm font-medium text-slate-700 dark:text-slate-300">
+        Qual é a sua dúvida? Eu procuro nas respostas que já tenho.
+      </label>
+      <div className="relative">
+        <Search size={16} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          id="suporte-duvida"
+          type="search"
+          autoFocus
+          value={duvida}
+          onChange={(e) => aoMudar(e.target.value.slice(0, 300))}
+          placeholder="Ex.: cancelar nota, certificado, extrato..."
+          className={`${classeCampo} pl-9`}
+        />
+      </div>
+      <div role="status" aria-live="polite">
+        {digitou && achadas.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">Não achei uma resposta pronta pra isso.</p>}
+      </div>
+      {achadas.length > 0 && (
+        <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 dark:divide-slate-700/60 dark:border-slate-700">
+          {achadas.map((p) => (
+            <li key={p.id}>
+              <button
+                type="button"
+                aria-expanded={aberta === p.id}
+                onClick={() => setAberta(aberta === p.id ? null : p.id)}
+                className="flex w-full items-start justify-between gap-2 px-3 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-700/40"
+              >
+                <span>{p.pergunta}</span>
+                <ChevronDown size={16} aria-hidden="true" className={`mt-0.5 shrink-0 text-slate-400 transition-transform ${aberta === p.id ? "rotate-180" : ""}`} />
+              </button>
+              {aberta === p.id && (
+                <div className="px-3 pb-3 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                  <p>{p.resposta}</p>
+                  {p.link && (
+                    <Link to={p.link} onClick={aoFechar} className="mt-2 inline-block font-semibold text-primary-600 hover:underline dark:text-primary-300">
+                      Ir pra essa tela
+                    </Link>
+                  )}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-slate-700/60">
+        <Link to="/app/ajuda" onClick={aoFechar} className="text-xs font-medium text-slate-500 hover:text-primary-600 dark:text-slate-400">
+          Ver todas as perguntas
+        </Link>
+        <Button type="button" variant={digitou && achadas.length === 0 ? "accent" : "outline"} onClick={aoNaoAchar}>
+          {temIa ? <Sparkles size={15} aria-hidden="true" /> : null} {temIa ? "Não achei: perguntar à Ana" : "Não achei: falar com a equipe"}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** Link/botão que abre o suporte (logado: busca → Ana → equipe). */
+export function BotaoSuporte({
+  className,
+  children,
+  logado,
+  inicio,
+  textoInicial,
+}: {
+  className?: string
+  children: ReactNode
+  logado?: boolean
+  inicio?: EtapaSuporte
+  textoInicial?: string
+}) {
   const [aberto, setAberto] = useState(false)
   return (
     <>
@@ -147,7 +304,7 @@ export function BotaoSuporte({ className, children, logado }: { className?: stri
         {children}
       </button>
       {/* Portal: dentro da barra lateral (sticky) o modal ficaria atrás do topo. */}
-      {aberto && createPortal(<SuporteModal logado={logado} onClose={() => setAberto(false)} />, document.body)}
+      {aberto && createPortal(<SuporteModal logado={logado} inicio={inicio} textoInicial={textoInicial} onClose={() => setAberto(false)} />, document.body)}
     </>
   )
 }

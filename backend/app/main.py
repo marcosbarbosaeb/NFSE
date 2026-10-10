@@ -93,6 +93,7 @@ from app.schemas import (
     PlanoRequest,
     OrigemNotaRequest,
     PreferenciasRequest,
+    TutorialRequest,
     GeracaoShopeeResponse,
     OrdemAwinResponse,
     PreferenciasPrestadorRequest,
@@ -3999,6 +4000,24 @@ def api_novidades_vistas(request: Request, db: Session = Depends(get_db)):
 def api_preferencias(request: Request, db: Session = Depends(get_db)):
     """Disposição dos cards (Financeiro, Visão geral) — da pessoa, não da empresa."""
     return _usuario_logado(request, db).preferencias or {}
+
+
+@app.put("/api/conta/tutorial")
+def api_salvar_tutorial(req: TutorialRequest, request: Request, db: Session = Depends(get_db)):
+    """Dicas de primeira visita (2026.10.7): as telas já vistas ficam na conta
+    (somadas às que já estavam), pra não repetir em outro navegador."""
+    usuario = _usuario_logado(request, db)
+    atual = dict((usuario.preferencias or {}).get("tutorial") or {})
+    if req.limpar:
+        atual["vistos"] = []
+    if req.vistos is not None:
+        limpos = [v for v in req.vistos if isinstance(v, str) and re.fullmatch(r"[a-z0-9-]{1,40}", v)]
+        atual["vistos"] = sorted(set(atual.get("vistos") or []) | set(limpos))[:60]
+    if req.ativo is not None:
+        atual["ativo"] = req.ativo
+    usuario.preferencias = {**(usuario.preferencias or {}), "tutorial": atual}
+    db.commit()
+    return atual
 
 
 @app.put("/api/conta/preferencias")

@@ -78,6 +78,20 @@ Migrações (em ordem): `f2a4c6e8b0d1` (ia_chamada, emissao.erro_explicacao), `a
   existe). Gestão › Contadores (`GET /api/gestao/contadores`): na carteira, ativos no mês e cadastrados por ele —
   base da cobrança por cliente, que **não** está ligada (modelo em aberto). Login aceita `?volta=` (caminho interno).
 
+- **Observações de teste do Marcos (10/10)** (`ideias/observacoes-de-teste.md`):
+  - *Looping do tutorial:* o passeio "o que mudou" tinha itens com link para fora do painel (`/cadastro`, `/simulacao`);
+    o cadastro devolve quem está logado para `/app`, o painel monta de novo, esquece o passeio e convida outra vez.
+    Correção: itens sem esses links (teste `test_tutorial_e_passeio.py` trava link fora de `/app`), o passeio só navega
+    dentro de `/app`, marca as novidades como vistas ao começar (lista congelada) e não convida de novo na mesma aba.
+    Dicas de primeira visita: guardadas por login no navegador e na conta (`PUT /api/conta/tutorial`, em
+    `usuario.preferencias.tutorial`), então não repetem em outro navegador; o balão não sai mais da tela. Reprodução no
+    navegador: `scripts/e2e_tutorial_looping.py`.
+  - *Contador na entrada:* a entrada é a mesma; o caminho para criar conta de contador (`/cadastro?tipo=contador`) agora
+    aparece na tela de entrar e no site.
+  - *Pergunte à Ana dentro do suporte:* `SuporteModal` logado vira funil (busca nas perguntas → Pergunte à Ana → equipe);
+    a Ajuda perdeu o quadro do topo e, sem resultado na busca, oferece "Perguntar à Ana". `/api/ajuda/perguntar` passa a
+    valer na conta só de contador (dava 403).
+
 **Conferir depois de publicar:** `GET /api/versao` = 2026.10.7; migração até `b0c2e4f6a8d0` no log; `GET /api/ajuda`
 com `ia_ativa` (false enquanto `IA_ATIVA` não for ligada); `GET /api/atendimento?cnpj=` respondendo; Gestão com as abas
 Lista de espera, Gestores e Perfis; `/app/documentos` abrindo; Empresa mostrando "IBS e CBS" para ME/EPP do Simples; Painel do contador com a aba Gestão; com `GESTAO_HOST`, a Gestão só

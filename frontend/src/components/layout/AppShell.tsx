@@ -1,13 +1,15 @@
 import { PerguntaPerfil } from "../PerguntaPerfil"
 import { FlaskConical, LogOut, ShieldCheck } from "lucide-react"
 import { ehDominioGestao } from "../../lib/dominios"
-import { Suspense, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom"
 import { useAuth } from "../../lib/auth"
 import { PasseioNovidades } from "../tour/PasseioNovidades"
 import { TourDaPagina } from "../tour/Tour"
 import { useModoGravacao } from "../../lib/gravacao"
 import { useRegistrarTela } from "../../lib/uso"
+import { api } from "../../lib/api"
+import { sincronizarTutorial } from "../../lib/tutorial"
 import { AvisoSemAssinatura, FaixaAssinatura, FaixaContador, FaixaUsoDoPlano } from "./FaixasAcesso"
 import { Sidebar } from "./Sidebar"
 import { Topbar } from "./Topbar"
@@ -107,6 +109,17 @@ function AppShellDoEmissor() {
   const { pathname } = useLocation()
   useModoGravacao() // liga/desliga as dicas antes das telas abrirem
   useRegistrarTela()
+  // Dicas de primeira visita por login (2026.10.7): define o dono antes das
+  // telas abrirem e soma o que a conta já viu (vale em outro navegador).
+  if (usuario?.email) sincronizarTutorial(usuario.email)
+  useEffect(() => {
+    if (!usuario?.email || usuario.demo) return
+    const email = usuario.email
+    api
+      .get<{ tutorial?: { vistos?: string[]; ativo?: boolean } }>("/conta/preferencias")
+      .then((p) => sincronizarTutorial(email, p.tutorial ?? { vistos: [] }))
+      .catch(() => undefined)
+  }, [usuario?.email, usuario?.demo])
   if (usuario?.so_contador && !TELAS_DA_CONTA_DE_CONTADOR.some((t) => pathname === t || pathname.startsWith(t + "/"))) {
     return <Navigate to="/app/atendimentos" replace />
   }

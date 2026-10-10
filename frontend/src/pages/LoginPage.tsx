@@ -160,6 +160,15 @@ export function LoginPage() {
               Criar conta
             </Link>
           </p>
+          {/* 2026.10.7 (observação de teste): a entrada é a mesma para empresa e
+              contador, mas o caminho do contador não aparecia em lugar nenhum. */}
+          <p className="mt-2 text-center text-sm text-slate-500 dark:text-slate-400">
+            É contador(a)? Entre aqui mesmo com o seu e-mail ou{" "}
+            <Link to="/cadastro?tipo=contador" className="font-medium text-primary-600 hover:text-primary-700">
+              crie a sua conta de contador
+            </Link>
+            .
+          </p>
           <p className="mt-2 text-center text-sm text-slate-500 dark:text-slate-400">
             Só quer conhecer?{" "}
             <Link to="/simulacao" className="font-medium text-accent-600 hover:text-accent-700">
