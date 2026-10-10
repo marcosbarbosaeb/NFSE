@@ -5,7 +5,7 @@ import { SoNoEmissor } from "./components/layout/SoNoEmissor"
 import { ProtectedRoute } from "./components/layout/ProtectedRoute"
 import { SoModulo } from "./components/layout/SoModulo"
 import { AuthProvider } from "./lib/auth"
-import { ehDominioNotas } from "./lib/dominios"
+import { ehDominioGestao, ehDominioNotas } from "./lib/dominios"
 import { ThemeProvider } from "./lib/theme"
 import { CadastroPage } from "./pages/CadastroPage"
 import { ConfirmarEmailPage } from "./pages/ConfirmarEmailPage"
@@ -52,7 +52,7 @@ export default function App() {
         <Routes>
           {/* No subdomínio notas.agenteana.com.br a raiz é o próprio emissor
               (a landing mora em agenteana.com.br) — ver lib/dominios.ts. */}
-          <Route path="/" element={ehDominioNotas() ? <Navigate to="/app" replace /> : <LandingPage />} />
+          <Route path="/" element={ehDominioGestao() ? <Navigate to="/app/gestao" replace /> : ehDominioNotas() ? <Navigate to="/app" replace /> : <LandingPage />} />
           <Route path="/privacidade" element={<PrivacidadePage />} />
           <Route path="/termos" element={<TermosPage />} />
           <Route path="/entrar" element={<SoNoEmissor><LoginPage /></SoNoEmissor>} />

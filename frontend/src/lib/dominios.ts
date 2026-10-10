@@ -20,6 +20,14 @@ export function ehDominioNotas(h: string = host()): boolean {
   return h === DOMINIO_NOTAS
 }
 
+// Gestão num endereço próprio (2026.10.7): gestao.agenteana.com.br (e, no
+// ambiente de teste, um domínio do Railway que comece com "gestao-"). Aqui é
+// só a aparência — quem trava de verdade é o servidor (GESTAO_HOST,
+// backend/app/services/area_gestao.py).
+export function ehDominioGestao(h: string = host()): boolean {
+  return h.startsWith("gestao.") || h.startsWith("gestao-")
+}
+
 // URL de uma tela do emissor, vista de onde o usuário está agora: no
 // domínio raiz vira link absoluto pro subdomínio notas; em qualquer outro
 // host continua relativa (mesmo domínio).

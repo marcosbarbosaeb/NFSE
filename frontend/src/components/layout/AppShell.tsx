@@ -1,5 +1,6 @@
 import { PerguntaPerfil } from "../PerguntaPerfil"
-import { FlaskConical } from "lucide-react"
+import { FlaskConical, LogOut, ShieldCheck } from "lucide-react"
+import { ehDominioGestao } from "../../lib/dominios"
 import { Suspense, useState } from "react"
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom"
 import { useAuth } from "../../lib/auth"
@@ -57,7 +58,50 @@ function FaixaContaTeste() {
 // notas nem financeiro — só estas telas existem pra ela.
 const TELAS_DA_CONTA_DE_CONTADOR = ["/app/atendimentos", "/app/conta", "/app/ajuda", "/app/novidades", "/app/gestao"]
 
+// Gestão num endereço próprio (2026.10.7, gestao.agenteana.com.br): só a
+// Gestão, sem menu do emissor, faixas, passeios ou perguntas. Qualquer outra
+// tela volta pra /app/gestao (o servidor faz o mesmo nos acessos diretos).
+function GestaoShell() {
+  const { usuario, logout } = useAuth()
+  const { pathname } = useLocation()
+  const navigate = useNavigate()
+  if (!pathname.startsWith("/app/gestao")) return <Navigate to="/app/gestao" replace />
+  return (
+    <div className="flex min-h-screen flex-col bg-canvas dark:bg-canvas-dark">
+      <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800 sm:px-6 lg:px-8">
+        <p className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+          <ShieldCheck size={18} className="text-primary-600 dark:text-primary-300" aria-hidden="true" />
+          Gestão · Agente Ana
+        </p>
+        <div className="flex items-center gap-3">
+          <span className="hidden text-sm text-slate-500 dark:text-slate-400 sm:inline">{usuario?.email}</span>
+          <button
+            type="button"
+            onClick={async () => {
+              await logout()
+              navigate("/entrar")
+            }}
+            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
+          >
+            <LogOut size={16} aria-hidden="true" /> Sair
+          </button>
+        </div>
+      </header>
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <Suspense fallback={<p className="py-10 text-center text-sm text-slate-400">Carregando...</p>}>
+          <Outlet />
+        </Suspense>
+      </main>
+    </div>
+  )
+}
+
 export function AppShell() {
+  if (ehDominioGestao()) return <GestaoShell />
+  return <AppShellDoEmissor />
+}
+
+function AppShellDoEmissor() {
   const [menuAberto, setMenuAberto] = useState(false)
   const { usuario } = useAuth()
   const { pathname } = useLocation()

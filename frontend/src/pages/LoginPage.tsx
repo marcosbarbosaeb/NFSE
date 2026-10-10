@@ -6,7 +6,7 @@ import { GoogleIcon } from "../components/ui/GoogleIcon"
 import { ApiError, useAuth } from "../lib/auth"
 import { api, formatarErro } from "../lib/api"
 import { AnaAvatar } from "../components/brand/Marca"
-import { urlLanding } from "../lib/dominios"
+import { ehDominioGestao, urlLanding } from "../lib/dominios"
 
 // Marco 16, item 1 — mensagens do redirect de volta de /api/auth/google/callback
 // (ver app/main.py: nunca JSON, sempre um redirect com ?erro=... nessa volta).
@@ -20,6 +20,7 @@ const classeInput =
 
 export function LoginPage() {
   const { usuario, login, loginComGoogle } = useAuth()
+  const naGestao = ehDominioGestao()
   const [modo, setModo] = useState<"senha" | "codigo">("senha")
   const [searchParams] = useSearchParams()
   // Na volta do Google com conta sem confirmar, o e-mail vem na URL: é pra ele que o link é reenviado.
@@ -37,7 +38,7 @@ export function LoginPage() {
   const [reenviando, setReenviando] = useState(false)
   const [erroGoogle, setErroGoogle] = useState<string | null>(null)
 
-  if (usuario) return <Navigate to="/app" replace />
+  if (usuario) return <Navigate to={naGestao ? "/app/gestao" : "/app"} replace />
 
   if (modo === "codigo") {
     return (
@@ -137,14 +138,19 @@ export function LoginPage() {
           </div>
           {erroGoogle && <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erroGoogle}</p>}
           <div className="flex flex-col gap-2">
-            <Button type="button" variant="outline" onClick={onGoogleClick} className="w-full">
-              <GoogleIcon /> Continuar com Google
-            </Button>
+            {/* No endereço da Gestão o login é só por e-mail: a volta do Google cai no app das notas. */}
+            {!naGestao && (
+              <Button type="button" variant="outline" onClick={onGoogleClick} className="w-full">
+                <GoogleIcon /> Continuar com Google
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={() => { setErro(null); setModo("codigo") }} className="w-full">
               <Mail size={17} className="text-slate-500 dark:text-slate-400" aria-hidden="true" /> Entrar com código por e-mail
             </Button>
           </div>
 
+          {!naGestao && (
+          <>
           <p className="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
             Ainda não tem conta?{" "}
             <Link to="/cadastro" className="font-medium text-primary-600 hover:text-primary-700">
@@ -157,6 +163,8 @@ export function LoginPage() {
               Testar sem cadastro
             </Link>
           </p>
+          </>
+          )}
         </form>
     </MolduraLogin>
   )
@@ -173,6 +181,7 @@ function MolduraLogin({ children }: { children: ReactNode }) {
           <p className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">
             <span className="font-normal opacity-80">Agente</span> <span className="text-accent-500">Ana</span>
           </p>
+          {ehDominioGestao() && <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Gestão da plataforma</p>}
           <p className="text-sm text-slate-500 dark:text-slate-400">Entre no seu emissor de notas</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">{children}</div>

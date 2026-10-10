@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     # verdade assim que ele existir (ver Marco 15, item 4: página de
     # marketing + rota pública de cadastro).
     app_base_url: str = "http://localhost:5173"
+    # Gestão num endereço próprio (2026.10.7): ex. "gestao.agenteana.com.br".
+    # Com ela preenchida, as rotas da Gestão só respondem nesse host e o app
+    # das notas não mostra a Gestão (`app/services/area_gestao.py`). Vazia =
+    # Gestão dentro do app, como antes (desenvolvimento e testes).
+    gestao_host: str = ""
 
     # Marco 15 (item 4) — assinatura/cobrança via Stripe (ver
     # app/services/billing.py). Marcos confirmou "cobrança real (Stripe)"

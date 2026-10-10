@@ -369,7 +369,9 @@ def _origem_confiavel(origem: str) -> bool:
     (agenteana.com.br) e o painel local em desenvolvimento."""
     host = urlparse(origem).hostname or ""
     base = urlparse(get_settings().app_base_url).hostname or ""
-    return host == base or host == "agenteana.com.br" or host.endswith(".agenteana.com.br") or host in ("localhost", "127.0.0.1")
+    gestao = (get_settings().gestao_host or "").strip().lower()
+    return (host == base or host == "agenteana.com.br" or host.endswith(".agenteana.com.br") or host in ("localhost", "127.0.0.1")
+            or (bool(gestao) and host == gestao))
 
 
 @app.middleware("http")
@@ -1379,7 +1381,9 @@ def _avisar_administracao_do_pedido(d: dict) -> None:
         return
     esc = html.escape
     quem = esc(d["nome"] or d["email"])
-    link = f"{get_settings().app_base_url.rstrip('/')}/app/gestao?aba=contas"
+    from app.services import area_gestao
+
+    link = area_gestao.url("/app/gestao?aba=contas") if area_gestao.separada() else f"{get_settings().app_base_url.rstrip('/')}/app/gestao?aba=contas"
     linhas = [f"Empresa: {d['empresa']}", f"CNPJ: {d['cnpj']}", f"Login: {d['email']}", f"WhatsApp: {d['telefone'] or 'não informado'}"]
     corpo = m.moldura(
         titulo="Pedido de liberação",
@@ -3213,6 +3217,10 @@ def _eh_admin(request: Request, db: Session, prestador_id: uuid.UUID) -> bool:
 
 
 def exigir_admin(request: Request, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)) -> None:
+    from app.services import area_gestao
+
+    if area_gestao.fora_da_gestao(request):
+        raise HTTPException(status_code=404, detail="Rota não encontrada.")
     if not _eh_admin(request, db, prestador_id):
         raise HTTPException(status_code=403, detail="Só a administração da plataforma acessa esta área.")
 
@@ -3221,8 +3229,11 @@ def exigir_gestor(request: Request, db: Session = Depends(db_sessao), prestador_
     """A Gestão mostra números de TODAS as contas: só entra gestor (tabela
     `gestor` ou ADMIN_EMAILS). Sem nenhum gestor, ninguém entra (aqui não
     vale o atalho da conta "cortesia")."""
-    from app.services import gestores
+    from app.services import area_gestao, gestores
 
+    if area_gestao.fora_da_gestao(request):
+        # Gestão num endereço próprio (2026.10.7): no app das notas ela não existe.
+        raise HTTPException(status_code=404, detail="Rota não encontrada.")
     if not gestores.configurado(db) or not _eh_admin(request, db, prestador_id):
         raise HTTPException(status_code=403, detail="Só a administração da plataforma acessa esta área.")
 
@@ -3230,10 +3241,14 @@ def exigir_gestor(request: Request, db: Session = Depends(db_sessao), prestador_
 @app.get("/api/gestao/acesso")
 def api_gestao_acesso(request: Request, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     """A tela usa pra saber se mostra a Gestão (e por que não, quando falta configurar)."""
-    from app.services import gestores
+    from app.services import area_gestao, gestores
 
     configurado = gestores.configurado(db)
-    return {"gestor": configurado and _eh_admin(request, db, prestador_id), "configurado": configurado}
+    if area_gestao.fora_da_gestao(request):
+        # No app das notas o menu não mostra a Gestão (ela mora no subdomínio).
+        return {"gestor": False, "configurado": configurado, "separada": True}
+    return {"gestor": configurado and _eh_admin(request, db, prestador_id), "configurado": configurado,
+            "separada": area_gestao.separada()}
 
 
 class GestorRequest(BaseModel):
@@ -4103,12 +4118,16 @@ app.include_router(_rotas_documentos)
 
 
 @app.get("/", include_in_schema=False)
-def frontend_raiz():
+def frontend_raiz(request: Request):
+    from app.services import area_gestao
+
+    if area_gestao.na_gestao(request):
+        return RedirectResponse("/app/gestao", status_code=302)
     return _index_html()
 
 
 @app.get("/{caminho_completo:path}", include_in_schema=False)
-def frontend_catch_all(caminho_completo: str):
+def frontend_catch_all(caminho_completo: str, request: Request):
     """Serve o SPA novo pra qualquer rota que não seja da API. Isso vem
     DEPOIS de toda rota /api/* no arquivo (a ordem de registro é o que
     decide qual rota o Starlette tenta primeiro — ver docstring do módulo
@@ -4134,6 +4153,17 @@ def frontend_catch_all(caminho_completo: str):
         if caminho_completo.startswith("assets/"):
             return FileResponse(candidato, headers={"Cache-Control": "public, max-age=31536000, immutable"})
         return FileResponse(candidato)
+    from app.services import area_gestao
+
+    if area_gestao.separada():
+        # Gestão num endereço próprio (2026.10.7).
+        eh_gestao = partes[:2] == ["app", "gestao"] or partes[:1] == ["gestao"]
+        if area_gestao.na_gestao(request):
+            if not eh_gestao and not (len(partes) == 1 and partes[0] in area_gestao.TELAS_NA_GESTAO):
+                return RedirectResponse("/app/gestao", status_code=302)
+        elif eh_gestao:
+            consulta = f"?{request.url.query}" if request.url.query else ""
+            return RedirectResponse(area_gestao.url("/" + "/".join(["app", *partes[1:]] if partes[0] == "gestao" else partes) + consulta), status_code=302)
     if _rota_do_painel(partes):
         return _index_html()
     # Endereços antigos do painel (antes de ele morar em /app): leva pro novo.
