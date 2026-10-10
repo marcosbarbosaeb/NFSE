@@ -31,7 +31,7 @@ import { Modal } from "../ui/Modal"
 // Gestão › Contas (06/10/2026): quem tem conta, quem está ativo e quanto usa.
 // Só números de uso — o conteúdo das notas e do financeiro não chega aqui.
 
-type Filtro = "todas" | "ativas" | "sem-acesso" | "nao-confirmou" | "sem-certificado" | "teste" | "sem-assinatura" | "liberadas" | "bloqueadas" | "contadores" | "pediram"
+type Filtro = "todas" | "ativas" | "sem-acesso" | "nao-confirmou" | "sem-certificado" | "teste" | "sem-assinatura" | "liberadas" | "bloqueadas" | "contadores" | "pediram" | "fora"
 const FILTROS: { id: Filtro; rotulo: string; vale: (c: ContaGestao) => boolean }[] = [
   { id: "todas", rotulo: "Todas", vale: () => true },
   { id: "ativas", rotulo: "Ativas 30 dias", vale: ativa30 },
@@ -43,6 +43,8 @@ const FILTROS: { id: Filtro; rotulo: string; vale: (c: ContaGestao) => boolean }
   { id: "sem-assinatura", rotulo: "Aguardando sua autorização", vale: (c) => !c.demo && c.acesso?.liberado === false && c.acesso?.motivo !== "bloqueada" },
   { id: "pediram", rotulo: "Pediram liberação", vale: (c) => Boolean(c.liberacao_pedida_em) },
   { id: "contadores", rotulo: "Contas de contador", vale: (c) => c.so_contador === true },
+  // 2026.10.7: contas que já existiam em cidade ou regime que a Ana não atende (continuam funcionando)
+  { id: "fora", rotulo: "Fora do atendimento", vale: (c) => Boolean(c.fora_do_atendimento) },
   { id: "liberadas", rotulo: "Liberadas por você", vale: (c) => c.acesso?.motivo === "liberacao" },
   { id: "bloqueadas", rotulo: "Bloqueadas por você", vale: (c) => c.acesso?.motivo === "bloqueada" },
 ]
@@ -430,8 +432,11 @@ function Empresa({ conta: c }: { conta: ContaGestao }) {
           {c.telefone_origem === "empresa" && <span className="font-normal text-slate-400 dark:text-slate-500" title="Telefone do cadastro da empresa (Receita) — pode ser o do contador">· da empresa</span>}
         </a>
       )}
-      {(c.modo_teste || c.demo || c.so_contador) && (
+      {(c.modo_teste || c.demo || c.so_contador || c.fora_do_atendimento) && (
         <span className="mt-1 flex flex-wrap gap-1">
+          {c.fora_do_atendimento && (
+            <Badge variant="warning">{c.fora_do_atendimento === "regime" ? "regime não atendido" : "cidade fora do Emissor Nacional"}</Badge>
+          )}
           {c.so_contador && <Badge variant="info">conta de contador</Badge>}
           {c.modo_teste && <Badge variant="warning">teste</Badge>}
           {c.demo && <Badge variant="neutral">simulação</Badge>}

@@ -116,6 +116,13 @@ def iniciar(intervalo_s: int = INTERVALO_S) -> None:
                     n = avisar(db)
                 if n:
                     logger.info("Aviso de vencimento do certificado enviado a %s empresa(s)", n)
+                # Lista de espera: cidade que entrou no Emissor Nacional (2026.10.7)
+                from app.services import lista_espera
+
+                with SessionLocal() as db:
+                    n = lista_espera.avisar_cidades_novas(db)
+                if n:
+                    logger.info("Lista de espera: %s pessoa(s) avisada(s) de cidade nova no Emissor Nacional", n)
             except Exception:  # noqa: BLE001
                 logger.exception("Rotina de aviso de vencimento do certificado falhou")
             time.sleep(intervalo_s)

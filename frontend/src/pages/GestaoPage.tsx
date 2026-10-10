@@ -1,11 +1,12 @@
 import { UsoGestao } from "../components/gestao/UsoGestao"
-import { Activity, Bot, Building2, EyeOff, Handshake, LayoutDashboard, Lock, Mail, RefreshCw } from "lucide-react"
+import { Activity, Bot, Building2, EyeOff, Handshake, Hourglass, LayoutDashboard, Lock, Mail, RefreshCw } from "lucide-react"
 import { type ReactNode, useCallback, useEffect, useState } from "react"
 import { PaginaAbas } from "../components/PaginaAbas"
 import { ParceirasAdmin } from "../components/ParceirasAdmin"
 import { AjudaIaGestao } from "../components/gestao/AjudaIaGestao"
 import { ContasGestao } from "../components/gestao/ContasGestao"
 import { EmailsGestao } from "../components/gestao/EmailsGestao"
+import { ListaEsperaGestao } from "../components/gestao/ListaEsperaGestao"
 import { VisaoGeralGestao } from "../components/gestao/VisaoGeralGestao"
 import { Button } from "../components/ui/Button"
 import { Card } from "../components/ui/Card"
@@ -103,6 +104,7 @@ export function GestaoPage() {
         { id: "contas", rotulo: "Contas", icone: Building2, conteudo: comPainel((p) => <ContasGestao painel={p} aoMudar={carregar} />) },
         { id: "emails", rotulo: "E-mails", icone: Mail, conteudo: comPainel((p) => <EmailsGestao painel={p} />) },
         { id: "uso", rotulo: "Uso", icone: Activity, conteudo: () => <UsoGestao key={versao} /> },
+        { id: "espera", rotulo: "Lista de espera", icone: Hourglass, conteudo: () => <ListaEsperaGestao key={versao} /> },
         {
           id: "parceiras",
           rotulo: "Parceiras",

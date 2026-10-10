@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import definir_prestador_atual
+from app.services import atendimento
 from app.tempo import hoje as hoje_br
 
 # O que conta como "usar" cada ferramenta (id, nome, campo de volume no mês).
@@ -118,7 +119,7 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
         for prestador_id, pessoas in logins.items():
             definir_prestador_atual(db, prestador_id)
             empresa = db.execute(text("""
-                SELECT p.razao_social, p.cpf_cnpj, p.cod_municipio, p.criado_em, p.demo, p.modo_teste, p.modulos, p.so_contador,
+                SELECT p.razao_social, p.cpf_cnpj, p.cod_municipio, p.criado_em, p.demo, p.modo_teste, p.modulos, p.so_contador, p.op_simples_nacional,
                        (p.drive_token IS NOT NULL) AS drive,
                        a.status AS assinatura, a.plano, a.trial_termina_em, a.liberado_ate, a.liberado_sempre, a.liberado_obs, a.bloqueada_em, a.bloqueada_obs, a.liberacao_pedida_em,
                        p.telefone, p.email AS email_empresa,
@@ -175,6 +176,10 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
                 "anotacoes": n["anotacoes"], "lotes_mes": n["lotes_mes"], "drive": 1 if empresa["drive"] else 0,
                 "indicou": empresa["indicou"], "indicou_ativos": empresa["indicou_ativos"],
                 "veio_por": "parceira: " + parcerias[prestador_id] if prestador_id in parcerias else ("indicação de cliente" if empresa["veio_por_indicacao"] else None),
+                # 2026.10.7: conta que já existia em cidade ou regime que a Ana não atende
+                # continua funcionando — só fica marcada aqui ("cidade_fora" | "regime" | None).
+                "fora_do_atendimento": None if empresa["so_contador"] else atendimento.fora_do_atendimento(
+                    regime=empresa["op_simples_nacional"], cod_municipio=empresa["cod_municipio"], modulos=list(empresa["modulos"] or [])),
             })
     finally:
         definir_prestador_atual(db, prestador_de_volta)

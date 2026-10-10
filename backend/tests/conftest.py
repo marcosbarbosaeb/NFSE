@@ -135,6 +135,15 @@ def _sem_rede_e_sem_limites(monkeypatch):
     import app.services.ia as ia_mod
 
     monkeypatch.setattr(ia_mod, "_gravar_chamada", lambda registro: None)
+    # ...nem consultam a Receita pra decidir se a Ana atende o CNPJ (2026.10.7):
+    # sem rede, é o caso "consulta fora do ar" (o cadastro segue).
+    import app.services.atendimento as atendimento_mod
+    from app.services.cnpj_lookup import ConsultaCnpjIndisponivelError
+
+    def _sem_consulta(cnpj):
+        raise ConsultaCnpjIndisponivelError("sem rede nos testes")
+
+    monkeypatch.setattr(atendimento_mod, "_consultar", _sem_consulta)
     limitador = getattr(main_mod, "limitador", None)
     if limitador is not None:
         limitador.limpar()

@@ -264,7 +264,7 @@ from app.services.motor_emissao import (
 from app.services import assistente_tomador, billing, drive, pacote, identificar_tomador
 from app.services import cep as servico_cep
 from app.services import conferencia
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from app.services.nota_visual import montar_nota_visual
 from app.services.tomadores import CnpjJaCadastradoError, buscar_tomador, criar_tomador, listar_catalogo
 from app.services.cadastro import (
@@ -583,7 +583,91 @@ def api_consultar_cnpj(cnpj: str):
         complemento=dados.complemento, bairro=dados.bairro, cep=dados.cep,
         municipio=dados.municipio, uf=dados.uf,
         cod_municipio_sugerido=dados.cod_municipio_sugerido, situacao_cadastral=dados.situacao_cadastral,
+        regime=dados.regime,
     )
+
+
+class AtendimentoResponse(BaseModel):
+    codigo: str
+    pode_criar: bool
+    lista_espera: bool
+    titulo: str | None = None
+    mensagem: str | None = None
+    regime: str | None = None
+    regime_rotulo: str | None = None
+    cidade: str | None = None
+    cod_municipio: str | None = None
+    situacao_cadastral: str | None = None
+    razao_social: str | None = None
+
+
+@app.get("/api/atendimento", response_model=AtendimentoResponse, responses={404: {"model": ErroResponse}, 422: {"model": ErroResponse}},
+         dependencies=[Depends(limite("atendimento", 60, 600))])
+def api_atendimento(cnpj: str, produto: str = "emissor"):
+    """A Ana atende este CNPJ? (2026.10.7, `app/services/atendimento.py`).
+    Rota pública: o cadastro chama assim que a pessoa digita o CNPJ."""
+    from app.services import atendimento
+
+    try:
+        return atendimento.avaliar_cnpj(cnpj, so_financeiro=produto == "financeiro")
+    except CnpjInvalidoError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except CnpjNaoEncontradoError as exc:
+        raise HTTPException(status_code=404, detail="Não encontrei esse CNPJ na Receita. Confira os números.") from exc
+
+
+class ListaEsperaRequest(BaseModel):
+    cnpj: str = Field(pattern=r"^\d{14}$")
+    email: str = Field(min_length=3, max_length=254)
+    whatsapp: str | None = Field(default=None, max_length=30)
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        from app.services.emails import conferir_um, normalizar
+
+        conferir_um(v)
+        return normalizar(v)
+
+
+@app.post("/api/lista-espera", responses={409: {"model": ErroResponse}, 422: {"model": ErroResponse}, 503: {"model": ErroResponse}},
+          dependencies=[Depends(limite("lista-espera", 10, 3600))])
+def api_lista_espera(req: ListaEsperaRequest, db: Session = Depends(get_db)):
+    """Entrar na lista de espera (2026.10.7). O motivo e a cidade saem da
+    consulta feita aqui, não do navegador."""
+    from app.services import atendimento, lista_espera
+    from app.services.cadastro import WhatsappInvalidoError, limpar_whatsapp
+
+    try:
+        whatsapp = limpar_whatsapp(req.whatsapp) if req.whatsapp else None
+    except WhatsappInvalidoError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        veredito = atendimento.avaliar_cnpj(req.cnpj)
+    except (CnpjInvalidoError, CnpjNaoEncontradoError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if veredito["codigo"] == "sem_consulta":
+        raise HTTPException(status_code=503, detail="Não consegui consultar o CNPJ agora. Tente de novo em instantes.")
+    try:
+        registro = lista_espera.entrar(db, cnpj=req.cnpj, email=req.email, whatsapp=whatsapp, veredito=veredito)
+    except lista_espera.ForaDaListaError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    resposta = {"ok": True, "motivo": registro.motivo, "cidade": registro.cidade}
+    db.commit()
+    return resposta
+
+
+def _conferir_atendimento(cnpj: str, modulos: list[str]) -> None:
+    """Trava do cadastro (2026.10.7): conta com o emissor só nasce se a Ana
+    atende o CNPJ. Consulta fora do ar não trava (segue à mão)."""
+    from app.services import atendimento
+
+    try:
+        veredito = atendimento.avaliar_cnpj(cnpj, so_financeiro="emissor" not in modulos)
+    except (CnpjInvalidoError, CnpjNaoEncontradoError):
+        return  # o cadastro já trata CNPJ errado do jeito dele
+    if not veredito["pode_criar"]:
+        raise HTTPException(status_code=422, detail=f"{veredito['titulo']}. {veredito['mensagem']}")
 
 
 @app.get("/api/compatibilidade", dependencies=[Depends(limite("compat", 60, 600))])
@@ -635,6 +719,8 @@ def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
         telefone = limpar_whatsapp(req.whatsapp)
     except WhatsappInvalidoError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    modulos = {"emissor": ["emissor"], "financeiro": ["financeiro"], "ambos": ["emissor", "financeiro"]}[req.produto]
+    _conferir_atendimento(req.cpf_cnpj, modulos)
     try:
         usuario = criar_cadastro(
             db, telefone=telefone, email=req.email, senha=req.senha, razao_social=req.razao_social,
@@ -925,6 +1011,7 @@ def _criar_empresa(db: Session, request: Request, u: Usuario, req: EmpresaCriarR
     herdados = modulos_da_empresa(db, ativa)
     if com_emissor and "emissor" not in herdados:
         herdados = [m for m in MODULOS if m == "emissor" or m in herdados]
+    _conferir_atendimento(req.cpf_cnpj, herdados)
     try:
         return contas.adicionar_empresa(db, u, modulos=herdados, **req.model_dump())
     except contas.ContaError as exc:
@@ -3198,6 +3285,14 @@ def api_uso_tela(req: TelaVistaRequest, request: Request):
     if nome:
         uso.gravar(request.session.get("usuario_id"), request.session.get("prestador_id"), "tela", nome)
     return {"ok": True}
+
+
+@app.get("/api/gestao/lista-espera", dependencies=[Depends(exigir_gestor)])
+def api_gestao_lista_espera(db: Session = Depends(db_sessao)):
+    """Lista de espera do cadastro, agrupada por cidade e por motivo (2026.10.7)."""
+    from app.services import lista_espera
+
+    return lista_espera.resumo_gestao(db)
 
 
 @app.get("/api/gestao/uso", dependencies=[Depends(exigir_gestor)])

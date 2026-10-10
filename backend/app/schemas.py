@@ -168,6 +168,8 @@ class ConsultaCnpjResponse(BaseModel):
     uf: str
     cod_municipio_sugerido: str | None = None
     situacao_cadastral: str | None = None
+    # 2026.10.7: o regime que a Receita informa ("2" MEI, "3" Simples, "1" não optante)
+    regime: str | None = None
 
 
 class VerificarDuplicataResponse(BaseModel):

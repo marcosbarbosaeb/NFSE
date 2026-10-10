@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Loader2, XCircle } from "lucide-react"
 import { type FocusEvent, type FormEvent, useEffect, useRef, useState } from "react"
 import { Link, Navigate, useSearchParams } from "react-router-dom"
 import { esquecerCodigoIndicacao, guardarCodigoIndicacao } from "../lib/indicacao"
@@ -8,7 +8,7 @@ import { Field } from "../components/ui/Field"
 import { GoogleIcon } from "../components/ui/GoogleIcon"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useAuth } from "../lib/auth"
-import type { CadastroRequest, Compatibilidade, ConsultaCnpj } from "../lib/types"
+import type { Atendimento, CadastroRequest, Compatibilidade, ConsultaCnpj } from "../lib/types"
 import { AnaAvatar } from "../components/brand/Marca"
 import { urlLanding } from "../lib/dominios"
 
@@ -133,6 +133,12 @@ export function CadastroPage() {
   }, [codMunicipio])
   const querNotas = produto !== "financeiro"
 
+  // A Ana atende este CNPJ? (2026.10.7): regime, situação e cidade, logo
+  // depois do CNPJ. Quem não é atendido não cria conta: entra na lista de espera.
+  const [atendimento, setAtendimento] = useState<Atendimento | null>(null)
+  const [naLista, setNaLista] = useState<string | null>(null)
+  const barrado = tipo === "empresa" && atendimento !== null && !atendimento.pode_criar
+
   if (usuario) return <Navigate to="/app" replace />
 
   // Cadastro só com o CNPJ (07/10/2026): "importe os dados da empresa da
@@ -147,6 +153,8 @@ export function CadastroPage() {
     if (digitos.length === 14 && digitos === cnpjConsultado) return
     setCnpjConsultado(digitos.length === 14 ? digitos : null)
     setAvisoCnpj(null)
+    setAtendimento(null)
+    setNaLista(null)
     setEnderecoResolvido(null)
     setEnderecoAutopreenchido(null)
     // CNPJ novo: a razão social e a cidade do CNPJ anterior saem (08/10/2026)
@@ -171,9 +179,10 @@ export function CadastroPage() {
       setEnderecoResolvido(`${partes.join(", ")}${partes.length ? " — " : ""}${dados.municipio}/${dados.uf}`)
       // Sem razão social ou cidade a pessoa completa à mão.
       setManual(!dados.razao_social || !dados.cod_municipio_sugerido)
-      if (dados.situacao_cadastral && dados.situacao_cadastral.toUpperCase() !== "ATIVA") {
-        setAvisoCnpj(`Situação cadastral deste CNPJ na Receita: ${dados.situacao_cadastral}. Confirme se está certo antes de continuar.`)
-      }
+      api
+        .get<Atendimento>(`/atendimento?cnpj=${digitos}&produto=${produto}`)
+        .then((v) => setAtendimento(v.codigo === "sem_consulta" || v.codigo === "indefinido" ? null : v))
+        .catch(() => setAtendimento(null))
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         setAvisoCnpj("Não encontramos esse CNPJ — confira se digitou certo, ou preencha os dados manualmente.")
@@ -198,6 +207,19 @@ export function CadastroPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setErro(null)
+    if (barrado && atendimento) {
+      if (!atendimento.lista_espera) return
+      setEnviando(true)
+      try {
+        await api.post("/lista-espera", { cnpj: cnpj.replace(/\D/g, ""), email, whatsapp: whatsapp || null })
+        setNaLista(email)
+      } catch (err) {
+        setErro(err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo.")
+      } finally {
+        setEnviando(false)
+      }
+      return
+    }
     if (senha.length < 8) {
       setErro("A senha precisa ter pelo menos 8 caracteres.")
       return
@@ -443,25 +465,41 @@ export function CadastroPage() {
                 </>
               )}
 
-              {compat && querNotas && compat.emissor === "sim" && (
+              {atendimento && (
+                <div
+                  role="status"
+                  className={`rounded-lg px-3 py-2.5 text-sm ${
+                    atendimento.pode_criar
+                      ? "bg-success-50 text-success-700 dark:bg-success-900/30 dark:text-success-300"
+                      : atendimento.lista_espera
+                        ? "bg-warning-50 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300"
+                        : "bg-danger-50 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300"
+                  }`}
+                >
+                  <p className="flex items-start gap-2 font-semibold">
+                    {atendimento.pode_criar ? (
+                      <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+                    ) : atendimento.lista_espera ? (
+                      <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                    ) : (
+                      <XCircle size={16} className="mt-0.5 shrink-0" />
+                    )}
+                    <span>{atendimento.titulo}</span>
+                  </p>
+                  {atendimento.regime_rotulo && <p className="mt-1 pl-6 text-xs">Regime na Receita: {atendimento.regime_rotulo}</p>}
+                  <p className="mt-1 pl-6">{atendimento.mensagem}</p>
+                </div>
+              )}
+              {/* Sem o veredito (consulta fora do ar, cidade escolhida à mão): o aviso da cidade, como antes. */}
+              {!atendimento && compat && querNotas && compat.emissor === "sim" && (
                 <p className="flex items-start gap-2 rounded-lg bg-success-50 px-3 py-2 text-sm text-success-700 dark:bg-success-900/30 dark:text-success-300" role="status">
                   <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> <span>{compat.mensagem}</span>
                 </p>
               )}
-              {compat && querNotas && compat.emissor === "nao" && (
-                <div className="rounded-lg bg-warning-50 px-3 py-2.5 text-sm text-warning-700 dark:bg-warning-900/30 dark:text-warning-300" role="status">
-                  <p className="flex items-start gap-2">
-                    <AlertTriangle size={16} className="mt-0.5 shrink-0" /> <span>{compat.mensagem}</span>
-                  </p>
-                  <p className="mt-1.5 pl-6 text-xs">
-                    Você pode{" "}
-                    <Link to="/cadastro?produto=financeiro" className="font-semibold underline">
-                      criar a conta só com o Financeiro
-                    </Link>{" "}
-                    — ou criar assim mesmo, se a prefeitura já liberou o Emissor Nacional pra sua empresa (a lista da Receita é de{" "}
-                    {compat.lista_atualizada_em?.split("-").reverse().join("/") ?? "alguns dias atrás"}).
-                  </p>
-                </div>
+              {!atendimento && compat && querNotas && compat.emissor === "nao" && (
+                <p className="flex items-start gap-2 rounded-lg bg-warning-50 px-3 py-2.5 text-sm text-warning-700 dark:bg-warning-900/30 dark:text-warning-300" role="status">
+                  <AlertTriangle size={16} className="mt-0.5 shrink-0" /> <span>{compat.mensagem}</span>
+                </p>
               )}
 
                 </>
@@ -479,13 +517,28 @@ export function CadastroPage() {
                 value={whatsapp}
                 onChange={(e) => setWhatsapp(mascararTelefone(e.target.value))}
               />
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Senha" type="password" required value={senha} onChange={(e) => setSenha(e.target.value)} />
-                <Field label="Confirmar senha" type="password" required value={confirmacao} onChange={(e) => setConfirmacao(e.target.value)} />
-              </div>
-              <Button type="submit" disabled={enviando} className="mt-2 w-full">
-                {enviando ? "Criando conta..." : "Criar conta"}
-              </Button>
+              {!barrado && (
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Senha" type="password" required value={senha} onChange={(e) => setSenha(e.target.value)} />
+                  <Field label="Confirmar senha" type="password" required value={confirmacao} onChange={(e) => setConfirmacao(e.target.value)} />
+                </div>
+              )}
+              {barrado && atendimento?.lista_espera ? (
+                naLista ? (
+                  <p role="status" className="rounded-lg bg-success-50 px-3 py-2 text-sm text-success-700 dark:bg-success-900/30 dark:text-success-300">
+                    Pronto! Você está na lista de espera. Eu aviso em <strong>{naLista}</strong>{" "}
+                    {atendimento.codigo === "cidade_fora" ? "assim que a sua cidade entrar no Emissor Nacional." : "quando passar a atender o seu regime."}
+                  </p>
+                ) : (
+                  <Button type="submit" disabled={enviando} className="mt-2 w-full">
+                    {enviando ? "Guardando..." : "Entrar na lista de espera"}
+                  </Button>
+                )
+              ) : (
+                <Button type="submit" disabled={enviando || barrado} className="mt-2 w-full">
+                  {enviando ? "Criando conta..." : "Criar conta"}
+                </Button>
+              )}
               <p className="text-center text-xs text-slate-400 dark:text-slate-500">
                 Ao criar a conta você concorda com os{" "}
                 <Link to="/termos" className="underline hover:text-accent-600">Termos de uso</Link> e a{" "}

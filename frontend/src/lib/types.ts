@@ -668,6 +668,7 @@ export interface ConsultaCnpj {
   uf: string
   cod_municipio_sugerido: string | null
   situacao_cadastral: string | null
+  regime?: string | null
 }
 
 export interface Emissao {
@@ -1543,6 +1544,21 @@ export interface ProximaNota {
   restantes: number
 }
 
+/** A Ana atende este CNPJ? (2026.10.7, GET /api/atendimento) */
+export interface Atendimento {
+  codigo: "atende" | "cidade_fora" | "regime" | "inativo" | "sem_consulta" | "indefinido"
+  pode_criar: boolean
+  lista_espera: boolean
+  titulo: string | null
+  mensagem: string | null
+  regime: string | null
+  regime_rotulo: string | null
+  cidade: string | null
+  cod_municipio: string | null
+  situacao_cadastral: string | null
+  razao_social: string | null
+}
+
 export interface Compatibilidade {
   emissor: "sim" | "nao" | "indefinido"
   cidade: string | null
@@ -1888,6 +1904,8 @@ export interface ContaGestao {
   so_contador?: boolean
   /** Contadores com acesso ativo a esta empresa. */
   contadores: number
+  /** 2026.10.7: conta antiga em cidade/regime que a Ana não atende. */
+  fora_do_atendimento?: "cidade_fora" | "regime" | null
 }
 
 export interface ResumoGestao {

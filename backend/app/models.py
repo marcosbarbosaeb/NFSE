@@ -1210,6 +1210,31 @@ class IaChamada(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ListaEspera(Base):
+    """Lista de espera (2026.10.7): quem não pôde criar conta porque a cidade
+    ainda não usa o Emissor Nacional ou porque o regime não é atendido. A
+    Gestão vê agrupado por cidade e por motivo; quando a lista de municípios
+    é atualizada e a cidade entra, a pessoa recebe um e-mail (`avisado_em`).
+    Sem RLS (é antes de existir conta)."""
+
+    __tablename__ = "lista_espera"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    email: Mapped[str] = mapped_column(String(254), nullable=False)
+    whatsapp: Mapped[str | None] = mapped_column(String(20))
+    cnpj: Mapped[str] = mapped_column(String(14), nullable=False)
+    razao_social: Mapped[str | None] = mapped_column(String(300))
+    cod_municipio: Mapped[str | None] = mapped_column(String(7))
+    cidade: Mapped[str | None] = mapped_column(String(120))
+    motivo: Mapped[str] = mapped_column(String(20), nullable=False)  # cidade_fora | regime
+    regime: Mapped[str | None] = mapped_column(String(1))
+    avisado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=_agora_utc)
+
+    __table_args__ = (UniqueConstraint("cnpj", "motivo", name="uq_lista_espera_cnpj_motivo"),)
+
+
 class AssinaturaAgenda(Base):
     """Link de assinatura do calendário (08/10/2026): o Google Agenda (ou
     Outlook, Apple) lê `GET /api/agenda/<token>.ics` sem login. Sem RLS de
