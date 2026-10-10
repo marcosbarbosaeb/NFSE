@@ -64,6 +64,7 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
   const modulos = useModulos()
   const { usuario } = useAuth()
   const soContador = usuario?.so_contador === true
+  const noPainelDoContador = pathname.startsWith("/app/atendimentos")
   const grupos = soContador ? [] : [
     ...(modulos.emissor ? [{ titulo: "Notas", itens: NOTAS }] : []),
     ...(modulos.financeiro ? [{ titulo: "Financeiro", itens: modulos.emissor ? FINANCEIRO : [...FINANCEIRO, CLIENTES] }] : []),
@@ -134,6 +135,30 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
           <Marca escuro subtitulo={soContador ? "Conta de contador" : doisProdutos ? "Notas e financeiro" : modulos.financeiro ? "Financeiro" : "Emissor de notas"} />
         </Link>
 
+        {/* Observação de teste 8 (10/10/2026): quem é dono de empresa e também
+            contador(a) troca de papel aqui, no topo do menu (antes era um link
+            perdido no rodapé). Só aparece pra quem atende empresas. */}
+        {usuario?.atende_empresas && !soContador && (
+          <div role="group" aria-label="Trocar de papel" className="mb-3 flex gap-1 rounded-lg bg-brand-800/70 p-1">
+            <Link
+              to="/app"
+              onClick={onFechar}
+              aria-current={!noPainelDoContador ? "page" : undefined}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold ${!noPainelDoContador ? "bg-white text-brand-900" : "text-slate-300 hover:text-white"}`}
+            >
+              <Home size={14} aria-hidden="true" /> Empresa
+            </Link>
+            <Link
+              to="/app/atendimentos"
+              onClick={onFechar}
+              aria-current={noPainelDoContador ? "page" : undefined}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold ${noPainelDoContador ? "bg-white text-brand-900" : "text-slate-300 hover:text-white"}`}
+            >
+              <BriefcaseBusiness size={14} aria-hidden="true" /> Contador(a)
+            </Link>
+          </div>
+        )}
+
         <div className="mb-5">
           <TrocaEmpresa />
         </div>
@@ -193,13 +218,6 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
             <UserRound size={18} aria-hidden="true" />
             Minha conta
           </Link>
-          {/* Contador (06/10/2026): só pra quem atende empresas ou tem convite. */}
-          {usuario?.atende_empresas && !soContador && (
-            <NavLink to="/app/atendimentos" onClick={onFechar} className={({ isActive }) => `mt-1 ${classeItem(isActive)}`}>
-              <BriefcaseBusiness size={18} aria-hidden="true" />
-              Painel do contador
-            </NavLink>
-          )}
           {gestor && (
             <NavLink to="/app/gestao" onClick={onFechar} className={({ isActive }) => `mt-1 ${classeItem(isActive)}`}>
               <ShieldCheck size={18} aria-hidden="true" />

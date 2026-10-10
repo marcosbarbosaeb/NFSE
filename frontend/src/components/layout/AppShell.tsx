@@ -1,3 +1,4 @@
+import { TELA_DO_CONTADOR, voltouDoGoogleComoContador } from "../../lib/entrada"
 import { PerguntaPerfil } from "../PerguntaPerfil"
 import { FlaskConical, LogOut, ShieldCheck } from "lucide-react"
 import { ehDominioGestao } from "../../lib/dominios"
@@ -120,6 +121,14 @@ function AppShellDoEmissor() {
       .then((p) => sincronizarTutorial(email, p.tutorial ?? { vistos: [] }))
       .catch(() => undefined)
   }, [usuario?.email, usuario?.demo])
+  // Entrou pelo Google com "Sou contador(a)" (observação 8): o Google devolve
+  // em /app; levo uma vez para o painel do contador.
+  const navigate = useNavigate()
+  useEffect(() => {
+    if (usuario && pathname === "/app" && voltouDoGoogleComoContador()) navigate(TELA_DO_CONTADOR, { replace: true })
+    // só na chegada
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Boolean(usuario)])
   if (usuario?.so_contador && !TELAS_DA_CONTA_DE_CONTADOR.some((t) => pathname === t || pathname.startsWith(t + "/"))) {
     return <Navigate to="/app/atendimentos" replace />
   }

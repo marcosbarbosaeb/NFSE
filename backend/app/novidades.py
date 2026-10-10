@@ -27,11 +27,12 @@ VERSOES: list[dict] = [
         "itens": [
             {"perfil": "todos", "titulo": "Pergunte à Ana, dentro do suporte", "link": "/app/ajuda",
              "texto": "Em “Fale com o suporte”, escreva a sua dúvida: primeiro eu procuro nas respostas que já tenho; se não achar, "
-                      "você pergunta pra mim do seu jeito; e, se ainda precisar, fala com a equipe. Quando a pergunta é de "
+                      "você me pergunta. Embaixo ficam sempre as três formas de falar com a gente: Pergunte à Ana, WhatsApp e "
+                      "e-mail. Pergunta completa ajuda: diga o que quer fazer e em qual tela. Quando a pergunta é de "
                       "contabilidade (imposto, regime, alíquota), eu digo que é com o seu contador. Há um número de perguntas por dia."},
-            {"perfil": "contador", "titulo": "Contador entra pela mesma tela",
-             "texto": "A entrada é a mesma para empresa e contador. Na tela de entrar e no site agora aparece o caminho para criar a "
-                      "conta de contador."},
+            {"perfil": "contador", "titulo": "Entrada de empresa e de contador",
+             "texto": "A tela de entrar agora tem duas abas: “Sou empresa” e “Sou contador(a)”. O login é o mesmo; a aba do contador "
+                      "leva direto ao painel do contador. Quem também tem empresa troca de papel no topo do menu."},
             {"perfil": "empresa", "titulo": "Nota recusada explicada em palavras simples",
              "texto": "Quando a prefeitura recusa uma nota, a página dela ganha “Em palavras simples”: o que aconteceu e o que fazer, "
                       "passo a passo, sem o código da recusa."},

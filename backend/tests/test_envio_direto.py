@@ -57,7 +57,10 @@ def test_token_ida_e_volta_e_token_adulterado(db, vinculo_teste, client):
     token = envio_direto.gerar_token(emissao)
     assert envio_direto.ler_token(token) == (emissao.id, emissao.prestador_id)
     with pytest.raises(envio_direto.LinkInvalidoError):
-        envio_direto.ler_token(token[:-2] + "xx")
+        # troca um caractere do meio da assinatura (o último caractere em base64 só
+        # carrega parte dos bits e às vezes a troca não mudava nada: teste instável)
+        i = len(token) - 6
+        envio_direto.ler_token(token[:i] + ("A" if token[i] != "A" else "B") + token[i + 1:])
 
 
 def test_opcoes_email_desligado_sem_dominio(client, vinculo_teste):

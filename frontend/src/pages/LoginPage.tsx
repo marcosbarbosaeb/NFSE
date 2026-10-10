@@ -7,6 +7,7 @@ import { ApiError, useAuth } from "../lib/auth"
 import { api, formatarErro } from "../lib/api"
 import { AnaAvatar } from "../components/brand/Marca"
 import { ehDominioGestao, urlLanding } from "../lib/dominios"
+import { type ComoEntrar, comoEntrarSalvo, destinoDeEntrada, guardarComoEntrar } from "../lib/entrada"
 
 // Marco 16, item 1 — mensagens do redirect de volta de /api/auth/google/callback
 // (ver app/main.py: nunca JSON, sempre um redirect com ?erro=... nessa volta).
@@ -37,10 +38,18 @@ export function LoginPage() {
   const [avisoReenvio, setAvisoReenvio] = useState<string | null>(null)
   const [reenviando, setReenviando] = useState(false)
   const [erroGoogle, setErroGoogle] = useState<string | null>(null)
+  // Observação de teste 8 (10/10/2026): a entrada mostra os dois caminhos,
+  // empresa e contador(a). O login é o mesmo; muda só a tela onde a pessoa cai.
+  // ?como=contador abre já na aba do contador.
+  const [como, setComo] = useState<ComoEntrar>(() => (searchParams.get("como") === "contador" ? "contador" : comoEntrarSalvo()))
+  function escolher(c: ComoEntrar) {
+    setComo(c)
+    guardarComoEntrar(c)
+  }
 
   // ?volta=/convite/... (2026.10.7): depois de entrar, volta pro convite do dono. Só caminho interno.
   const volta = searchParams.get("volta")
-  const destino = volta && volta.startsWith("/") && !volta.startsWith("//") ? volta : naGestao ? "/app/gestao" : "/app"
+  const destino = volta && volta.startsWith("/") && !volta.startsWith("//") ? volta : naGestao ? "/app/gestao" : destinoDeEntrada(como)
   if (usuario) return <Navigate to={destino} replace />
 
   if (modo === "codigo") {
@@ -53,6 +62,7 @@ export function LoginPage() {
 
   async function onGoogleClick() {
     setErroGoogle(null)
+    guardarComoEntrar(como, { depoisDoGoogle: true })
     try {
       await loginComGoogle()
     } catch (err) {
@@ -104,6 +114,7 @@ export function LoginPage() {
 
   return (
     <MolduraLogin>
+        {!naGestao && <AbasDeEntrada como={como} aoEscolher={escolher} />}
         <form onSubmit={onSubmit}>
           <label className="mb-4 block">
             <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">E-mail</span>
@@ -154,21 +165,21 @@ export function LoginPage() {
 
           {!naGestao && (
           <>
-          <p className="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
-            Ainda não tem conta?{" "}
-            <Link to="/cadastro" className="font-medium text-primary-600 hover:text-primary-700">
-              Criar conta
-            </Link>
-          </p>
-          {/* 2026.10.7 (observação de teste): a entrada é a mesma para empresa e
-              contador, mas o caminho do contador não aparecia em lugar nenhum. */}
-          <p className="mt-2 text-center text-sm text-slate-500 dark:text-slate-400">
-            É contador(a)? Entre aqui mesmo com o seu e-mail ou{" "}
-            <Link to="/cadastro?tipo=contador" className="font-medium text-primary-600 hover:text-primary-700">
-              crie a sua conta de contador
-            </Link>
-            .
-          </p>
+          {como === "contador" ? (
+            <p className="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
+              Ainda não tem conta de contador?{" "}
+              <Link to="/cadastro?tipo=contador" className="font-medium text-primary-600 hover:text-primary-700">
+                Criar conta de contador
+              </Link>
+            </p>
+          ) : (
+            <p className="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
+              Ainda não tem conta?{" "}
+              <Link to="/cadastro" className="font-medium text-primary-600 hover:text-primary-700">
+                Criar conta
+              </Link>
+            </p>
+          )}
           <p className="mt-2 text-center text-sm text-slate-500 dark:text-slate-400">
             Só quer conhecer?{" "}
             <Link to="/simulacao" className="font-medium text-accent-600 hover:text-accent-700">
@@ -179,6 +190,38 @@ export function LoginPage() {
           )}
         </form>
     </MolduraLogin>
+  )
+}
+
+/** As duas portas da entrada: empresa ou contador(a). Mesmo e-mail e senha. */
+function AbasDeEntrada({ como, aoEscolher }: { como: ComoEntrar; aoEscolher: (c: ComoEntrar) => void }) {
+  const aba = (valor: ComoEntrar, rotulo: string) => (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={como === valor}
+      onClick={() => aoEscolher(valor)}
+      className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+        como === valor
+          ? "bg-white text-primary-700 shadow-sm dark:bg-slate-700 dark:text-primary-200"
+          : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+      }`}
+    >
+      {rotulo}
+    </button>
+  )
+  return (
+    <div className="mb-5">
+      <div role="tablist" aria-label="Como você quer entrar" className="flex gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-900/60">
+        {aba("empresa", "Sou empresa")}
+        {aba("contador", "Sou contador(a)")}
+      </div>
+      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+        {como === "contador"
+          ? "Você cai no painel do contador, com as empresas que atende. Se também tem empresa na Ana, é o mesmo login: depois troca no menu."
+          : "Você cai na sua empresa. Se também atende empresas como contador(a), é o mesmo login: depois troca no menu."}
+      </p>
+    </div>
   )
 }
 

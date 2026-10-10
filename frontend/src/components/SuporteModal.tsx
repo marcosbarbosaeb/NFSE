@@ -102,97 +102,146 @@ export function SuporteModal({
     ? `https://wa.me/${canais.whatsapp}?text=${encodeURIComponent("Olá! Preciso de ajuda com a Agente Ana.")}`
     : null
 
-  const titulo = etapa === "buscar" ? "Fale com o suporte" : etapa === "ana" ? "Pergunte à Ana" : "Fale com a equipe"
+  const temAna = logado && ia !== null
+  const titulo = etapa === "buscar" ? "Fale com o suporte" : etapa === "ana" ? "Pergunte à Ana" : "Fale com a equipe por e-mail"
+  // Observação de teste 6 (10/10/2026): janela maior e do mesmo tamanho em
+  // todas as etapas — o conteúdo rola por dentro, a moldura não muda.
+  // Observação 4: as três formas de falar com a gente ficam sempre à vista,
+  // embaixo (Pergunte à Ana, WhatsApp e e-mail).
   return (
-    <Modal titulo={titulo} onClose={onClose}>
-      {etapa === "buscar" ? (
-        <BuscarDuvida
-          duvida={duvida}
-          aoMudar={setDuvida}
-          temIa={ia !== null}
-          aoFechar={onClose}
-          aoNaoAchar={() => (ia ? setEtapa("ana") : irParaEquipe(duvida, null))}
-        />
-      ) : etapa === "ana" && ia ? (
-        <div className="flex flex-col gap-3">
-          <button type="button" onClick={() => setEtapa("buscar")} className="inline-flex items-center gap-1 self-start text-xs font-medium text-slate-500 hover:text-primary-600 dark:text-slate-400">
-            <ArrowLeft size={13} aria-hidden="true" /> Voltar pras perguntas
-          </button>
-          <p className="text-sm text-slate-600 dark:text-slate-300">
-            <Sparkles size={15} className="mr-1 inline align-[-2px] text-accent-500" aria-hidden="true" />
-            Eu respondo com base nas minhas explicações. Dúvida de imposto ou de qual código usar é com o seu contador.
-          </p>
-          <PergunteAna perguntaInicial={duvida} restantesIniciais={ia.restantes} limite={ia.limite} aoPrecisarDaEquipe={irParaEquipe} />
-        </div>
-      ) : enviado ? (
-        <div className="flex flex-col items-center gap-3 py-6 text-center">
-          <CheckCircle2 size={40} className="text-success-600" />
-          <p className="font-medium text-slate-800 dark:text-slate-100">Mensagem enviada!</p>
-          <p className="text-sm text-slate-500 dark:text-slate-400">A gente responde no seu e-mail, normalmente no mesmo dia útil.</p>
-          <Button variant="outline" onClick={onClose}>
-            Fechar
-          </Button>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {logado && inicio !== "equipe" && (
-            <button type="button" onClick={() => setEtapa(ia ? "ana" : "buscar")} className="inline-flex items-center gap-1 self-start text-xs font-medium text-slate-500 hover:text-primary-600 dark:text-slate-400">
-              <ArrowLeft size={13} aria-hidden="true" /> {ia ? "Voltar pra Ana" : "Voltar pras perguntas"}
-            </button>
-          )}
-          {whatsapp && (
-            <a
-              href={whatsapp}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center justify-center gap-2 rounded-lg bg-[#25D366] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90"
-            >
-              <MessageCircle size={18} /> Chamar no WhatsApp
-            </a>
-          )}
-          {canais && !canais.formulario ? (
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              Escreva para{" "}
-              <a href={MAILTO_SUPORTE} className="font-medium text-primary-600 underline">
-                {EMAIL_SUPORTE}
-              </a>
-              .
-            </p>
+    <Modal titulo={titulo} onClose={onClose} largura="max-w-2xl">
+      <div className="flex h-[34rem] max-h-[calc(100dvh-12rem)] flex-col gap-3">
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          {etapa === "buscar" ? (
+            <BuscarDuvida
+              duvida={duvida}
+              aoMudar={setDuvida}
+              temIa={temAna}
+              aoFechar={onClose}
+              aoNaoAchar={() => (temAna ? setEtapa("ana") : irParaEquipe(duvida, null))}
+            />
+          ) : etapa === "ana" && temAna && ia ? (
+            <div className="flex flex-col gap-3">
+              <button type="button" onClick={() => setEtapa("buscar")} className="inline-flex items-center gap-1 self-start text-xs font-medium text-slate-500 hover:text-primary-600 dark:text-slate-400">
+                <ArrowLeft size={13} aria-hidden="true" /> Voltar pras perguntas
+              </button>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                <Sparkles size={15} className="mr-1 inline align-[-2px] text-accent-500" aria-hidden="true" />
+                Eu respondo com base nas minhas explicações. Dúvida de imposto ou de qual código usar é com o seu contador.
+              </p>
+              <PergunteAna perguntaInicial={duvida} restantesIniciais={ia.restantes} limite={ia.limite} aoPrecisarDaEquipe={irParaEquipe} />
+            </div>
+          ) : enviado ? (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <CheckCircle2 size={40} className="text-success-600" />
+              <p className="font-medium text-slate-800 dark:text-slate-100">Mensagem enviada!</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">A gente responde no seu e-mail, normalmente no mesmo dia útil.</p>
+              <Button variant="outline" onClick={onClose}>
+                Fechar
+              </Button>
+            </div>
           ) : (
-            <form onSubmit={enviar} className="flex flex-col gap-3">
-              {whatsapp && <p className="text-center text-xs text-slate-400">ou mande uma mensagem por aqui</p>}
-              {!logado && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Rotulo texto="Seu nome">
-                    <input value={nome} onChange={(e) => setNome(e.target.value)} maxLength={120} className={classeCampo} />
-                  </Rotulo>
-                  <Rotulo texto="Seu e-mail (pra resposta)">
-                    <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={200} className={classeCampo} />
-                  </Rotulo>
-                </div>
+            <div className="flex flex-col gap-4">
+              {logado && inicio !== "equipe" && (
+                <button type="button" onClick={() => setEtapa(temAna ? "ana" : "buscar")} className="inline-flex items-center gap-1 self-start text-xs font-medium text-slate-500 hover:text-primary-600 dark:text-slate-400">
+                  <ArrowLeft size={13} aria-hidden="true" /> {temAna ? "Voltar pra Ana" : "Voltar pras perguntas"}
+                </button>
               )}
-              <Rotulo texto="Assunto">
-                <input required minLength={2} value={assunto} onChange={(e) => setAssunto(e.target.value)} maxLength={150} placeholder="Ex.: dúvida ao gerar a nota" className={classeCampo} />
-              </Rotulo>
-              <Rotulo texto="Mensagem">
-                <textarea required minLength={5} value={mensagem} onChange={(e) => setMensagem(e.target.value)} rows={5} maxLength={5000} className={classeCampo} />
-              </Rotulo>
-              {/* robôs preenchem isto; gente não vê */}
-              <input tabIndex={-1} autoComplete="off" value={site} onChange={(e) => setSite(e.target.value)} className="hidden" aria-hidden="true" />
-              {erro && <p className="text-sm text-danger-600">{erro}</p>}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <a href={MAILTO_SUPORTE} className="flex items-center gap-1 text-xs text-slate-400 hover:text-primary-600">
-                  <Mail size={13} /> {EMAIL_SUPORTE}
-                </a>
-                <Button type="submit" variant="accent" disabled={enviando}>
-                  <Send size={15} /> {enviando ? "Enviando..." : "Enviar"}
-                </Button>
-              </div>
-            </form>
+              {canais && !canais.formulario ? (
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Escreva para{" "}
+                  <a href={MAILTO_SUPORTE} className="font-medium text-primary-600 underline">
+                    {EMAIL_SUPORTE}
+                  </a>
+                  .
+                </p>
+              ) : (
+                <form onSubmit={enviar} className="flex flex-col gap-3">
+                  <p className="text-sm text-slate-600 dark:text-slate-300">Escreva aqui e a resposta chega no seu e-mail.</p>
+                  {!logado && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <Rotulo texto="Seu nome">
+                        <input value={nome} onChange={(e) => setNome(e.target.value)} maxLength={120} className={classeCampo} />
+                      </Rotulo>
+                      <Rotulo texto="Seu e-mail (pra resposta)">
+                        <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={200} className={classeCampo} />
+                      </Rotulo>
+                    </div>
+                  )}
+                  <Rotulo texto="Assunto">
+                    <input required minLength={2} value={assunto} onChange={(e) => setAssunto(e.target.value)} maxLength={150} placeholder="Ex.: dúvida ao gerar a nota" className={classeCampo} />
+                  </Rotulo>
+                  <Rotulo texto="Mensagem">
+                    <textarea required minLength={5} value={mensagem} onChange={(e) => setMensagem(e.target.value)} rows={5} maxLength={5000} className={classeCampo} />
+                  </Rotulo>
+                  {/* robôs preenchem isto; gente não vê */}
+                  <input tabIndex={-1} autoComplete="off" value={site} onChange={(e) => setSite(e.target.value)} className="hidden" aria-hidden="true" />
+                  {erro && <p className="text-sm text-danger-600">{erro}</p>}
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <a href={MAILTO_SUPORTE} className="flex items-center gap-1 text-xs text-slate-400 hover:text-primary-600">
+                      <Mail size={13} /> {EMAIL_SUPORTE}
+                    </a>
+                    <Button type="submit" variant="accent" disabled={enviando}>
+                      <Send size={15} /> {enviando ? "Enviando..." : "Enviar"}
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </div>
           )}
         </div>
-      )}
+
+        <CanaisSempreAVista
+          etapa={etapa}
+          temAna={temAna}
+          whatsapp={whatsapp}
+          aoAna={() => setEtapa("ana")}
+          aoEmail={() => {
+            setEnviado(false)
+            irParaEquipe(etapa === "buscar" ? duvida : "", null)
+          }}
+        />
+      </div>
     </Modal>
+  )
+}
+
+/** As três formas de falar com a gente, sempre à vista no rodapé do suporte. */
+function CanaisSempreAVista({
+  etapa,
+  temAna,
+  whatsapp,
+  aoAna,
+  aoEmail,
+}: {
+  etapa: EtapaSuporte
+  temAna: boolean
+  whatsapp: string | null
+  aoAna: () => void
+  aoEmail: () => void
+}) {
+  const base = "flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors"
+  const normal = "border-slate-200 bg-white text-slate-700 hover:border-primary-300 hover:text-primary-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:text-primary-300"
+  const ativo = "border-primary-400 bg-primary-50 text-primary-700 dark:border-primary-500 dark:bg-primary-900/30 dark:text-primary-200"
+  return (
+    <div className="border-t border-slate-100 pt-3 dark:border-slate-700/60">
+      <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">Prefere falar direto? Escolha como:</p>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        {temAna && (
+          <button type="button" onClick={aoAna} aria-pressed={etapa === "ana"} className={`${base} ${etapa === "ana" ? ativo : normal}`}>
+            <Sparkles size={16} className="text-accent-500" aria-hidden="true" /> Pergunte à Ana
+          </button>
+        )}
+        {whatsapp && (
+          <a href={whatsapp} target="_blank" rel="noreferrer" className={`${base} border-transparent bg-[#25D366] text-white hover:opacity-90`}>
+            <MessageCircle size={16} aria-hidden="true" /> WhatsApp
+          </a>
+        )}
+        <button type="button" onClick={aoEmail} aria-pressed={etapa === "equipe"} className={`${base} ${etapa === "equipe" ? ativo : normal}`}>
+          <Mail size={16} aria-hidden="true" /> E-mail
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -245,7 +294,7 @@ function BuscarDuvida({
         {digitou && achadas.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">Não achei uma resposta pronta pra isso.</p>}
       </div>
       {achadas.length > 0 && (
-        <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 dark:divide-slate-700/60 dark:border-slate-700">
+        <ul className="divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 dark:divide-slate-700/60 dark:border-slate-700">
           {achadas.map((p) => (
             <li key={p.id}>
               <button

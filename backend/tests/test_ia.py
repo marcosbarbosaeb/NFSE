@@ -259,3 +259,43 @@ def test_resumo_da_gestao(db, usuario, prestador_teste, ligada, vinculo_teste):
     r = ia.resumo_gestao(db, 30)
     assert r["perguntas"].get("ok", 0) >= 1 and r["recusas"].get("ok", 0) >= 1
     assert r["custo_por_pergunta_usd"] is not None and r["custo_estimado_usd"] > 0
+
+
+# ---- observação de teste 5 (10/10/2026): resposta saiu cortada no meio da palavra
+
+class _RespCortada(_Resp):
+    def __init__(self, texto):
+        super().__init__(texto=texto, saida=1500)
+        self._dados["stop_reason"] = "max_tokens"
+
+
+def test_teto_de_tamanho_folgado_e_pergunta_vaga_no_sistema(db, usuario, prestador_teste, ligada):
+    _perguntar(db, usuario, prestador_teste, "carregar nota")
+    enviado = ligada.chamadas[0]["json"]
+    assert enviado["max_tokens"] >= 1500  # 500 cortava a resposta
+    assert "curta ou vaga" in enviado["system"]
+
+
+def test_resposta_cortada_fica_ate_a_ultima_frase(db, usuario, prestador_teste, ligada):
+    ligada.resposta = _RespCortada(
+        "Para trazer as notas que você já emitiu, uso a importação do Emissor Nacional.\n"
+        "1. Clique em NFS-e.\n2. Clique em Importar do Emissor Nacional.\n3. Escolha o p"
+    )
+    r = _perguntar(db, usuario, prestador_teste, "carregar nota")
+    assert r.situacao == "ok"
+    assert "Escolha o p" not in r.texto  # nunca meia palavra
+    assert "2. Clique em Importar do Emissor Nacional." in r.texto
+    assert "Parei aqui" in r.texto
+
+
+def test_resposta_cortada_sem_frase_inteira_vira_falha_e_nao_conta(db, usuario, prestador_teste, ligada):
+    ligada.resposta = _RespCortada("Se você quer trazer para o sistema as notas que já emitiu p")
+    r = _perguntar(db, usuario, prestador_teste, "carregar nota")
+    assert r.situacao == "falha" and r.texto is None
+    assert ia.perguntas_hoje(db, usuario.id) == 0
+
+
+def test_ate_a_ultima_frase():
+    assert ia.ate_a_ultima_frase("Uma frase. Outra pela met") == "Uma frase."
+    assert ia.ate_a_ultima_frase("sem fim nenhum") == ""
+    assert ia.ate_a_ultima_frase("Valor 1.500 reais e mais") == ""  # ponto de número não é fim de frase

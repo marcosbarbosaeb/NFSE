@@ -54,7 +54,7 @@ Desde a versão 2026.10.7 a Ana consulta o CNPJ e mostra o resultado na hora, an
 
 ### Criar a conta
 
-A entrada é a mesma para todos: empresa e contador usam a mesma tela de entrar ("Entrar"), com o e-mail e a senha, o código por e-mail ou o Google. Para **criar** a conta, a tela de cadastro tem duas abas: "Tenho empresa" e "Sou contador(a)". Na tela de entrar, o link "crie a sua conta de contador" já abre a aba do contador.
+A tela de entrar tem duas abas: **"Sou empresa"** e **"Sou contador(a)"**. O login é o mesmo (e-mail e senha, código por e-mail ou Google); a aba só decide onde você cai: "Sou empresa" abre a sua empresa e "Sou contador(a)" abre o "Painel do contador". A Ana lembra a última aba escolhida naquele navegador. Quem é dono de empresa e também contador(a) troca de papel depois de entrar, no topo do menu: "Empresa" ou "Contador(a)". Para **criar** a conta, a tela de cadastro tem duas abas: "Tenho empresa" e "Sou contador(a)"; na aba do contador da tela de entrar, o link "Criar conta de contador" já abre a aba certa.
 
 Na tela de cadastro você informa o CNPJ (o resto é preenchido sozinho), a razão social, a cidade, o e-mail e uma senha com pelo menos 8 caracteres. Também dá pra usar "Continuar com Google".
 
@@ -822,7 +822,7 @@ Clique em "Enviar convite". O contador entra com o login dele (você não passa 
 
 ### Para contadores: "Painel do contador"
 
-O contador cria a própria conta em "Criar conta", na opção "Sou contador(a)": é grátis, não pede CNPJ e não tem período de teste nem assinatura — quem assina é o cliente. O e-mail tem que ser o mesmo que o cliente convidou. Essa conta mostra só "Painel do contador", "Minha conta" e "Ajuda"; pra emitir as próprias notas, o contador adiciona a empresa dele pelo seletor de empresas ("Adicionar empresa"). O convite aparece em "Painel do contador" (no menu): "Aceitar" e depois "Abrir empresa". Dentro da empresa do cliente aparece uma faixa azul no topo dizendo o que ele pode fazer ali. As empresas dos clientes ficam também no seletor de empresas, no topo do menu, no grupo "Painel do contador". Se o contador tentar algo que o cliente não liberou, a Ana avisa qual permissão falta. "Deixar de atender" tira a empresa da lista.
+O contador cria a própria conta em "Criar conta", na opção "Sou contador(a)": é grátis, não pede CNPJ e não tem período de teste nem assinatura — quem assina é o cliente. O e-mail tem que ser o mesmo que o cliente convidou. Essa conta mostra só "Painel do contador", "Minha conta" e "Ajuda"; pra emitir as próprias notas, o contador adiciona a empresa dele pelo seletor de empresas ("Adicionar empresa"). O convite aparece em "Painel do contador" (no menu): "Aceitar" e depois "Abrir empresa". Dentro da empresa do cliente aparece uma faixa azul no topo dizendo o que ele pode fazer ali. As empresas dos clientes ficam também no seletor de empresas, no topo do menu, no grupo "Empresas que atendo". Quem atende empresas e também tem a própria troca de papel no topo do menu: "Empresa" ou "Contador(a)". Se o contador tentar algo que o cliente não liberou, a Ana avisa qual permissão falta. "Deixar de atender" tira a empresa da lista.
 
 Cada empresa da lista mostra "O que tem pra fazer": notas pra gerar, assinar, enviar, recusadas pela prefeitura e o que falta conferir na conciliação. Clicar numa pendência abre a empresa já na tela certa. "Só com pendência" esconde quem está em dia.
 
@@ -850,11 +850,11 @@ O dono recebe um convite por e-mail, válido por 14 dias, pra criar o acesso del
 
 ### Pergunte à Ana
 
-O "Pergunte à Ana" fica dentro do **"Fale com o suporte"** (no menu ou no fim da tela "Ajuda"). Primeiro você escreve a dúvida e a Ana procura nas respostas que já existem. Se não achar, clique em **"Não achei: perguntar à Ana"**, escreva do seu jeito e clique em "Perguntar à Ana". A resposta sai das explicações deste guia e aparece ali mesmo; se não resolver, "Falar com a equipe" leva a sua pergunta para o formulário. Na tela "Ajuda", quando a busca não acha nada, o botão "Perguntar à Ana" já leva o que você digitou. Cada pessoa pode fazer um número limitado de perguntas por dia (o quadro mostra quantas faltam); se acabarem, amanhã tem mais. Dúvidas de imposto, de alíquota ou de qual código de serviço usar são com o seu contador. A resposta é escrita por inteligência artificial e pode errar: na dúvida, fale com o suporte.
+O "Pergunte à Ana" fica dentro do **"Fale com o suporte"** (no menu ou no fim da tela "Ajuda"). Primeiro você escreve a dúvida e a Ana procura nas respostas que já existem. Se não achar, clique em **"Não achei: perguntar à Ana"** (ou no botão "Pergunte à Ana", que fica sempre embaixo), escreva a pergunta completa, dizendo o que quer fazer e em qual tela, e clique em "Perguntar à Ana". Com poucas palavras a Ana pede um pouco mais de detalhe antes de responder; dá para "Perguntar assim mesmo". A resposta sai das explicações deste guia e aparece ali mesmo; se não resolver, "Falar com a equipe" leva a sua pergunta para o formulário. Na tela "Ajuda", quando a busca não acha nada, o botão "Perguntar à Ana" já leva o que você digitou. Cada pessoa pode fazer um número limitado de perguntas por dia (o quadro mostra quantas faltam); se acabarem, amanhã tem mais. Dúvidas de imposto, de alíquota ou de qual código de serviço usar são com o seu contador. A resposta é escrita por inteligência artificial e pode errar: na dúvida, fale com o suporte.
 
 ### Falar com o suporte
 
-No menu, clique em "Precisa de ajuda? Fale com o suporte" (ou use o botão da tela "Ajuda"). Primeiro aparece a busca nas respostas prontas e depois o "Pergunte à Ana"; para falar com uma pessoa, use "Não achei" e depois "Falar com a equipe". Abre um formulário: escreva o assunto e a mensagem e clique em "Enviar". A resposta chega no seu e-mail, normalmente no mesmo dia útil. Quando disponível, também aparece o botão "Chamar no WhatsApp".
+No menu, clique em "Precisa de ajuda? Fale com o suporte" (ou use o botão da tela "Ajuda"). Primeiro aparece a busca nas respostas prontas. Embaixo da janela ficam sempre as três formas de falar com a gente: **"Pergunte à Ana"**, **"WhatsApp"** (quando disponível) e **"E-mail"**. O "E-mail" abre um formulário: escreva o assunto e a mensagem e clique em "Enviar". A resposta chega no seu e-mail, normalmente no mesmo dia útil.
 
 O e-mail do suporte é suporte@agenteana.com.br.
 

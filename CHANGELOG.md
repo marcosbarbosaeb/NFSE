@@ -91,6 +91,14 @@ Migrações (em ordem): `f2a4c6e8b0d1` (ia_chamada, emissao.erro_explicacao), `a
   - *Pergunte à Ana dentro do suporte:* `SuporteModal` logado vira funil (busca nas perguntas → Pergunte à Ana → equipe);
     a Ajuda perdeu o quadro do topo e, sem resultado na busca, oferece "Perguntar à Ana". `/api/ajuda/perguntar` passa a
     valer na conta só de contador (dava 403).
+  - *Observações 4 a 8 (segunda rodada):* o suporte tem tamanho fixo (`max-w-2xl`, altura fixa, conteúdo rola por dentro)
+    e mostra sempre embaixo as três formas de contato (Pergunte à Ana, WhatsApp quando `SUPORTE_WHATSAPP` existe, e-mail).
+    Resposta da Ana cortada no meio da palavra: o teto era `max_tokens=500`; agora 1500 (recusa: 1000), e se a API ainda
+    parar por tamanho (`stop_reason=max_tokens`) a resposta fica até a última frase inteira (`ia.ate_a_ultima_frase`) ou
+    vira falha que não conta. Pergunta com menos de 4 palavras recebe um pedido de mais detalhe antes de gastar a pergunta,
+    e o sistema da IA tem a regra 8 (pergunta vaga). Entrada com abas "Sou empresa" / "Sou contador(a)" (`lib/entrada.ts`,
+    mesmo login, muda só o destino; lembra a escolha; volta do Google pela marca de uso único) e troca de papel no topo do
+    menu para quem atende empresas.
 
 **Conferir depois de publicar:** `GET /api/versao` = 2026.10.7; migração até `b0c2e4f6a8d0` no log; `GET /api/ajuda`
 com `ia_ativa` (false enquanto `IA_ATIVA` não for ligada); `GET /api/atendimento?cnpj=` respondendo; Gestão com as abas

@@ -95,6 +95,9 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
   **Item de novidade nunca leva para fora de `/app`** (sair do painel no meio do passeio deu looping; teste trava).
   Dicas vistas: por login no navegador e na conta (`PUT /api/conta/tutorial`). "Pergunte à Ana" mora no `SuporteModal`
   (busca → Ana → equipe); `inicio="equipe"` pula direto pra equipe (contratar, certificado).
+  Os três canais (Ana, WhatsApp, e-mail) ficam sempre no rodapé do suporte; a janela tem tamanho fixo.
+- Entrada (observação 8): abas "Sou empresa" / "Sou contador(a)" no login (`lib/entrada.ts`); o login é o mesmo, a aba só
+  muda o destino. Quem atende empresas troca de papel no topo do menu (Sidebar), não no rodapé.
 - Competência: a prática é emitir com a data do mês corrente mesmo quando o relatório/serviço é de meses atrás (data antiga
   gera multa — a Ana só avisa `competencia_antiga`). Não crie aviso sugerindo voltar a data pro mês passado.
 - DANFSe e alfabetos (08/10/2026): a Helvetica só escreve latino; o resto vai pelas fontes de `danfse._FONTES_AMPLAS`, que o

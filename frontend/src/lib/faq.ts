@@ -613,6 +613,14 @@ export const FAQ: PerguntaFaq[] = [
     link: "/app/atendimentos",
   },
   {
+    id: "contador-e-empresa",
+    tema: "conta",
+    pergunta: "Tenho empresa e também sou contador. Como escolho com qual papel entrar?",
+    resposta:
+      "O login é um só. Na tela de entrar, escolha a aba “Sou empresa” (abre a sua empresa) ou “Sou contador(a)” (abre o Painel do contador); a Ana lembra a última escolha. Depois de entrar, troque quando quiser no topo do menu: “Empresa” ou “Contador(a)”.",
+    link: "/app/atendimentos",
+  },
+  {
     id: "esqueci-a-senha",
     tema: "conta",
     pergunta: "Esqueci a senha. Como eu entro?",
