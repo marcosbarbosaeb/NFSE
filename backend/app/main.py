@@ -1304,11 +1304,17 @@ def api_pedir_liberacao(request: Request, prestador_id: uuid.UUID = Depends(pres
 
 
 def _avisar_administracao_do_pedido(d: dict) -> None:
-    """E-mail pra quem administra (ADMIN_EMAILS). Falhar não desfaz o pedido:
-    ele aparece na Gestão de qualquer jeito."""
+    """E-mail pros gestores (tabela `gestor` + ADMIN_EMAILS). Falhar não desfaz
+    o pedido: ele aparece na Gestão de qualquer jeito."""
+    from app.database import SessionLocal
     from app.services import email_modelo as m
+    from app.services import gestores
 
-    destinos = [e.strip() for e in get_settings().admin_emails.split(",") if e.strip()]
+    try:
+        with SessionLocal() as sessao:
+            destinos = sorted(gestores.emails(sessao))
+    except Exception:  # noqa: BLE001
+        destinos = [e.strip() for e in get_settings().admin_emails.split(",") if e.strip()]
     if not destinos:
         return
     esc = html.escape
@@ -3119,16 +3125,18 @@ def api_baixar_pdf(
 # --- Parceiras de indicação com comissão (06/10/2026) — app/services/parceiros.py ---
 
 def _eh_admin(request: Request, db: Session, prestador_id: uuid.UUID) -> bool:
-    """Administração da plataforma: e-mail de login em ADMIN_EMAILS; sem
-    essa variável, a conta com assinatura "cortesia" (regra antiga)."""
-    permitidos = {e.strip().lower() for e in get_settings().admin_emails.split(",") if e.strip()}
-    if permitidos:
+    """Administração da plataforma: gestor (tabela `gestor` ou ADMIN_EMAILS,
+    `app/services/gestores.py`); sem nenhum gestor, a conta com assinatura
+    "cortesia" (regra antiga)."""
+    from app.services import gestores
+
+    if gestores.configurado(db):
         bruto = request.session.get("usuario_id")
         try:
             usuario = db.get(Usuario, uuid.UUID(bruto)) if bruto else None
         except ValueError:
             usuario = None
-        return usuario is not None and (usuario.email or "").lower() in permitidos
+        return gestores.eh_gestor(db, usuario)
     assinatura = db.query(Assinatura).filter_by(prestador_id=prestador_id).one_or_none()
     return assinatura is not None and assinatura.status == "cortesia"
 
@@ -3139,18 +3147,62 @@ def exigir_admin(request: Request, db: Session = Depends(db_sessao), prestador_i
 
 
 def exigir_gestor(request: Request, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)) -> None:
-    """A Gestão mostra números de TODAS as contas: só entra quem está em
-    ADMIN_EMAILS. Sem essa variável configurada, ninguém entra (aqui não vale
-    o atalho da conta "cortesia")."""
-    if not get_settings().admin_emails.strip() or not _eh_admin(request, db, prestador_id):
+    """A Gestão mostra números de TODAS as contas: só entra gestor (tabela
+    `gestor` ou ADMIN_EMAILS). Sem nenhum gestor, ninguém entra (aqui não
+    vale o atalho da conta "cortesia")."""
+    from app.services import gestores
+
+    if not gestores.configurado(db) or not _eh_admin(request, db, prestador_id):
         raise HTTPException(status_code=403, detail="Só a administração da plataforma acessa esta área.")
 
 
 @app.get("/api/gestao/acesso")
 def api_gestao_acesso(request: Request, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     """A tela usa pra saber se mostra a Gestão (e por que não, quando falta configurar)."""
-    configurado = bool(get_settings().admin_emails.strip())
+    from app.services import gestores
+
+    configurado = gestores.configurado(db)
     return {"gestor": configurado and _eh_admin(request, db, prestador_id), "configurado": configurado}
+
+
+class GestorRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+
+
+@app.get("/api/gestao/gestores", dependencies=[Depends(exigir_gestor)])
+def api_gestores(db: Session = Depends(db_sessao)):
+    """Quem administra a plataforma (2026.10.7)."""
+    from app.services import gestores
+
+    return {"gestores": gestores.listar(db)}
+
+
+@app.post("/api/gestao/gestores", dependencies=[Depends(exigir_gestor), Depends(exigir_conta_real)])
+def api_adicionar_gestor(req: GestorRequest, request: Request, db: Session = Depends(db_sessao)):
+    from app.services import gestores
+
+    quem = db.get(Usuario, uuid.UUID(request.session["usuario_id"]))
+    try:
+        gestores.adicionar(db, req.email, quem.email)
+    except gestores.GestorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    resposta = {"gestores": gestores.listar(db)}
+    db.commit()
+    return resposta
+
+
+@app.delete("/api/gestao/gestores/{email}", dependencies=[Depends(exigir_gestor), Depends(exigir_conta_real)])
+def api_remover_gestor(email: str, request: Request, db: Session = Depends(db_sessao)):
+    from app.services import gestores
+
+    quem = db.get(Usuario, uuid.UUID(request.session["usuario_id"]))
+    try:
+        gestores.remover(db, email, quem.email)
+    except gestores.GestorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    resposta = {"gestores": gestores.listar(db)}
+    db.commit()
+    return resposta
 
 
 @app.get("/api/gestao", dependencies=[Depends(exigir_gestor)])

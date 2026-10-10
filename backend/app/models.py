@@ -1217,6 +1217,19 @@ class IaChamada(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Gestor(Base):
+    """Quem administra a plataforma (2026.10.7 — Gestão com usuários próprios).
+    Pelo e-mail do login (a pessoa pode ser incluída antes de criar a conta).
+    Todo gestor tem todas as permissões por enquanto. A variável ADMIN_EMAILS
+    continua valendo junto, só como reserva. Sem RLS."""
+
+    __tablename__ = "gestor"
+
+    email: Mapped[str] = mapped_column(String(254), primary_key=True)
+    adicionado_por: Mapped[str | None] = mapped_column(String(254))
+    adicionado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ListaEspera(Base):
     """Lista de espera (2026.10.7): quem não pôde criar conta porque a cidade
     ainda não usa o Emissor Nacional ou porque o regime não é atendido. A

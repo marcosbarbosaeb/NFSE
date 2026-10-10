@@ -144,6 +144,12 @@ def _sem_rede_e_sem_limites(monkeypatch):
         raise ConsultaCnpjIndisponivelError("sem rede nos testes")
 
     monkeypatch.setattr(atendimento_mod, "_consultar", _sem_consulta)
+    # ...e a tabela de gestores começa vazia (o banco local já tem a conta do
+    # Marcos, da migração): quem é gestor nos testes vem do ADMIN_EMAILS de
+    # cada teste. tests/test_gestores.py usa a tabela de verdade.
+    import app.services.gestores as gestores_mod
+
+    monkeypatch.setattr(gestores_mod, "_da_tabela", lambda db: set())
     limitador = getattr(main_mod, "limitador", None)
     if limitador is not None:
         limitador.limpar()
