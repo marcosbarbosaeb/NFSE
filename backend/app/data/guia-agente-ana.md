@@ -838,6 +838,14 @@ Clicar numa empresa (ou escolher na busca) abre a **ficha dela**: regime, alíqu
 
 O faturamento mostrado é a soma das notas autorizadas que passaram pela Ana (geradas aqui ou importadas do Emissor Nacional). Receita que não virou NFS-e por aqui não entra — é um indicador, não o RBT12 oficial. O regime é o que está no cadastro da empresa: quem não é do Simples aparece como "Fora do Simples".
 
+### Para contadores: gestão dos clientes e cadastro de cliente
+
+No Painel do contador, a aba **Gestão** mostra os números de cada cliente sem entrar na empresa: a situação do acesso (em teste, assinante, bloqueada...), as notas e o faturamento do mês, o certificado, o último uso da Ana e se o cliente está **ativo no mês**. Ativo no mês é quem teve nota autorizada ou usou a Ana no mês e não está bloqueado.
+
+Pra cadastrar a empresa de um cliente, clique em **Cadastrar cliente** e informe o CNPJ, a razão social, a cidade e o e-mail do dono. A Ana confere se atende a cidade e o regime (como no cadastro normal), cria a empresa com o teste grátis dela e você fica com acesso pra emitir e cuidar de tudo. Os documentos da empresa ficam de fora até o dono liberar.
+
+O dono recebe um convite por e-mail, válido por 14 dias, pra criar o acesso dele (ou, se já tiver conta na Ana com aquele e-mail, pra juntar a empresa ao login dele). Enquanto ele não entra, a lista mostra "Esperando ... criar o acesso" com o botão **Reenviar**, que manda um link novo.
+
 ### Pergunte à Ana
 
 Na tela "Ajuda", quando estiver disponível, aparece o quadro **"Pergunte à Ana"**: escreva a dúvida do seu jeito e clique em "Perguntar". A resposta sai das explicações deste guia e aparece ali mesmo. Cada pessoa pode fazer um número limitado de perguntas por dia (o quadro mostra quantas faltam); se acabarem, amanhã tem mais. Dúvidas de imposto, de alíquota ou de qual código de serviço usar são com o seu contador. A resposta é escrita por inteligência artificial e pode errar: na dúvida, fale com o suporte.

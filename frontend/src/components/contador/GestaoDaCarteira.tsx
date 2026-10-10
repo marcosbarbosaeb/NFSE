@@ -111,14 +111,18 @@ export function GestaoDaCarteira({
                         </button>
                         <p className="text-xs text-slate-500 dark:text-slate-400">{formatarDocumento(c.cnpj)}</p>
                         {c.convite_dono && !c.convite_dono.aceito && (
-                          <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-warning-700 dark:text-warning-300">
-                            {c.convite_dono.vencido ? <MailWarning size={13} aria-hidden="true" /> : <CircleDashed size={13} aria-hidden="true" />}
-                            {c.convite_dono.vencido ? "Convite do dono venceu" : `Esperando ${c.convite_dono.email} criar o acesso`}
+                          <p className="mt-1 text-xs text-warning-700 dark:text-warning-300">
+                            {c.convite_dono.vencido ? (
+                              <MailWarning size={13} className="mr-1 inline align-[-2px]" aria-hidden="true" />
+                            ) : (
+                              <CircleDashed size={13} className="mr-1 inline align-[-2px]" aria-hidden="true" />
+                            )}
+                            {c.convite_dono.vencido ? "Convite do dono venceu" : `Esperando ${c.convite_dono.email} criar o acesso`}{" "}
                             <button
                               type="button"
                               disabled={reenviando === c.id}
                               onClick={() => reenviar(c)}
-                              className="inline-flex items-center gap-1 font-semibold underline disabled:opacity-60"
+                              className="ml-1 inline-flex items-center gap-1 font-semibold underline disabled:opacity-60"
                             >
                               <RefreshCw size={12} aria-hidden="true" /> {reenviando === c.id ? "Enviando..." : "Reenviar"}
                             </button>
@@ -130,7 +134,7 @@ export function GestaoDaCarteira({
                           </p>
                         )}
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="whitespace-nowrap px-3 py-3">
                         <Badge variant={sit.tom}>{sit.texto}</Badge>
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums">{c.raio_x?.notas_mes ?? 0}</td>

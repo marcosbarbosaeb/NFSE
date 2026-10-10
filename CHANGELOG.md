@@ -60,11 +60,28 @@ Dúvidas que dependem do Marcos: `claude/duvidas-para-o-marcos.md` (projeto).
 
 Migrações (em ordem): `f2a4c6e8b0d1` (ia_chamada, emissao.erro_explicacao), `a3b5c7d9e1f3` (aviso do certificado),
 `b4c6d8e0f2a4` (lista_espera), `c5d7e9f1a3b5` (ISS retido), `d6e8f0a2b4c6` (gestor), `e7f9a1b3c5d7` (perfis),
-`f8a0b2c4d6e8` (documentos), `a9b1c3d5e7f9` (IBS/CBS).
+`f8a0b2c4d6e8` (documentos), `a9b1c3d5e7f9` (IBS/CBS), `b0c2e4f6a8d0` (carteira do contador e convite do dono).
 
-**Conferir depois de publicar:** `GET /api/versao` = 2026.10.7; migração até `a9b1c3d5e7f9` no log; `GET /api/ajuda`
+- **Gestão num endereço próprio** (`services/area_gestao.py`, decisão do Marcos em 10/10): com `GESTAO_HOST`
+  (ex.: `gestao.agenteana.com.br`) as rotas de `exigir_gestor`/`exigir_admin` só respondem nesse host (404 no app das
+  notas), `/api/gestao/acesso` devolve `gestor:false` no app (o menu some), `/app/gestao` no app redireciona pro
+  subdomínio e, no subdomínio, as outras telas voltam pra `/app/gestao`. Tela própria (`AppShell` → `GestaoShell`),
+  login só por e-mail/código lá (sem Google). Sem a variável, nada muda. **Precisa:** domínio no Railway + CNAME no
+  Cloudflare (cada um com aprovação) e `GESTAO_HOST` no serviço. No teste: um domínio do Railway começando com `gestao-`.
+- **Financeiro sozinho fora da venda** (decisão do Marcos em 10/10): plano `financeiro` com `a_venda=False` (quem tem
+  continua vendo o dele); `/cadastro?produto=financeiro` vira notas + Financeiro, com a verificação normal.
+- **Carteira do contador** (`services/carteira.py`): aba Gestão no Painel do contador (último uso por `evento_uso`,
+  "ativo no mês" = acesso ativo, empresa sem bloqueio e nota autorizada ou uso no mês), cadastrar cliente
+  (`POST /api/contador/clientes`: mesma verificação de atendimento; acesso com todas as permissões menos `documentos`;
+  `acesso_contador.criado_pelo_contador`) e convite do dono (`convite_dono`, sem RLS, 14 dias; tela `/convite/<token>`,
+  `GET /api/convite-dono/{token}`, `.../criar-conta` cria o login já confirmado, `.../aceitar` junta ao login que já
+  existe). Gestão › Contadores (`GET /api/gestao/contadores`): na carteira, ativos no mês e cadastrados por ele —
+  base da cobrança por cliente, que **não** está ligada (modelo em aberto). Login aceita `?volta=` (caminho interno).
+
+**Conferir depois de publicar:** `GET /api/versao` = 2026.10.7; migração até `b0c2e4f6a8d0` no log; `GET /api/ajuda`
 com `ia_ativa` (false enquanto `IA_ATIVA` não for ligada); `GET /api/atendimento?cnpj=` respondendo; Gestão com as abas
-Lista de espera, Gestores e Perfis; `/app/documentos` abrindo; Empresa mostrando "IBS e CBS" para ME/EPP do Simples.
+Lista de espera, Gestores e Perfis; `/app/documentos` abrindo; Empresa mostrando "IBS e CBS" para ME/EPP do Simples; Painel do contador com a aba Gestão; com `GESTAO_HOST`, a Gestão só
+no subdomínio.
 Cobrança e `BLOQUEIO_ATIVO` continuam desligados.
 
 ## 2026.10.6 — 08/10/2026

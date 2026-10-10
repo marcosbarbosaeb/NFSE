@@ -140,6 +140,13 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
   confere dono ou acesso de contador de novo (o gestor nunca abre). DELETE é `NUNCA` pro contador. Gestão vê só quantidade/espaço.
 - IBS/CBS (2026.10.7, `services/ibs_cbs.py`): só tela e memória; NÃO monte o grupo IBSCBS no XML até a Sefin publicar o esquema
   da NT 009. Valores de IBS/CBS são da Sefin (só lemos da NFS-e autorizada pro PDF).
+- Gestão num endereço próprio (2026.10.7, `services/area_gestao.py`): com `GESTAO_HOST` as rotas da Gestão/parceiras só
+  respondem nesse host e o app das notas não mostra a Gestão. Rota nova da Gestão usa `exigir_gestor` (que já faz a trava
+  do host). No frontend, `ehDominioGestao()` só muda a aparência.
+- Carteira do contador (2026.10.7, `services/carteira.py`): "ativo no mês" (base da cobrança por cliente, ainda desligada)
+  mora em `carteira.ativo_no_mes`. Empresa cadastrada pelo contador: `acesso_contador.criado_pelo_contador` + `convite_dono`
+  (sem RLS, lido pelo token). Rota do contador que lê `prestador` define o contexto da RLS antes (num pedido real ele começa vazio).
+- Financeiro sozinho (2026.10.7): fora da venda para conta nova (`billing.PLANOS["financeiro"]["a_venda"] = False`).
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.
 - Segredos (Stripe, Resend, Google) só nas variáveis do Railway — nunca no código nem em conversa.
 

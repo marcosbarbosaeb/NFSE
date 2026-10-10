@@ -338,7 +338,15 @@ export function AtendimentosPage() {
         </Card>
       )}
       {dados && dados.clientes.length === 0 && usuario?.so_contador && (
-        <GestaoDaCarteira clientes={[]} resumo={dados.resumo} aoAtualizar={carregar} aoVerEmpresa={() => undefined} />
+        <GestaoDaCarteira
+          clientes={[]}
+          resumo={dados.resumo}
+          aoAtualizar={() => {
+            mudarAba("gestao") // o primeiro cliente aparece já na aba Gestão
+            carregar()
+          }}
+          aoVerEmpresa={() => undefined}
+        />
       )}
 
       {saindo && (

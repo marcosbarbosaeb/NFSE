@@ -147,3 +147,15 @@ def test_gestao_conta_os_clientes_de_cada_contador(db, ambiente, prestador_teste
     linhas = carteira.resumo_gestao(db, prestador_teste.id)
     minha = next(x for x in linhas if x["email"] == contador.email)
     assert minha["na_carteira"] == 2 and minha["cadastrados_pelo_contador"] == 2 and minha["ativos_no_mes"] == 0
+
+
+def test_cadastrar_cliente_sem_contexto_da_rls_no_pedido(db, ambiente):
+    """Num pedido de verdade a variável da RLS começa vazia: a rota tem que
+    definir o contexto antes de ler a empresa "de casa" (deu 500 no navegador)."""
+    from sqlalchemy import text
+
+    contador = _contador(db)
+    db.info.pop("prestador_atual", None)
+    db.execute(text("select set_config('app.current_prestador_id', '', true)"))
+    r = _cliente(contador).post("/api/contador/clientes", json={**NOVO, "cpf_cnpj": _cnpj()})
+    assert r.status_code == 200, r.text

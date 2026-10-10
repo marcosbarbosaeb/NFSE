@@ -268,6 +268,9 @@ class ClienteNovoRequest(BaseModel):
 
 
 def _eh_contador(db: Session, usuario: Usuario) -> bool:
+    # `prestador` tem RLS: lê a empresa "de casa" no contexto dela (num pedido
+    # de verdade a variável da RLS ainda está vazia aqui).
+    definir_prestador_atual(db, usuario.prestador_id)
     casa = db.query(Prestador.so_contador).filter(Prestador.id == usuario.prestador_id).scalar()
     return bool(casa) or acesso.tem_algo(db, usuario)
 
@@ -316,9 +319,9 @@ def api_cadastrar_cliente(req: ClienteNovoRequest, request: Request, db: Session
     from app.services import atendimento
     from app.services.cnpj_lookup import CnpjInvalidoError, CnpjNaoEncontradoError
 
+    voltar = contas.empresa_ativa(db, request, usuario)
     if not _eh_contador(db, usuario):
         raise HTTPException(status_code=403, detail="Só quem atende empresas como contador cadastra clientes por aqui.")
-    voltar = contas.empresa_ativa(db, request, usuario)
     try:
         veredito = atendimento.avaliar_cnpj(req.cpf_cnpj)
     except CnpjInvalidoError as exc:

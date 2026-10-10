@@ -23,7 +23,7 @@ VERSOES: list[dict] = [
     {
         "versao": "2026.10.7",
         "data": "2026-10-10",
-        "resumo": "Pergunte à Ana, nota de MEI certa, ISS retido, documentos da empresa e o começo da reforma tributária (IBS e CBS).",
+        "resumo": "Pergunte à Ana, nota de MEI certa, ISS retido, documentos da empresa, gestão dos clientes no painel do contador e o começo da reforma tributária (IBS e CBS).",
         "itens": [
             {"perfil": "todos", "titulo": "Pergunte à Ana", "link": "/app/ajuda",
              "texto": "Na Ajuda, escreva a sua dúvida do seu jeito e eu respondo com base no guia da Ana. Quando a pergunta é de "
@@ -55,6 +55,13 @@ VERSOES: list[dict] = [
             {"perfil": "contador", "titulo": "Documentos da empresa do cliente", "link": "/app/documentos",
              "texto": "Com a permissão “Documentos da empresa” (o cliente libera em Empresa › Contador), você vê, envia e substitui "
                       "os documentos fixos da empresa. Apagar é só com o dono."},
+            {"perfil": "contador", "titulo": "Gestão dos seus clientes", "link": "/app/atendimentos?aba=gestao",
+             "texto": "Nova aba Gestão no Painel do contador: de cada cliente, a situação do acesso, as notas e o faturamento do mês, o "
+                      "certificado, o último uso e se ele está ativo no mês — sem entrar na empresa."},
+            {"perfil": "contador", "titulo": "Cadastre a empresa do seu cliente", "link": "/app/atendimentos?aba=gestao",
+             "texto": "Em Gestão › Cadastrar cliente, você cria a empresa (eu confiro a cidade e o regime), fica com acesso para emitir e "
+                      "cuidar de tudo, e o dono recebe um convite por e-mail para criar o acesso dele. Os documentos da empresa ficam "
+                      "de fora até o dono liberar."},
             {"perfil": "empresa", "titulo": "IBS e CBS: o começo", "link": "/app/empresa?aba=emitente#ibs-cbs",
              "texto": "Para empresa do Simples: diga em Empresa como recolhe IBS e CBS a partir de 2027 (o padrão é tudo pelo Simples). "
                       "No tomador dá pra guardar a classificação que o seu contador passar. A nota ainda não leva esses campos — "
