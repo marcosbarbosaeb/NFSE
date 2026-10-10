@@ -514,9 +514,46 @@ def _checar_aliquota(aliq_sn) -> list[dict]:
     )]
 
 
+# ISS retido (2026.10.7 — regras do Anexo VI, raio-x seção 15): pra ME/EPP que
+# apura pelo Simples, nota COM retenção leva a alíquota do ISS (de 1,8% a 5%).
+ALIQ_ISS_MIN, ALIQ_ISS_MAX = 1.8, 5.0
+
+
+def _checar_retencao(prestador: Prestador | None, iss_retido: bool, aliq_iss) -> list[dict]:
+    if not iss_retido or prestador is None:
+        return []
+    if prestador.op_simples_nacional == "2":
+        return [_ponto(
+            "aviso", "mei_sem_retencao", "Tomador marcado como “retém o ISS”, mas MEI não tem ISS retido: a nota sai como não retida.",
+            "Se a empresa não é mais MEI, atualize o regime em Empresa.", campo="iss_retido", onde="nota",
+        )]
+    if prestador.op_simples_nacional != "3" or (prestador.regime_apuracao_sn or "1") != "1":
+        return []
+    como = "Informe a alíquota do ISS da sua faixa do Simples (pergunte ao seu contador). Ela fica guardada em Empresa › Emitente pras próximas."
+    if aliq_iss is None:
+        return [_ponto("erro", "aliquota_iss_faltando", "Nota com ISS retido precisa da alíquota do ISS — sem ela a prefeitura recusa.", como, campo="aliq_iss", onde="nota")]
+    if not ALIQ_ISS_MIN <= float(aliq_iss) <= ALIQ_ISS_MAX:
+        return [_ponto(
+            "erro", "aliquota_iss_fora", f"A alíquota do ISS ({float(aliq_iss):g}%) tem que ficar entre {ALIQ_ISS_MIN:g}% e {ALIQ_ISS_MAX:g}% na nota com retenção.",
+            como, campo="aliq_iss", onde="nota",
+        )]
+    return []
+
+
+def retencao_da_nota(vinculo: PrestadorTomador, prestador: Prestador | None, iss_retido: bool | None, aliq_iss) -> tuple[bool, float | None]:
+    """O que vale na nota: o que veio na tela ou, sem isso, a memória (tomador
+    e empresa). MEI nunca retém."""
+    retido = bool(vinculo.iss_retido) if iss_retido is None else bool(iss_retido)
+    if prestador is not None and prestador.op_simples_nacional == "2":
+        return False, None
+    if aliq_iss is None and prestador is not None and prestador.aliquota_iss_retido is not None:
+        aliq_iss = float(prestador.aliquota_iss_retido)
+    return retido, (float(aliq_iss) if retido and aliq_iss is not None else None)
+
+
 def conferir_nota(
     db: Session, vinculo: PrestadorTomador, valor, data_competencia: datetime.date | None,
-    ordem: str | None, aliq_sn, *, competencia: str | None = None,
+    ordem: str | None, aliq_sn, *, competencia: str | None = None, iss_retido: bool | None = None, aliq_iss=None,
 ) -> list[dict]:
     """Antes de GERAR a nota: os erros do cadastro do tomador + a empresa +
     o que foi digitado agora. `competencia` (AAAA-MM) só é usada quando não
@@ -547,6 +584,19 @@ def conferir_nota(
         historico=None if vinculo.sem_nota else _historico(db, vinculo.id),
     )
     pontos += _checar_aliquota(aliq_sn)
+    if not (vinculo.cod_nbs or "").strip() and not vinculo.sem_nota:
+        # Na versão 1.01 da nota (reforma tributária) o NBS passa a ser
+        # obrigatório: avisa desde já pra ir completando (2026.10.7).
+        pontos.append(_ponto(
+            "aviso", "nbs_faltando", "Este tomador está sem o código NBS. Hoje a nota sai sem ele, mas com a reforma tributária ele passa a ser obrigatório.",
+            "Complete o NBS no cadastro do tomador (campo “Código NBS”). Na dúvida, confirme com o seu contador.", campo="cod_nbs", onde="tomador",
+        ))
+    prestador = db.get(Prestador, vinculo.prestador_id)
+    if prestador is not None and prestador.op_simples_nacional == "2" and bool(vinculo.iss_retido if iss_retido is None else iss_retido):
+        pontos += _checar_retencao(prestador, True, None)
+    else:
+        retido, aliq = retencao_da_nota(vinculo, prestador, iss_retido, aliq_iss)
+        pontos += _checar_retencao(prestador, retido, aliq)
     return pontos
 
 
@@ -622,6 +672,7 @@ def conferir_emissao(db: Session, emissao: Emissao) -> list[dict]:
         valor=emissao.valor, data_competencia=_data_ou_none(snap.get("dcompet")), competencia=emissao.competencia, historico=historico,
     )
     pontos += _checar_aliquota(snap.get("aliq_sn"))
+    pontos += _checar_retencao(prestador, bool(snap.get("iss_retido")), snap.get("aliq_iss"))
 
     if not avulsa:
         ultimas = _codigos_das_ultimas(db, [emissao.prestador_tomador_id], ignorar_id=emissao.id).get(emissao.prestador_tomador_id, [])

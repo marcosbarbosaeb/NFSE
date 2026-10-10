@@ -100,6 +100,10 @@ class Prestador(Base):
     # valor "atual" pra pré-preencher, mas a confirmação antes de emitir é
     # sempre obrigatória (ver Contingências: "Alíquota errada" no plano).
     aliquota_atual: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
+    # Alíquota do ISS que vai na nota COM retenção (2026.10.7): pra ME/EPP do
+    # Simples é a parte do ISS na faixa do Simples (de 2% a 5%; a Sefin aceita
+    # de 1,8%). Quem sabe é a empresa/contador; fica guardada aqui.
+    aliquota_iss_retido: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     # Marco 16, item 5 — depois da pesquisa de viabilidade de uma "aba de
     # impostos" (DAS-MEI), Marcos decidiu não construir cálculo/boleto por
     # enquanto (exigiria integração paga com a SERPRO): só quer poder
@@ -421,6 +425,9 @@ class PrestadorTomador(Base):
     # declarar o marketplace (o tomador deste vínculo) como intermediário.
     cod_nbs: Mapped[str | None] = mapped_column(String(12))
     incluir_intermediario: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
+    # ISS retido pelo tomador (2026.10.7): memória — vale pra toda nota deste
+    # tomador; na hora de gerar dá pra mudar só naquela nota. Nunca pra MEI.
+    iss_retido: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     # Só controle de recebimento (parceria, bônus, PayPal, tomador
     # estrangeiro importado): a Ana não gera nota pra ele (28/09/2026).
     sem_nota: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")

@@ -138,6 +138,14 @@ def montar_nota_visual(emissao: Emissao) -> dict:
         ret_issqn = _xml("valores/trib/tribMun/tpRetISSQN")
         if trib_issqn is not None:
             issqn_retido = "Retido pelo tomador" if ret_issqn == "2" else "Não retido (recolhido pelo prestador)"
+            aliq = _xml("valores/trib/tribMun/pAliq")
+            if ret_issqn == "2" and aliq:
+                # 2026.10.7: com a alíquota, o valor retido (a prefeitura confirma na nota autorizada)
+                try:
+                    retido = float(emissao.valor) * float(aliq) / 100
+                    issqn_retido += f" — {aliq.replace('.', ',')}%, cerca de R$ {retido:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                except ValueError:
+                    pass
 
     ambiente = _xml("tpAmb") or snap.get("tpAmb")
 

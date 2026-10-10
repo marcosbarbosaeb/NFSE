@@ -73,6 +73,7 @@ interface FormState {
   portal_url: string
   cod_nbs: string
   incluir_intermediario: boolean
+  iss_retido: boolean
   /** Só controle de recebimento — a Ana não gera nota pra este tomador. */
   sem_nota: boolean
 }
@@ -98,6 +99,7 @@ const ESTADO_INICIAL: FormState = {
   portal_url: "",
   cod_nbs: "",
   incluir_intermediario: false,
+  iss_retido: false,
   sem_nota: false,
 }
 
@@ -230,6 +232,7 @@ export function VinculoFormPage() {
           portal_url: v.portal_url ?? "",
           cod_nbs: mascaraNbs(v.cod_nbs ?? ""),
           incluir_intermediario: Boolean(v.incluir_intermediario),
+          iss_retido: Boolean(v.iss_retido),
           sem_nota: Boolean(v.sem_nota),
         })
         setTomadorSelecionado(v.tomador)
@@ -599,6 +602,7 @@ export function VinculoFormPage() {
         portal_url: form.portal_url.trim() || null,
         cod_nbs: nbs || null,
         incluir_intermediario: form.incluir_intermediario,
+        iss_retido: form.iss_retido,
         sem_nota: form.sem_nota,
       }
 
@@ -1007,6 +1011,31 @@ export function VinculoFormPage() {
               />
               Quero revisar cada nota antes de assinar
             </label>
+
+            {/* ISS retido (2026.10.7): memória do tomador; MEI não tem retenção. */}
+            {prestadorModelo?.op_simples_nacional !== "2" && (
+              <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={form.iss_retido}
+                  onChange={(e) => atualizarCampo("iss_retido", e.target.checked)}
+                  className="peer sr-only"
+                />
+                <span
+                  aria-hidden
+                  className="relative mt-0.5 inline-flex h-5 w-9 shrink-0 rounded-full bg-slate-300 transition-colors peer-checked:bg-primary-600 peer-focus-visible:ring-2 peer-focus-visible:ring-primary-300 dark:bg-slate-600 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-4"
+                />
+                <span className="text-sm text-slate-700 dark:text-slate-300">
+                  Este tomador retém o ISS
+                  <span className="mt-0.5 block text-xs text-slate-400 dark:text-slate-500">
+                    Vale pra todas as notas dele (dá pra mudar numa nota só, na hora de gerar). A nota leva a alíquota do ISS da sua faixa do
+                    Simples — confirme com o seu contador. A prefeitura precisa prever a retenção pra esse tomador ou serviço; se não previr, a nota
+                    volta recusada e eu explico.
+                  </span>
+                </span>
+              </label>
+            )}
 
             <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700">
               <input

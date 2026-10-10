@@ -109,7 +109,7 @@ def vinculo_teste(db, prestador_teste):
     vinculo = PrestadorTomador(
         id=uuid.uuid4(), prestador_id=prestador_teste.id, tomador_id=tomador.id,
         apelido="Fornecedor Teste", cod_local_prestacao=prestador_teste.cod_municipio,
-        cod_trib_nacional="170601", cod_trib_municipal="001",
+        cod_trib_nacional="170601", cod_trib_municipal="001", cod_nbs="118069000",
         template_descricao="Comissão de teste - {competencia_mm_aaaa}",
         serie="1", requer_revisao=True, ativo=True,
     )

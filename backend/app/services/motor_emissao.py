@@ -166,6 +166,8 @@ def criar_rascunho(
     tomador_avulso: dict | None = None,
     dcompet: str | None = None,
     referencia: str | None = None,
+    iss_retido: bool | None = None,
+    aliq_iss: float | None = None,
 ) -> Emissao:
     """rascunho — atribui nDPS, congela o snapshot do tomador+descrição, e
     checa a idempotência mensal ANTES de tentar gravar (o índice único
@@ -213,6 +215,13 @@ def criar_rascunho(
         "aliq_sn": aliq_sn,
         "tpAmb": tpAmb,
     }
+    # ISS retido (2026.10.7): o que veio na tela ou a memória do tomador/empresa.
+    # Nota de vendedor da Shopee (avulsa) não herda a retenção do marketplace.
+    from app.services.conferencia import retencao_da_nota
+
+    retido, aliq = retencao_da_nota(vinculo, vinculo.prestador, False if tomador_avulso and iss_retido is None else iss_retido, aliq_iss)
+    snapshot["iss_retido"] = retido
+    snapshot["aliq_iss"] = aliq
     if not tomador_avulso and vinculo.tomador.estrangeiro:
         # Tomador de fora do Brasil (05/10/2026): sem CNPJ, a nota sai com a
         # identificação fiscal de lá (NIF) e o país — o mesmo retrato das
@@ -419,6 +428,7 @@ def _montar_xml(db: Session, emissao: Emissao) -> Emissao:
         prest=prest, toma=toma, serv=serv, serie=emissao.serie, n_dps=emissao.n_dps,
         valor=float(emissao.valor), tpAmb=snap["tpAmb"], aliq_sn=snap["aliq_sn"],
         dcompet=snap.get("dcompet"), interm=_interm_valido(snap.get("intermediario")),
+        iss_retido=bool(snap.get("iss_retido")), aliq_iss=snap.get("aliq_iss"),
     )
     emissao.xml_dps = etree.tostring(dps_el, xml_declaration=True, encoding="UTF-8", pretty_print=True).decode()
     emissao.estado = "montado"
@@ -479,6 +489,12 @@ def _confirmar_com_resposta(db: Session, emissao: Emissao, resposta, cliente: Cl
 
 
 _DICAS_DE_RECUSA = {
+    # ISS retido (2026.10.7 — regras do Anexo VI, raio-x seção 15)
+    "E0655": "A prefeitura do serviço não prevê retenção de ISS pra este tomador ou serviço. Se o tomador não retém, desmarque “retém o ISS” no cadastro dele e gere a nota de novo.",
+    "E0621": "Nota com ISS retido precisa da alíquota do ISS (de 1,8% a 5%). Informe na nota ou em Empresa › Emitente e gere de novo.",
+    "E0628": "Nota com ISS retido precisa da alíquota do ISS (de 1,8% a 5%). Informe na nota ou em Empresa › Emitente e gere de novo.",
+    "E0583": "MEI não tem ISS retido. Desmarque a retenção no cadastro do tomador e gere a nota de novo.",
+    "E0160": "O regime cadastrado na empresa não bate com o da Receita (MEI, Simples ou não optante) no mês da nota. Confira em Empresa › Emitente.",
     "E0240": "Clique em “Corrigir e reenviar”: a Ana procura o CEP certo pelo endereço e manda de novo.",
     "E0008": "A hora da nota ficou à frente do relógio da Receita. Clique em “Corrigir e reenviar”: a Ana acerta a hora e manda de novo.",
 }

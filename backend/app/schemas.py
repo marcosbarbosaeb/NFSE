@@ -52,6 +52,8 @@ class VinculoResumo(BaseModel):
     tomador_pais: str | None = None
     tomador_nif: str | None = None
     tomador_motivo_sem_nif: str | None = None
+    # ISS retido pelo tomador (2026.10.7)
+    iss_retido: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -92,6 +94,9 @@ class GerarDpsRequest(BaseModel):
     valor: float = Field(gt=0)
     ordem: str | None = Field(default=None, description="Número da ordem de pagamento (AWIN/AWIN Rchlo)")
     aliq_sn: float | None = Field(default=None, description="Alíquota do Simples Nacional em %% (ex.: 12.5)")
+    # ISS retido (2026.10.7): None = usa o que está no cadastro do tomador.
+    iss_retido: bool | None = None
+    aliq_iss: float | None = Field(default=None, ge=0, le=5, description="Alíquota do ISS (%) na nota com retenção")
     # Sem valor = ambiente configurado na conta (prestador.tp_amb_padrao) —
     # a escolha saiu da tela de gerar nota em 28/09/2026.
     tpAmb: str | None = Field(default=None, pattern=r"^[12]$", description="1=Produção 2=Homologação")
@@ -700,6 +705,7 @@ class VinculoDetalheResponse(BaseModel):
     email_para: str | None = None
     cod_nbs: str | None = None
     incluir_intermediario: bool = False
+    iss_retido: bool = False
     envio_canal: str | None = None
     envio_formas: list[str] | None = None
     email_extras: list[dict] | None = None
@@ -781,6 +787,7 @@ class VinculoCriarRequest(BaseModel):
     email_para: str | None = Field(default=None, max_length=400)
     cod_nbs: str | None = Field(default=None, max_length=14, pattern=r"^[\d.\s]*$")
     incluir_intermediario: bool | None = None
+    iss_retido: bool | None = None
     envio_canal: str | None = Field(default=None, pattern=r"^(email|whatsapp|portal|nenhum)$")
     # Formas de envio padrão — pode ser mais de uma (email, whatsapp, portal,
     # download). Lista vazia = não precisa enviar.
@@ -823,6 +830,7 @@ class VinculoAtualizarRequest(BaseModel):
     email_para: str | None = Field(default=None, max_length=400)
     cod_nbs: str | None = Field(default=None, max_length=14, pattern=r"^[\d.\s]*$")
     incluir_intermediario: bool | None = None
+    iss_retido: bool | None = None
     envio_canal: str | None = Field(default=None, pattern=r"^(email|whatsapp|portal|nenhum)$")
     # Formas de envio padrão — pode ser mais de uma (email, whatsapp, portal,
     # download). Lista vazia = não precisa enviar.
@@ -864,6 +872,7 @@ class PrestadorResponse(BaseModel):
     op_simples_nacional: str | None = None
     regime_apuracao_sn: str | None = None
     regime_especial_trib: str | None = None
+    aliquota_iss_retido: float | None = None
     email_assunto_padrao: str | None = None
     email_mensagem_padrao: str | None = None
     email_anexos_padrao: str | None = None
@@ -1507,6 +1516,8 @@ class EmitenteAtualizarRequest(BaseModel):
     op_simples_nacional: str | None = Field(default=None, pattern=r"^[123]$")
     regime_apuracao_sn: str | None = Field(default=None, pattern=r"^[123]$")
     regime_especial_trib: str | None = Field(default=None, pattern=r"^[0-6]$")
+    # ISS retido (2026.10.7): a alíquota do ISS que vai na nota com retenção
+    aliquota_iss_retido: float | None = Field(default=None, ge=0, le=5)
 
     _conferir_formato_email = field_validator("email")(_conferir_emails)
 

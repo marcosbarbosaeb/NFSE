@@ -270,6 +270,7 @@ function AbaEmitente({ prestador, onAtualizado }: { prestador: Prestador; onAtua
     op_simples_nacional: p.op_simples_nacional ?? "",
     regime_apuracao_sn: p.regime_apuracao_sn ?? "",
     regime_especial_trib: p.regime_especial_trib ?? "0",
+    aliquota_iss_retido: p.aliquota_iss_retido != null ? String(p.aliquota_iss_retido).replace(".", ",") : "",
   })
   const [f, setF] = useState(inicial)
   const [salvando, setSalvando] = useState(false)
@@ -332,6 +333,15 @@ function AbaEmitente({ prestador, onAtualizado }: { prestador: Prestador; onAtua
     }
     if (f.op_simples_nacional) corpo.op_simples_nacional = f.op_simples_nacional as "1" | "2" | "3"
     if (f.op_simples_nacional === "3" && f.regime_apuracao_sn) corpo.regime_apuracao_sn = f.regime_apuracao_sn as "1" | "2" | "3"
+    if (f.op_simples_nacional !== "2") {
+      const aliq = Number(f.aliquota_iss_retido.replace(",", "."))
+      if (f.aliquota_iss_retido.trim() && (!Number.isFinite(aliq) || aliq < 0 || aliq > 5)) {
+        setSalvando(false)
+        setMsg({ ok: false, texto: "A alíquota do ISS fica entre 0 e 5%." })
+        return
+      }
+      corpo.aliquota_iss_retido = f.aliquota_iss_retido.trim() ? aliq : null
+    }
     try {
       const p = await api.patch<Prestador>("/prestador", corpo)
       onAtualizado(p)
@@ -434,6 +444,17 @@ function AbaEmitente({ prestador, onAtualizado }: { prestador: Prestador; onAtua
               </option>
             ))}
           </CampoSelect>
+          {f.op_simples_nacional && f.op_simples_nacional !== "2" && (
+            <div className="sm:col-span-2">
+              <Field
+                label="Alíquota do ISS nas notas com ISS retido (%)"
+                inputMode="decimal"
+                placeholder="Ex.: 2,5"
+                hint="Só pra tomador que retém o ISS: a parte do ISS na sua faixa do Simples (de 2% a 5%). Confirme com o seu contador."
+                {...campo("aliquota_iss_retido")}
+              />
+            </div>
+          )}
           {f.op_simples_nacional === "3" && (
             <div className="sm:col-span-2">
               <CampoSelect label="Como os tributos são apurados" hint="Só vale para ME/EPP optante do Simples Nacional." {...campo("regime_apuracao_sn")}>

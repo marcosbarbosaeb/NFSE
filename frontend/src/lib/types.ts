@@ -364,6 +364,7 @@ export interface VinculoDetalhe {
   email_para?: string | null
   cod_nbs?: string | null
   incluir_intermediario?: boolean
+  iss_retido?: boolean
   envio_canal?: FormaEnvio | null
   envio_formas?: FormaDeEnvio[] | null
   email_extras?: EmailExtra[] | null
@@ -394,6 +395,7 @@ export interface VinculoCriarRequest {
   email_para?: string | null
   cod_nbs?: string | null
   incluir_intermediario?: boolean
+  iss_retido?: boolean
   envio_canal?: FormaEnvio | null
   envio_formas?: FormaDeEnvio[] | null
   email_extras?: EmailExtra[] | null
@@ -639,6 +641,9 @@ export interface GerarDpsRequest {
   origem?: string | null
   /** Trocar a nota do mês que ainda não foi enviada por esta. */
   substituir?: boolean
+  /** ISS retido (2026.10.7): null = usa o cadastro do tomador */
+  iss_retido?: boolean | null
+  aliq_iss?: number | null
 }
 
 export interface VerificarDuplicata {
@@ -890,6 +895,8 @@ export interface Prestador {
   email_geral_assunto?: string | null
   email_geral_mensagem?: string | null
   email_geral_anexos?: "pdf_xml" | "pdf" | "xml" | null
+  /** Alíquota do ISS na nota com retenção (2026.10.7) */
+  aliquota_iss_retido?: number | null
 }
 
 export type EmitenteAtualizarRequest = Partial<{
@@ -907,6 +914,7 @@ export type EmitenteAtualizarRequest = Partial<{
   op_simples_nacional: "1" | "2" | "3"
   regime_apuracao_sn: "1" | "2" | "3"
   regime_especial_trib: string
+  aliquota_iss_retido: number | null
 }>
 
 export interface AliquotaAtualizarRequest {
@@ -1599,6 +1607,8 @@ export interface Tomador {
 }
 
 export interface VinculoResumo {
+  /** ISS retido pelo tomador (2026.10.7) */
+  iss_retido?: boolean
   tomador_pais?: string | null
   tomador_nif?: string | null
   tomador_motivo_sem_nif?: string | null

@@ -154,6 +154,7 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
   const [aliquotaReferencia, setAliquotaReferencia] = useState<number | null>(null)
   // MEI (2026.10.7): a nota de MEI não leva alíquota do Simples — o campo some.
   const [mei, setMei] = useState(false)
+  const [aliqIssReferencia, setAliqIssReferencia] = useState<number | null>(null)
   const [ambienteTeste, setAmbienteTeste] = useState(false)
   // Ações em lote (29/09/2026): seleção múltipla + "enviar todas".
   const [selecionadas, setSelecionadas] = useState<Set<string>>(() => new Set())
@@ -197,6 +198,7 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
       .get<Prestador>("/prestador")
       .then((p) => {
         setMei(p.op_simples_nacional === "2")
+        setAliqIssReferencia(p.aliquota_iss_retido ?? null)
         setAliquotaReferencia(p.op_simples_nacional === "2" ? null : p.aliquota_atual)
         setAmbienteTeste(p.tp_amb_padrao === "2")
       })
@@ -840,6 +842,7 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
           vinculos={emissiveis}
           aliquotaReferencia={aliquotaReferencia}
           mei={mei}
+          aliqIssReferencia={aliqIssReferencia}
           ambienteTeste={ambienteTeste}
           vinculoInicial={searchParams.get("gerar")}
           competenciaInicial={searchParams.get("competencia")}
@@ -970,6 +973,7 @@ function NovaEmissaoModal({
   vinculos,
   aliquotaReferencia,
   mei = false,
+  aliqIssReferencia = null,
   ambienteTeste,
   vinculoInicial,
   competenciaInicial,
@@ -983,6 +987,8 @@ function NovaEmissaoModal({
   aliquotaReferencia: number | null
   /** Empresa MEI: sem o campo de alíquota do Simples. */
   mei?: boolean
+  /** Alíquota do ISS da nota com retenção guardada na empresa (2026.10.7). */
+  aliqIssReferencia?: number | null
   ambienteTeste?: boolean
   vinculoInicial?: string | null
   competenciaInicial?: string | null
@@ -1026,6 +1032,13 @@ function NovaEmissaoModal({
   const [ligando, setLigando] = useState(false)
 
   const vinculo = vinculos.find((v) => v.id === vinculoId)
+  // ISS retido (2026.10.7): vem do cadastro do tomador; dá pra mudar só nesta nota.
+  const [issRetido, setIssRetido] = useState(false)
+  const [aliqIss, setAliqIss] = useState<number | null>(aliqIssReferencia)
+  useEffect(() => setIssRetido(Boolean(vinculo?.iss_retido)), [vinculo?.id, vinculo?.iss_retido])
+  useEffect(() => {
+    if (aliqIssReferencia != null) setAliqIss((atual) => atual ?? aliqIssReferencia)
+  }, [aliqIssReferencia])
   // Shopee (01/10/2026): a nota da própria Shopee (valor que ela informa)
   // sai por aqui; as dos vendedores, pelo relatório.
   const [notaDaShopee, setNotaDaShopee] = useState(false)
@@ -1077,6 +1090,8 @@ function NovaEmissaoModal({
     data_competencia: dataEfetiva,
     ordem: ordem || null,
     aliq_sn: mei ? null : aliqSn,
+    iss_retido: mei ? null : issRetido,
+    aliq_iss: !mei && issRetido ? aliqIss : null,
   }
   const chaveConferencia = JSON.stringify(pedidoConferencia)
   // Pra quais dados os pontos na tela valem (o clique em Gerar confere de novo se mudou).
@@ -1177,6 +1192,8 @@ function NovaEmissaoModal({
         valor: Number(valor),
         ordem: ordem || null,
         aliq_sn: mei ? null : aliqSn,
+        iss_retido: mei ? null : issRetido,
+        aliq_iss: !mei && issRetido ? aliqIss : null,
       }
       criada = await api.post<Emissao>("/dps", payload)
       feito("Nota gerada")
@@ -1380,6 +1397,32 @@ function NovaEmissaoModal({
           />
         )}
 
+        {!mei && (
+          <div className="flex flex-col gap-2 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+              <input
+                type="checkbox"
+                checked={issRetido}
+                onChange={(e) => setIssRetido(e.target.checked)}
+                className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-900"
+              />
+              ISS retido pelo tomador nesta nota
+            </label>
+            <span className="text-xs text-slate-400 dark:text-slate-500">
+              {vinculo?.iss_retido
+                ? "Marcado no cadastro deste tomador. Desmarque se só esta nota é diferente."
+                : "Marque só se este tomador retém o ISS. Pra valer sempre, marque no cadastro dele."}
+            </span>
+            {issRetido && (
+              <CampoPercentual
+                label="Alíquota do ISS (%)"
+                valor={aliqIss}
+                onChange={setAliqIss}
+                hint="A do ISS na sua faixa do Simples (de 2% a 5%) — confirme com o seu contador. Fica guardada pras próximas."
+              />
+            )}
+          </div>
+        )}
         {!mei && (
           <CampoPercentual
             label="Alíquota do Simples Nacional (%)"

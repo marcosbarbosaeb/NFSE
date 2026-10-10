@@ -1459,7 +1459,7 @@ def api_listar_vinculos(todos: bool = False, competencia: str | None = None, db:
             emissao_id=emissao["id"] if emissao else None, emissao_estado=emissao["estado"] if emissao else None,
             emissao_valor=round(emissao["valor"], 2) if emissao else None,
             emissao_quantidade=emissao["quantidade"] if emissao else 0,
-            metodo_captura_valor=v.metodo_captura_valor, sem_nota=v.sem_nota,
+            metodo_captura_valor=v.metodo_captura_valor, sem_nota=v.sem_nota, iss_retido=bool(v.iss_retido),
         ))
     return resposta
 
@@ -1633,6 +1633,7 @@ def api_criar_vinculo(
         setattr(vinculo, campo, (getattr(req, campo) or "").strip() or None)
     vinculo.cod_nbs = _validar_nbs(req.cod_nbs)
     vinculo.incluir_intermediario = bool(req.incluir_intermediario)
+    vinculo.iss_retido = bool(req.iss_retido)
     vinculo.envio_canal = req.envio_canal
     if req.envio_formas is not None:
         vinculo.envio_formas = _validar_formas(req.envio_formas)
@@ -1802,6 +1803,8 @@ def api_atualizar_vinculo(vinculo_id: uuid.UUID, req: VinculoAtualizarRequest, d
         campos["cod_nbs"] = _validar_nbs(campos["cod_nbs"])
     if campos.get("incluir_intermediario") is None:
         campos.pop("incluir_intermediario", None)
+    if campos.get("iss_retido") is None:
+        campos.pop("iss_retido", None)
     if campos.get("sem_nota") is None:
         campos.pop("sem_nota", None)
     if "portal_url" in campos:
@@ -2187,6 +2190,8 @@ class ConferirNotaRequest(BaseModel):
     data_competencia: datetime.date | None = None
     ordem: str | None = Field(default=None, max_length=60)
     aliq_sn: float | None = None
+    iss_retido: bool | None = None
+    aliq_iss: float | None = None
 
 
 @app.get("/api/vinculos/{vinculo_id}/conferencia", dependencies=[_SO_EMISSOR], responses={404: {"model": ErroResponse}})
@@ -2212,7 +2217,8 @@ def api_conferir_nota(req: ConferirNotaRequest, db: Session = Depends(db_sessao)
     vinculo = buscar_vinculo(db, req.vinculo_id)
     if vinculo is None or vinculo.excluido_em is not None:
         raise HTTPException(status_code=404, detail="Tomador não encontrado.")
-    return {"pontos": conferencia.conferir_nota(db, vinculo, req.valor, req.data_competencia, req.ordem, req.aliq_sn)}
+    return {"pontos": conferencia.conferir_nota(db, vinculo, req.valor, req.data_competencia, req.ordem, req.aliq_sn,
+                                                iss_retido=req.iss_retido, aliq_iss=req.aliq_iss)}
 
 
 @app.get("/api/dps/{emissao_id}/conferencia", dependencies=[_SO_EMISSOR], responses={404: {"model": ErroResponse}})
@@ -2278,7 +2284,8 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
         competencia = f"{req.data_competencia.year:04d}-{req.data_competencia.month:02d}"
     # Conferência (05/10/2026): com algum "erro" a nota sairia errada ou seria
     # recusada — não gera. Os "avisos" a tela mostra e a pessoa confirma.
-    pontos_conferencia = conferencia.conferir_nota(db, vinculo, req.valor, req.data_competencia, req.ordem, req.aliq_sn, competencia=competencia)
+    pontos_conferencia = conferencia.conferir_nota(db, vinculo, req.valor, req.data_competencia, req.ordem, req.aliq_sn, competencia=competencia,
+                                                   iss_retido=req.iss_retido, aliq_iss=req.aliq_iss)
     if any(p["nivel"] == "erro" for p in pontos_conferencia):
         raise HTTPException(status_code=422, detail=conferencia.frase_de_recusa(pontos_conferencia))
     # De onde veio o pedido da nota, quando veio de outro módulo (texto
@@ -2314,8 +2321,12 @@ def api_criar_dps(req: GerarDpsRequest, db: Session = Depends(db_sessao)):
             db, vinculo, competencia=competencia, valor=req.valor,
             ordem=req.ordem, aliq_sn=req.aliq_sn, tpAmb=_tp_amb_da_nota(db, vinculo.prestador_id, req.tpAmb),
             dcompet=req.data_competencia.isoformat() if req.data_competencia else None,
+            iss_retido=req.iss_retido, aliq_iss=req.aliq_iss,
         )
         emissao = montar_emissao(db, emissao)
+        # A alíquota do ISS digitada na nota vira a memória da empresa (2026.10.7).
+        if req.aliq_iss is not None and vinculo.prestador.aliquota_iss_retido is None and (emissao.tomador_snapshot or {}).get("iss_retido"):
+            vinculo.prestador.aliquota_iss_retido = req.aliq_iss
     except EmissaoJaExisteError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except DescricaoIncompletaError as exc:
