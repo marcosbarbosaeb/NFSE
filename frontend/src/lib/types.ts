@@ -103,6 +103,12 @@ export interface ClienteAtendido {
   dono?: { nome: string | null; email: string; telefone: string | null } | null
   /** Pasta do mês (do mês passado): o que falta e o que a empresa mandou de novo. */
   pasta?: ResumoPasta | null
+  /** Carteira (2026.10.7): último uso da Ana nesta empresa e se o cliente está ativo no mês. */
+  ultimo_uso?: string | null
+  ativo_no_mes?: boolean
+  /** A empresa foi cadastrada pelo próprio contador (e o convite do dono, se houver). */
+  criado_pelo_contador?: boolean
+  convite_dono?: { email: string; aceito: boolean; vencido: boolean } | null
 }
 
 export interface ResumoPasta {
@@ -154,6 +160,10 @@ export interface ResumoCarteira {
   alertas_criticos: number
   alertas: number
   competencia: string | null
+  /** Carteira (2026.10.7): base da cobrança por cliente. */
+  na_carteira?: number
+  ativos_no_mes?: number
+  cadastrados_pelo_contador?: number
 }
 
 export interface PendenciaDoCliente {

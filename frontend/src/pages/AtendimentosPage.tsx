@@ -1,7 +1,8 @@
-import { ArrowRight, BriefcaseBusiness, Building2, CalendarCheck, Check, Gift, ListChecks, Loader2, MailPlus } from "lucide-react"
+import { ArrowRight, BarChart3, BriefcaseBusiness, Building2, CalendarCheck, Check, Gift, ListChecks, Loader2, MailPlus } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { FichaDaEmpresa } from "../components/contador/FichaDaEmpresa"
+import { GestaoDaCarteira } from "../components/contador/GestaoDaCarteira"
 import { FaixaDaCarteira, FilaDeTarefas, ListaDaCarteira, QuadroDeFechamento, tarefasDe } from "../components/contador/PainelContador"
 import { CaixaBusca } from "../components/ui/CaixaBusca"
 import { nomeEmpresa } from "../components/TrocaEmpresa"
@@ -25,6 +26,8 @@ const ABAS = [
   { id: "hoje", rotulo: "Hoje", Icone: ListChecks },
   { id: "fechamento", rotulo: "Fechamento do mês", Icone: CalendarCheck },
   { id: "empresas", rotulo: "Empresas", Icone: Building2 },
+  // 2026.10.7: os números de cada cliente e o cadastro de cliente novo.
+  { id: "gestao", rotulo: "Gestão", Icone: BarChart3 },
 ] as const
 type IdAba = (typeof ABAS)[number]["id"]
 
@@ -247,6 +250,10 @@ export function AtendimentosPage() {
                 </Card>
               )}
 
+              {aba === "gestao" && (
+                <GestaoDaCarteira clientes={dados.clientes} resumo={dados.resumo} aoAtualizar={carregar} aoVerEmpresa={(c) => verEmpresa(c.id)} />
+              )}
+
               {aba === "fechamento" && <QuadroDeFechamento clientes={dados.clientes} desligado={fazendo !== null} aoAbrir={(c, link) => abrir(c, link)} aoVerEmpresa={(c) => verEmpresa(c.id)} />}
 
               {aba === "empresas" && (
@@ -327,7 +334,11 @@ export function AtendimentosPage() {
             <li>Ele marca o que você pode fazer: só ver, gerar notas, enviar, cuidar dos tomadores, do financeiro...</li>
             <li>O convite aparece aqui. Você aceita e a empresa dele entra na sua lista — e no seletor de empresas, lá no topo do menu.</li>
           </ol>
+          <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">Ou cadastre você mesmo a empresa do cliente: eu mando o convite para o dono criar o acesso dele.</p>
         </Card>
+      )}
+      {dados && dados.clientes.length === 0 && usuario?.so_contador && (
+        <GestaoDaCarteira clientes={[]} resumo={dados.resumo} aoAtualizar={carregar} aoVerEmpresa={() => undefined} />
       )}
 
       {saindo && (

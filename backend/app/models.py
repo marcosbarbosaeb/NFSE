@@ -1173,6 +1173,9 @@ class AcessoContador(Base):
     convidado_por: Mapped[str | None] = mapped_column(String(200))
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     aceito_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 2026.10.7: a empresa foi cadastrada pelo próprio contador (Painel do
+    # contador › Cadastrar cliente) — conta pros números de cobrança por cliente.
+    criado_pelo_contador: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
 
     __table_args__ = (
         UniqueConstraint("prestador_id", "email", name="uq_acesso_contador_empresa_email"),
@@ -1180,6 +1183,24 @@ class AcessoContador(Base):
         Index("ix_acesso_contador_usuario", "usuario_id"),
         Index("ix_acesso_contador_email", "email"),
     )
+
+
+class ConviteDono(Base):
+    """Convite para o dono de uma empresa cadastrada pelo contador (2026.10.7).
+    O dono cria o login dele pelo link (ou junta a empresa ao login que já
+    tem). Sem RLS, como `acesso_contador`: é lido pelo token."""
+
+    __tablename__ = "convite_dono"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False)
+    email: Mapped[str] = mapped_column(String(200), nullable=False)
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    criado_por: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("usuario.id", ondelete="SET NULL"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    aceito_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    usuario_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("usuario.id", ondelete="SET NULL"))
 
 
 class RegistroContador(Base):

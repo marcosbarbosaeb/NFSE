@@ -38,7 +38,10 @@ export function LoginPage() {
   const [reenviando, setReenviando] = useState(false)
   const [erroGoogle, setErroGoogle] = useState<string | null>(null)
 
-  if (usuario) return <Navigate to={naGestao ? "/app/gestao" : "/app"} replace />
+  // ?volta=/convite/... (2026.10.7): depois de entrar, volta pro convite do dono. Só caminho interno.
+  const volta = searchParams.get("volta")
+  const destino = volta && volta.startsWith("/") && !volta.startsWith("//") ? volta : naGestao ? "/app/gestao" : "/app"
+  if (usuario) return <Navigate to={destino} replace />
 
   if (modo === "codigo") {
     return (

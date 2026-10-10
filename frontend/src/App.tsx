@@ -12,6 +12,7 @@ import { ConfirmarEmailPage } from "./pages/ConfirmarEmailPage"
 import { LandingPage } from "./pages/LandingPage"
 import { PrivacidadePage, TermosPage } from "./pages/LegalPage"
 import { SimulacaoPage } from "./pages/SimulacaoPage"
+import { ConviteDonoPage } from "./pages/ConviteDonoPage"
 import { LoginPage } from "./pages/LoginPage"
 
 // Telas do painel carregadas sob demanda (o site institucional e o login
@@ -58,6 +59,8 @@ export default function App() {
           <Route path="/entrar" element={<SoNoEmissor><LoginPage /></SoNoEmissor>} />
           <Route path="/cadastro" element={<SoNoEmissor><CadastroPage /></SoNoEmissor>} />
           <Route path="/simulacao" element={<SoNoEmissor><SimulacaoPage /></SoNoEmissor>} />
+          {/* Convite do dono — empresa cadastrada pelo contador (2026.10.7). */}
+          <Route path="/convite/:token" element={<SoNoEmissor><ConviteDonoPage /></SoNoEmissor>} />
           <Route path="/confirmar-email" element={<SoNoEmissor><ConfirmarEmailPage /></SoNoEmissor>} />
           {/* Fora de /app de propósito: a parceira não tem conta. O Suspense é
               próprio porque esta rota não passa pelo AppShell. */}

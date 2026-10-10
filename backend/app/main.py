@@ -3440,6 +3440,17 @@ def api_uso_tela(req: TelaVistaRequest, request: Request):
     return {"ok": True}
 
 
+@app.get("/api/gestao/contadores", dependencies=[Depends(exigir_gestor)])
+def api_gestao_contadores(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Contadores e os clientes de cada um (2026.10.7): na carteira, ativos no
+    mês e cadastrados por ele — a base da cobrança por cliente (que ainda não
+    está ligada). Só números."""
+    from app.services import carteira
+
+    contadores = carteira.resumo_gestao(db, prestador_id)
+    return {"contadores": contadores, "total_ativos": sum(c["ativos_no_mes"] for c in contadores)}
+
+
 @app.get("/api/gestao/perfis", dependencies=[Depends(exigir_gestor)])
 def api_gestao_perfis(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
     """Perfis: empresas em cada um, quem pulou, "Não me encontrei" e buscas sem resultado."""
@@ -4191,6 +4202,8 @@ def _rota_do_painel(partes: list[str]) -> bool:
     if partes[0] == "app":  # dentro do painel quem decide é o próprio app
         return True
     if partes[0] == "parceira":
+        return len(partes) == 2
+    if partes[0] == "convite":  # convite do dono (empresa cadastrada pelo contador, 2026.10.7)
         return len(partes) == 2
     return len(partes) == 1 and partes[0] in _ROTAS_DO_PAINEL
 

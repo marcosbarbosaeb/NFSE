@@ -59,7 +59,7 @@ def test_migracao_criou_a_conta_do_marcos(db, tabela_de_verdade):
 def test_gestor_pela_tabela_entra_e_cuida_dos_gestores(db, tabela_de_verdade, entrar):
     gestores.adicionar(db, "Gestora@Plataforma.Example", "marcosbarbosaeb@gmail.com")
     c, _ = entrar("gestora@plataforma.example")
-    assert c.get("/api/gestao/acesso").json() == {"gestor": True, "configurado": True}
+    assert c.get("/api/gestao/acesso").json() == {"gestor": True, "configurado": True, "separada": False}
     lista = c.get("/api/gestao/gestores").json()["gestores"]
     assert {g["email"] for g in lista} >= {"gestora@plataforma.example", "marcosbarbosaeb@gmail.com"}
     r = c.post("/api/gestao/gestores", json={"email": "novo@plataforma.example"})
@@ -73,7 +73,7 @@ def test_gestor_pela_tabela_entra_e_cuida_dos_gestores(db, tabela_de_verdade, en
 
 def test_quem_nao_e_gestor_nao_entra(db, tabela_de_verdade, entrar):
     c, _ = entrar("cliente@empresa.example")
-    assert c.get("/api/gestao/acesso").json() == {"gestor": False, "configurado": True}
+    assert c.get("/api/gestao/acesso").json() == {"gestor": False, "configurado": True, "separada": False}
     assert c.get("/api/gestao/gestores").status_code == 403
     assert c.post("/api/gestao/gestores", json={"email": "eu@empresa.example"}).status_code == 403
 

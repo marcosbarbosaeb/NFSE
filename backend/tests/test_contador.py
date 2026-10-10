@@ -81,6 +81,8 @@ def _convidar_e_aceitar(db, api, cenario, permissoes: list[str]) -> tuple[TestCl
 _FORA_DA_EMPRESA = (
     "/api/auth/", "/api/cadastro", "/api/conta", "/api/empresas", "/api/webhooks/", "/api/suporte", "/api/demo",
     "/api/certificado/ler", "/api/contador/convites/", "/api/contador/atendimentos/",
+    # 2026.10.7: carteira do contador e convite do dono — não dependem da empresa ativa
+    "/api/contador/clientes", "/api/convite-dono/",
 )
 
 

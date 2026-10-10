@@ -241,3 +241,164 @@ def api_sair(acesso_id: uuid.UUID, request: Request, db: Session = Depends(get_d
         request.session["prestador_id"] = str(usuario.prestador_id)
     db.commit()
     return {"ok": True}
+
+
+# --- carteira do contador (2026.10.7) -------------------------------------------
+# "O contador deve poder fazer a gestão de seus clientes no módulo contador":
+# números de cada cliente (vêm em GET /api/contador/atendimentos) e cadastrar
+# cliente novo, com convite pro dono. Regras em app/services/carteira.py.
+
+from app.limites import limite  # noqa: E402
+from app.services import carteira  # noqa: E402
+
+
+class ClienteNovoRequest(BaseModel):
+    cpf_cnpj: str = Field(min_length=14, max_length=18)
+    razao_social: str = Field(min_length=1, max_length=200)
+    nome_fantasia: str | None = Field(default=None, max_length=200)
+    cod_municipio: str = Field(pattern=r"^\d{7}$")
+    email_dono: str = Field(min_length=5, max_length=200)
+
+    @field_validator("email_dono")
+    @classmethod
+    def _formato(cls, v: str) -> str:
+        from app.services.emails import conferir_um
+
+        return conferir_um(v, "e-mail do dono da empresa")
+
+
+def _eh_contador(db: Session, usuario: Usuario) -> bool:
+    casa = db.query(Prestador.so_contador).filter(Prestador.id == usuario.prestador_id).scalar()
+    return bool(casa) or acesso.tem_algo(db, usuario)
+
+
+def _carteira_erro(exc: carteira.CarteiraError) -> HTTPException:
+    return HTTPException(status_code=exc.status, detail=str(exc))
+
+
+def _email_convite_dono(empresa: str, contador: Usuario, email: str, token: str) -> bool:
+    """Convite pro dono da empresa cadastrada pelo contador. Falhar o envio não
+    desfaz nada: o contador pode reenviar pelo painel."""
+    base = get_settings().app_base_url.rstrip("/")
+    link = f"{base}/convite/{token}"
+    de = contador.nome or contador.email
+    from app.services import email_modelo as m
+
+    texto = (
+        f"{de}, seu contador(a), cadastrou a empresa {empresa} na Agente Ana para emitir as suas notas fiscais de serviço.\n\n"
+        f"Crie o seu acesso (ou entre com a sua conta, se já tiver) por este link, válido por 14 dias: {link}\n"
+    )
+    corpo = m.moldura(
+        titulo=f"{empresa} na Agente Ana",
+        previa=f"{de} cadastrou a sua empresa na Agente Ana.",
+        motivo=f"Você recebeu este e-mail porque {de} informou o seu endereço como dono(a) da empresa na Agente Ana.",
+        corpo_html=(
+            m.paragrafo(f"<strong>{html.escape(de)}</strong>, seu contador(a), cadastrou a empresa <strong>{html.escape(empresa)}</strong> "
+                        "na Agente Ana, para emitir as suas notas fiscais de serviço.")
+            + m.paragrafo("Crie o seu acesso para acompanhar tudo. Se você já tem conta na Agente Ana com este e-mail, é só entrar.")
+            + m.botao("Criar meu acesso", link)
+            + m.paragrafo("O link vale por 14 dias. Venceu? Peça um novo ao seu contador.", suave=True)
+        ),
+    )
+    try:
+        get_email_sender().enviar(destinatario=email, assunto=f"{de} cadastrou {empresa} na Agente Ana",
+                                  corpo_texto=texto, corpo_html=corpo, responder_para=contador.email)
+        return True
+    except EmailEnvioError:
+        logger.exception("Falha ao enviar o convite do dono")
+        return False
+
+
+@rotas.post("/api/contador/clientes", dependencies=[Depends(exigir_conta_real), Depends(limite("contador-cliente", 20, 3600))])
+def api_cadastrar_cliente(req: ClienteNovoRequest, request: Request, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_logado)):
+    """O contador cadastra a empresa de um cliente: mesma verificação de cidade
+    e regime do cadastro; ele fica com acesso a ela e o dono recebe o convite."""
+    from app.services import atendimento
+    from app.services.cnpj_lookup import CnpjInvalidoError, CnpjNaoEncontradoError
+
+    if not _eh_contador(db, usuario):
+        raise HTTPException(status_code=403, detail="Só quem atende empresas como contador cadastra clientes por aqui.")
+    voltar = contas.empresa_ativa(db, request, usuario)
+    try:
+        veredito = atendimento.avaliar_cnpj(req.cpf_cnpj)
+    except CnpjInvalidoError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except CnpjNaoEncontradoError:
+        veredito = {"pode_criar": True}
+    if not veredito["pode_criar"]:
+        raise HTTPException(status_code=422, detail=f"{veredito['titulo']}. {veredito['mensagem']}")
+    try:
+        prestador, a, convite = carteira.cadastrar_cliente(
+            db, usuario, cpf_cnpj=req.cpf_cnpj, razao_social=req.razao_social, cod_municipio=req.cod_municipio,
+            email_dono=req.email_dono, nome_fantasia=req.nome_fantasia,
+        )
+    except carteira.CarteiraError as exc:
+        definir_prestador_atual(db, voltar)
+        raise _carteira_erro(exc) from exc
+    resposta = {"acesso_id": str(a.id), "prestador_id": str(prestador.id), "empresa": prestador.razao_social, "email_dono": convite.email}
+    token, empresa = convite.token, prestador.nome_fantasia or prestador.razao_social
+    definir_prestador_atual(db, voltar)
+    db.commit()
+    resposta["email_enviado"] = _email_convite_dono(empresa, usuario, convite.email, token)
+    return resposta
+
+
+@rotas.post("/api/contador/clientes/{acesso_id}/reenviar-convite", dependencies=[Depends(exigir_conta_real), Depends(limite("contador-convite", 10, 3600))])
+def api_reenviar_convite_dono(acesso_id: uuid.UUID, request: Request, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_logado)):
+    voltar = contas.empresa_ativa(db, request, usuario)
+    try:
+        convite, empresa = carteira.renovar_convite(db, usuario, acesso_id)
+    except carteira.CarteiraError as exc:
+        definir_prestador_atual(db, voltar)
+        raise _carteira_erro(exc) from exc
+    email, token = convite.email, convite.token
+    definir_prestador_atual(db, voltar)
+    db.commit()
+    return {"ok": True, "email_enviado": _email_convite_dono(empresa, usuario, email, token)}
+
+
+# --- o dono aceita (rotas públicas) -------------------------------------------
+
+
+class AceitarConviteDonoRequest(BaseModel):
+    senha: str = Field(min_length=8, max_length=200)
+    whatsapp: str = Field(min_length=10, max_length=20)
+    nome: str | None = Field(default=None, max_length=200)
+
+
+@rotas.get("/api/convite-dono/{token}", dependencies=[Depends(limite("convite-dono", 60, 600))])
+def api_ver_convite_dono(token: str, db: Session = Depends(get_db)):
+    try:
+        return carteira.ver_convite(db, token)
+    except carteira.CarteiraError as exc:
+        raise _carteira_erro(exc) from exc
+
+
+@rotas.post("/api/convite-dono/{token}/criar-conta", dependencies=[Depends(limite("convite-dono-criar", 10, 600))])
+def api_criar_conta_pelo_convite(token: str, req: AceitarConviteDonoRequest, request: Request, db: Session = Depends(get_db)):
+    """Dono sem conta: cria o login (já confirmado — o link chegou no e-mail dele) e entra."""
+    from app.services.cadastro import WhatsappInvalidoError, limpar_whatsapp
+
+    try:
+        telefone = limpar_whatsapp(req.whatsapp)
+    except WhatsappInvalidoError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        usuario = carteira.aceitar_convite_novo(db, token, senha=req.senha, telefone=telefone, nome=req.nome)
+    except carteira.CarteiraError as exc:
+        raise _carteira_erro(exc) from exc
+    contas.iniciar_sessao(db, request, usuario)
+    db.commit()
+    return {"ok": True}
+
+
+@rotas.post("/api/convite-dono/{token}/aceitar", dependencies=[Depends(limite("convite-dono-aceitar", 10, 600))])
+def api_aceitar_convite_dono(token: str, request: Request, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_logado)):
+    """Dono que já tem conta (logado com o e-mail do convite): a empresa entra no login dele."""
+    try:
+        prestador_id = carteira.aceitar_convite_logado(db, token, usuario)
+    except carteira.CarteiraError as exc:
+        raise _carteira_erro(exc) from exc
+    request.session["prestador_id"] = str(prestador_id)
+    db.commit()
+    return {"ok": True}

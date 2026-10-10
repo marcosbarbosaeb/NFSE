@@ -39,12 +39,12 @@ def test_gestao_so_abre_pra_quem_esta_em_admin_emails(client, db, prestador_test
     # sem a variável: ninguém entra — nem a conta "cortesia"
     db.add(Assinatura(id=uuid.uuid4(), prestador_id=prestador_teste.id, status="cortesia"))
     db.flush()
-    assert client.get("/api/gestao/acesso").json() == {"gestor": False, "configurado": False}
+    assert client.get("/api/gestao/acesso").json() == {"gestor": False, "configurado": False, "separada": False}
     assert client.get("/api/gestao").status_code == 403
     assert client.get("/api/gestao/guia").status_code == 403
     # com a variável, mas sem ser o login certo
     monkeypatch.setattr(get_settings(), "admin_emails", "dona@plataforma.com")
-    assert client.get("/api/gestao/acesso").json() == {"gestor": False, "configurado": True}
+    assert client.get("/api/gestao/acesso").json() == {"gestor": False, "configurado": True, "separada": False}
     assert client.get("/api/gestao").status_code == 403
 
 

@@ -1,5 +1,5 @@
 import { UsoGestao } from "../components/gestao/UsoGestao"
-import { Activity, Bot, Building2, EyeOff, Handshake, Hourglass, LayoutDashboard, Lock, Mail, RefreshCw, ShieldCheck, Sparkles } from "lucide-react"
+import { Activity, Bot, BriefcaseBusiness, Building2, EyeOff, Handshake, Hourglass, LayoutDashboard, Lock, Mail, RefreshCw, ShieldCheck, Sparkles } from "lucide-react"
 import { type ReactNode, useCallback, useEffect, useState } from "react"
 import { PaginaAbas } from "../components/PaginaAbas"
 import { ParceirasAdmin } from "../components/ParceirasAdmin"
@@ -8,6 +8,7 @@ import { ContasGestao } from "../components/gestao/ContasGestao"
 import { EmailsGestao } from "../components/gestao/EmailsGestao"
 import { GestoresGestao } from "../components/gestao/GestoresGestao"
 import { PerfisGestao } from "../components/gestao/PerfisGestao"
+import { ContadoresGestao } from "../components/gestao/ContadoresGestao"
 import { ListaEsperaGestao } from "../components/gestao/ListaEsperaGestao"
 import { VisaoGeralGestao } from "../components/gestao/VisaoGeralGestao"
 import { Button } from "../components/ui/Button"
@@ -108,6 +109,7 @@ export function GestaoPage() {
         { id: "uso", rotulo: "Uso", icone: Activity, conteudo: () => <UsoGestao key={versao} /> },
         { id: "espera", rotulo: "Lista de espera", icone: Hourglass, conteudo: () => <ListaEsperaGestao key={versao} /> },
         { id: "perfis", rotulo: "Perfis", icone: Sparkles, conteudo: () => <PerfisGestao key={versao} /> },
+        { id: "contadores", rotulo: "Contadores", icone: BriefcaseBusiness, conteudo: () => <ContadoresGestao key={versao} /> },
         { id: "gestores", rotulo: "Gestores", icone: ShieldCheck, conteudo: () => <GestoresGestao key={versao} /> },
         {
           id: "parceiras",

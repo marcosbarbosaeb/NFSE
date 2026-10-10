@@ -406,7 +406,11 @@ def do_contador(db: Session, usuario: Usuario, voltar_para: uuid.UUID) -> dict:
             })
     finally:
         definir_prestador_atual(db, voltar_para)
-    return {"convites": convites, "clientes": clientes, "resumo": raio_x.resumo(clientes)}
+    # Carteira (2026.10.7): último uso, ativo no mês e quem cadastrou cada cliente.
+    from app.services import carteira
+
+    conta = carteira.completar_clientes(db, clientes)
+    return {"convites": convites, "clientes": clientes, "resumo": {**raio_x.resumo(clientes), **conta}}
 
 
 def _dono_da_empresa(db: Session, prestador_id: uuid.UUID) -> dict | None:
