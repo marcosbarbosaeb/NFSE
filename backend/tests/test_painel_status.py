@@ -293,6 +293,8 @@ def test_resumo_mes_sem_alerta_quando_certificado_longe_do_vencimento(db, presta
 
 
 def test_resumo_mes_alerta_aliquota_pendente_quando_nunca_definida(db, prestador_teste):
+    prestador_teste.aliquota_atual = None
+    db.flush()
     from app.services.dashboard import resumo_mes
 
     resumo = resumo_mes(db, prestador_teste.id, competencia="2026-08")

@@ -152,6 +152,8 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
   // Marco 16, item 5 — só pra pré-preencher aliq_sn na Nova emissão (ver
   // NovaEmissaoModal abaixo); nunca aplicada sem o usuário poder confirmar.
   const [aliquotaReferencia, setAliquotaReferencia] = useState<number | null>(null)
+  // MEI (2026.10.7): a nota de MEI não leva alíquota do Simples — o campo some.
+  const [mei, setMei] = useState(false)
   const [ambienteTeste, setAmbienteTeste] = useState(false)
   // Ações em lote (29/09/2026): seleção múltipla + "enviar todas".
   const [selecionadas, setSelecionadas] = useState<Set<string>>(() => new Set())
@@ -194,7 +196,8 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
     api
       .get<Prestador>("/prestador")
       .then((p) => {
-        setAliquotaReferencia(p.aliquota_atual)
+        setMei(p.op_simples_nacional === "2")
+        setAliquotaReferencia(p.op_simples_nacional === "2" ? null : p.aliquota_atual)
         setAmbienteTeste(p.tp_amb_padrao === "2")
       })
       .catch(() => {})
@@ -836,6 +839,7 @@ export function NfsePage({ modo = "notas" }: { modo?: "notas" | "lote" }) {
         <NovaEmissaoModal
           vinculos={emissiveis}
           aliquotaReferencia={aliquotaReferencia}
+          mei={mei}
           ambienteTeste={ambienteTeste}
           vinculoInicial={searchParams.get("gerar")}
           competenciaInicial={searchParams.get("competencia")}
@@ -965,6 +969,7 @@ function lerAoGerar(simulacao = false): AoGerar {
 function NovaEmissaoModal({
   vinculos,
   aliquotaReferencia,
+  mei = false,
   ambienteTeste,
   vinculoInicial,
   competenciaInicial,
@@ -976,6 +981,8 @@ function NovaEmissaoModal({
 }: {
   vinculos: VinculoResumo[]
   aliquotaReferencia: number | null
+  /** Empresa MEI: sem o campo de alíquota do Simples. */
+  mei?: boolean
   ambienteTeste?: boolean
   vinculoInicial?: string | null
   competenciaInicial?: string | null
@@ -1069,7 +1076,7 @@ function NovaEmissaoModal({
     valor: Number(valor),
     data_competencia: dataEfetiva,
     ordem: ordem || null,
-    aliq_sn: aliqSn,
+    aliq_sn: mei ? null : aliqSn,
   }
   const chaveConferencia = JSON.stringify(pedidoConferencia)
   // Pra quais dados os pontos na tela valem (o clique em Gerar confere de novo se mudou).
@@ -1169,7 +1176,7 @@ function NovaEmissaoModal({
         substituir: substituir && !!duplicata?.pode_substituir,
         valor: Number(valor),
         ordem: ordem || null,
-        aliq_sn: aliqSn,
+        aliq_sn: mei ? null : aliqSn,
       }
       criada = await api.post<Emissao>("/dps", payload)
       feito("Nota gerada")
@@ -1373,12 +1380,14 @@ function NovaEmissaoModal({
           />
         )}
 
-        <CampoPercentual
-          label="Alíquota do Simples Nacional (%)"
-          valor={aliqSn}
-          onChange={setAliqSn}
-          hint={aliquotaReferencia != null ? "Pré-preenchida com a referência de Empresa › Dados da empresa (Alíquota) — confira antes de gerar." : "Opcional."}
-        />
+        {!mei && (
+          <CampoPercentual
+            label="Alíquota do Simples Nacional (%)"
+            valor={aliqSn}
+            onChange={setAliqSn}
+            hint={aliquotaReferencia != null ? "Pré-preenchida com a referência de Empresa › Dados da empresa (Alíquota) — confira antes de gerar." : "Opcional."}
+          />
+        )}
 
 
           </>

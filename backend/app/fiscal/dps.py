@@ -44,6 +44,12 @@ class DescricaoIncompletaError(ValueError):
     ValueError."""
 
 
+class RegimeNaoInformadoError(DescricaoIncompletaError):
+    """A empresa não tem o regime tributário (opção pelo Simples) cadastrado.
+    Antes a nota saía com o texto "None" e a Receita recusava; agora para
+    antes, com a mesma resposta 422 de "falta dado" (2026.10.7)."""
+
+
 def renderizar_descricao(template: str, competencia: str, ordem: str | None = None,
                           dados_bancarios: str | None = None) -> str:
     """competencia: 'AAAA-MM'. Substitui os placeholders que os 5
@@ -107,6 +113,40 @@ def _leaf(tag, text):
     return e
 
 
+def _vazio(valor) -> bool:
+    return valor is None or str(valor).strip() in ("", "None")
+
+
+def _opcional(tag, valor):
+    """Campo opcional: sem valor não vai (antes ia o texto "None" — 2026.10.7)."""
+    return None if _vazio(valor) else _leaf(tag, str(valor).strip())
+
+
+# Situação perante o Simples (opSimpNac): 1 não optante, 2 MEI, 3 ME/EPP.
+MEI = "2"
+ME_EPP = "3"
+
+
+def regras_do_regime(prest: dict) -> dict:
+    """O que o regime do prestador permite na DPS (Anexo VI da NT 009, lido em
+    10/10/2026 — ver claude/raio-x-tecnico.md seção 15):
+
+    - MEI: sem regApTribSN (E0162), regEspTrib sempre 0 (E0174), sem
+      pTotTribSN (E0710 — vai indTotTrib=0), sem retenção de ISS (E0583) e sem
+      alíquota (E0600).
+    - ME/EPP: regApTribSN quando informado; indTotTrib proibido (E0712).
+    - Não optante: sem regApTribSN (E0162).
+    """
+    op = str(prest.get("opSimpNac") or "").strip()
+    return {
+        "op": op,
+        "mei": op == MEI,
+        "me_epp": op == ME_EPP,
+        "regApTribSN": None if op != ME_EPP or _vazio(prest.get("regApTribSN")) else str(prest["regApTribSN"]).strip(),
+        "regEspTrib": "0" if op == MEI or _vazio(prest.get("regEspTrib")) else str(prest["regEspTrib"]).strip(),
+    }
+
+
 def _pessoa(tag: str, dados: dict):
     """<toma>/<interm>: documento (CNPJ, CPF ou NIF), nome e endereço
     nacional quando houver município."""
@@ -153,6 +193,8 @@ def montar_dps_xml(
     aliq_sn: float | None = None,
     dcompet: str | None = None,
     interm: dict | None = None,
+    iss_retido: bool = False,
+    aliq_iss: float | None = None,
 ) -> etree._Element:
     """Monta o elemento <DPS> (não assinado).
 
@@ -169,6 +211,8 @@ def montar_dps_xml(
         indTotTrib=0 (mesma regra do original — Marcos ajusta manualmente
         todo mês).
     dcompet: 'AAAA-MM-DD'; None = hoje.
+    iss_retido / aliq_iss: ISS retido pelo tomador e a alíquota do ISS (%) que
+        vai junto quando a regra exige (ver `regras_do_regime` e abaixo).
     """
     dCompet = dcompet or hoje_br().isoformat()
     cnpj_prest = prest["CNPJ"]
@@ -185,14 +229,17 @@ def montar_dps_xml(
     id_dps = montar_id_dps(prest["cMun"], cnpj_prest, serie, n_dps)
 
     end_nac_prest = _el("endNac", [_leaf("cMun", prest["cMun"]), _leaf("CEP", prest.get("CEP", ""))])
+    regime = regras_do_regime(prest)
+    if not regime["op"]:
+        raise RegimeNaoInformadoError("Informe o regime tributário da empresa (Simples Nacional, MEI...) em Empresa antes de gerar a nota.")
     regTrib = _el("regTrib", [
-        _leaf("opSimpNac", prest["opSimpNac"]),
-        _leaf("regApTribSN", prest["regApTribSN"]),
-        _leaf("regEspTrib", prest["regEspTrib"]),
+        _leaf("opSimpNac", regime["op"]),
+        _opcional("regApTribSN", regime["regApTribSN"]),
+        _leaf("regEspTrib", regime["regEspTrib"]),
     ])
     prest_el = _el("prest", [
         _leaf("CNPJ", cnpj_prest),
-        _leaf("IM", prest["IM"]),
+        _opcional("IM", prest.get("IM")),
         regTrib,
     ])
 
@@ -229,10 +276,21 @@ def montar_dps_xml(
     serv_el = _el("serv", [locPrest, cServ, com_ext])
 
     vServPrest = _el("vServPrest", [_leaf("vServ", f"{valor:.2f}")])
-    tribMun = _el("tribMun", [_leaf("tribISSQN", "1"), _leaf("tpRetISSQN", "1")])
-    if aliq_sn is not None:
+    # ISS retido pelo tomador (2026.10.7): tpRetISSQN=2. Nunca pra MEI (E0583).
+    # ME/EPP apurando pelo Simples (regApTribSN=1): com retenção a alíquota do
+    # ISS é obrigatória (E0621/E0628, de 1,8% a 5%); sem retenção é proibida
+    # (E0625/E0631). Fora do Simples pro ISS (2 ou 3), em cidade com convênio
+    # ativo, a alíquota é proibida (E0635) — a Sefin usa a do município.
+    retido = bool(iss_retido) and not regime["mei"]
+    pAliq = None
+    if retido and regime["me_epp"] and regime["regApTribSN"] in (None, "1") and aliq_iss is not None:
+        pAliq = _leaf("pAliq", f"{float(aliq_iss):.2f}")
+    # Ordem do esquema 1.00: pAliq ANTES de tpRetISSQN (no 1.01 a ordem inverte).
+    tribMun = _el("tribMun", [_leaf("tribISSQN", "1"), pAliq, _leaf("tpRetISSQN", "2" if retido else "1")])
+    if aliq_sn is not None and not regime["mei"]:
         totTrib = _el("totTrib", [_leaf("pTotTribSN", f"{aliq_sn:.2f}")])
     else:
+        # MEI nunca manda pTotTribSN (E0710): vai "não informo" (indTotTrib=0).
         totTrib = _el("totTrib", [_leaf("indTotTrib", "0")])
     trib = _el("trib", [tribMun, totTrib])
     valores_el = _el("valores", [vServPrest, trib])

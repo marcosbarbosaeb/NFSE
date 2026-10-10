@@ -32,6 +32,9 @@ def _certificado(db, prestador, validade):
 
 
 def test_conta_nova_e_guiada_e_nao_gera_nota_sem_certificado(client, db, prestador_teste, vinculo_teste):
+    prestador_teste.op_simples_nacional = None  # conta nova: sem regime ainda
+    prestador_teste.aliquota_atual = None
+    db.flush()
     p = client.get("/api/empresa/prontidao").json()
     assert (p["certificado"], p["pode_emitir"], p["pronta"], p["tomadores"]) == ("falta", False, False, 1)
     assert {f["campo"] for f in p["dados_faltando"]} == {"endereco", "regime"}

@@ -197,6 +197,8 @@ def test_varios_tomadores_sem_uma_consulta_por_tomador(db, prestador_teste, vinc
 
 
 def test_empresa_certificado_ambiente_e_aliquota(db, prestador_teste):
+    prestador_teste.aliquota_atual = None  # a fixture já vem com regime e alíquota
+    prestador_teste.op_simples_nacional = None
     pontos = conferir_empresa(db, prestador_teste.id)
     assert _codigos(pontos, "erro") == {"sem_certificado"} and all(p["onde"] == "empresa" for p in pontos)
     assert _codigos(conferir_empresa(db, prestador_teste.id, certificado_trava=False), "aviso") == {"sem_certificado"}

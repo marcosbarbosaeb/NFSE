@@ -167,6 +167,8 @@ def test_conta_de_teste(db, monkeypatch):
         )
         db.add(v)
         db.flush()
+        db.get(Prestador, teste.prestador_id).op_simples_nacional = "3"
+        db.flush()
         r = client.post("/api/dps", json={"vinculo_id": str(v.id), "competencia": "2026-09", "valor": 10, "tpAmb": "1"})
         assert r.status_code == 200, r.text
         from app.models import Emissao

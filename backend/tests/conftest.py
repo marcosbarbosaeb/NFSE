@@ -84,6 +84,8 @@ def prestador_teste(db):
         cpf_cnpj="00000000000191",
         razao_social="PRESTADOR DE TESTE (nunca deveria sobreviver a um teste)",
         cod_municipio="3106200",
+        # Simples Nacional ME/EPP apurando tudo pelo Simples (o caso de sempre)
+        op_simples_nacional="3", regime_apuracao_sn="1", regime_especial_trib="0", aliquota_atual=6,
         # os dois produtos ligados (os testes de "só um módulo" trocam isto)
         modulos=["emissor", "financeiro"],
     )

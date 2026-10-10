@@ -161,7 +161,9 @@ def test_listar_despesas_filtra_por_ano(client, prestador_teste):
 # --- GET /api/prestador ---
 
 
-def test_ver_prestador(client, prestador_teste):
+def test_ver_prestador(client, prestador_teste, db):
+    prestador_teste.aliquota_atual = None
+    db.flush()
     resp = client.get("/api/prestador")
     assert resp.status_code == 200, resp.text
     dados = resp.json()
