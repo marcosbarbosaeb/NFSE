@@ -1,5 +1,5 @@
 import { ArrowRight, ChevronDown, LifeBuoy, MessageCircleQuestion, Search, Sparkles, X } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { type FormEvent, useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { BotaoSuporte } from "../components/SuporteModal"
 import { AnaAvatar } from "../components/brand/Marca"
@@ -8,7 +8,8 @@ import { Card } from "../components/ui/Card"
 import { api } from "../lib/api"
 import { FAQ, type PerguntaFaq, TEMAS_FAQ, perguntaVisivel } from "../lib/faq"
 import { useModulos } from "../lib/modulos"
-import type { AjudaInfo } from "../lib/types"
+import type { AjudaInfo, RespostaPergunteAna } from "../lib/types"
+import { telaDeOrigem } from "../lib/uso"
 
 // Ajuda / FAQ (05/10/2026) — pedido do Marcos: "vamos fazer uma sessão de
 // FAQ" e, sobre IA, "não quero pagar; queria algo simples, apenas para
@@ -72,19 +73,129 @@ function Pergunta({ item, aberta, onAlternar }: { item: PerguntaFaq; aberta: boo
   )
 }
 
+/** "Pergunte à Ana" (2026.10.7): a IA do Claude responde só com o guia da Ana,
+ * que fica no servidor. Se a IA falhar ou demorar, a tela continua como sempre
+ * (perguntas acima e o suporte abaixo). */
+function PergunteAna({ restantesIniciais, limite }: { restantesIniciais: number | null; limite: number | null }) {
+  const [pergunta, setPergunta] = useState("")
+  const [enviando, setEnviando] = useState(false)
+  const [resposta, setResposta] = useState<RespostaPergunteAna | null>(null)
+  const [perguntaFeita, setPerguntaFeita] = useState("")
+  const [restantes, setRestantes] = useState<number | null>(restantesIniciais)
+  const semPerguntas = restantes !== null && restantes <= 0
+
+  async function enviar(e: FormEvent) {
+    e.preventDefault()
+    const texto = pergunta.trim()
+    if (!texto || enviando || semPerguntas) return
+    setEnviando(true)
+    setResposta(null)
+    try {
+      const r = await api.post<RespostaPergunteAna>("/ajuda/perguntar", { pergunta: texto, tela: telaDeOrigem() })
+      setResposta(r)
+      setPerguntaFeita(texto)
+      if (typeof r.restantes === "number") setRestantes(r.restantes)
+      if (r.situacao === "ok" || r.situacao === "nao_sei" || r.situacao === "contador") setPergunta("")
+    } catch {
+      setResposta({ situacao: "falha", texto: null, restantes })
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <section aria-labelledby="ajuda-pergunte">
+      <Card className="p-4 sm:p-6">
+        <h2 id="ajuda-pergunte" className="flex items-center gap-2 text-base font-semibold text-slate-800 dark:text-slate-100">
+          <Sparkles size={18} aria-hidden="true" className="text-accent-500" /> Pergunte à Ana
+        </h2>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+          Escreva a sua dúvida sobre o sistema do seu jeito. Eu respondo com base nas minhas explicações. Dúvida de imposto ou de qual
+          código usar é com o seu contador.
+        </p>
+        <form onSubmit={enviar} className="mt-3 flex flex-col gap-2">
+          <label htmlFor="pergunte-ana" className="sr-only">
+            Sua dúvida
+          </label>
+          <textarea
+            id="pergunte-ana"
+            value={pergunta}
+            onChange={(e) => setPergunta(e.target.value.slice(0, 600))}
+            rows={2}
+            maxLength={600}
+            disabled={semPerguntas}
+            placeholder="Ex.: como eu cancelo uma nota?"
+            className="w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 placeholder:text-slate-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 sm:text-sm"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault()
+                e.currentTarget.form?.requestSubmit()
+              }
+            }}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {restantes !== null && limite ? `Você ainda pode fazer ${restantes} de ${limite} perguntas hoje.` : ""}
+            </span>
+            <Button type="submit" variant="accent" disabled={enviando || semPerguntas || !pergunta.trim()}>
+              <MessageCircleQuestion size={16} aria-hidden="true" /> {enviando ? "Pensando..." : "Perguntar"}
+            </Button>
+          </div>
+        </form>
+
+        <div role="status" aria-live="polite">
+          {semPerguntas && !resposta && (
+            <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900/40 dark:text-slate-300">
+              Por hoje acabaram as suas perguntas. Amanhã tem mais — e o suporte continua aqui embaixo.
+            </p>
+          )}
+          {resposta && (resposta.situacao === "ok" || resposta.situacao === "nao_sei" || resposta.situacao === "contador") && resposta.texto && (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/40">
+              {perguntaFeita && <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">Você perguntou: “{perguntaFeita}”</p>}
+              <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700 dark:text-slate-200">{resposta.texto}</p>
+              {resposta.situacao !== "ok" && (
+                <BotaoSuporte logado className={`${LINK_BOTAO} mt-3 bg-primary-600 text-white hover:bg-primary-700`}>
+                  Falar com o suporte
+                </BotaoSuporte>
+              )}
+              <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">Resposta escrita por IA: pode errar. Na dúvida, fale com o suporte.</p>
+            </div>
+          )}
+          {resposta && resposta.situacao === "limite" && (
+            <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900/40 dark:text-slate-300">
+              Por hoje acabaram as suas perguntas. Amanhã tem mais — e o suporte continua aqui embaixo.
+            </p>
+          )}
+          {resposta && (resposta.situacao === "falha" || resposta.situacao === "desligada") && (
+            <p className="mt-3 rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
+              Não consegui responder agora. Procure nas perguntas acima ou fale com o suporte — a sua pergunta não foi contada.
+            </p>
+          )}
+        </div>
+      </Card>
+    </section>
+  )
+}
+
 export function AjudaPage() {
   const modulos = useModulos()
   const [busca, setBusca] = useState("")
   const [abertas, setAbertas] = useState<Set<string>>(() => new Set())
   // Endereço da IA gratuita (undefined = ainda perguntando; null = não tem).
   const [iaUrl, setIaUrl] = useState<string | null | undefined>(undefined)
+  // "Pergunte à Ana" (IA do Claude): só quando o servidor diz que está ligada.
+  const [iaAtiva, setIaAtiva] = useState<{ restantes: number | null; limite: number | null } | null>(null)
 
   useEffect(() => {
     let vivo = true
     api
       .get<AjudaInfo>("/ajuda")
       // Confere de novo aqui: o link abre em outra aba, só serve https.
-      .then((r) => vivo && setIaUrl(typeof r.ia_url === "string" && r.ia_url.startsWith("https://") ? r.ia_url : null))
+      .then((r) => {
+        if (!vivo) return
+        setIaUrl(typeof r.ia_url === "string" && r.ia_url.startsWith("https://") ? r.ia_url : null)
+        setIaAtiva(r.ia_ativa ? { restantes: r.ia_restantes ?? null, limite: r.ia_limite ?? null } : null)
+      })
       // Sem resposta, a tela segue sem o botão — o guia e o suporte continuam.
       .catch(() => vivo && setIaUrl(null))
     return () => {
@@ -181,6 +292,8 @@ export function AjudaPage() {
         </p>
       </Card>
 
+      {iaAtiva && <PergunteAna restantesIniciais={iaAtiva.restantes} limite={iaAtiva.limite} />}
+
       {buscando && encontradas === 0 && (
         <Card className="px-4 py-6 text-center sm:px-6">
           <p className="text-sm font-medium text-slate-800 dark:text-slate-100">Não achei nenhuma pergunta com “{busca.trim()}”.</p>
@@ -217,7 +330,7 @@ export function AjudaPage() {
       {/* IA gratuita: só quando há um endereço configurado (AJUDA_IA_URL). O guia
           completo NÃO fica à disposição do usuário (06/10/2026: "o usuário comum
           não deve ter acesso a isso") — quem baixa é a administração, na Gestão. */}
-      {iaUrl && (
+      {iaUrl && !iaAtiva && (
         <section aria-labelledby="ajuda-ia">
           <Card className="p-4 sm:p-6">
             <h2 id="ajuda-ia" className="flex items-center gap-2 text-base font-semibold text-slate-800 dark:text-slate-100">

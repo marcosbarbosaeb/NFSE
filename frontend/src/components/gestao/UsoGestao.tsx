@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Lightbulb, MousePointerClick, PanelsTopLeft } from "lucide-react"
+import { Activity, AlertTriangle, Lightbulb, MousePointerClick, PanelsTopLeft, Sparkles } from "lucide-react"
 import { useEffect, useState } from "react"
 import { api } from "../../lib/api"
 import { erroDe, numero, plural } from "../../lib/gestao"
@@ -26,6 +26,45 @@ interface UsoDaPlataforma {
   telas_sem_visita: { nome: string; titulo: string }[]
   funil: { etapa: string; contas: number }[]
   sugestoes: { tipo: string; titulo: string; texto: string }[]
+  ia_eventos?: Linha[]
+  ia?: {
+    ligada: boolean
+    modelo: string
+    limite_diario: number
+    perguntas: Record<string, number>
+    recusas: Record<string, number>
+    tokens_entrada: number
+    tokens_saida: number
+    custo_estimado_usd: number
+    custo_por_pergunta_usd: number | null
+    custo_por_recusa_usd: number | null
+  }
+}
+
+const dolar = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `US$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 5 })}`)
+
+function IaGestao({ ia, eventos }: { ia: NonNullable<UsoDaPlataforma["ia"]>; eventos: Linha[] }) {
+  const respondidas = (ia.perguntas.ok ?? 0) + (ia.perguntas.nao_sei ?? 0) + (ia.perguntas.contador ?? 0)
+  return (
+    <Card className="p-5">
+      <TituloSecao icone={Sparkles}>IA do Claude (Pergunte à Ana e explicação de recusas)</TituloSecao>
+      <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+        {ia.ligada ? `Ligada — modelo ${ia.modelo}, até ${ia.limite_diario} perguntas por pessoa por dia.` : "Desligada (variáveis IA_ATIVA e ANTHROPIC_API_KEY)."} Custo
+        estimado pelo preço configurado (IA_PRECO_ENTRADA / IA_PRECO_SAIDA); o valor de verdade está no Claude Console.
+      </p>
+      <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <div><dt className="text-slate-500 dark:text-slate-400">Perguntas respondidas</dt><dd className="font-semibold text-slate-800 dark:text-slate-100">{numero(respondidas)}</dd></div>
+        <div><dt className="text-slate-500 dark:text-slate-400">"Não sei"</dt><dd className="font-semibold text-slate-800 dark:text-slate-100">{numero(ia.perguntas.nao_sei ?? 0)}</dd></div>
+        <div><dt className="text-slate-500 dark:text-slate-400">Recusas explicadas</dt><dd className="font-semibold text-slate-800 dark:text-slate-100">{numero(ia.recusas.ok ?? 0)}</dd></div>
+        <div><dt className="text-slate-500 dark:text-slate-400">Falhas / limite atingido</dt><dd className="font-semibold text-slate-800 dark:text-slate-100">{numero((ia.perguntas.falha ?? 0) + (ia.recusas.falha ?? 0))} / {numero(ia.perguntas.limite ?? 0)}</dd></div>
+        <div><dt className="text-slate-500 dark:text-slate-400">Custo no período</dt><dd className="font-semibold text-slate-800 dark:text-slate-100">{dolar(ia.custo_estimado_usd)}</dd></div>
+        <div><dt className="text-slate-500 dark:text-slate-400">Por pergunta</dt><dd className="font-semibold text-slate-800 dark:text-slate-100">{dolar(ia.custo_por_pergunta_usd)}</dd></div>
+        <div><dt className="text-slate-500 dark:text-slate-400">Por recusa</dt><dd className="font-semibold text-slate-800 dark:text-slate-100">{dolar(ia.custo_por_recusa_usd)}</dd></div>
+        <div><dt className="text-slate-500 dark:text-slate-400">Tokens (entrada / saída)</dt><dd className="font-semibold text-slate-800 dark:text-slate-100">{numero(ia.tokens_entrada)} / {numero(ia.tokens_saida)}</dd></div>
+      </dl>
+      {eventos.length > 0 && <div className="mt-4"><Tabela linhas={eventos} vazio="" /></div>}
+    </Card>
+  )
 }
 
 const PERIODOS = [7, 30, 90]
@@ -186,6 +225,8 @@ export function UsoGestao() {
         </p>
         <Tabela linhas={dados.erros} vazio="Nenhuma ação recusada neste período." extra={(l) => `código ${(l as UsoDaPlataforma["erros"][number]).status || "?"}`} />
       </Card>
+
+      {dados.ia && <IaGestao ia={dados.ia} eventos={dados.ia_eventos ?? []} />}
     </>
   )
 }

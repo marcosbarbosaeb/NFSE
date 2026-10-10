@@ -58,6 +58,8 @@ _REGRAS_BRUTAS: list[tuple[str, str, str, str]] = [
     # não mudam nada
     ("POST", r"/api/cep/buscar", LIVRE, ""),
     ("POST", r"/api/uso/tela", LIVRE, ""),
+    ("POST", r"/api/ajuda/perguntar", LIVRE, ""),
+    ("POST", r"/api/dps/[^/]+/explicar-recusa", LIVRE, ""),
     ("POST", r"/api/dps/conferir", LIVRE, ""),
     ("POST", r"/api/lotes/previa", LIVRE, ""),
     ("POST", r"/api/shopee/previa", LIVRE, ""),

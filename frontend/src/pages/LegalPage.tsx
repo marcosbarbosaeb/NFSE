@@ -10,7 +10,7 @@ import { EMAIL_SUPORTE, MAILTO_SUPORTE } from "../lib/contato"
 // advogado antes de crescer a base de clientes (especialmente o
 // controlador dos dados, que ainda não tem CNPJ próprio).
 
-const ATUALIZADO_EM = "8 de outubro de 2026"
+const ATUALIZADO_EM = "10 de outubro de 2026"
 
 function Secao({ titulo, children }: { titulo: string; children: ReactNode }) {
   return (
@@ -94,6 +94,14 @@ export function PrivacidadePage() {
           ou do seu financeiro. Serve para entendermos o que é usado e onde as pessoas encontram dificuldade. Esses registros
           são apagados depois de 180 dias.
         </p>
+        <p>
+          <b>Ajuda com inteligência artificial:</b> quando você usa o "Pergunte à Ana" ou quando uma nota é recusada pela
+          prefeitura, a explicação pode ser escrita por um serviço de IA externo (Claude, da Anthropic). Enviamos só o
+          necessário: a sua pergunta, o nome da tela, se você é dono ou contador e trechos do nosso guia; na recusa, a mensagem
+          da prefeitura e dados da nota como código de serviço, valor e competência. Nunca enviamos certificado, senha, nome
+          ou documento dos seus clientes, nem dados de outras empresas. Guardamos só a contagem de perguntas (para o limite
+          diário) e a explicação de cada recusa, junto da nota.
+        </p>
       </Secao>
 
       <Secao titulo="2. Para que usamos">
@@ -110,8 +118,8 @@ export function PrivacidadePage() {
         <p>
           <b>Governo:</b> o Sistema Nacional da NFS-e (Receita Federal/prefeituras), que recebe as notas que você emite.
           <br />
-          <b>Infraestrutura:</b> provedores de hospedagem e banco de dados, envio de e-mail e processamento de pagamentos,
-          que tratam os dados apenas em nosso nome.
+          <b>Infraestrutura:</b> provedores de hospedagem e banco de dados, envio de e-mail, processamento de pagamentos e
+          o serviço de IA da ajuda (Anthropic), que tratam os dados apenas em nosso nome.
           <br />
           <b>Destinatários que você escolher:</b> quando você manda uma nota a um fornecedor por e-mail ou WhatsApp.
         </p>
@@ -200,6 +208,10 @@ export function TermosPage() {
         <p>
           Trabalhamos para manter o serviço sempre no ar, mas ele depende também do Sistema Nacional da NFS-e e de
           outros serviços de terceiros, que podem ficar indisponíveis. Não garantimos funcionamento ininterrupto.
+        </p>
+        <p>
+          As respostas do "Pergunte à Ana" e as explicações de recusa são escritas por inteligência artificial e podem
+          conter erros. Não são orientação fiscal ou contábil: confirme as decisões tributárias com o seu contador.
         </p>
       </Secao>
 

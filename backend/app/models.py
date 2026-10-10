@@ -33,6 +33,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     LargeBinary,
     Numeric,
     SmallInteger,
@@ -515,6 +516,10 @@ class Emissao(Base):
     danfse_pdf: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
     danfse_path: Mapped[str | None] = mapped_column(Text)
     erro_detalhe: Mapped[str | None] = mapped_column(Text)
+    # Explicação da recusa feita pela IA (2026.10.7): feita UMA vez por recusa
+    # e guardada — {"para": <erro_detalhe explicado>, "o_que": ..., "passos": [...]}.
+    # Se a nota for recusada de novo com outro motivo, "para" não bate e explica de novo.
+    erro_explicacao: Mapped[dict | None] = mapped_column(JSONB)
     # 'importada' = trazida do Emissor Nacional (emitida fora da Ana).
     origem: Mapped[str] = mapped_column(String(12), nullable=False, default="ana", server_default="ana")
 
@@ -1175,9 +1180,30 @@ class EventoUso(Base):
     id: Mapped[uuid.UUID] = _uuid_pk()
     usuario_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     prestador_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    tipo: Mapped[str] = mapped_column(String(8), nullable=False)  # tela | acao | erro
+    tipo: Mapped[str] = mapped_column(String(8), nullable=False)  # tela | acao | erro | ia
     nome: Mapped[str] = mapped_column(String(120), nullable=False)
     detalhe: Mapped[str | None] = mapped_column(String(60))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class IaChamada(Base):
+    """Cada chamada à IA do Claude (2026.10.7): de quem, de que tipo
+    ("pergunta" ou "recusa"), se deu certo, quantos tokens e quanto demorou.
+    Serve pra contar o limite diário por pessoa (sobrevive a reinício) e pra
+    Gestão ver o custo. Nunca guarda a pergunta nem a resposta. Sem RLS (é da
+    plataforma, como `evento_uso`)."""
+
+    __tablename__ = "ia_chamada"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    usuario_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    prestador_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    tipo: Mapped[str] = mapped_column(String(10), nullable=False)  # pergunta | recusa
+    resultado: Mapped[str] = mapped_column(String(12), nullable=False)  # ok | nao_sei | contador | falha
+    modelo: Mapped[str | None] = mapped_column(String(60))
+    tokens_entrada: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    tokens_saida: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    milissegundos: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

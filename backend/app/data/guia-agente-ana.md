@@ -348,6 +348,8 @@ Há dois casos:
 - **A Ana sabe consertar sozinha.** Aparece o botão "Corrigir e reenviar". Ela corrige, assina de novo e manda à prefeitura. O número da nota não muda.
 - **Precisa de você.** Corrija o que a prefeitura apontou (no cadastro do tomador ou gerando a nota de novo) e use "Tentar submeter de novo" na página da nota (ou "Tentar de novo" no selo).
 
+Embaixo da mensagem da prefeitura pode aparecer **"Em palavras simples"**: uma explicação curta do que aconteceu e o que corrigir, escrita por inteligência artificial. A mensagem original da prefeitura continua visível logo acima — se as duas parecerem diferentes, vale a da prefeitura. A explicação não muda a nota nem reenvia nada.
+
 ### Recusa por causa do CEP
 
 É o erro que mais faz a prefeitura recusar nota: o CEP do tomador não bate com a cidade ou com o endereço.
@@ -785,6 +787,10 @@ No menu, "Painel do contador" mostra as empresas dos clientes sem precisar entra
 Clicar numa empresa (ou escolher na busca) abre a **ficha dela**: regime, alíquota de referência, notas mês a mês (gráfico e tabela dos últimos 12 meses), limite do regime, validade do certificado, fechamento dos três últimos meses, o que tem pra fazer, o download das notas do mês e o contato do responsável. "Entrar na empresa" continua existindo pra trabalhar nela.
 
 O faturamento mostrado é a soma das notas autorizadas que passaram pela Ana (geradas aqui ou importadas do Emissor Nacional). Receita que não virou NFS-e por aqui não entra — é um indicador, não o RBT12 oficial. O regime é o que está no cadastro da empresa: quem não é do Simples aparece como "Fora do Simples".
+
+### Pergunte à Ana
+
+Na tela "Ajuda", quando estiver disponível, aparece o quadro **"Pergunte à Ana"**: escreva a dúvida do seu jeito e clique em "Perguntar". A resposta sai das explicações deste guia e aparece ali mesmo. Cada pessoa pode fazer um número limitado de perguntas por dia (o quadro mostra quantas faltam); se acabarem, amanhã tem mais. Dúvidas de imposto, de alíquota ou de qual código de serviço usar são com o seu contador. A resposta é escrita por inteligência artificial e pode errar: na dúvida, fale com o suporte.
 
 ### Falar com o suporte
 

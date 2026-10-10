@@ -29,7 +29,7 @@ import { Modal } from "../components/ui/Modal"
 import { ApiError, api, formatarErro } from "../lib/api"
 import { useModoGravacao } from "../lib/gravacao"
 import { formatBRL } from "../lib/format"
-import type { CanalEnvio, ConferenciaNota, Emissao, Envio, NotaVisual, OpcoesEnvio, PontoConferencia, PreviaEmail, ProximaNota, StatusDrive, VinculoResumo } from "../lib/types"
+import type { CanalEnvio, ConferenciaNota, Emissao, Envio, ExplicacaoRecusa, NotaVisual, OpcoesEnvio, PontoConferencia, PreviaEmail, ProximaNota, StatusDrive, VinculoResumo } from "../lib/types"
 
 // Marco 16, item 7 — motivos de cancelamento aceitos pela Sefin (mesmo
 // vocabulário de app/fiscal/eventos.MOTIVOS_CANCELAMENTO no backend).
@@ -222,6 +222,24 @@ export function EmissaoDetalhePage() {
 
   useEffect(carregar, [id])
 
+  // Tradutor de recusa (2026.10.7): a IA explica a recusa em palavras simples.
+  // Sem IA, se falhar ou se for recusa de regra fixa, nada aparece — a mensagem
+  // original da prefeitura continua lá de qualquer jeito.
+  const [explicacao, setExplicacao] = useState<ExplicacaoRecusa | null>(null)
+  const recusa = nota?.estado === "erro" ? nota.erro_detalhe : null
+  useEffect(() => {
+    setExplicacao(null)
+    if (!id || !recusa) return
+    let vivo = true
+    api
+      .post<ExplicacaoRecusa>(`/dps/${id}/explicar-recusa`)
+      .then((r) => vivo && r.disponivel && setExplicacao(r))
+      .catch(() => undefined)
+    return () => {
+      vivo = false
+    }
+  }, [id, recusa])
+
   // Conferência (05/10/2026): enquanto a nota não foi autorizada, a Ana
   // confere os dados guardados nela. `undefined` = não se aplica / falhou.
   const estadoDaNota = nota?.estado
@@ -389,7 +407,7 @@ export function EmissaoDetalhePage() {
 
       {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}
       {nota.estado === "erro" && nota.erro_detalhe && (
-        <p className="flex flex-wrap items-start gap-2 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">
+        <div className="flex flex-wrap items-start gap-2 rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           <span className="min-w-0 flex-1">
             <strong>{nota.erro_detalhe}</strong>
@@ -403,6 +421,19 @@ export function EmissaoDetalhePage() {
                 antes — a nota vai com o endereço novo.
               </span>
             )}
+            {explicacao?.o_que && (
+              <span className="mt-2 block rounded-md bg-white/70 px-3 py-2 font-normal text-slate-700 dark:bg-slate-900/40 dark:text-slate-200">
+                <span className="block font-semibold">Em palavras simples: {explicacao.o_que}</span>
+                {explicacao.passos.length > 0 && (
+                  <ol className="mt-1 list-decimal pl-5">
+                    {explicacao.passos.map((p, i) => (
+                      <li key={i}>{p}</li>
+                    ))}
+                  </ol>
+                )}
+                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">Explicação escrita por IA; vale o que a prefeitura escreveu acima.</span>
+              </span>
+            )}
             {erroAcao && <span className="mt-1 block">{erroAcao}</span>}
           </span>
           {dados?.erro_corrigivel && (
@@ -410,7 +441,7 @@ export function EmissaoDetalhePage() {
               {processando ? "Reenviando..." : "Corrigir e reenviar"}
             </Button>
           )}
-        </p>
+        </div>
       )}
 
       <Card className="p-6">

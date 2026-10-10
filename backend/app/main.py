@@ -2644,6 +2644,45 @@ def api_ver_dps(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
     return _para_resposta(emissao)
 
 
+class ExplicacaoRecusaResponse(BaseModel):
+    disponivel: bool = False
+    o_que: str | None = None
+    passos: list[str] = []
+
+
+@app.post("/api/dps/{emissao_id}/explicar-recusa", response_model=ExplicacaoRecusaResponse, dependencies=[_SO_EMISSOR])
+def api_explicar_recusa(
+    emissao_id: uuid.UUID,
+    db: Session = Depends(db_sessao),
+    prestador_id: uuid.UUID = Depends(prestador_atual_id),
+    usuario: Usuario = Depends(usuario_logado),
+):
+    """Tradutor de recusa (2026.10.7, `app/services/ia.py`): "o que
+    aconteceu" + passos, feito pela IA UMA vez por recusa e guardado. Sem IA,
+    na simulação, nas recusas de regra fixa (E0008/E0240) ou se a IA falhar:
+    `disponivel=false` e a tela fica como sempre foi. Nunca dá erro."""
+    from app.services import ia
+    from app.services.demo import eh_email_demo
+
+    emissao = db.query(Emissao).filter_by(id=emissao_id).one_or_none()
+    if emissao is None:
+        raise HTTPException(status_code=404, detail="Emissão não encontrada (ou não pertence ao prestador ativo)")
+    if eh_email_demo(usuario.email):
+        return {"disponivel": False}
+    prest = emissao.vinculo.prestador if emissao.vinculo else None
+    dados_prestador = {
+        "regime_simples": {"1": "não optante", "2": "MEI", "3": "ME/EPP (Simples Nacional)"}.get(str(prest.op_simples_nacional or "")) if prest else None,
+        "municipio_do_prestador_ibge": prest.cod_municipio if prest else None,
+    }
+    explicacao = ia.explicar_recusa(db, emissao, usuario_id=usuario.id, prestador_id=prestador_id, dados_prestador=dados_prestador)
+    if not explicacao:
+        return {"disponivel": False}
+    db.flush()
+    resposta = {"disponivel": True, "o_que": explicacao["o_que"], "passos": explicacao.get("passos") or []}
+    db.commit()
+    return resposta
+
+
 @app.get("/api/dps/{emissao_id}/nota", response_model=NotaVisualResponse, responses={404: {"model": ErroResponse}}, dependencies=[_SO_EMISSOR])
 def api_nota_visual(emissao_id: uuid.UUID, db: Session = Depends(db_sessao)):
     """Marco 11 — a mesma emissão de /api/dps/{id}, mas com os campos já
@@ -3153,7 +3192,9 @@ def api_gestao_uso(dias: int = 30, db: Session = Depends(db_sessao), prestador_i
     uso.limpar_antigos(db)
     dados = uso.painel(db, dias)
     etapas = uso.funil(gestao.painel(db, prestador_id)["contas"])
-    resposta = {**dados, "funil": etapas, "sugestoes": uso.sugestoes(dados, etapas)}
+    from app.services import ia
+
+    resposta = {**dados, "funil": etapas, "sugestoes": uso.sugestoes(dados, etapas), "ia": ia.resumo_gestao(db, dias)}
     db.commit()
     return resposta
 

@@ -129,6 +129,10 @@ def _sem_rede_e_sem_limites(monkeypatch):
     import app.services.uso as uso_mod
 
     monkeypatch.setattr(uso_mod, "gravar", lambda *a, **k: None)
+    # ...nem anotam chamadas da IA (idem; tests/test_ia.py troca pela sessão do teste).
+    import app.services.ia as ia_mod
+
+    monkeypatch.setattr(ia_mod, "_gravar_chamada", lambda registro: None)
     limitador = getattr(main_mod, "limitador", None)
     if limitador is not None:
         limitador.limpar()

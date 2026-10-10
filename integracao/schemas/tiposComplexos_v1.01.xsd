@@ -1,0 +1,1075 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" targetNamespace="http://www.sped.fazenda.gov.br/nfse" xmlns="http://www.sped.fazenda.gov.br/nfse" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+<xs:import namespace="http://www.w3.org/2000/09/xmldsig#" schemaLocation="xmldsig-core-schema.xsd"/>
+<xs:include schemaLocation="tiposSimples_v1.01.xsd"/>
+<!--TIPO COMPLEXO NFS-e-->
+<xs:complexType name="TCNFSe">
+<xs:sequence>
+<xs:element name="infNFSe" type="TCInfNFSe"/>
+<xs:element ref="ds:Signature"/>
+</xs:sequence>
+<xs:attribute name="versao" type="TVerNFSe" use="required"/>
+</xs:complexType>
+<!--GRUPO DE INFORMAÇÕES DA NFS-e-->
+<xs:complexType name="TCInfNFSe">
+<xs:sequence>
+<xs:element name="xLocEmi" type="TSDesc150">
+</xs:element>
+<xs:element name="xLocPrestacao" type="TSDesc150">
+</xs:element>
+<xs:element name="nNFSe" type="TSNNFSe">
+</xs:element>
+<xs:element name="cLocIncid" type="TSCodMunIBGE" minOccurs="0">
+</xs:element>
+<xs:element name="xLocIncid" type="TSDesc150" minOccurs="0">
+</xs:element>
+<xs:element name="xTribNac" type="TSDesc600">
+</xs:element>
+<xs:element name="xTribMun" type="TSDesc600" minOccurs="0">
+</xs:element>
+<xs:element name="xNBS" type="TSDesc600" minOccurs="0">
+</xs:element>
+<xs:element name="verAplic" type="TSVerAplic">
+</xs:element>
+<xs:element name="ambGer" type="TSAmbGeradorNFSe">
+</xs:element>
+<xs:element name="tpEmis" type="TSTipoEmissao">
+</xs:element>
+<xs:element name="procEmi" type="TSProcEmissao" minOccurs="0">
+</xs:element>
+<xs:element name="cStat" type="TStat">
+</xs:element>
+<xs:element name="dhProc" type="TSDateTimeUTC">
+</xs:element>
+<xs:element name="nDFSe" type="TSNDFSe">
+</xs:element>
+<xs:element name="emit" type="TCEmitente">
+</xs:element>
+<xs:element name="xOutInf" type="TSDesc2000" minOccurs="0">
+</xs:element>
+<xs:element name="valores" type="TCValoresNFSe">
+</xs:element>
+<xs:element name="IBSCBS" type="TCRTCIBSCBS" minOccurs="0">
+</xs:element>
+<xs:element name="DPS" type="TCDPS">
+</xs:element>
+</xs:sequence>
+<xs:attribute name="Id" type="TSIdNFSe" use="required"/>
+</xs:complexType>
+<!--TIPO COMPLEXO DO EMITENTE DA NFS-e-->
+<xs:complexType name="TCEmitente">
+<xs:sequence>
+<xs:choice>
+<xs:element name="CNPJ" type="TSCNPJ">
+</xs:element>
+<xs:element name="CPF" type="TSCPF">
+</xs:element>
+</xs:choice>
+<xs:element name="IM" type="TSInscMun" minOccurs="0">
+</xs:element>
+<xs:element name="xNome" type="TSNomeRazaoSocial">
+</xs:element>
+<xs:element name="xFant" type="TSNomeFantasia" minOccurs="0">
+</xs:element>
+<xs:element name="enderNac" type="TCEnderecoEmitente">
+</xs:element>
+<xs:element name="fone" type="TSTelefone" minOccurs="0">
+</xs:element>
+<xs:element name="email" type="TSEmail" minOccurs="0">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO DOS VALORES DA NFS-e-->
+<xs:complexType name="TCValoresNFSe">
+<xs:sequence>
+<xs:element name="vCalcDR" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="tpBM" type="TBMISSQN" minOccurs="0">
+</xs:element>
+<xs:element name="vCalcBM" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="vBC" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="pAliqAplic" type="TSDec1V2" minOccurs="0">
+</xs:element>
+<xs:element name="vISSQN" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="vTotalRet" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="vLiq" type="TSDec15V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO IBSCBS-->
+<xs:complexType name="TCRTCIBSCBS">
+<xs:sequence>
+<xs:element name="cLocalidadeIncid" type="TSCodMunIBGE">
+</xs:element>
+<xs:element name="xLocalidadeIncid" type="TSDesc600">
+</xs:element>
+<xs:element name="pRedutor" type="TSDec2V2" minOccurs="0">
+</xs:element>
+<xs:element name="valores" type="TCRTCValoresIBSCBS">
+</xs:element>
+<xs:element name="totCIBS" type="TCRTCTotalCIBS">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO DOS VALORES BRUTOS IBSCBS-->
+<xs:complexType name="TCRTCValoresIBSCBS">
+<xs:sequence>
+<xs:element name="vBC" type="TSDec15V2">
+</xs:element>
+<xs:element name="vCalcReeRepRes" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="uf" type="TCRTCValoresIBSCBSUF">
+</xs:element>
+<xs:element name="mun" type="TCRTCValoresIBSCBSMun">
+</xs:element>
+<xs:element name="fed" type="TCRTCValoresIBSCBSFed">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO IBS ESTADUAL-->
+<xs:complexType name="TCRTCValoresIBSCBSUF">
+<xs:sequence>
+<xs:element name="pIBSUF" type="TSDec2V2">
+</xs:element>
+<xs:element name="pRedAliqUF" type="TSDec3V2" minOccurs="0">
+</xs:element>
+<xs:element name="pAliqEfetUF" type="TSDec2V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO IBS MUNICIPAL-->
+<xs:complexType name="TCRTCValoresIBSCBSMun">
+<xs:sequence>
+<xs:element name="pIBSMun" type="TSDec2V2">
+</xs:element>
+<xs:element name="pRedAliqMun" type="TSDec3V2" minOccurs="0">
+</xs:element>
+<xs:element name="pAliqEfetMun" type="TSDec2V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO CBS-->
+<xs:complexType name="TCRTCValoresIBSCBSFed">
+<xs:sequence>
+<xs:element name="pCBS" type="TSDec2V2">
+</xs:element>
+<xs:element name="pRedAliqCBS" type="TSDec3V2" minOccurs="0">
+</xs:element>
+<xs:element name="pAliqEfetCBS" type="TSDec2V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO DE TOTALIZADORES IBSCBS-->
+<xs:complexType name="TCRTCTotalCIBS">
+<xs:sequence>
+<xs:element name="vTotNF" type="TSDec15V2">
+</xs:element>
+<xs:element name="gIBS" type="TCRTCTotalIBS">
+</xs:element>
+<xs:element name="gCBS" type="TCRTCTotalCBS">
+</xs:element>
+<xs:element name="gTribRegular" type="TCRTCTotalTribRegular" minOccurs="0">
+</xs:element>
+<xs:element name="gTribCompraGov" type="TCRTCTotalTribCompraGov" minOccurs="0">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO DE TOTALIZADORES DOS VALORES IBS-->
+<xs:complexType name="TCRTCTotalIBS">
+<xs:sequence>
+<xs:element name="vIBSTot" type="TSDec15V2">
+</xs:element>
+<xs:element name="gIBSCredPres" type="TCRTCTotalIBSCredPres" minOccurs="0">
+</xs:element>
+<xs:element name="gIBSUFTot" type="TCRTCTotalIBSUF">
+</xs:element>
+<xs:element name="gIBSMunTot" type="TCRTCTotalIBSMun">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO DE TOTALIZADORES DOS VALORES CREDITO PRESUMIDO IBS-->
+<xs:complexType name="TCRTCTotalIBSCredPres">
+<xs:sequence>
+<xs:element name="pCredPresIBS" type="TSDec2V2">
+</xs:element>
+<xs:element name="vCredPresIBS" type="TSDec15V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO DE TOTALIZADORES DOS VALORES IBS ESTADUAL-->
+<xs:complexType name="TCRTCTotalIBSUF">
+<xs:sequence>
+<xs:element name="vDifUF" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="vIBSUF" type="TSDec15V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO DE TOTALIZADORES DOS VALORES IBS MUNICIPAL-->
+<xs:complexType name="TCRTCTotalIBSMun">
+<xs:sequence>
+<xs:element name="vDifMun" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="vIBSMun" type="TSDec15V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO DE TOTALIZADORES DOS VALORES CBS-->
+<xs:complexType name="TCRTCTotalCBS">
+<xs:sequence>
+<xs:element name="gCBSCredPres" type="TCRTCTotalCBSCredPres" minOccurs="0">
+</xs:element>
+<xs:element name="vDifCBS" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="vCBS" type="TSDec15V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO DE TOTALIZADORES DOS VALORES CREDITO PRESUMIDO CBS-->
+<xs:complexType name="TCRTCTotalCBSCredPres">
+<xs:sequence>
+<xs:element name="pCredPresCBS" type="TSDec2V2">
+</xs:element>
+<xs:element name="vCredPresCBS" type="TSDec15V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO DE TOTALIZADORES DOS VALORES TRIBUTAÇÃO REGULAR-->
+<xs:complexType name="TCRTCTotalTribRegular">
+<xs:sequence>
+<xs:element name="pAliqEfeRegIBSUF" type="TSDec2V2">
+</xs:element>
+<xs:element name="vTribRegIBSUF" type="TSDec15V2">
+</xs:element>
+<xs:element name="pAliqEfeRegIBSMun" type="TSDec2V2">
+</xs:element>
+<xs:element name="vTribRegIBSMun" type="TSDec15V2">
+</xs:element>
+<xs:element name="pAliqEfeRegCBS" type="TSDec2V2">
+</xs:element>
+<xs:element name="vTribRegCBS" type="TSDec15V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO DE TOTALIZADORES DOS VALORES IBSCBS EM COMPRAS GOVERNAMENTAIS-->
+<xs:complexType name="TCRTCTotalTribCompraGov">
+<xs:sequence>
+<xs:element name="pIBSUF" type="TSDec2V2">
+</xs:element>
+<xs:element name="vIBSUF" type="TSDec15V2">
+</xs:element>
+<xs:element name="pIBSMun" type="TSDec2V2">
+</xs:element>
+<xs:element name="vIBSMun" type="TSDec15V2">
+</xs:element>
+<xs:element name="pCBS" type="TSDec2V2">
+</xs:element>
+<xs:element name="vCBS" type="TSDec15V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO DPS-->
+<xs:complexType name="TCDPS">
+<xs:sequence>
+<xs:element name="infDPS" type="TCInfDPS"/>
+<xs:element ref="ds:Signature" minOccurs="0"/>
+</xs:sequence>
+<xs:attribute name="versao" type="TVerNFSe" use="required"/>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DA DPS-->
+<xs:complexType name="TCInfDPS">
+<xs:sequence>
+<xs:element name="tpAmb" type="TSTipoAmbiente">
+</xs:element>
+<xs:element name="dhEmi" type="TSDateTimeUTC">
+</xs:element>
+<xs:element name="verAplic" type="TSVerAplic">
+</xs:element>
+<xs:element name="serie" type="TSSerieDPS">
+</xs:element>
+<xs:element name="nDPS" type="TSNumDPS">
+</xs:element>
+<xs:element name="dCompet" type="TSData">
+</xs:element>
+<xs:element name="tpEmit" type="TSEmitenteDPS">
+</xs:element>
+<xs:element minOccurs="0" name="cMotivoEmisTI" type="TSMotivoEmisTI">
+</xs:element>
+<xs:element minOccurs="0" name="chNFSeRej" type="TSChaveNFSe">
+</xs:element>
+<xs:element name="cLocEmi" type="TSCodMunIBGE">
+</xs:element>
+<xs:element name="subst" type="TCSubstituicao" minOccurs="0">
+</xs:element>
+<xs:element name="prest" type="TCInfoPrestador">
+</xs:element>
+<xs:element name="toma" type="TCInfoPessoa" minOccurs="0">
+</xs:element>
+<xs:element name="interm" type="TCInfoPessoa" minOccurs="0">
+</xs:element>
+<xs:element name="serv" type="TCServ">
+</xs:element>
+<xs:element name="valores" type="TCInfoValores">
+</xs:element>
+<xs:element name="IBSCBS" type="TCRTCInfoIBSCBS" minOccurs="0">
+</xs:element>
+</xs:sequence>
+<xs:attribute name="Id" type="TSIdDPS" use="required"/>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE SUBSTITUIÇÃO DE NFS-E-->
+<xs:complexType name="TCSubstituicao">
+<xs:sequence>
+<xs:element name="chSubstda" type="TSChaveNFSe">
+</xs:element>
+<xs:element name="cMotivo" type="TSCodJustSubst">
+</xs:element>
+<xs:element name="xMotivo" type="TSMotivo" minOccurs="0">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE UMA PESSOA ENVOLVIDA NA NFS-E (TOMADOR, INTERMEDIÁRIO E FORNECEDOR PARA DEDUÇÃO)-->
+<xs:complexType name="TCInfoPrestador">
+<xs:sequence>
+<xs:choice>
+<xs:element name="CNPJ" type="TSCNPJ">
+</xs:element>
+<xs:element name="CPF" type="TSCPF">
+</xs:element>
+<xs:element name="NIF" type="TSNIF">
+</xs:element>
+<xs:element name="cNaoNIF" type="TSCodNaoNIF">
+</xs:element>
+</xs:choice>
+<xs:element name="CAEPF" type="TSCAEPF" minOccurs="0">
+</xs:element>
+<xs:element name="IM" type="TSInscMun" minOccurs="0">
+</xs:element>
+<xs:element name="xNome" type="TSNomeRazaoSocial" minOccurs="0">
+</xs:element>
+<xs:element name="end" type="TCEndereco" minOccurs="0">
+</xs:element>
+<xs:element name="fone" type="TSTelefone" minOccurs="0">
+</xs:element>
+<xs:element name="email" type="TSEmail" minOccurs="0">
+</xs:element>
+<xs:element name="regTrib" type="TCRegTrib">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE REGIMES DE TRIBUTAÇÃO ESPECÍFICOS DO CONTRIBUINTE-->
+<xs:complexType name="TCRegTrib">
+<xs:sequence>
+<xs:element name="opSimpNac" type="TSOpSimpNac">
+</xs:element>
+<xs:element name="regApTribSN" type="TSRegimeApuracaoSimpNac" minOccurs="0">
+</xs:element>
+<xs:element name="regEspTrib" type="TSRegEspTrib">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE UMA PESSOA ENVOLVIDA NA NFS-E (TOMADOR, INTERMEDIÁRIO E FORNECEDOR PARA DEDUÇÃO)-->
+<xs:complexType name="TCInfoPessoa">
+<xs:sequence>
+<xs:choice>
+<xs:element name="CNPJ" type="TSCNPJ">
+</xs:element>
+<xs:element name="CPF" type="TSCPF">
+</xs:element>
+<xs:element name="NIF" type="TSNIF">
+</xs:element>
+<xs:element name="cNaoNIF" type="TSCodNaoNIF">
+</xs:element>
+</xs:choice>
+<xs:element name="CAEPF" type="TSCAEPF" minOccurs="0">
+</xs:element>
+<xs:element name="IM" type="TSInscMun" minOccurs="0">
+</xs:element>
+<xs:element name="xNome" type="TSNomeRazaoSocial">
+</xs:element>
+<xs:element name="end" type="TCEndereco" minOccurs="0">
+</xs:element>
+<xs:element name="fone" type="TSTelefone" minOccurs="0">
+</xs:element>
+<xs:element name="email" type="TSEmail" minOccurs="0">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA ENDEREÇO -->
+<xs:complexType name="TCEndereco">
+<xs:sequence>
+<xs:choice>
+<xs:element name="endNac" type="TCEnderNac">
+</xs:element>
+<xs:element name="endExt" type="TCEnderExt">
+</xs:element>
+</xs:choice>
+<xs:element name="xLgr" type="TSLogradouro">
+</xs:element>
+<xs:element name="nro" type="TSNumeroEndereco">
+</xs:element>
+<xs:element name="xCpl" type="TSComplementoEndereco" minOccurs="0">
+</xs:element>
+<xs:element name="xBairro" type="TSBairro">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DO ENDERECO DO EMITENTE DA NFSE -->
+<xs:complexType name="TCEnderecoEmitente">
+<xs:sequence>
+<xs:element name="xLgr" type="TSLogradouro">
+</xs:element>
+<xs:element name="nro" type="TSNumeroEndereco">
+</xs:element>
+<xs:element name="xCpl" type="TSComplementoEndereco" minOccurs="0">
+</xs:element>
+<xs:element name="xBairro" type="TSBairro">
+</xs:element>
+<xs:element name="cMun" type="TSCodMunIBGE">
+</xs:element>
+<xs:element name="UF" type="TSUF">
+</xs:element>
+<xs:element name="CEP" type="TSCEP">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO ENDEREÇO SIMPLES -->
+<xs:complexType name="TCEnderecoSimples">
+<xs:sequence>
+<xs:choice>
+<xs:element name="CEP" type="TSCEP">
+</xs:element>
+<xs:element name="endExt" type="TCEnderExtSimples">
+</xs:element>
+</xs:choice>
+<xs:element name="xLgr" type="TSLogradouro">
+</xs:element>
+<xs:element name="nro" type="TSNumeroEndereco">
+</xs:element>
+<xs:element name="xCpl" type="TSComplementoEndereco" minOccurs="0">
+</xs:element>
+<xs:element name="xBairro" type="TSBairro">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA OS CAMPOS ESPECÍFICOS DE ENDEREÇO NACIONAL-->
+<xs:complexType name="TCEnderNac">
+<xs:sequence>
+<xs:element name="cMun" type="TSCodMunIBGE">
+</xs:element>
+<xs:element name="CEP" type="TSCEP">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA OS CAMPOS ESPECÍFICOS DE ENDEREÇO NO EXTERIOR-->
+<xs:complexType name="TCEnderExt">
+<xs:sequence>
+<xs:element name="cPais" type="TSCodPaisISO">
+</xs:element>
+<xs:element name="cEndPost" type="TSCodigoEndPostal">
+</xs:element>
+<xs:element name="xCidade" type="TSCidade">
+</xs:element>
+<xs:element name="xEstProvReg" type="TSEstadoProvRegiao">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO ENDEREÇO EXTERIOR SIMPLES -->
+<xs:complexType name="TCEnderExtSimples">
+<xs:sequence>
+<xs:element name="cEndPost" type="TSCodigoEndPostal">
+</xs:element>
+<xs:element name="xCidade" type="TSCidade">
+</xs:element>
+<xs:element name="xEstProvReg" type="TSEstadoProvRegiao">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA ENDEREÇO DE OBRA-->
+<xs:complexType name="TCEnderObraEvento">
+<xs:sequence>
+<xs:choice>
+<xs:element minOccurs="1" name="CEP" type="TSCEP">
+</xs:element>
+<xs:element minOccurs="1" name="endExt" type="TCEnderExtSimples">
+</xs:element>
+</xs:choice>
+<xs:element name="xLgr" type="TSLogradouro">
+</xs:element>
+<xs:element name="nro" type="TSNumeroEndereco">
+</xs:element>
+<xs:element name="xCpl" type="TSComplementoEndereco" minOccurs="0">
+</xs:element>
+<xs:element name="xBairro" type="TSBairro">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DO SERVIÇO PRESTADO-->
+<xs:complexType name="TCServ">
+<xs:sequence>
+<xs:element name="locPrest" type="TCLocPrest">
+</xs:element>
+<xs:element name="cServ" type="TCCServ">
+</xs:element>
+<xs:element name="comExt" type="TCComExterior" minOccurs="0">
+</xs:element>
+<xs:element name="obra" type="TCInfoObra" minOccurs="0">
+</xs:element>
+<xs:element name="atvEvento" type="TCAtvEvento" minOccurs="0">
+</xs:element>
+<xs:element name="explRod" type="TCExploracaoRodoviaria" minOccurs="0">
+</xs:element>
+<xs:element name="infoCompl" type="TCInfoCompl" minOccurs="0">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DO LOCAL DA PRESTAÇÃO DO SERVIÇO-->
+<xs:complexType name="TCLocPrest">
+<xs:choice minOccurs="1">
+<xs:element name="cLocPrestacao" type="TSCodMunIBGE">
+</xs:element>
+<xs:element name="cPaisPrestacao" type="TSCodPaisISO">
+</xs:element>
+</xs:choice>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES RELATIVAS AO CÓDIGO DO SERVIÇO PRESTADO-->
+<xs:complexType name="TCCServ">
+<xs:sequence>
+<xs:element name="cTribNac" type="TSCodTribNac">
+</xs:element>
+<xs:element name="cTribMun" type="TCCodTribMun" minOccurs="0">
+</xs:element>
+<xs:element name="xDescServ" type="TSDesc2000">
+</xs:element>
+<xs:element name="cNBS" type="TSCodNBS">
+</xs:element>
+<xs:element name="cIntContrib" type="TSCodigoInternoContribuinte" minOccurs="0">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE COMÉRCIO EXTERIOR-->
+<xs:complexType name="TCComExterior">
+<xs:sequence>
+<xs:element name="mdPrestacao" type="TSModoPrestacao">
+</xs:element>
+<xs:element name="vincPrest" type="TSVincPrest">
+</xs:element>
+<xs:element name="tpMoeda" type="TSCodMoeda">
+</xs:element>
+<xs:element name="vServMoeda" type="TSDec15V2">
+</xs:element>
+<xs:element name="mecAFComexP" type="TSMecAFComExPrest">
+</xs:element>
+<xs:element name="mecAFComexT" type="TSMecAFComExToma">
+</xs:element>
+<xs:element name="movTempBens" type="TSMovTempBens">
+</xs:element>
+<xs:element name="nDI" type="TSNumDocImport" minOccurs="0">
+</xs:element>
+<xs:element name="nRE" type="TSNumRegExport" minOccurs="0">
+</xs:element>
+<xs:element name="mdic" type="TSEnvMDIC">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE PEDÁGIO-->
+<xs:complexType name="TCExploracaoRodoviaria">
+<xs:sequence>
+<xs:element name="categVeic" type="TSCategVeic">
+</xs:element>
+<xs:element name="nEixos" type="TSNumEixos">
+</xs:element>
+<xs:element name="rodagem" type="TSRodagem">
+</xs:element>
+<xs:element name="sentido" type="TSSentido">
+</xs:element>
+<xs:element name="placa" type="TSPlaca">
+</xs:element>
+<xs:element name="codAcessoPed" type="TSCodAcessoPed">
+</xs:element>
+<xs:element name="codContrato" type="TSCodContrato">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE ATIVIDADE DE EVENTO-->
+<xs:complexType name="TCAtvEvento">
+<xs:sequence>
+<xs:element name="xNome" type="TSDesc255">
+</xs:element>
+<xs:element name="dtIni" type="TSData">
+</xs:element>
+<xs:element name="dtFim" type="TSData">
+</xs:element>
+<xs:choice>
+<xs:element name="idAtvEvt" type="TSIdeEvento">
+</xs:element>
+<xs:element name="end" type="TCEnderecoSimples">
+</xs:element>
+</xs:choice>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE OBRA-->
+<xs:complexType name="TCInfoObra">
+<xs:sequence>
+<xs:element minOccurs="0" name="inscImobFisc" type="TSInscImobFisc">
+</xs:element>
+<xs:choice minOccurs="1">
+<xs:element name="cObra" type="TSCodObra">
+</xs:element>
+<xs:element name="cCIB" type="TSCodCIB">
+</xs:element>
+<xs:element name="end" type="TCEnderObraEvento">
+</xs:element>
+</xs:choice>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES COMPLEMENTARES DO SERVIÇO PRESTADO-->
+<xs:complexType name="TCInfoCompl">
+<xs:sequence>
+<xs:element name="idDocTec" type="TSDRT" minOccurs="0">
+</xs:element>
+<xs:element name="docRef" type="TSDesc255" minOccurs="0">
+</xs:element>
+<xs:element name="xPed" type="TSNumeroEndereco" minOccurs="0">
+</xs:element>
+<xs:element name="gItemPed" type="TCInfoItemPed" minOccurs="0">
+</xs:element>
+<xs:element name="xInfComp" type="TSDescInfCompl" minOccurs="0">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA GRUPO DE ITENS DO PEDIDO/ORDEM DE COMPRA/ORDEM DE SERVIÇO/PROJETO-->
+<xs:complexType name="TCInfoItemPed">
+<xs:sequence>
+<xs:element name="xItemPed" type="TSNumeroEndereco" maxOccurs="99">
+</xs:element>
+</xs:sequence>
+</xs:complexType>  
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE TRIBUTAÇÃO DA NFS-E-->
+<xs:complexType name="TCInfoValores">
+<xs:sequence>
+<xs:element name="vServPrest" type="TCVServPrest">
+</xs:element>
+<xs:element name="vDescCondIncond" type="TCVDescCondIncond" minOccurs="0">
+</xs:element>
+<xs:element name="vDedRed" type="TCInfoDedRed" minOccurs="0">
+</xs:element>
+<xs:element name="trib" type="TCInfoTributacao">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE TRIBUTAÇÃO DA NFS-E-->
+<xs:complexType name="TCInfoTributacao">
+<xs:sequence>
+<xs:element name="tribMun" type="TCTribMunicipal">
+</xs:element>
+<xs:element name="tribFed" type="TCTribFederal" minOccurs="0">
+</xs:element>
+<xs:element name="totTrib" type="TCTribTotal">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES RELATIVAS AOS VALORES DO SERVIÇO PRESTADO-->
+<xs:complexType name="TCVServPrest">
+<xs:sequence>
+<xs:element name="vReceb" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="vServ" type="TSDec15V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES RELATIVAS AOS DESCONTOS-->
+<xs:complexType name="TCVDescCondIncond">
+<xs:sequence>
+<xs:element name="vDescIncond" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="vDescCond" type="TSDec15V2" minOccurs="0">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE DEDUÇÃO/REDUÇÃO-->
+<xs:complexType name="TCInfoDedRed">
+<xs:sequence>
+<xs:choice>
+<xs:element name="pDR" type="TSDec3V2">
+</xs:element>
+<xs:element name="vDR" type="TSDec15V2">
+</xs:element>
+<xs:element name="documentos" type="TCListaDocDedRed">
+</xs:element>
+</xs:choice>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA COMPORTAR A LISTA DE DOCUMENTOS DE DEDUÇÃO/REDUÇÃO-->
+<xs:complexType name="TCListaDocDedRed">
+<xs:sequence>
+<xs:element name="docDedRed" type="TCDocDedRed" minOccurs="1" maxOccurs="1000">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE DOCUMENTO INFORMADO PARA DEDUÇÃO/REDUÇÃO-->
+<xs:complexType name="TCDocDedRed">
+<xs:sequence>
+<xs:choice>
+<xs:element name="chNFSe" type="TSChaveNFSe">
+</xs:element>
+<xs:element name="chNFe" type="TSChaveNFe">
+</xs:element>
+<xs:element name="NFSeMun" type="TCDocOutNFSe">
+</xs:element>
+<xs:element name="NFNFS" type="TCDocNFNFS">
+</xs:element>
+<xs:element name="nDocFisc" type="TSDesc255">
+</xs:element>
+<xs:element name="nDoc" type="TSDesc255">
+</xs:element>
+</xs:choice>
+<xs:element name="tpDedRed" type="TSIdeDedRed">
+</xs:element>
+<xs:element name="xDescOutDed" type="TSDescOutDedRed" minOccurs="0">
+</xs:element>
+<xs:element name="dtEmiDoc" type="xs:date">
+</xs:element>
+<xs:element name="vDedutivelRedutivel" type="TSDec15V2">
+</xs:element>
+<xs:element name="vDeducaoReducao" type="TSDec15V2">
+</xs:element>
+<xs:element name="fornec" type="TCInfoPessoa" minOccurs="0">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE DOCUMENTO INFORMADO PARA DEDUÇÃO/REDUÇÃO DO TIPO OUTRAS NFS-E-->
+<xs:complexType name="TCDocOutNFSe">
+<xs:sequence>
+<xs:element name="cMunNFSeMun" type="TSCodMunIBGE">
+</xs:element>
+<xs:element name="nNFSeMun" type="TSNum15Dig">
+</xs:element>
+<xs:element name="cVerifNFSeMun" type="TSCodVerificacao">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE DOCUMENTO INFORMADO PARA DEDUÇÃO/REDUÇÃO DO TIPO NF ou NFS-->
+<xs:complexType name="TCDocNFNFS">
+<xs:sequence>
+<xs:element name="nNFS" type="TSNum7Dig">
+</xs:element>
+<xs:element name="modNFS" type="TSNum15Dig">
+</xs:element>
+<xs:element name="serieNFS" type="TSSerieNFNFS">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE TRIBUTAÇÃO ESPECÍFICA DO ISSQN-->
+<xs:complexType name="TCTribMunicipal">
+<xs:sequence>
+<xs:element name="tribISSQN" type="TSTribISSQN">
+</xs:element>
+<xs:element name="cPaisResult" type="TSCodPaisISO" minOccurs="0">
+</xs:element>
+<xs:element name="tpImunidade" type="TSTipoImunidadeISSQN" minOccurs="0">
+</xs:element>
+<xs:element name="exigSusp" type="TCExigSuspensa" minOccurs="0">
+</xs:element>
+<xs:element name="BM" type="TCBeneficioMunicipal" minOccurs="0">
+</xs:element>
+<xs:element name="tpRetISSQN" type="TSTipoRetISSQN">
+</xs:element>
+<xs:element name="pAliq" type="TSDec1V2" minOccurs="0">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE BENEFÍCIO MUNICIPAL-->
+<xs:complexType name="TCBeneficioMunicipal">
+<xs:sequence>
+<xs:element name="nBM" type="TSNumBeneficioMunicipal">
+</xs:element>
+<xs:choice>
+<xs:element name="vRedBCBM" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="pRedBCBM" type="TSDec3V2" minOccurs="0">
+</xs:element>
+</xs:choice>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE EXIGIBILIDADE SUSPENSA -->
+<xs:complexType name="TCExigSuspensa">
+<xs:sequence>
+<xs:element name="tpSusp" type="TSOpExigSuspensa">
+</xs:element>
+<xs:element name="nProcesso" type="TSNumProcExigSuspensa">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE TRIBUTAÇÃO ESPECÍFICA PARA OUTROS TRIBUTOS-->
+<xs:complexType name="TCTribFederal">
+<xs:sequence>
+<xs:element name="piscofins" type="TCTribOutrosPisCofins" minOccurs="0">
+</xs:element>
+<xs:element name="vRetCP" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="vRetIRRF" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="vRetCSLL" type="TSDec15V2" minOccurs="0">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE TRIBUTAÇÃO ESPECÍFICA PARA OUTROS TRIBUTOS DO TIPO PIS/COFINS-->
+<xs:complexType name="TCTribOutrosPisCofins">
+<xs:sequence>
+<xs:element name="CST" type="TSTipoCST">
+</xs:element>
+<xs:element name="vBCPisCofins" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="pAliqPis" type="TSDec2V2" minOccurs="0">
+</xs:element>
+<xs:element name="pAliqCofins" type="TSDec2V2" minOccurs="0">
+</xs:element>
+<xs:element name="vPis" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="vCofins" type="TSDec15V2" minOccurs="0">
+</xs:element>
+<xs:element name="tpRetPisCofins" type="TSTipoRetPISCofins" minOccurs="0">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE TRIBUTAÇÃO ESPECÍFICA PARA TOTAL DOS TRIBUTOS-->
+<xs:complexType name="TCTribTotal">
+<xs:sequence>
+<xs:choice>
+<xs:element name="vTotTrib" type="TCTribTotalMonet">
+</xs:element>
+<xs:element name="pTotTrib" type="TCTribTotalPercent">
+</xs:element>
+<xs:element name="indTotTrib" type="TSTipoIndTotTrib">
+</xs:element>
+<xs:element name="pTotTribSN" type="TSDec2V2">
+</xs:element>
+</xs:choice>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE TRIBUTAÇÃO ESPECÍFICA PARA TOTAL DOS TRIBUTOS-->
+<xs:complexType name="TCTribTotalMonet">
+<xs:sequence>
+<xs:element name="vTotTribFed" type="TSDec15V2">
+</xs:element>
+<xs:element name="vTotTribEst" type="TSDec15V2">
+</xs:element>
+<xs:element name="vTotTribMun" type="TSDec15V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DE TRIBUTAÇÃO ESPECÍFICA PARA TOTAL DOS TRIBUTOS-->
+<xs:complexType name="TCTribTotalPercent">
+<xs:sequence>
+<xs:element name="pTotTribFed" type="TSDec3V2">
+</xs:element>
+<xs:element name="pTotTribEst" type="TSDec3V2">
+</xs:element>
+<xs:element name="pTotTribMun" type="TSDec3V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA INFORMAÇÕES DECLARADAS REFERENTES A IBS/CBS-->
+<xs:complexType name="TCRTCInfoIBSCBS">
+<xs:sequence>
+<xs:element name="finNFSe" type="TSRTCFinNFSe">
+</xs:element>
+<xs:element name="indFinal" type="TSRTCIndFinal" minOccurs="0">
+</xs:element>
+<xs:element name="cIndOp" type="TSRTCCodIndOp">
+</xs:element>
+<xs:element name="tpOper" type="TSRTCTpOper" minOccurs="0">
+</xs:element>
+<xs:element name="gRefNFSe" type="TCInfoRefNFSe" minOccurs="0">
+</xs:element>
+<xs:element name="tpEnteGov" type="TSRTCTpEnteGov" minOccurs="0">
+</xs:element>
+<xs:element name="indDest" type="TSRTCIndDest">
+</xs:element>
+<xs:element name="dest" type="TCRTCInfoDest" minOccurs="0">
+</xs:element>
+<xs:element name="imovel" type="TCRTCInfoImovel" minOccurs="0">
+</xs:element>
+<xs:element name="valores" type="TCRTCInfoValoresIBSCBS">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO PARA GRUPO DE NFS-E REFERENCIADAS-->
+<xs:complexType name="TCInfoRefNFSe">
+<xs:sequence>
+<xs:element name="refNFSe" type="TSChaveNFSe" maxOccurs="99">
+</xs:element>
+</xs:sequence>
+</xs:complexType>  
+<!--TIPO COMPLEXO INFORMAÇÕES RELATIVAS AO DESTINATÁRIO DO SERVIÇO IBSCBS-->
+<xs:complexType name="TCRTCInfoDest">
+<xs:sequence>
+<xs:choice>
+<xs:element name="CNPJ" type="TSCNPJ">
+</xs:element>
+<xs:element name="CPF" type="TSCPF">
+</xs:element>
+<xs:element name="NIF" type="TSNIF">
+</xs:element>
+<xs:element name="cNaoNIF" type="TSCodNaoNIF">
+</xs:element>
+</xs:choice>
+<xs:element name="xNome" type="TSDesc150">
+</xs:element>
+<xs:element name="end" type="TCEndereco" minOccurs="0">
+</xs:element>
+<xs:element name="fone" type="TSTelefone" minOccurs="0">
+</xs:element>
+<xs:element name="email" type="TSEmail" minOccurs="0">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO INFORMAÇÕES RELATIVAS A BENS IMÓVEIS IBSCBS-->
+<xs:complexType name="TCRTCInfoImovel">
+<xs:sequence>
+<xs:element name="inscImobFisc" type="TSInscImobFisc" minOccurs="0">
+</xs:element>
+<xs:choice minOccurs="1">
+<xs:element name="cCIB" type="TSCodCIB">
+</xs:element>
+<xs:element name="end" type="TCEnderObraEvento">
+</xs:element>
+</xs:choice>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO INFORMAÇÕES RELATIVAS AOS VALORES DO SERVIÇO PRESTADO IBSCBS-->
+<xs:complexType name="TCRTCInfoValoresIBSCBS">
+<xs:sequence>
+<xs:element name="gReeRepRes" type="TCRTCInfoReeRepRes" minOccurs="0">
+</xs:element>
+<xs:element name="trib" type="TCRTCInfoTributosIBSCBS">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO INFORMAÇÕES RELATIVAS AOS VALORES DE REEMBOLSO REPASSE OU RESSARCIMENTO IBSCBS-->
+<xs:complexType name="TCRTCInfoReeRepRes">
+<xs:sequence>
+<xs:element name="documentos" type="TCRTCListaDoc" minOccurs="1" maxOccurs="1000">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO INFORMAÇÕES RELACIONADOS AOS TRIBUTOS IBSCBS-->
+<xs:complexType name="TCRTCInfoTributosIBSCBS">
+<xs:sequence>
+<xs:element name="gIBSCBS" type="TCRTCInfoTributosSitClas">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO INFORMAÇÕES RELATIVAS AOS DOCUMENTOS REFERENCIADOS NO REEMBOLSO REPASSE OU RESSARCIMENTO IBSCBS-->
+<xs:complexType name="TCRTCListaDoc">
+<xs:sequence>
+<xs:choice>
+<xs:element name="dFeNacional" type="TCRTCListaDocDFe">
+</xs:element>
+<xs:element name="docFiscalOutro" type="TCRTCListaDocFiscalOutro">
+</xs:element>
+<xs:element name="docOutro" type="TCRTCListaDocOutro">
+</xs:element>
+</xs:choice>
+<xs:element name="fornec" type="TCRTCListaDocFornec" minOccurs="0">
+</xs:element>
+<xs:element name="dtEmiDoc" type="TSData">
+</xs:element>
+<xs:element name="dtCompDoc" type="TSData">
+</xs:element>
+<xs:element name="tpReeRepRes" type="TSRTCTpReeRepRes">
+</xs:element>
+<xs:element name="xTpReeRepRes" type="TSDesc150" minOccurs="0">
+</xs:element>
+<xs:element name="vlrReeRepRes" type="TSDec15V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO INFORMAÇÕES DE DOCUMENTOS FISCAIS ELETRÔNICOS QUE SE ENCONTRAM NO REPOSITÓRIO NACIONAL-->
+<xs:complexType name="TCRTCListaDocDFe">
+<xs:sequence>
+<xs:element name="tipoChaveDFe" type="TSRTCTipoChaveDFe">
+</xs:element>
+<xs:element name="xTipoChaveDFe" type="TSDesc255" minOccurs="0">
+</xs:element>
+<xs:element name="chaveDFe" type="TSRTCChaveDFe">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO INFORMAÇÕES DE DOCUMENTO FISCAIS, ELETRÔNICOS OU NÃO, QUE NÃO SE ENCONTRAM NO REPOSITÓRIO NACIONAL-->
+<xs:complexType name="TCRTCListaDocFiscalOutro">
+<xs:sequence>
+<xs:element name="cMunDocFiscal" type="TSNum7Dig">
+</xs:element>
+<xs:element name="nDocFiscal" type="TSDesc255">
+</xs:element>
+<xs:element name="xDocFiscal" type="TSDesc255">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO INFORMAÇÕES DE DOCUMENTO NÃO FISCAL-->
+<xs:complexType name="TCRTCListaDocOutro">
+<xs:sequence>
+<xs:element name="nDoc" type="TSDesc255">
+</xs:element>
+<xs:element name="xDoc" type="TSDesc255">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO INFORMAÇÕES DO FORNECEDOR DO DOCUMENTO REFERENCIADO-->
+<xs:complexType name="TCRTCListaDocFornec">
+<xs:sequence>
+<xs:choice>
+<xs:element name="CNPJ" type="TSCNPJ">
+</xs:element>
+<xs:element name="CPF" type="TSCPF">
+</xs:element>
+<xs:element name="NIF" type="TSNIF">
+</xs:element>
+<xs:element name="cNaoNIF" type="TSCodNaoNIF">
+</xs:element>
+</xs:choice>
+<xs:element name="xNome" type="TSDesc150">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO INFORMAÇÕES RELACIONADOS AOS TRIBUTOS SITUACAO E CLASSIFICACAO IBSCBS-->
+<xs:complexType name="TCRTCInfoTributosSitClas">
+<xs:sequence>
+<xs:element name="CST" type="TSRTCCodSitTrib">
+</xs:element>
+<xs:element name="cClassTrib" type="TSRTCCodClassTrib">
+</xs:element>
+<xs:element name="cCredPres" type="TSRTCCodCredPres" minOccurs="0">
+</xs:element>
+<xs:element name="gTribRegular" type="TCRTCInfoTributosTribRegular" minOccurs="0">
+</xs:element>
+<xs:element name="gDif" type="TCRTCInfoTributosDif" minOccurs="0">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO INFORMAÇÕES DA TRIBUTAÇÃO REGULAR-->
+<xs:complexType name="TCRTCInfoTributosTribRegular">
+<xs:sequence>
+<xs:element name="CSTReg" type="TSRTCCodSitTrib">
+</xs:element>
+<xs:element name="cClassTribReg" type="TSRTCCodClassTrib">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+<!--TIPO COMPLEXO INFORMAÇÕES RELACIONADAS AO DIFERIMENTO PARA IBS E CBS-->
+<xs:complexType name="TCRTCInfoTributosDif">
+<xs:sequence>
+<xs:element name="pDifUF" type="TSDec3V2">
+</xs:element>
+<xs:element name="pDifMun" type="TSDec3V2">
+</xs:element>
+<xs:element name="pDifCBS" type="TSDec3V2">
+</xs:element>
+</xs:sequence>
+</xs:complexType>
+</xs:schema>

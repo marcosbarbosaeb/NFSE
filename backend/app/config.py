@@ -164,6 +164,19 @@ class Settings(BaseSettings):
     # começar com https:// (ver app/ajuda.py).
     ajuda_ia_url: str = ""
 
+    # IA do Claude dentro da Ana (2026.10.7, ideias/ia-na-ana.md): "Pergunte à
+    # Ana" na Ajuda e a explicação das recusas da prefeitura. Sobe DESLIGADA:
+    # só liga com IA_ATIVA=true E a chave ANTHROPIC_API_KEY preenchida (no
+    # Railway, nunca no código). IA_MODELO troca o modelo e IA_LIMITE_DIARIO o
+    # número de perguntas por pessoa por dia, sem publicar versão.
+    ia_ativa: bool = False
+    ia_modelo: str = "claude-haiku-5-5"
+    ia_limite_diario: int = 20
+    anthropic_api_key: str = ""
+    # Preço por milhão de tokens (US$), só pra estimar o custo na Gestão.
+    ia_preco_entrada: float = 0.10
+    ia_preco_saida: float = 0.50
+
 
 @lru_cache
 def get_settings() -> Settings:

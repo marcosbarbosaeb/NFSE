@@ -119,9 +119,11 @@ def painel(db: Session, dias: int = 30) -> dict:
         FROM evento_uso WHERE criado_em >= :desde
         GROUP BY tipo, nome, coalesce(detalhe, '') ORDER BY vezes DESC
     """), {"desde": desde}).mappings().all()
-    telas, acoes, erros = [], {}, []
+    telas, acoes, erros, ia = [], {}, [], []
     for l in linhas:
-        if l["tipo"] == "tela":
+        if l["tipo"] == "ia":
+            ia.append({"titulo": l["nome"], "vezes": l["vezes"], "pessoas": l["pessoas"]})
+        elif l["tipo"] == "tela":
             telas.append({"nome": l["nome"], "titulo": _nome_da_tela(l["nome"]), "vezes": l["vezes"], "pessoas": l["pessoas"]})
         elif l["tipo"] == "acao":
             # rotas diferentes com o mesmo título ("Enviou uma nota por e-mail") somam
@@ -138,7 +140,7 @@ def painel(db: Session, dias: int = 30) -> dict:
     total, pessoas = db.query(func.count(EventoUso.id), func.count(func.distinct(EventoUso.usuario_id))).filter(EventoUso.criado_em >= desde).one()
     return {
         "dias": dias, "eventos": int(total or 0), "pessoas": int(pessoas or 0),
-        "telas": telas[:40], "acoes": sorted(acoes.values(), key=lambda a: -a["vezes"])[:40], "erros": erros[:30],
+        "telas": telas[:40], "acoes": sorted(acoes.values(), key=lambda a: -a["vezes"])[:40], "erros": erros[:30], "ia_eventos": ia[:20],
         "telas_sem_visita": [{"nome": n, "titulo": t} for n, t in TELAS.items() if n not in {x["nome"].partition("?")[0] for x in telas} and ":id" not in n and n != "/app/gestao"],
     }
 

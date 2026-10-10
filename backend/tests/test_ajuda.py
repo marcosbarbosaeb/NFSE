@@ -1,12 +1,16 @@
 """Ajuda / FAQ: a rota só devolve o endereço da IA gratuita configurada em
 AJUDA_IA_URL (05/10/2026). Só dados sintéticos."""
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 
 import app.ajuda as ajuda_mod
 from app.config import Settings
 from app.database import get_db
+from app.deps import usuario_logado
 from app.main import app, prestador_atual_id
+from app.models import Usuario
 
 URL = "/api/ajuda"
 
@@ -18,9 +22,11 @@ def client(db, prestador_teste):
 
     app.dependency_overrides[get_db] = _get_db_override
     app.dependency_overrides[prestador_atual_id] = lambda: prestador_teste.id
+    app.dependency_overrides[usuario_logado] = lambda: Usuario(id=uuid.uuid4(), email="dona@exemplo.test", prestador_id=prestador_teste.id)
     yield TestClient(app)
     app.dependency_overrides.pop(get_db, None)
     app.dependency_overrides.pop(prestador_atual_id, None)
+    app.dependency_overrides.pop(usuario_logado, None)
 
 
 def _configurar(monkeypatch, valor: str):
@@ -31,14 +37,14 @@ def test_sem_link_configurado_devolve_null(client, monkeypatch):
     _configurar(monkeypatch, "")
     r = client.get(URL)
     assert r.status_code == 200
-    assert r.json() == {"ia_url": None}
+    assert r.json()["ia_url"] is None and r.json()["ia_ativa"] is False
 
 
 def test_com_link_https_devolve_o_link(client, monkeypatch):
     _configurar(monkeypatch, "  https://notebooklm.google.com/notebook/exemplo-sintetico  ")
     r = client.get(URL)
     assert r.status_code == 200
-    assert r.json() == {"ia_url": "https://notebooklm.google.com/notebook/exemplo-sintetico"}
+    assert r.json()["ia_url"] == "https://notebooklm.google.com/notebook/exemplo-sintetico"
 
 
 @pytest.mark.parametrize(
@@ -55,7 +61,7 @@ def test_link_invalido_devolve_null(client, monkeypatch, valor):
     _configurar(monkeypatch, valor)
     r = client.get(URL)
     assert r.status_code == 200
-    assert r.json() == {"ia_url": None}
+    assert r.json()["ia_url"] is None and r.json()["ia_ativa"] is False
 
 
 def test_vale_pra_qualquer_modulo(client, monkeypatch, prestador_teste, db):
@@ -63,7 +69,7 @@ def test_vale_pra_qualquer_modulo(client, monkeypatch, prestador_teste, db):
     prestador_teste.modulos = ["financeiro"]
     db.flush()
     _configurar(monkeypatch, "https://exemplo.test/ia")
-    assert client.get(URL).json() == {"ia_url": "https://exemplo.test/ia"}
+    assert client.get(URL).json()["ia_url"] == "https://exemplo.test/ia"
 
 
 def test_exige_login():

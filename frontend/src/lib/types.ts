@@ -1745,6 +1745,22 @@ export interface ResumoConciliacao {
  * (null = não configurada: a tela não mostra o botão "Perguntar pra IA"). */
 export interface AjudaInfo {
   ia_url: string | null
+  /** "Pergunte à Ana" (IA do Claude, 2026.10.7) ligado pra esta conta. */
+  ia_ativa?: boolean
+  ia_restantes?: number | null
+  ia_limite?: number | null
+}
+
+export interface RespostaPergunteAna {
+  situacao: "ok" | "nao_sei" | "contador" | "limite" | "desligada" | "falha"
+  texto: string | null
+  restantes: number | null
+}
+
+export interface ExplicacaoRecusa {
+  disponivel: boolean
+  o_que: string | null
+  passos: string[]
 }
 
 // --- Parceiras de indicação com comissão (06/10/2026) ---
