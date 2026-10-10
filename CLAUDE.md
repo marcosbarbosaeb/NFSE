@@ -122,6 +122,24 @@ App: notas.agenteana.com.br · site: agenteana.com.br · deploy: Railway (push n
   pra algo que alguém deveria olhar; `error`/`exception` só pra defeito de verdade.
 - Endereços: o catch-all do frontend só devolve o app pras telas de `App.tsx` (lista `_ROTAS_DO_PAINEL` em main.py) — tela
   nova fora de /app tem que entrar lá, senão dá 404.
+- IA (2026.10.7, `app/services/ia.py`): só chama a API com `IA_ATIVA=true` + `ANTHROPIC_API_KEY`. "Pergunte à Ana" responde só
+  com trechos do guia; explicação de recusa guarda em `emissao.erro_explicacao` e nunca leva nome/documento do tomador. Toda
+  chamada vira `ia_chamada` (custo) e `evento_uso` tipo `ia`. Conta de simulação: IA desligada. Nos testes `_gravar_chamada` é no-op.
+- Regime (2026.10.7): `fiscal/dps.regras_do_regime` decide o que vai em `regTrib`. MEI (`opSimpNac=2`): sem `regApTribSN`,
+  `regEspTrib=0`, sem `pAliq`, `indTotTrib=0`, sem retenção. Regime vazio = `RegimeNaoInformadoError` (o conftest preenche o
+  regime do `prestador_teste`). Leiaute 1.01 / NT 009 / IBS-CBS: raio-x seção 15 e `integracao/schemas/LEIA-ME.md`.
+- Certificado (2026.10.7): vencido não carrega (`CertificadoVencidoError`, filha de NaoEncontrado) e CNPJ raiz tem que bater
+  (`certificados.conferir_para_empresa`). Aviso de vencimento por e-mail: `services/avisos_certificado.py` (thread, uma vez por validade).
+- Atendimento no cadastro (2026.10.7, `services/atendimento.py`): MEI qualquer cidade; ME/EPP só cidade da lista; não optante e
+  inativo fora → lista de espera (`lista_espera`). Consulta fora do ar deixa seguir (Gestão marca). No conftest a consulta é "fora".
+- ISS retido (2026.10.7): memória em `prestador_tomador.iss_retido`, alíquota em `prestador.aliquota_iss_retido`, retrato na nota
+  (`conferencia.retencao_da_nota`). `pAliq` só pra ME/EPP que apura ISS pelo Simples, e vem ANTES de `tpRetISSQN` (ordem do 1.00).
+- Quem é da Gestão (2026.10.7): tabela `gestor` + `ADMIN_EMAILS` (`services/gestores.py`). Use `gestores.eh_gestor`/`emails`,
+  nunca leia `ADMIN_EMAILS` direto. No conftest a tabela vem vazia (`_da_tabela`).
+- Documentos da empresa (2026.10.7): exceção ao "contador sempre vê" — só com a permissão `documentos`; `documentos_rotas._ctx`
+  confere dono ou acesso de contador de novo (o gestor nunca abre). DELETE é `NUNCA` pro contador. Gestão vê só quantidade/espaço.
+- IBS/CBS (2026.10.7, `services/ibs_cbs.py`): só tela e memória; NÃO monte o grupo IBSCBS no XML até a Sefin publicar o esquema
+  da NT 009. Valores de IBS/CBS são da Sefin (só lemos da NFS-e autorizada pro PDF).
 - Nunca commitar: `backend/.db_url_tmp`, `backend/producao.env.txt`, relatórios/planilhas/PDFs reais. Testes só com dados sintéticos.
 - Segredos (Stripe, Resend, Google) só nas variáveis do Railway — nunca no código nem em conversa.
 

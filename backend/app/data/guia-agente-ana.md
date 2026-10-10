@@ -44,8 +44,13 @@ Algumas palavras que aparecem muito:
 
 A emissão de notas depende de a prefeitura da sua cidade usar o **Emissor Nacional da NFS-e**. Na tela de cadastro, assim que você digita o CNPJ, a Ana preenche os dados da empresa e já confere se emite nota na sua cidade, pela lista publicada pela Receita.
 
-- Se a prefeitura usa o Emissor Nacional: a Ana emite as suas notas. Você vai precisar do certificado digital A1 da empresa.
-- Se a prefeitura ainda usa um sistema próprio de nota: a Ana ainda não consegue emitir as notas dessa cidade. O módulo Financeiro funciona normalmente em qualquer cidade, e dá pra criar a conta só com ele.
+Desde a versão 2026.10.7 a Ana consulta o CNPJ e mostra o resultado na hora, antes de criar a conta:
+
+- **MEI**: a Ana atende em qualquer cidade.
+- **Empresa do Simples Nacional (ME/EPP)**: a Ana atende quando a prefeitura usa o Emissor Nacional (lista publicada pela Receita). Você vai precisar do certificado digital A1 da empresa.
+- **Empresa fora do Simples (Lucro Presumido ou Real)** ou **CNPJ que não está ativo**: a Ana ainda não atende.
+- **Cidade ou regime que a Ana ainda não atende**: dá pra entrar na **lista de espera** com o seu e-mail. Quando a sua cidade entrar na lista, a Ana manda um e-mail avisando.
+- Se a consulta da Receita estiver fora do ar, o cadastro segue normalmente e a equipe da Ana confere depois.
 
 ### Criar a conta
 
@@ -91,11 +96,38 @@ Pra enviar o certificado:
 
 A tela mostra se o certificado está "Carregado", a data de validade e avisa quando estiver "Vencido". Pra trocar por um novo, faça o mesmo caminho: o botão passa a se chamar "Substituir certificado".
 
+Cuidados que a Ana toma com o certificado:
+
+- **Vencido não entra nem assina**: um certificado vencido é recusado no envio, e nenhuma nota é assinada com ele. A mensagem diz que é preciso renovar com a certificadora.
+- **Tem que ser da mesma empresa**: o certificado precisa ser do mesmo CNPJ da empresa (o da matriz serve para a filial). Certificado de outro CNPJ é recusado.
+- **Aviso antes de vencer**: 30 dias antes do vencimento, a Ana manda um e-mail pros donos da conta e mostra o aviso em "Precisa da sua atenção".
+- **Ainda não tem certificado?** Na aba Certificado e nos avisos aparece como conseguir um: a Ana tem um parceiro com preço especial (o botão abre o WhatsApp).
+
 O certificado fica guardado de forma criptografada.
 
 ### Dados da empresa (emitente)
 
-Em "Empresa", aba "Dados da empresa", ficam os dados que aparecem nas notas: razão social, nome fantasia, inscrição municipal, e-mail, telefone, endereço e o regime tributário (Simples Nacional, MEI, regime especial). O CNPJ não muda — outro CNPJ é outra empresa. O regime tributário vai em toda nota; na dúvida, confirme com seu contador. Depois de mexer, clique em "Salvar dados do emitente".
+Em "Empresa", aba "Dados da empresa", ficam os dados que aparecem nas notas: razão social, nome fantasia, inscrição municipal, e-mail, telefone, endereço e o regime tributário (Simples Nacional, MEI, regime especial). O CNPJ não muda — outro CNPJ é outra empresa. O regime tributário vai em toda nota e é **obrigatório**: sem ele a Ana não gera a nota e mostra onde preencher. Na dúvida, confirme com seu contador. Depois de mexer, clique em "Salvar dados do emitente".
+
+**MEI**: a nota do MEI sai sem alíquota e sem os campos que o MEI não pode mandar; o campo de alíquota nem aparece pra ele. O MEI também não tem retenção de ISS.
+
+**Alíquota do ISS nas notas com ISS retido**: só para empresa do Simples que tem tomador que retém o ISS. É a parte do ISS na sua faixa do Simples (de 2% a 5%); quem sabe é o seu contador.
+
+### IBS e CBS (reforma tributária)
+
+Para a empresa do Simples Nacional (ME/EPP), a aba "Dados da empresa" tem o bloco "IBS e CBS (reforma tributária)". A partir de janeiro de 2027 a nota da empresa do Simples passa a levar IBS e CBS. Quem calcula os valores é o próprio sistema da nota (a Ana não calcula); a empresa só informa como recolhe:
+
+- IBS e CBS pelo Simples Nacional (o mais comum, e o padrão);
+- CBS pelo Simples e IBS pelo regime regular;
+- IBS e CBS pelo regime regular.
+
+A escolha vale por semestre ("Vale a partir de"). Clique em "Salvar e confirmar". Nos dois meses antes da virada do semestre (maio e junho, novembro e dezembro), "Precisa da sua atenção" pede pra confirmar de novo. O MEI não escolhe.
+
+Por enquanto a nota ainda não leva esses campos: o governo ainda não publicou o formato final. Quando publicar, a Ana usa o que você já deixou guardado. Quando a nota autorizada trouxer os valores de IBS e CBS, o PDF mostra.
+
+### Como você emite? (perfil)
+
+No cadastro (ou na primeira vez que você entra depois da versão 2026.10.7), a Ana pergunta como você costuma emitir: muitas notas de uma vez, clientes fixos todo mês, fechamento do mês ou nota avulsa. Dá pra marcar mais de um (o primeiro é o principal), buscar pela sua profissão, escrever em "Não me encontrei" ou pular. A Visão geral ganha um atalho pro seu jeito de emitir. Pra mudar depois: "Empresa", aba "Dados da empresa", bloco "Como você costuma emitir suas notas?".
 
 ### Alíquota do Simples Nacional
 
@@ -197,6 +229,22 @@ A coluna "Neste mês" mostra a situação:
 
 - **Desligar "Ativo"**: use quando parou de faturar alguém por um tempo. Ele vai pro fim da lista, sem perder nada.
 - **Excluir (lixeira)**: tira o tomador da sua lista e do calendário. As notas já geradas pra ele continuam guardadas na tela NFS-e.
+
+### Tomador que retém o ISS
+
+Alguns tomadores (geralmente empresas maiores e órgãos públicos) retêm o ISS: eles pagam o imposto direto à prefeitura e descontam do valor. No cadastro do tomador, ligue "Este tomador retém o ISS". As notas dele passam a sair com a retenção e com a alíquota do ISS guardada em Empresa (dá pra mudar numa nota só, na hora de gerar).
+
+Cuidados:
+
+- O MEI não tem retenção de ISS (a opção não aparece).
+- A prefeitura precisa prever a retenção para esse tomador ou serviço. Se não previr, a nota volta recusada e a Ana explica o que fazer.
+- A alíquota da retenção fica entre 2% e 5% (a parte do ISS na sua faixa do Simples). Confirme com o seu contador.
+
+### Código NBS e classificação de IBS e CBS
+
+Com a reforma tributária, o **código NBS** (Nomenclatura Brasileira de Serviços) passa a ser obrigatório na nota. Hoje a nota ainda sai sem ele, mas a conferência avisa quando o tomador está sem NBS — complete no cadastro do tomador, campo "Item da NBS".
+
+Para a empresa do Simples (ME/EPP), o cadastro do tomador também tem a **classificação tributária (cClassTrib)** e o **código da operação (cIndOp)**, de 6 números cada. São opcionais por enquanto: a Ana guarda pra quando a nota passar a levar IBS e CBS. Quem informa é o seu contador. Nas notas de 2027 em diante, a conferência avisa quando faltar.
 
 ### Conferência do cadastro
 
@@ -765,6 +813,7 @@ Em "Empresa" › "Contador" você convida o seu contador pelo e-mail dele e marc
 - **Cadastrar e editar tomadores**.
 - **Lançar e conciliar no Financeiro** — recebimentos, despesas, extrato, conciliação.
 - **Alterar dados da empresa** — cadastro, alíquota, certificado A1 e preferências.
+- **Documentos da empresa** — ver, enviar e substituir os documentos fixos (contrato social, documentos dos sócios...). É a única coisa que o contador **não** vê sem permissão, porque tem documento pessoal de sócio. Começa desligada, inclusive para quem já era seu contador.
 
 Clique em "Enviar convite". O contador entra com o login dele (você não passa a sua senha). Dá pra mudar as permissões a qualquer momento (vale na hora) ou tirar o acesso pela lixeira. A lista "O que o contador fez" mostra as últimas ações dele. Ficam sempre só com o dono: a assinatura, convidar ou tirar pessoas, ligar e desligar módulos e apagar a empresa ou os dados.
 
@@ -822,6 +871,16 @@ O e-mail do suporte é suporte@agenteana.com.br.
 | Assinar, mudar de plano ou cancelar | "Minha conta" › "Assinatura" |
 | Tema escuro e dicas | "Minha conta" › "Preferências" |
 | Falar com uma pessoa | "Ajuda" › "Falar com o suporte" |
+
+## Documentos da empresa
+
+No menu, "Documentos da empresa" guarda os documentos fixos que o contador sempre pede, fora da pasta do mês: contrato social e alterações, cartão CNPJ, documentos dos sócios, certidões, alvará e licenças, e outros.
+
+- **Guardar**: escolha o tipo, dê um nome (opcional), coloque a validade se tiver e escolha o arquivo (até 15 MB cada; 100 MB no total por empresa).
+- **Validade**: 30 dias antes de vencer, e depois de vencido, o documento aparece em "Precisa da sua atenção".
+- **Substituir**: troca o arquivo e guarda a data (não fica histórico de versões).
+- **Quem vê**: só você e o contador que tiver a permissão "Documentos da empresa" (Empresa › Contador). Nem a equipe da Ana abre os documentos.
+- **Quem apaga**: só o dono da empresa. O dono também vê quem abriu ou baixou cada documento ("Quem abriu").
 
 ## Pasta do mês (com o seu contador)
 

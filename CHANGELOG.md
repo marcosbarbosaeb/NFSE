@@ -16,6 +16,57 @@ Numeração: `ano.mês.sequência`. Versão nova = bloco novo no topo de `novida
 Antes de publicar no real, sempre: testes passando (`pytest`), `tsc` e build do frontend, telas conferidas no teste,
 migração e variáveis novas anotadas abaixo.
 
+## 2026.10.7 — 10/10/2026
+
+Atualização grande da etapa 1 do roteiro de lançamento (itens A a G) + IA. Construída na noite de 09 para 10/10 a partir de
+`ideias/roteiro-de-lancamento.md`, `ideias/ia-na-ana.md`, `ideias/proxima-versao.md` e dos três levantamentos novos.
+Dúvidas que dependem do Marcos: `claude/duvidas-para-o-marcos.md` (projeto).
+
+- **Leiaute IBS/CBS lido primeiro** (raio-x, seção 15). Esquemas 1.01 guardados em `integracao/schemas/` (sem
+  `xs:annotation`; LEIA-ME lá). Achado: o 1.01 publicado é anterior à NT 009 (sem `regApIBSCBSSN`, `cAtvSN`,
+  `opSimpNac=4`) → nesta versão IBS/CBS fica só na tela e no cadastro; o XML continua 1.00.
+- **IA** (`services/ia.py`, `ajuda.py`): "Pergunte à Ana" (Ajuda) responde só com trechos do guia
+  (`data/guia-agente-ana.md`, busca por seção `###`), marcadores `[NAO_SEI]`/`[CONTADOR]`; limite por empresa por dia
+  (horário de Brasília). Explicação de recusa (`POST /api/dps/{id}/explicar-recusa`, guarda em `emissao.erro_explicacao`;
+  recusas de regra fixa E0008/E0240 não chamam a IA). Nada de nome/documento do tomador vai pra IA. Custo por chamada em
+  `ia_chamada` + `evento_uso` tipo `ia`; Gestão › Uso mostra perguntas e custo. Conta de simulação: IA desligada.
+  **Variáveis:** `IA_ATIVA` (padrão false — sem ela nada chama a API), `ANTHROPIC_API_KEY`, `IA_MODELO`
+  (`claude-haiku-5-5`), `IA_LIMITE_DIARIO` (20), `IA_PRECO_ENTRADA`/`IA_PRECO_SAIDA` (US$ por milhão de tokens).
+  Política de Privacidade e Termos atualizados (10/10/2026).
+- **MEI** (`fiscal/dps.py`): `regras_do_regime`; MEI sem `regApTribSN`, `regEspTrib=0`, sem `pAliq`, `indTotTrib=0`;
+  regime vazio = `RegimeNaoInformadoError` (a conferência mostra onde preencher). IM opcional. Teste valida a DPS do MEI no 1.01.
+- **Certificado** (`services/certificados.py`, `services/avisos_certificado.py`): vencido não entra nem assina
+  (`CertificadoVencidoError`), CNPJ raiz tem que bater (filial ok); e-mail 30 dias antes, uma vez por validade
+  (`certificado.aviso_vencimento_para`, thread a cada 6 h). Orientação "não tem certificado?" com
+  `CERTIFICADO_ORIENTACAO` e `CERTIFICADO_ORIENTACAO_WHATSAPP` (sem esta, usa o WhatsApp do suporte).
+- **Verificação no CNPJ** (`services/atendimento.py`, `services/lista_espera.py`): `GET /api/atendimento?cnpj=` no
+  cadastro; MEI atende em qualquer cidade, ME/EPP só nas cidades da lista; não optante e CNPJ inativo ficam de fora;
+  consulta fora do ar deixa seguir e a Gestão marca "fora do atendimento". `POST /api/lista-espera` (tabela
+  `lista_espera`), aviso por e-mail quando a cidade entra na lista; Gestão › Lista de espera.
+- **ISS retido** (`services/conferencia.py`): `prestador_tomador.iss_retido` (memória), `prestador.aliquota_iss_retido`;
+  na nota `iss_retido`/`aliq_iss` (snapshot); `tpRetISSQN=2` e `pAliq` (1,8–5%) só pra ME/EPP que apura ISS pelo Simples;
+  MEI nunca. Dicas de recusa E0655, E0621, E0628, E0583, E0160. Aviso de NBS faltando (obrigatório no 1.01).
+- **Gestores** (`services/gestores.py`): tabela `gestor` (semeada com o e-mail do Marcos + `ADMIN_EMAILS`); Gestão ›
+  Gestores adiciona/remove (não remove a si nem o último). `ADMIN_EMAILS` continua valendo (pode ser esvaziada depois).
+- **Perfis** (`services/perfis.py`, `data/perfis.json`): cadastro pergunta como emite (pula), `prestador.perfis`;
+  pergunta uma vez a quem já tem conta; atalho na Visão geral; buscas sem resultado em `perfil_busca`; Gestão › Perfis.
+- **Documentos da empresa** (`services/documentos_empresa.py`, `documentos_rotas.py`, tela `/app/documentos`): tabelas
+  `documento_empresa` e `documento_acesso` (RLS). Permissão nova do contador `documentos` (começa desligada para todos);
+  só o dono apaga e vê os acessos; Gestão nunca abre (só quantidade/espaço). 15 MB por arquivo, 100 MB por empresa.
+  Validade → "Precisa da sua atenção" (sem o nome do documento).
+- **IBS e CBS na tela** (`services/ibs_cbs.py`): `prestador.regime_ibs_cbs` (1/2/3, padrão 1), `regime_ibs_cbs_desde`,
+  `ibs_cbs_confirmado_em`; `prestador_tomador.cclass_trib`/`cind_op`. Conferência avisa (2027+) sem classificação;
+  "Precisa da sua atenção" pede confirmação em mai–jun e nov–dez; DANFSe mostra o grupo `IBSCBS` quando a nota trouxer.
+
+Migrações (em ordem): `f2a4c6e8b0d1` (ia_chamada, emissao.erro_explicacao), `a3b5c7d9e1f3` (aviso do certificado),
+`b4c6d8e0f2a4` (lista_espera), `c5d7e9f1a3b5` (ISS retido), `d6e8f0a2b4c6` (gestor), `e7f9a1b3c5d7` (perfis),
+`f8a0b2c4d6e8` (documentos), `a9b1c3d5e7f9` (IBS/CBS).
+
+**Conferir depois de publicar:** `GET /api/versao` = 2026.10.7; migração até `a9b1c3d5e7f9` no log; `GET /api/ajuda`
+com `ia_ativa` (false enquanto `IA_ATIVA` não for ligada); `GET /api/atendimento?cnpj=` respondendo; Gestão com as abas
+Lista de espera, Gestores e Perfis; `/app/documentos` abrindo; Empresa mostrando "IBS e CBS" para ME/EPP do Simples.
+Cobrança e `BLOQUEIO_ATIVO` continuam desligados.
+
 ## 2026.10.6 — 08/10/2026
 
 Modo demonstração (pra gravar vídeos de anúncio) em cima da simulação, sem ambiente novo, e as falhas achadas no teste.

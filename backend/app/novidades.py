@@ -21,6 +21,47 @@ PERFIS = ("todos", "empresa", "contador")
 # A mais nova primeiro.
 VERSOES: list[dict] = [
     {
+        "versao": "2026.10.7",
+        "data": "2026-10-10",
+        "resumo": "Pergunte à Ana, nota de MEI certa, ISS retido, documentos da empresa e o começo da reforma tributária (IBS e CBS).",
+        "itens": [
+            {"perfil": "todos", "titulo": "Pergunte à Ana", "link": "/app/ajuda",
+             "texto": "Na Ajuda, escreva a sua dúvida do seu jeito e eu respondo com base no guia da Ana. Quando a pergunta é de "
+                      "contabilidade (imposto, regime, alíquota), eu digo que é com o seu contador. Há um número de perguntas por dia."},
+            {"perfil": "empresa", "titulo": "Nota recusada explicada em palavras simples",
+             "texto": "Quando a prefeitura recusa uma nota, a página dela ganha “Em palavras simples”: o que aconteceu e o que fazer, "
+                      "passo a passo, sem o código da recusa."},
+            {"perfil": "empresa", "titulo": "Nota de MEI do jeito certo", "link": "/app/empresa?aba=emitente",
+             "texto": "Para MEI, a nota sai sem alíquota e sem os campos que o MEI não pode mandar. O regime da empresa (MEI, Simples "
+                      "ou não optante) passa a ser obrigatório: sem ele eu não gero a nota e digo onde preencher."},
+            {"perfil": "empresa", "titulo": "Certificado: aviso antes de vencer e trava quando venceu", "link": "/app/empresa?aba=certificado",
+             "texto": "Eu mando um e-mail 30 dias antes de o certificado vencer. Certificado vencido, ou de outro CNPJ, não entra e não "
+                      "assina nota — e a mensagem diz o que fazer. Quem ainda não tem certificado vê como conseguir um."},
+            {"perfil": "todos", "titulo": "Confiro a cidade e o regime no cadastro", "link": "/cadastro",
+             "texto": "Ao criar a conta, eu consulto o CNPJ e digo se já atendo a sua cidade e o seu regime. Se ainda não, você entra "
+                      "na lista de espera e eu aviso por e-mail quando a sua cidade entrar."},
+            {"perfil": "empresa", "titulo": "ISS retido pelo tomador", "link": "/app/tomadores",
+             "texto": "No cadastro do tomador, marque “Este tomador retém o ISS”: as notas dele saem com a retenção e a alíquota do ISS "
+                      "da sua faixa do Simples (que fica guardada em Empresa). Dá pra mudar numa nota só, na hora de gerar. MEI não tem retenção."},
+            {"perfil": "empresa", "titulo": "Código NBS: comece a completar", "link": "/app/tomadores",
+             "texto": "Com a reforma tributária o código NBS passa a ser obrigatório na nota. A conferência avisa quando o tomador está sem ele."},
+            {"perfil": "empresa", "titulo": "Como você emite?", "link": "/app/empresa?aba=emitente",
+             "texto": "Uma pergunta rápida (dá pra pular): muitas notas de uma vez, clientes fixos, fechamento do mês ou nota avulsa. "
+                      "A Visão geral ganha um atalho para o seu jeito de emitir. Dá pra mudar em Empresa."},
+            {"perfil": "empresa", "titulo": "Documentos da empresa", "link": "/app/documentos",
+             "texto": "Um lugar fixo para contrato social, cartão CNPJ, documentos dos sócios, certidões e alvará — fora da pasta do mês. "
+                      "Coloque a validade e eu aviso 30 dias antes. Só você e o contador que você liberar enxergam (o contador começa "
+                      "SEM essa permissão: libere em Empresa › Contador). Só você apaga e vê quem abriu cada documento."},
+            {"perfil": "contador", "titulo": "Documentos da empresa do cliente", "link": "/app/documentos",
+             "texto": "Com a permissão “Documentos da empresa” (o cliente libera em Empresa › Contador), você vê, envia e substitui "
+                      "os documentos fixos da empresa. Apagar é só com o dono."},
+            {"perfil": "empresa", "titulo": "IBS e CBS: o começo", "link": "/app/empresa?aba=emitente#ibs-cbs",
+             "texto": "Para empresa do Simples: diga em Empresa como recolhe IBS e CBS a partir de 2027 (o padrão é tudo pelo Simples). "
+                      "No tomador dá pra guardar a classificação que o seu contador passar. A nota ainda não leva esses campos — "
+                      "o governo não publicou o formato final; quando publicar, eu uso o que você já deixou guardado."},
+        ],
+    },
+    {
         "versao": "2026.10.6",
         "data": "2026-10-08",
         "resumo": "Gerar a nota num clique só, Visão geral contando só notas autorizadas, consulta de CNPJ mais firme e e-mail conferido.",
