@@ -55,6 +55,7 @@ _REGRAS_BRUTAS: list[tuple[str, str, str, str]] = [
     (_MUDA, r"/api/gestao/.*", NUNCA, ""),
     (_MUDA, r"/api/vinculos/publicar-sugestoes", NUNCA, ""),
     ("PUT", r"/api/empresa/modulos", NUNCA, ""),
+    ("PUT", r"/api/empresa/perfil", "empresa", "Mudou o jeito de emitir da empresa"),
     # não mudam nada
     ("POST", r"/api/cep/buscar", LIVRE, ""),
     ("POST", r"/api/uso/tela", LIVRE, ""),

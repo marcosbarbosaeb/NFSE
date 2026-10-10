@@ -33,7 +33,7 @@ export function PasseioNovidades() {
 
   // Convida quando há novidade e a tela atual não está no meio das dicas de primeira visita.
   useEffect(() => {
-    if (passo !== null || dispensado || !usuario || usuario.demo || itens.length === 0 || !tutorialAtivo()) return
+    if (passo !== null || dispensado || !usuario || usuario.demo || usuario.perguntar_perfil || itens.length === 0 || !tutorialAtivo()) return
     if (pathname.startsWith("/app/novidades")) return // já está lendo
     const tour = tourDoCaminho(pathname)
     if (tour && !jaViu(tour.tela)) return

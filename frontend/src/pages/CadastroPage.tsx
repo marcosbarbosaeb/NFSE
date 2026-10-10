@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle2, Loader2, XCircle } from "lucide-react"
 import { type FocusEvent, type FormEvent, useEffect, useRef, useState } from "react"
 import { Link, Navigate, useSearchParams } from "react-router-dom"
 import { esquecerCodigoIndicacao, guardarCodigoIndicacao } from "../lib/indicacao"
+import { ESCOLHA_VAZIA, EscolherPerfil, type EscolhaPerfil, escolhaFeita } from "../components/EscolherPerfil"
 import { Button } from "../components/ui/Button"
 import { CampoCidade } from "../components/ui/CampoCidade"
 import { Field } from "../components/ui/Field"
@@ -138,6 +139,9 @@ export function CadastroPage() {
   const [atendimento, setAtendimento] = useState<Atendimento | null>(null)
   const [naLista, setNaLista] = useState<string | null>(null)
   const barrado = tipo === "empresa" && atendimento !== null && !atendimento.pode_criar
+  // Perfis (2026.10.7): "Como você costuma emitir suas notas?" depois do CNPJ aceito.
+  const [perfil, setPerfil] = useState<EscolhaPerfil>(ESCOLHA_VAZIA)
+  const mostrarPerfil = tipo === "empresa" && querNotas && !barrado && Boolean(razaoSocial) && cnpj.replace(/\D/g, "").length === 14
 
   if (usuario) return <Navigate to="/app" replace />
 
@@ -273,6 +277,7 @@ export function CadastroPage() {
         codigo_indicacao: modoTeste ? null : codigoIndicacao,
         modo_teste: modoTeste,
         produto,
+        ...(mostrarPerfil && (perfil.pulou || escolhaFeita(perfil)) ? { perfil } : {}),
       }
       const resp = await api.post<{ mensagem: string; email: string; email_enviado?: boolean }>("/cadastro", payload)
       esquecerCodigoIndicacao()
@@ -503,6 +508,34 @@ export function CadastroPage() {
               )}
 
                 </>
+              )}
+
+              {mostrarPerfil && (
+                <section aria-labelledby="cadastro-perfil" className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                  <div className="mb-2 flex items-start justify-between gap-2">
+                    <h2 id="cadastro-perfil" className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                      Como você costuma emitir suas notas?
+                    </h2>
+                    {!perfil.pulou && (
+                      <button type="button" onClick={() => setPerfil({ ...ESCOLHA_VAZIA, pulou: true, buscas_sem_resultado: perfil.buscas_sem_resultado })} className="shrink-0 text-xs font-medium text-slate-500 underline dark:text-slate-400">
+                        Pular
+                      </button>
+                    )}
+                  </div>
+                  {perfil.pulou ? (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Sem problema — dá pra responder depois em Empresa.{" "}
+                      <button type="button" onClick={() => setPerfil({ ...perfil, pulou: false })} className="font-medium underline">
+                        Responder agora
+                      </button>
+                    </p>
+                  ) : (
+                    <>
+                      <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">Pode marcar mais de um — o primeiro é o principal.</p>
+                      <EscolherPerfil valor={perfil} onChange={setPerfil} />
+                    </>
+                  )}
+                </section>
               )}
 
               <Field label="E-mail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />

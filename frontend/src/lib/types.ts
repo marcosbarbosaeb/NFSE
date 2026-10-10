@@ -17,6 +17,10 @@ export interface Usuario {
   acesso?: SituacaoAcesso
   /** Conta só de contador, fora da empresa de um cliente: sem notas nem financeiro próprios. */
   so_contador?: boolean
+  /** Perfis (2026.10.7): mostrar a pergunta "Como você costuma emitir?" uma vez. */
+  perguntar_perfil?: boolean
+  /** Perfil principal da empresa ativa, com o atalho da tela inicial. */
+  perfil_principal?: { id: string; titulo: string; atalho?: { rotulo: string; link: string } | null } | null
 }
 
 // --- Contador com permissões e bloqueio sem assinatura (06/10/2026) ---
@@ -199,6 +203,7 @@ export interface CadastroRequest {
   modo_teste?: boolean
   /** Produto contratado: emissor (padrão), financeiro ou ambos. */
   produto?: "emissor" | "financeiro" | "ambos"
+  perfil?: { perfis: string[]; outro: string | null; pulou: boolean; buscas_sem_resultado: string[] }
 }
 
 export interface VinculoResumo {

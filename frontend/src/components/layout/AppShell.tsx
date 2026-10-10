@@ -1,3 +1,4 @@
+import { PerguntaPerfil } from "../PerguntaPerfil"
 import { FlaskConical } from "lucide-react"
 import { Suspense, useState } from "react"
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom"
@@ -82,6 +83,7 @@ export function AppShell() {
         </main>
         <TourDaPagina />
         <PasseioNovidades />
+        <PerguntaPerfil />
         <AvisoSemAssinatura />
       </div>
     </div>

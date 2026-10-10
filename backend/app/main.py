@@ -78,6 +78,7 @@ from app.schemas import (
     CheckoutSessaoResponse,
     ConfirmarEmailRequest,
     ConsultaCnpjResponse,
+    PerfilRequest,
     DashboardResumoResponse,
     EmissaoListaLinha,
     ExclusaoVinculoResponse,
@@ -735,6 +736,15 @@ def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
     except PrestadorJaCadastradoError:
         raise HTTPException(status_code=409, detail="Já existe uma conta cadastrada com este CNPJ.")
     _completar_pela_receita(db, usuario.prestador_id)
+    if req.perfil is not None:
+        from app.services import perfis
+
+        try:
+            definir_prestador_atual(db, usuario.prestador_id)
+            perfis.salvar(db, db.get(Prestador, usuario.prestador_id), perfis=req.perfil.perfis, outro=req.perfil.outro,
+                          pulou=req.perfil.pulou, buscas_sem_resultado=req.perfil.buscas_sem_resultado)
+        except perfis.PerfilError:
+            pass  # perfil incompleto não atrapalha o cadastro: a pergunta aparece ao entrar
     db.commit()
     enviado = bool(getattr(usuario, "email_enviado", True))
     return CadastroResponse(
@@ -833,13 +843,54 @@ def api_auth_me(request: Request, db: Session = Depends(get_db)):
 
     papel, permissoes = acesso.papel(db, usuario, ativa)
     so_contador = acesso.eh_so_contador(db, ativa)
+    from app.services import perfis
+
+    definir_prestador_atual(db, ativa)
+    empresa = db.get(Prestador, ativa)
+    demo = eh_email_demo(usuario.email)
     return UsuarioResponse(
-        email=usuario.email, prestador_id=ativa, demo=eh_email_demo(usuario.email), nome=usuario.nome,
+        email=usuario.email, prestador_id=ativa, demo=demo, nome=usuario.nome,
         teste=teste and not so_contador, so_contador=so_contador,
         modulos=[] if so_contador else modulos_da_empresa(db, ativa),
         papel=papel, permissoes=permissoes, atende_empresas=acesso.tem_algo(db, usuario),
         acesso=acesso.situacao(db, ativa),
+        perguntar_perfil=bool(empresa is not None and papel == "dono" and not so_contador and not demo and not empresa.demo
+                              and empresa.perfil_respondido_em is None),
+        perfil_principal=perfis.principal(empresa),
     )
+
+
+@app.get("/api/perfis")
+def api_perfis():
+    """Os jeitos de emitir do cadastro (2026.10.7, app/data/perfis.json). Público:
+    o cadastro usa antes de existir conta. O `id` é interno."""
+    from app.services import perfis
+
+    return {"perfis": [{"id": p["id"], "titulo": p["titulo"], "profissoes": p["profissoes"]} for p in perfis.catalogo()]}
+
+
+@app.get("/api/empresa/perfil")
+def api_ver_perfil(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    p = db.get(Prestador, prestador_id)
+    return {"perfis": list(p.perfis or []), "outro": p.perfil_outro, "pulou": bool(p.perfil_pulou),
+            "respondido": p.perfil_respondido_em is not None}
+
+
+@app.put("/api/empresa/perfil", responses={422: {"model": ErroResponse}})
+def api_salvar_perfil(req: PerfilRequest, db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Perfis da empresa ativa (pergunta ao entrar ou Empresa › Emitente)."""
+    from app.services import perfis
+
+    p = db.get(Prestador, prestador_id)
+    try:
+        perfis.salvar(db, p, perfis=req.perfis, outro=req.outro, pulou=req.pulou, buscas_sem_resultado=req.buscas_sem_resultado)
+    except perfis.PerfilError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    resposta = {"perfis": list(p.perfis or []), "outro": p.perfil_outro, "pulou": bool(p.perfil_pulou), "respondido": True,
+                "perfil_principal": perfis.principal(p)}
+    db.commit()
+    return resposta
+
 
 
 @app.put("/api/empresa/modulos")
@@ -3348,6 +3399,14 @@ def api_uso_tela(req: TelaVistaRequest, request: Request):
     if nome:
         uso.gravar(request.session.get("usuario_id"), request.session.get("prestador_id"), "tela", nome)
     return {"ok": True}
+
+
+@app.get("/api/gestao/perfis", dependencies=[Depends(exigir_gestor)])
+def api_gestao_perfis(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)):
+    """Perfis: empresas em cada um, quem pulou, "Não me encontrei" e buscas sem resultado."""
+    from app.services import perfis
+
+    return perfis.resumo_gestao(db, prestador_id)
 
 
 @app.get("/api/gestao/lista-espera", dependencies=[Depends(exigir_gestor)])

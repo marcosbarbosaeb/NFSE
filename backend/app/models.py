@@ -104,6 +104,14 @@ class Prestador(Base):
     # Simples é a parte do ISS na faixa do Simples (de 2% a 5%; a Sefin aceita
     # de 1,8%). Quem sabe é a empresa/contador; fica guardada aqui.
     aliquota_iss_retido: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    # Perfis do cadastro (2026.10.7): como a empresa costuma emitir — ids de
+    # app/data/perfis.json, o primeiro é o principal. `perfil_outro` = "Não me
+    # encontrei". `perfil_respondido_em` nulo = ainda não respondeu (a pergunta
+    # aparece uma vez ao entrar); quem pula fica com `perfil_pulou`.
+    perfis: Mapped[list | None] = mapped_column(JSONB)
+    perfil_outro: Mapped[str | None] = mapped_column(String(300))
+    perfil_pulou: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
+    perfil_respondido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Marco 16, item 5 — depois da pesquisa de viabilidade de uma "aba de
     # impostos" (DAS-MEI), Marcos decidiu não construir cálculo/boleto por
     # enquanto (exigiria integração paga com a SERPRO): só quer poder
@@ -1214,6 +1222,18 @@ class IaChamada(Base):
     tokens_entrada: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     tokens_saida: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     milissegundos: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PerfilBusca(Base):
+    """Profissão buscada no cadastro que não bateu com nenhum perfil
+    (2026.10.7) — a lista de demanda pros próximos perfis, na Gestão. Só o
+    texto; sem quem buscou. Sem RLS."""
+
+    __tablename__ = "perfil_busca"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    texto: Mapped[str] = mapped_column(String(80), nullable=False)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

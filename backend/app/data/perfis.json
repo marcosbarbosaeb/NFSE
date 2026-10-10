@@ -1,0 +1,29 @@
+{
+  "_leia": "Perfis do cadastro (2026.10.7, ideias/perfis-no-cadastro.md). O perfil é o JEITO de emitir, não a profissão: as profissões são só exemplos (as 5 primeiras aparecem no cartão; o resto abre em 'e outros' e entra na busca). Pode crescer à vontade sem mexer no código. O 'id' é interno e nunca aparece pro usuário — não mude.",
+  "perfis": [
+    {
+      "id": "lote",
+      "titulo": "Muitas notas de uma vez",
+      "profissoes": ["Afiliado Shopee", "Afiliado de outros programas de afiliados", "Vendedor de comissão por relatório"],
+      "atalho": {"rotulo": "Enviar o relatório da Shopee", "link": "/app/nfse/lote"}
+    },
+    {
+      "id": "clientes_fixos",
+      "titulo": "Mesmos clientes todo mês",
+      "profissoes": ["Social media", "Gestor de tráfego", "Designer", "Programador", "Editor de vídeo", "Consultor", "Personal trainer", "Psicólogo", "Redator", "Copywriter", "Nutricionista", "Fisioterapeuta", "Professor particular com alunos fixos", "Assessor de imprensa"],
+      "atalho": {"rotulo": "Gerar a nota do mês", "link": "/app/nfse?nova=1"}
+    },
+    {
+      "id": "fechamento_mensal",
+      "titulo": "Uma nota por mês por plataforma",
+      "profissoes": ["Afiliado Amazon", "Afiliado Mercado Livre", "Afiliado Magalu", "Redes de afiliados", "Afiliado Hotmart", "Afiliado Awin", "Criador de conteúdo com publicidade"],
+      "atalho": {"rotulo": "Gerar a nota do mês", "link": "/app/nfse?nova=1"}
+    },
+    {
+      "id": "avulso",
+      "titulo": "Um cliente diferente a cada serviço",
+      "profissoes": ["Fotógrafo", "Eletricista", "Encanador", "Técnico de manutenção", "Montador de móveis", "Maquiador", "Músico", "Tradutor", "Palestrante", "Professor", "Entregador", "Pintor", "Cabeleireiro", "Manicure", "DJ", "Videomaker de eventos", "Guia de turismo"],
+      "atalho": {"rotulo": "Gerar uma nota", "link": "/app/nfse?nova=1"}
+    }
+  ]
+}

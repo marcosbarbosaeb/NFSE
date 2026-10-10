@@ -542,6 +542,10 @@ class UsuarioResponse(BaseModel):
     # A empresa ativa é a "casa" de uma conta só de contador: sem notas nem
     # financeiro próprios — o painel mostra só "Empresas que atendo".
     so_contador: bool = False
+    # Perfis (2026.10.7): mostrar a pergunta uma vez (dono, empresa ainda sem
+    # resposta) e o perfil principal (atalho da tela inicial).
+    perguntar_perfil: bool = False
+    perfil_principal: dict | None = None
 
 
 class ModulosRequest(BaseModel):
@@ -595,8 +599,19 @@ class CadastroRequest(BaseModel):
     modo_teste: bool = False
     # Qual produto a pessoa veio contratar (05/10/2026): /cadastro?produto=financeiro
     produto: Literal["emissor", "financeiro", "ambos"] = "emissor"
+    # Perfis (2026.10.7): "Como você costuma emitir suas notas?". Sem `perfil`
+    # = não respondeu (a pergunta aparece ao entrar).
+    perfil: "PerfilRequest | None" = None
 
     _conferir_formato_email = field_validator("email")(_conferir_emails)
+
+
+class PerfilRequest(BaseModel):
+    """Perfis da empresa (2026.10.7, app/services/perfis.py)."""
+    perfis: list[str] = Field(default_factory=list, max_length=4)
+    outro: str | None = Field(default=None, max_length=300)
+    pulou: bool = False
+    buscas_sem_resultado: list[str] = Field(default_factory=list, max_length=10)
 
 
 class CadastroResponse(BaseModel):

@@ -1,3 +1,4 @@
+import { PerfilDaEmpresaCard } from "../components/PerfilDaEmpresaCard"
 import { OrientacaoCertificado } from "../components/OrientacaoCertificado"
 import { BriefcaseBusiness,
   Building2,
@@ -355,6 +356,7 @@ function AbaEmitente({ prestador, onAtualizado }: { prestador: Prestador; onAtua
   }
 
   return (
+    <>
     <form onSubmit={salvar} className="flex flex-col gap-6">
       {temCnpj && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary-200 bg-primary-50/60 px-4 py-3 dark:border-primary-800 dark:bg-primary-900/20">
@@ -486,6 +488,8 @@ function AbaEmitente({ prestador, onAtualizado }: { prestador: Prestador; onAtua
         )}
       </div>
     </form>
+    <PerfilDaEmpresaCard />
+    </>
   )
 }
 
