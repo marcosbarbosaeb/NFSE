@@ -613,7 +613,9 @@ def api_atendimento(cnpj: str, produto: str = "emissor"):
     from app.services import atendimento
 
     try:
-        return atendimento.avaliar_cnpj(cnpj, so_financeiro=produto == "financeiro")
+        # 2026.10.7: o Financeiro sozinho não é vendido para conta nova — todo
+        # cadastro passa pela mesma verificação (o parâmetro `produto` fica por compatibilidade).
+        return atendimento.avaliar_cnpj(cnpj)
     except CnpjInvalidoError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except CnpjNaoEncontradoError as exc:
@@ -723,7 +725,9 @@ def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
         telefone = limpar_whatsapp(req.whatsapp)
     except WhatsappInvalidoError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    modulos = {"emissor": ["emissor"], "financeiro": ["financeiro"], "ambos": ["emissor", "financeiro"]}[req.produto]
+    # 2026.10.7: link antigo /cadastro?produto=financeiro vira conta com notas
+    # e Financeiro (o Financeiro sozinho não é mais vendido para conta nova).
+    modulos = {"emissor": ["emissor"], "financeiro": ["emissor", "financeiro"], "ambos": ["emissor", "financeiro"]}[req.produto]
     _conferir_atendimento(req.cpf_cnpj, modulos)
     try:
         usuario = criar_cadastro(
@@ -732,7 +736,7 @@ def api_cadastro(req: CadastroRequest, db: Session = Depends(get_db)):
             cep=req.cep, logradouro=req.logradouro, numero=req.numero,
             complemento=req.complemento, bairro=req.bairro, codigo_indicacao=req.codigo_indicacao,
             modo_teste=req.modo_teste,
-            modulos={"emissor": ["emissor"], "financeiro": ["financeiro"], "ambos": ["emissor", "financeiro"]}[req.produto],
+            modulos=modulos,
         )
     except CadastroEmailJaCadastradoError:
         raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")

@@ -727,7 +727,8 @@ Os planos vão pelo número de notas autorizadas no mês. O limite é por CNPJ.
 | Empresa | R$ 129,90 | até 300 | incluído |
 | Avançado | R$ 149,00 | até 500 | incluído |
 | Ilimitado | R$ 299,00 | sem limite | incluído |
-| Financeiro | R$ 39,90 | não emite notas | é o próprio plano |
+
+O Financeiro não é vendido sozinho para contas novas: ele vem incluído nos planos Empresa, Avançado e Ilimitado, ou somado ao Básico e ao Empreendedor. Quem já tinha o plano só de Financeiro continua com ele.
 
 "Personalizado": pra várias empresas ou volume muito alto, clique em "Fale com a nossa equipe" na aba "Assinatura".
 

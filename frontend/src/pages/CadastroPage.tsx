@@ -31,7 +31,9 @@ export function CadastroPage() {
   // /cadastro?produto=financeiro (ou ambos) — qual produto a pessoa veio
   // contratar; sem isso, o emissor de notas.
   const produtoPedido = searchParams.get("produto")
-  const produto = produtoPedido === "financeiro" || produtoPedido === "ambos" ? produtoPedido : "emissor"
+  // 2026.10.7: o Financeiro sozinho não é vendido para conta nova — o link
+  // antigo ?produto=financeiro vira notas + Financeiro, com a verificação normal.
+  const produto = produtoPedido === "financeiro" || produtoPedido === "ambos" ? "ambos" : "emissor"
   // Marco 16, item 1 — volta de /api/auth/google/callback quando a conta
   // Google usada ainda não tem cadastro aqui (ver app/services/
   // google_oauth.py: não dá pra criar a conta só com o que a Google manda,
@@ -132,7 +134,7 @@ export function CadastroPage() {
       vivo = false
     }
   }, [codMunicipio])
-  const querNotas = produto !== "financeiro"
+  const querNotas = true // 2026.10.7: toda conta nova tem o emissor
 
   // A Ana atende este CNPJ? (2026.10.7): regime, situação e cidade, logo
   // depois do CNPJ. Quem não é atendido não cria conta: entra na lista de espera.
@@ -302,7 +304,7 @@ export function CadastroPage() {
           </p>
           <p className="text-sm text-slate-500 dark:text-slate-400">
             Crie sua conta gratuita
-            {produto === "financeiro" ? " · Financeiro" : produto === "ambos" ? " · Notas e Financeiro" : ""}
+            {produto === "ambos" ? " · Notas e Financeiro" : ""}
           </p>
         </div>
 

@@ -116,9 +116,9 @@ def test_cadastro_com_regime_nao_atendido_e_barrado(publico, receita):
     receita["dados"] = _dados("1", "ATIVA", DENTRO)
     r = publico.post("/api/cadastro", json={**CADASTRO, "cpf_cnpj": "11222333000181"})
     assert r.status_code == 422 and "Ainda não atendemos" in r.json()["detail"]
-    # só o Financeiro: passa
+    # 2026.10.7: o link antigo "só o Financeiro" passa pela mesma verificação
     r = publico.post("/api/cadastro", json={**CADASTRO, "cpf_cnpj": "11222333000181", "produto": "financeiro"})
-    assert r.status_code == 200, r.text
+    assert r.status_code == 422 and "Ainda não atendemos" in r.json()["detail"]
 
 
 def test_aviso_quando_a_cidade_entra(db, monkeypatch):

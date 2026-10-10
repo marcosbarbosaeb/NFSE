@@ -72,7 +72,10 @@ PLANOS = {
                  "descricao": "Até 500 notas por mês e o Financeiro incluído."},
     "ilimitado": {"nome": "Ilimitado", "modulos": ["emissor", "financeiro"], "limite": None, "preco": 299.00, "a_venda": True,
                   "descricao": "Notas sem limite e o Financeiro incluído."},
-    "financeiro": {"nome": "Financeiro", "modulos": ["financeiro"], "limite": 0, "preco": 39.90, "a_venda": True,
+    # Só o Financeiro (2026.10.7, decisão do Marcos): não é vendido sozinho para
+    # contas novas; quem já tem continua. O Financeiro segue como módulo dos
+    # planos de notas (incluído ou somado por R$ 39,90).
+    "financeiro": {"nome": "Financeiro", "modulos": ["financeiro"], "limite": 0, "preco": 39.90, "a_venda": False,
                    "descricao": "Recebimentos, contas do mês, conciliação do extrato e resultado. Sem emissão de notas."},
     "emissor": {"nome": "Notas (plano antigo)", "modulos": ["emissor"], "limite": None, "preco": None, "a_venda": False,
                 "descricao": "Emissão de NFS-e, tomadores, envio das notas e calendário."},

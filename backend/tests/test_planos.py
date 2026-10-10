@@ -47,11 +47,13 @@ def _notas(db, vinculo, quantas: int, *, estado: str = "confirmado", origem: str
 
 def test_catalogo_e_escada():
     ids = [p["id"] for p in billing.listar_planos()]
-    assert ids == ["basico", "empreendedor", "empresa", "avancado", "ilimitado", "financeiro"]
+    # 2026.10.7: o Financeiro sozinho saiu da vitrine (quem já tem continua vendo o dele)
+    assert ids == ["basico", "empreendedor", "empresa", "avancado", "ilimitado"]
+    assert "financeiro" in [p["id"] for p in billing.listar_planos(plano_atual="financeiro")]
     por_id = {p["id"]: p for p in billing.listar_planos()}
     assert [por_id[i]["limite_notas"] for i in billing.ESCADA_DE_NOTAS] == [30, 150, 300, 500, None]
-    assert [por_id[i]["valor"] for i in ids] == [49.90, 99.90, 129.90, 149.00, 299.00, 39.90]
-    assert [por_id[i]["aceita_financeiro"] for i in ids] == [True, True, False, False, False, False]
+    assert [por_id[i]["valor"] for i in ids] == [49.90, 99.90, 129.90, 149.00, 299.00]
+    assert [por_id[i]["aceita_financeiro"] for i in ids] == [True, True, False, False, False]
     assert billing.modulos_do_plano("basico", True) == ["emissor", "financeiro"]
     assert billing.modulos_do_plano("empresa", True) == ["emissor", "financeiro"]
     # plano antigo só aparece pra quem o tem
