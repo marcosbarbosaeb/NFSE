@@ -1,6 +1,7 @@
 import { PerfilDaEmpresaCard } from "../components/PerfilDaEmpresaCard"
 import { OrientacaoCertificado } from "../components/OrientacaoCertificado"
 import { BriefcaseBusiness,
+  Landmark,
   Building2,
   CheckCircle2,
   ChevronDown,
@@ -501,7 +502,7 @@ function AbaEmitente({ prestador, onAtualizado }: { prestador: Prestador; onAtua
 // o grupo (raio-x, seção 15). Salvar aqui é a "confirmação" que o aviso de
 // "Precisa da sua atenção" pede antes da virada do semestre. MEI não escolhe.
 const OPCOES_IBS_CBS = [
-  { valor: "1", rotulo: "IBS e CBS pelo Simples Nacional (o mais comum)" },
+  { valor: "1", rotulo: "IBS e CBS pelo Simples Nacional" },
   { valor: "2", rotulo: "CBS pelo Simples e IBS pelo regime regular" },
   { valor: "3", rotulo: "IBS e CBS pelo regime regular" },
 ]
@@ -538,8 +539,8 @@ function IbsCbsCard({ prestador, onAtualizado }: { prestador: Prestador; onAtual
   }
 
   return (
-    <Card className="p-5 sm:p-6" id="ibs-cbs">
-      <TituloSecao>IBS e CBS (reforma tributária)</TituloSecao>
+    <Card id="ibs-cbs" className="scroll-mt-24 p-5">
+      <TituloSecao icone={Landmark}>IBS e CBS (reforma tributária)</TituloSecao>
       <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
         A partir de janeiro de 2027 a nota da empresa do Simples leva IBS e CBS. Quem calcula os valores é o próprio sistema da nota; eu só preciso
         saber como a sua empresa recolhe. A opção vale por semestre — na dúvida, confirme com o seu contador.
