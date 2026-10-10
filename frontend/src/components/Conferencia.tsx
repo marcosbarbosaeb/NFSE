@@ -1,3 +1,4 @@
+import { OrientacaoCertificado } from "./OrientacaoCertificado"
 import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react"
 import { Link } from "react-router-dom"
 import type { PontoConferencia } from "../lib/types"
@@ -33,6 +34,10 @@ function atalho(ponto: PontoConferencia, vinculoId?: string | null): { para: str
   }
   return null
 }
+
+
+// Falta ou vencimento do certificado: junto vai a orientação de compra (2026.10.7).
+const CODIGOS_CERTIFICADO = new Set(["sem_certificado", "certificado_vencido", "certificado_vencendo"])
 
 export function contarPontos(pontos: PontoConferencia[] | null | undefined): { erros: number; avisos: number } {
   const erros = (pontos ?? []).filter((p) => p.nivel === "erro").length
@@ -112,6 +117,7 @@ export function Conferencia({
                     {link.rotulo}
                   </Link>
                 )}
+                {CODIGOS_CERTIFICADO.has(ponto.codigo) && <OrientacaoCertificado className="mt-2" />}
               </div>
             </li>
           )

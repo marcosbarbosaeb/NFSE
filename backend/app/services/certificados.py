@@ -33,6 +33,24 @@ class CertificadoNaoEncontradoError(LookupError):
     ver — checar se `definir_prestador_atual` foi chamado)."""
 
 
+class CertificadoVencidoError(CertificadoNaoEncontradoError):
+    """O certificado guardado já venceu (2026.10.7): não assina, não envia,
+    não cancela e o lote para. É "filho" de CertificadoNaoEncontradoError pra
+    todo lugar que já tratava "sem certificado" tratar este também; a mensagem
+    (`str(exc)`) é a que vai pra tela."""
+
+
+MENSAGEM_VENCIDO = (
+    "O certificado digital da empresa venceu em {data}. Envie o certificado novo em Empresa › Certificado "
+    "pra assinar e enviar notas."
+)
+
+
+class CertificadoRecusadoError(ValueError):
+    """O certificado abre, mas não serve pra esta empresa (de outro CNPJ ou
+    já vencido). A mensagem vai pra tela."""
+
+
 def salvar_certificado(
     db: Session,
     prestador_id: uuid.UUID,
@@ -52,6 +70,7 @@ def salvar_certificado(
     # hora de assinar uma DPS de verdade (ver Contingências no plano).
     _private_key, cert = carregar_pfx(pfx_bytes, senha)
     validade: date = cert.not_valid_after_utc.date() if hasattr(cert, "not_valid_after_utc") else cert.not_valid_after.date()
+    conferir_para_empresa(db, prestador_id, cert)
 
     pfx_cifrado = criptografar(pfx_bytes, chave_mestra)
     senha_cifrada = criptografar(senha.encode("utf-8"), chave_mestra)
@@ -87,6 +106,8 @@ def carregar_certificado(db: Session, prestador_id: uuid.UUID, chave_mestra: str
     if registro is None:
         raise CertificadoNaoEncontradoError(f"Nenhum certificado cadastrado para prestador_id={prestador_id}")
 
+    if certificado_vencido(registro):
+        raise CertificadoVencidoError(MENSAGEM_VENCIDO.format(data=registro.validade.strftime("%d/%m/%Y")))
     pfx_bytes = descriptografar(registro.pfx_criptografado, chave_mestra)
     senha = descriptografar(registro.senha_criptografada, chave_mestra).decode("utf-8")
     return carregar_pfx(pfx_bytes, senha)
@@ -198,3 +219,29 @@ def ler_certificado(pfx_bytes: bytes, senha: str) -> dict:
             "Não consegui abrir o certificado. Confira se o arquivo é o .pfx ou .p12 do certificado A1 e se a senha está certa."
         ) from exc
     return dados_do_certificado(cert)
+
+
+def _formatar_cnpj(c: str) -> str:
+    return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}" if len(c) == 14 else c
+
+
+def conferir_para_empresa(db: Session, prestador_id: uuid.UUID, cert, referencia: date | None = None) -> None:
+    """Trava no envio (2026.10.7): certificado vencido ou de outro CNPJ é
+    recusado com a frase pra pessoa. Certificado sem CNPJ legível (ex.: e-CPF
+    de um MEI) passa — a Sefin confere na hora de assinar."""
+    from app.models import Prestador
+
+    dados = dados_do_certificado(cert, referencia)
+    if dados["vencido"]:
+        raise CertificadoRecusadoError(
+            f"Este certificado venceu em {dados['valido_ate'].strftime('%d/%m/%Y')}. Envie um certificado dentro da validade."
+        )
+    prestador = db.get(Prestador, prestador_id)
+    cnpj_empresa = re.sub(r"\D", "", (prestador.cpf_cnpj if prestador else "") or "")
+    # Matriz e filial têm a mesma raiz (8 primeiros números): o certificado da
+    # matriz serve pra filial — a Receita aceita.
+    if dados["cnpj"] and len(cnpj_empresa) == 14 and dados["cnpj"][:8] != cnpj_empresa[:8]:
+        raise CertificadoRecusadoError(
+            f"Este certificado é do CNPJ {_formatar_cnpj(dados['cnpj'])}, e a empresa aberta é {_formatar_cnpj(cnpj_empresa)}. "
+            "Envie o certificado desta empresa (ou troque de empresa no seletor do menu)."
+        )

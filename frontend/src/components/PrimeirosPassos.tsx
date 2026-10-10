@@ -1,3 +1,4 @@
+import { OrientacaoCertificado } from "./OrientacaoCertificado"
 import { ArrowRight, Check, DownloadCloud, FileBadge, Building2, Users } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
@@ -164,6 +165,11 @@ export function PrimeirosPassos() {
           to="/app/empresa?aba=certificado"
           rotulo={p.certificado === "vencido" ? "Enviar o novo" : "Enviar o certificado"}
         />
+        {!certOk && (
+          <li className="list-none">
+            <OrientacaoCertificado />
+          </li>
+        )}
         <Passo
           n={2}
           feito={dadosOk}
@@ -246,6 +252,7 @@ export function TravaDeEmissao({ prontidao }: { prontidao: Prontidao | null }) {
       <Link to="/app/empresa?aba=certificado" className={`${BOTAO} bg-accent-500 text-white hover:bg-accent-600`}>
         Enviar o certificado <ArrowRight size={15} aria-hidden />
       </Link>
+      <OrientacaoCertificado className="basis-full" />
     </div>
   )
 }

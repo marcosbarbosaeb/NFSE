@@ -1,3 +1,4 @@
+import { OrientacaoCertificado } from "../components/OrientacaoCertificado"
 import { BriefcaseBusiness,
   Building2,
   CheckCircle2,
@@ -825,6 +826,13 @@ function ImportarNacionalCard() {
   )
 }
 
+/** Vence em 30 dias ou menos (a mesma janela do aviso por e-mail). */
+function venceEmBreve(validade: string | null | undefined): boolean {
+  if (!validade) return false
+  const dias = (new Date(`${validade}T00:00:00`).getTime() - Date.now()) / 86_400_000
+  return dias <= 30
+}
+
 function CertificadoCard() {
   const [certificado, setCertificado] = useState<CertificadoStatus | null>(null)
   const [erroCarga, setErroCarga] = useState<string | null>(null)
@@ -895,6 +903,8 @@ function CertificadoCard() {
             : "Sem data de validade informada."}
         </div>
       )}
+
+      {certificado && (!certificado.carregado || certificado.vencido || venceEmBreve(certificado.validade)) && <OrientacaoCertificado className="mb-4" />}
 
       <form onSubmit={enviar} className="flex max-w-md flex-col gap-3">
         {erro && <p className="rounded-lg bg-danger-50 px-4 py-3 text-sm text-danger-700">{erro}</p>}

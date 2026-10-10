@@ -1267,6 +1267,9 @@ class CanaisSuporteResponse(BaseModel):
     email: str
     whatsapp: str | None = None
     formulario: bool
+    # Orientação de compra do certificado (2026.10.7)
+    certificado_texto: str | None = None
+    certificado_whatsapp: str | None = None
 
 
 class MensagemSuporteRequest(BaseModel):

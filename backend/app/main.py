@@ -177,6 +177,8 @@ from app.services.cnpj_lookup import (
 from app.services.certificados import (
     CertificadoIlegivelError,
     CertificadoNaoEncontradoError,
+    CertificadoRecusadoError,
+    CertificadoVencidoError,
     carregar_certificado,
     certificado_vencido,
     ler_certificado,
@@ -307,6 +309,13 @@ def _retomar_lotes_interrompidos() -> None:
         lotes.iniciar_relogio()
     except Exception:  # noqa: BLE001 — subir o servidor nunca depende disto
         logger.exception("Falha ao retomar lotes")
+    try:
+        from app.services import avisos_certificado
+
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            avisos_certificado.iniciar()
+    except Exception:  # noqa: BLE001
+        logger.exception("Falha ao iniciar o aviso de vencimento do certificado")
 
 
 # Rotas do EMISSOR só respondem pra empresa que tem o módulo (05/10/2026).
@@ -1095,6 +1104,8 @@ def api_canais_suporte():
         "email": s.email_suporte,
         "whatsapp": re.sub(r"\D", "", s.suporte_whatsapp) or None,
         "formulario": bool(s.resend_api_key),
+        "certificado_texto": (getattr(s, "certificado_orientacao", "") or "").strip() or None,
+        "certificado_whatsapp": re.sub(r"\D", "", getattr(s, "certificado_orientacao_whatsapp", "") or "") or re.sub(r"\D", "", s.suporte_whatsapp) or None,
     }
 
 
@@ -1453,7 +1464,7 @@ def api_ler_nota_antiga(
         except CertificadoNaoEncontradoError as exc:
             raise HTTPException(
                 status_code=422,
-                detail="Pra ler a nota pelo PDF eu preciso do seu certificado digital (Empresa › Certificado). Sem ele, envie o XML da nota.",
+                detail=_motivo_certificado(exc, "Pra ler a nota pelo PDF eu preciso do seu certificado digital (Empresa › Certificado). Sem ele, envie o XML da nota."),
             ) from exc
         try:
             resposta = ClienteSefin(private_key, cert, "1", timeout=15).consultar_nfse(chave)
@@ -2011,6 +2022,11 @@ def api_atualizar_lembrete_aliquota(
     return prestador
 
 
+def _motivo_certificado(exc: Exception, sem_certificado: str) -> str:
+    """Certificado vencido tem frase própria; sem certificado, a de cada rota."""
+    return str(exc) if isinstance(exc, CertificadoVencidoError) else sem_certificado
+
+
 def exigir_certificado(db: Session = Depends(db_sessao), prestador_id: uuid.UUID = Depends(prestador_atual_id)) -> None:
     """Sem certificado A1 válido não se gera nota (06/10/2026): a pessoa é
     mandada pra Empresa › Certificado em vez de montar nota que não sai."""
@@ -2046,6 +2062,8 @@ def api_salvar_certificado(
     pfx_bytes = _ler_upload(pfx, 2)
     try:
         registro = salvar_certificado(db, prestador_id, pfx_bytes, senha, settings.cert_master_key)
+    except CertificadoRecusadoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.warning("Certificado recusado: %s", type(exc).__name__)
         raise HTTPException(
@@ -2734,7 +2752,7 @@ def api_assinar_dps(emissao_id: uuid.UUID, request: Request, db: Session = Depen
     try:
         private_key, cert = carregar_certificado(db, prestador_id, settings.cert_master_key)
     except CertificadoNaoEncontradoError as exc:
-        raise HTTPException(status_code=409, detail="Nenhum certificado carregado — envie o .pfx antes de assinar.") from exc
+        raise HTTPException(status_code=409, detail=_motivo_certificado(exc, "Nenhum certificado carregado — envie o .pfx antes de assinar.")) from exc
 
     try:
         emissao = assinar_emissao(db, emissao, private_key, cert)
@@ -2775,7 +2793,7 @@ def api_submeter_dps(emissao_id: uuid.UUID, request: Request, db: Session = Depe
     try:
         private_key, cert = carregar_certificado(db, prestador_id, settings.cert_master_key)
     except CertificadoNaoEncontradoError as exc:
-        raise HTTPException(status_code=409, detail="Nenhum certificado carregado — envie o .pfx antes de submeter.") from exc
+        raise HTTPException(status_code=409, detail=_motivo_certificado(exc, "Nenhum certificado carregado — envie o .pfx antes de submeter.")) from exc
 
     tpAmb = (emissao.tomador_snapshot or {}).get("tpAmb", "2")
     cliente = ClienteSefin(private_key, cert, tpAmb)
@@ -2799,7 +2817,7 @@ def api_corrigir_e_reenviar(emissao_id: uuid.UUID, db: Session = Depends(db_sess
     try:
         private_key, cert = carregar_certificado(db, prestador_id, get_settings().cert_master_key)
     except CertificadoNaoEncontradoError as exc:
-        raise HTTPException(status_code=409, detail="Nenhum certificado carregado — envie o .pfx antes de reenviar.") from exc
+        raise HTTPException(status_code=409, detail=_motivo_certificado(exc, "Nenhum certificado carregado — envie o .pfx antes de reenviar.")) from exc
     try:
         tpAmb = (emissao.tomador_snapshot or {}).get("tpAmb", "2")
         emissao = corrigir_e_reenviar_emissao(db, emissao, private_key, cert, ClienteSefin(private_key, cert, tpAmb))
@@ -2832,7 +2850,7 @@ def api_cancelar_dps(
     try:
         private_key, cert = carregar_certificado(db, prestador_id, settings.cert_master_key)
     except CertificadoNaoEncontradoError as exc:
-        raise HTTPException(status_code=409, detail="Nenhum certificado carregado — envie o .pfx antes de cancelar.") from exc
+        raise HTTPException(status_code=409, detail=_motivo_certificado(exc, "Nenhum certificado carregado — envie o .pfx antes de cancelar.")) from exc
 
     tpAmb = (emissao.tomador_snapshot or {}).get("tpAmb", "2")
     cliente = ClienteSefin(private_key, cert, tpAmb)
@@ -3580,7 +3598,7 @@ def _cliente_producao(db: Session, prestador_id: uuid.UUID) -> ClienteSefin:
     try:
         private_key, cert = carregar_certificado(db, prestador_id, get_settings().cert_master_key)
     except CertificadoNaoEncontradoError as exc:
-        raise HTTPException(status_code=409, detail="Carregue o certificado digital da empresa (Empresa › Certificado) pra importar do Emissor Nacional.") from exc
+        raise HTTPException(status_code=409, detail=_motivo_certificado(exc, "Carregue o certificado digital da empresa (Empresa › Certificado) pra importar do Emissor Nacional.")) from exc
     return ClienteSefin(private_key, cert, "1")
 
 

@@ -1,3 +1,4 @@
+import { OrientacaoCertificado } from "../components/OrientacaoCertificado"
 import {
   ArrowLeftRight,
   ArrowRight,
@@ -366,6 +367,7 @@ export function DashboardPage() {
                           {item.link_label ?? "Resolver"} <ArrowRight size={12} />
                         </Link>
                       )}
+                      {(item.tipo === "certificado_vencendo" || item.tipo === "certificado_vencido") && <OrientacaoCertificado className="mt-2" />}
                     </li>
                   ))}
                 </ul>

@@ -262,6 +262,9 @@ class Certificado(Base):
         String(200), comment="Identifica qual chave/versão do KMS cifrou este registro. Nulo = chave local de dev."
     )
     validade: Mapped[date | None] = mapped_column(Date, comment="Vencimento do certificado A1 — ver Contingências.")
+    # Aviso por e-mail 30 dias antes (2026.10.7): a validade já avisada — um
+    # aviso por certificado; certificado novo (outra validade) avisa de novo.
+    aviso_vencimento_para: Mapped[date | None] = mapped_column(Date)
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(

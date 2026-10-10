@@ -391,8 +391,10 @@ def _executor(db: Session, lote: LoteAcao, prestador_id: uuid.UUID, base_url: st
 
     try:
         private_key, cert = carregar_certificado(db, prestador_id, get_settings().cert_master_key)
-    except CertificadoNaoEncontradoError:
-        return lambda e: "Nenhum certificado carregado — envie o .pfx em Empresa › Certificado."
+    except CertificadoNaoEncontradoError as exc:
+        # vencido (2026.10.7) tem a frase própria; sem certificado, a de sempre
+        motivo = str(exc) if type(exc).__name__ == "CertificadoVencidoError" else "Nenhum certificado carregado — envie o .pfx em Empresa › Certificado."
+        return lambda e: motivo
     clientes: dict[str, ClienteSefin] = {}
 
     def cliente_de(e: Emissao) -> ClienteSefin:

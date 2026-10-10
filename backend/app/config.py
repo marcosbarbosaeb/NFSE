@@ -169,6 +169,12 @@ class Settings(BaseSettings):
     # só liga com IA_ATIVA=true E a chave ANTHROPIC_API_KEY preenchida (no
     # Railway, nunca no código). IA_MODELO troca o modelo e IA_LIMITE_DIARIO o
     # número de perguntas por pessoa por dia, sem publicar versão.
+    # Certificado (2026.10.7, item C do roteiro): orientação pra quem não tem
+    # certificado ou está com ele vencendo. Texto e contato trocam pelo Railway,
+    # sem publicar versão. Contato vazio = os canais de suporte de sempre.
+    certificado_orientacao: str = "Ainda não tem certificado digital? Fale com a gente: nosso parceiro tem preço especial."
+    certificado_orientacao_whatsapp: str = ""
+
     ia_ativa: bool = False
     ia_modelo: str = "claude-haiku-5-5"
     ia_limite_diario: int = 20

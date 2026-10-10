@@ -1183,6 +1183,9 @@ export interface CanaisSuporte {
   email: string
   whatsapp: string | null
   formulario: boolean
+  /** Orientação de compra do certificado (2026.10.7), configurável no servidor. */
+  certificado_texto?: string | null
+  certificado_whatsapp?: string | null
 }
 
 
