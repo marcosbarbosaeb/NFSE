@@ -31,6 +31,7 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase.ttfonts import TTFError, TTFont
 
 from app.models import Emissao
+from app.services import ibs_cbs
 from app.services.municipios import rotulo_municipio
 from app.services.paises import nome_do_pais
 
@@ -302,6 +303,9 @@ def dados_do_danfse(emissao: Emissao) -> dict:
             ("Desconto condicionado", _brl(_t(dps, "valores/vDescCondIncond/vDescCond"))),
             ("Total de retenções", _brl(_t(inf, "valores/vTotalRet"))),
         ],
+        # IBS e CBS (2026.10.7): só quando a nota autorizada trouxer os valores
+        # (calculados pela Sefin — a Ana não calcula). Rótulos seguem o leiaute.
+        "ibs_cbs": [(rot, _brl(v) if tipo == "brl" else _pct(v)) for rot, v, tipo in (ibs_cbs.valores_da_nota(inf) or [])] or None,
         "valor_liquido": _brl(v_liq),
         "tributos_aproximados": aprox,
         "complementares": " ".join(p for p in (_t(dps, "serv/infoCompl/xInfComp"), _t(inf, "valores/xOutInf")) if p) or "-",
@@ -570,6 +574,9 @@ def gerar_danfse(emissao: Emissao) -> bytes:
     p.campos(d["municipal"], colunas=4)
     p.titulo("Tributação federal")
     p.campos(d["federal"], colunas=5)
+    if d.get("ibs_cbs"):
+        p.titulo("IBS e CBS (reforma tributária)")
+        p.campos(d["ibs_cbs"], colunas=4)
     p.titulo("Valor total da NFS-e")
     p.campos(d["totais"], colunas=4)
     # Valor líquido em destaque (a NT pede o campo sombreado).

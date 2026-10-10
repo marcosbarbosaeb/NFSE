@@ -212,6 +212,7 @@ from app.limites import limitador, limite  # noqa: F401 — limitador: os testes
 from app.services import acesso as acesso_servico
 from app.services import planos as planos_servico
 from app.services import contas, importar_adn, lotes, mensagens
+from app.services import ibs_cbs
 from app.services.indicacao import resumo as resumo_indicacao
 from app.services.email import EmailEnvioError, get_email_sender
 from app.services.dashboard import proximos as proximos_do_painel
@@ -1214,7 +1215,8 @@ def api_atualizar_emitente(
     prestador = db.get(Prestador, prestador_id)
     if prestador is None:
         raise HTTPException(status_code=404, detail="Prestador não encontrado.")
-    for campo, valor in req.model_dump(exclude_unset=True).items():
+    dados = req.model_dump(exclude_unset=True)
+    for campo, valor in dados.items():
         if isinstance(valor, str):
             valor = valor.strip()
             if campo == "cep":
@@ -1222,6 +1224,13 @@ def api_atualizar_emitente(
         if campo == "razao_social" and not valor:
             continue
         setattr(prestador, campo, valor or None)
+    if "regime_ibs_cbs" in dados or "regime_ibs_cbs_desde" in dados:
+        # Salvar (mesmo sem mudar) é a confirmação que o aviso de "Precisa da
+        # sua atenção" pede antes da virada do semestre.
+        prestador.ibs_cbs_confirmado_em = hoje_br()
+    if not ibs_cbs.escolhe(prestador):
+        prestador.regime_ibs_cbs = None  # MEI e não optante não escolhem
+        prestador.regime_ibs_cbs_desde = None
     db.commit()
     return prestador
 
@@ -1691,6 +1700,11 @@ def api_criar_vinculo(
     vinculo.cod_nbs = _validar_nbs(req.cod_nbs)
     vinculo.incluir_intermediario = bool(req.incluir_intermediario)
     vinculo.iss_retido = bool(req.iss_retido)
+    try:
+        vinculo.cclass_trib = ibs_cbs.limpar_codigo(req.cclass_trib)
+        vinculo.cind_op = ibs_cbs.limpar_codigo(req.cind_op)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"Classificação de IBS e CBS: {exc}") from exc
     vinculo.envio_canal = req.envio_canal
     if req.envio_formas is not None:
         vinculo.envio_formas = _validar_formas(req.envio_formas)
@@ -1862,6 +1876,12 @@ def api_atualizar_vinculo(vinculo_id: uuid.UUID, req: VinculoAtualizarRequest, d
         campos.pop("incluir_intermediario", None)
     if campos.get("iss_retido") is None:
         campos.pop("iss_retido", None)
+    for campo in ("cclass_trib", "cind_op"):
+        if campo in campos:
+            try:
+                campos[campo] = ibs_cbs.limpar_codigo(campos[campo])
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=f"Classificação de IBS e CBS: {exc}") from exc
     if campos.get("sem_nota") is None:
         campos.pop("sem_nota", None)
     if "portal_url" in campos:

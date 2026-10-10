@@ -32,6 +32,7 @@ from app.services.envio_direto import formas_de_envio
 from app.services.municipios import municipio_por_codigo
 from app.services.paises import pais_valido
 from app.services.servicos_nacionais import normalizar_codigo, servico_por_codigo
+from app.services import ibs_cbs
 from app.tempo import hoje as hoje_br
 
 # xDescServ é TSDesc2000 no esquema da DPS (integracao/schemas/
@@ -592,6 +593,16 @@ def conferir_nota(
             "Complete o NBS no cadastro do tomador (campo “Código NBS”). Na dúvida, confirme com o seu contador.", campo="cod_nbs", onde="tomador",
         ))
     prestador = db.get(Prestador, vinculo.prestador_id)
+    if ibs_cbs.confere_classificacao(prestador, vinculo, mes_nota):
+        # Reforma (2026.10.7): de 2027 em diante a ME/EPP do Simples manda a
+        # classificação de IBS e CBS. Por enquanto é só aviso (o XML ainda
+        # não leva o grupo — esquema da NT 009 não publicado).
+        pontos.append(_ponto(
+            "aviso", "classificacao_ibs_cbs",
+            "Este tomador está sem a classificação de IBS e CBS (reforma tributária), que passa a ser exigida nas notas de 2027.",
+            "Peça ao seu contador a classificação tributária e o código da operação e complete no cadastro do tomador.",
+            campo="cclass_trib", onde="tomador",
+        ))
     if prestador is not None and prestador.op_simples_nacional == "2" and bool(vinculo.iss_retido if iss_retido is None else iss_retido):
         pontos += _checar_retencao(prestador, True, None)
     else:

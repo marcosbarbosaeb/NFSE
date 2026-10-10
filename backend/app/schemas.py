@@ -721,6 +721,8 @@ class VinculoDetalheResponse(BaseModel):
     cod_nbs: str | None = None
     incluir_intermediario: bool = False
     iss_retido: bool = False
+    cclass_trib: str | None = None
+    cind_op: str | None = None
     envio_canal: str | None = None
     envio_formas: list[str] | None = None
     email_extras: list[dict] | None = None
@@ -803,6 +805,9 @@ class VinculoCriarRequest(BaseModel):
     cod_nbs: str | None = Field(default=None, max_length=14, pattern=r"^[\d.\s]*$")
     incluir_intermediario: bool | None = None
     iss_retido: bool | None = None
+    # Reforma tributária (2026.10.7): memória, ainda não vai pro XML.
+    cclass_trib: str | None = Field(default=None, max_length=12)
+    cind_op: str | None = Field(default=None, max_length=12)
     envio_canal: str | None = Field(default=None, pattern=r"^(email|whatsapp|portal|nenhum)$")
     # Formas de envio padrão — pode ser mais de uma (email, whatsapp, portal,
     # download). Lista vazia = não precisa enviar.
@@ -846,6 +851,9 @@ class VinculoAtualizarRequest(BaseModel):
     cod_nbs: str | None = Field(default=None, max_length=14, pattern=r"^[\d.\s]*$")
     incluir_intermediario: bool | None = None
     iss_retido: bool | None = None
+    # Reforma tributária (2026.10.7): memória, ainda não vai pro XML.
+    cclass_trib: str | None = Field(default=None, max_length=12)
+    cind_op: str | None = Field(default=None, max_length=12)
     envio_canal: str | None = Field(default=None, pattern=r"^(email|whatsapp|portal|nenhum)$")
     # Formas de envio padrão — pode ser mais de uma (email, whatsapp, portal,
     # download). Lista vazia = não precisa enviar.
@@ -888,6 +896,9 @@ class PrestadorResponse(BaseModel):
     regime_apuracao_sn: str | None = None
     regime_especial_trib: str | None = None
     aliquota_iss_retido: float | None = None
+    regime_ibs_cbs: str | None = None
+    regime_ibs_cbs_desde: str | None = None
+    ibs_cbs_confirmado_em: date | None = None
     email_assunto_padrao: str | None = None
     email_mensagem_padrao: str | None = None
     email_anexos_padrao: str | None = None
@@ -1533,6 +1544,9 @@ class EmitenteAtualizarRequest(BaseModel):
     regime_especial_trib: str | None = Field(default=None, pattern=r"^[0-6]$")
     # ISS retido (2026.10.7): a alíquota do ISS que vai na nota com retenção
     aliquota_iss_retido: float | None = Field(default=None, ge=0, le=5)
+    # IBS e CBS (2026.10.7): como a ME/EPP do Simples recolhe e desde quando.
+    regime_ibs_cbs: str | None = Field(default=None, pattern=r"^[123]$")
+    regime_ibs_cbs_desde: str | None = Field(default=None, pattern=r"^\d{4}-(01|07)$")
 
     _conferir_formato_email = field_validator("email")(_conferir_emails)
 

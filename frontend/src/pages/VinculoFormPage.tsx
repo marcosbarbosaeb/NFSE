@@ -74,6 +74,9 @@ interface FormState {
   cod_nbs: string
   incluir_intermediario: boolean
   iss_retido: boolean
+  /** Reforma tributária (2026.10.7): memória da classificação de IBS e CBS */
+  cclass_trib: string
+  cind_op: string
   /** Só controle de recebimento — a Ana não gera nota pra este tomador. */
   sem_nota: boolean
 }
@@ -100,6 +103,8 @@ const ESTADO_INICIAL: FormState = {
   cod_nbs: "",
   incluir_intermediario: false,
   iss_retido: false,
+  cclass_trib: "",
+  cind_op: "",
   sem_nota: false,
 }
 
@@ -233,6 +238,8 @@ export function VinculoFormPage() {
           cod_nbs: mascaraNbs(v.cod_nbs ?? ""),
           incluir_intermediario: Boolean(v.incluir_intermediario),
           iss_retido: Boolean(v.iss_retido),
+          cclass_trib: v.cclass_trib ?? "",
+          cind_op: v.cind_op ?? "",
           sem_nota: Boolean(v.sem_nota),
         })
         setTomadorSelecionado(v.tomador)
@@ -542,6 +549,12 @@ export function VinculoFormPage() {
       setErro("Código NBS tem 9 dígitos (ex.: 1.1406.20.00).")
       return
     }
+    const cclass = form.cclass_trib.replace(/\D/g, "")
+    const cindop = form.cind_op.replace(/\D/g, "")
+    if ((cclass && cclass.length !== 6) || (cindop && cindop.length !== 6)) {
+      setErro("A classificação de IBS e CBS e o código da operação têm 6 números cada.")
+      return
+    }
     if (!form.sem_nota && !form.cod_local_prestacao) {
       setErro("Falta a cidade onde o serviço é prestado (em “Mais opções”).")
       return
@@ -603,6 +616,8 @@ export function VinculoFormPage() {
         cod_nbs: nbs || null,
         incluir_intermediario: form.incluir_intermediario,
         iss_retido: form.iss_retido,
+        cclass_trib: cclass || null,
+        cind_op: cindop || null,
         sem_nota: form.sem_nota,
       }
 
@@ -952,6 +967,32 @@ export function VinculoFormPage() {
                     : "Nomenclatura Brasileira de Serviços. Busque por palavra ou número. Opcional."
                 }
               />
+              {/* Reforma tributária (2026.10.7): só memória por enquanto — o XML
+                  ainda não leva o grupo IBS/CBS (esquema da NT 009 não saiu). */}
+              {prestadorModelo?.op_simples_nacional === "3" && (
+                <div className="grid grid-cols-1 gap-3 rounded-lg border border-dashed border-slate-300 p-3 sm:col-span-2 sm:grid-cols-2 dark:border-slate-600">
+                  <p className="text-xs text-slate-500 sm:col-span-2 dark:text-slate-400">
+                    <strong className="font-semibold text-slate-700 dark:text-slate-200">IBS e CBS (reforma tributária).</strong> A partir de 2027 a nota da
+                    empresa do Simples leva a classificação do serviço. Eu guardo aqui pra quando chegar a hora; quem informa é o seu contador. Opcional por enquanto.
+                  </p>
+                  <Field
+                    label="Classificação tributária (cClassTrib)"
+                    inputMode="numeric"
+                    maxLength={8}
+                    placeholder="6 números"
+                    value={form.cclass_trib}
+                    onChange={(e) => atualizarCampo("cclass_trib", e.target.value)}
+                  />
+                  <Field
+                    label="Código da operação (cIndOp)"
+                    inputMode="numeric"
+                    maxLength={8}
+                    placeholder="6 números"
+                    value={form.cind_op}
+                    onChange={(e) => atualizarCampo("cind_op", e.target.value)}
+                  />
+                </div>
+              )}
               </>
             )}
           </div>

@@ -352,6 +352,13 @@ def resumo_mes(
     # assim ela não deveria aparecer"): só entra quando o dia marcado no
     # calendário já chegou; antes disso é agenda, não pendência.
     prestador = db.query(Prestador).filter_by(id=prestador_id).one_or_none()
+    # IBS e CBS (2026.10.7): a ME/EPP do Simples confirma como recolhe nos
+    # dois meses antes da virada do semestre (a opção vale por semestre).
+    from app.services import ibs_cbs
+
+    aviso_ibs = ibs_cbs.aviso_de_atencao(prestador, hoje)
+    if aviso_ibs:
+        atencao.append({"tipo": "ibs_cbs_confirmar", **aviso_ibs, "link_label": "Confirmar"})
     nao_confirmada = prestador is not None and (
         prestador.aliquota_atualizada_em is None
         or (prestador.aliquota_atualizada_em.year, prestador.aliquota_atualizada_em.month) != (hoje.year, hoje.month)

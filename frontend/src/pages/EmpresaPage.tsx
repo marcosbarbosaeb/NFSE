@@ -150,6 +150,7 @@ export function EmpresaPage() {
             <>
               <AbaEmitente prestador={prestador} onAtualizado={setPrestador} />
               {modulos.emissor && <AliquotaCard prestador={prestador} onAtualizado={setPrestador} />}
+              {modulos.emissor && prestador.op_simples_nacional === "3" && <IbsCbsCard prestador={prestador} onAtualizado={setPrestador} />}
             </>
           ),
         },
@@ -494,6 +495,87 @@ function AbaEmitente({ prestador, onAtualizado }: { prestador: Prestador; onAtua
 }
 
 // --- E-mails ----------------------------------------------------------------
+
+// IBS e CBS (2026.10.7, ideias/ibs-cbs-na-nota.md): como a ME/EPP do Simples
+// recolhe, por semestre. Só tela e cadastro nesta versão: o XML ainda não leva
+// o grupo (raio-x, seção 15). Salvar aqui é a "confirmação" que o aviso de
+// "Precisa da sua atenção" pede antes da virada do semestre. MEI não escolhe.
+const OPCOES_IBS_CBS = [
+  { valor: "1", rotulo: "IBS e CBS pelo Simples Nacional (o mais comum)" },
+  { valor: "2", rotulo: "CBS pelo Simples e IBS pelo regime regular" },
+  { valor: "3", rotulo: "IBS e CBS pelo regime regular" },
+]
+
+function semestres(): { valor: string; rotulo: string }[] {
+  const lista: { valor: string; rotulo: string }[] = []
+  const ano = Math.max(2027, new Date().getFullYear())
+  for (let a = 2027; a <= ano + 1; a++) {
+    lista.push({ valor: `${a}-01`, rotulo: `1º semestre de ${a} (janeiro a junho)` })
+    lista.push({ valor: `${a}-07`, rotulo: `2º semestre de ${a} (julho a dezembro)` })
+  }
+  return lista
+}
+
+function IbsCbsCard({ prestador, onAtualizado }: { prestador: Prestador; onAtualizado: AoAtualizar }) {
+  const [regime, setRegime] = useState<string>(prestador.regime_ibs_cbs ?? "1")
+  const [desde, setDesde] = useState<string>(prestador.regime_ibs_cbs_desde ?? "2027-01")
+  const [salvando, setSalvando] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null)
+  const confirmado = prestador.ibs_cbs_confirmado_em
+
+  async function confirmar() {
+    setSalvando(true)
+    setMsg(null)
+    try {
+      const p = await api.patch<Prestador>("/prestador", { regime_ibs_cbs: regime as "1" | "2" | "3", regime_ibs_cbs_desde: desde })
+      onAtualizado(p)
+      setMsg({ ok: true, texto: "Salvo e confirmado." })
+    } catch (err) {
+      setMsg({ ok: false, texto: err instanceof ApiError ? formatarErro(err.detail) : "Falha de conexão. Tente de novo." })
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  return (
+    <Card className="p-5 sm:p-6" id="ibs-cbs">
+      <TituloSecao>IBS e CBS (reforma tributária)</TituloSecao>
+      <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+        A partir de janeiro de 2027 a nota da empresa do Simples leva IBS e CBS. Quem calcula os valores é o próprio sistema da nota; eu só preciso
+        saber como a sua empresa recolhe. A opção vale por semestre — na dúvida, confirme com o seu contador.
+      </p>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <CampoSelect label="Como a empresa recolhe IBS e CBS" value={regime} onChange={(e) => setRegime(e.target.value)}>
+          {OPCOES_IBS_CBS.map((o) => (
+            <option key={o.valor} value={o.valor}>
+              {o.rotulo}
+            </option>
+          ))}
+        </CampoSelect>
+        <CampoSelect label="Vale a partir de" value={desde} onChange={(e) => setDesde(e.target.value)}>
+          {semestres().map((o) => (
+            <option key={o.valor} value={o.valor}>
+              {o.rotulo}
+            </option>
+          ))}
+        </CampoSelect>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Button type="button" variant="accent" onClick={confirmar} disabled={salvando}>
+          {salvando ? "Salvando..." : "Salvar e confirmar"}
+        </Button>
+        <span className="text-xs text-slate-500 dark:text-slate-400">
+          {confirmado ? `Confirmado em ${new Date(`${confirmado}T00:00:00`).toLocaleDateString("pt-BR")}.` : "Ainda não confirmado."}
+        </span>
+        {msg && (
+          <span role="status" className={`text-sm ${msg.ok ? "text-success-700 dark:text-success-300" : "text-danger-700 dark:text-danger-300"}`}>
+            {msg.texto}
+          </span>
+        )}
+      </div>
+    </Card>
+  )
+}
 
 function ModeloEmailCard({ prestador, onAtualizado }: { prestador: Prestador; onAtualizado: AoAtualizar }) {
   const inicial = (): ValorModeloEmail => ({

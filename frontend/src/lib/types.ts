@@ -370,6 +370,9 @@ export interface VinculoDetalhe {
   cod_nbs?: string | null
   incluir_intermediario?: boolean
   iss_retido?: boolean
+  /** Reforma (2026.10.7): classificação tributária e código da operação — memória */
+  cclass_trib?: string | null
+  cind_op?: string | null
   envio_canal?: FormaEnvio | null
   envio_formas?: FormaDeEnvio[] | null
   email_extras?: EmailExtra[] | null
@@ -401,6 +404,9 @@ export interface VinculoCriarRequest {
   cod_nbs?: string | null
   incluir_intermediario?: boolean
   iss_retido?: boolean
+  /** Reforma (2026.10.7): classificação tributária e código da operação — memória */
+  cclass_trib?: string | null
+  cind_op?: string | null
   envio_canal?: FormaEnvio | null
   envio_formas?: FormaDeEnvio[] | null
   email_extras?: EmailExtra[] | null
@@ -902,6 +908,10 @@ export interface Prestador {
   email_geral_anexos?: "pdf_xml" | "pdf" | "xml" | null
   /** Alíquota do ISS na nota com retenção (2026.10.7) */
   aliquota_iss_retido?: number | null
+  /** IBS e CBS (2026.10.7): como a ME/EPP do Simples recolhe ("1" tudo pelo Simples), desde quando e a última confirmação */
+  regime_ibs_cbs?: "1" | "2" | "3" | null
+  regime_ibs_cbs_desde?: string | null
+  ibs_cbs_confirmado_em?: string | null
 }
 
 export type EmitenteAtualizarRequest = Partial<{
@@ -920,6 +930,8 @@ export type EmitenteAtualizarRequest = Partial<{
   regime_apuracao_sn: "1" | "2" | "3"
   regime_especial_trib: string
   aliquota_iss_retido: number | null
+  regime_ibs_cbs: "1" | "2" | "3"
+  regime_ibs_cbs_desde: string
 }>
 
 export interface AliquotaAtualizarRequest {

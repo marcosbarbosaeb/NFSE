@@ -104,6 +104,14 @@ class Prestador(Base):
     # Simples é a parte do ISS na faixa do Simples (de 2% a 5%; a Sefin aceita
     # de 1,8%). Quem sabe é a empresa/contador; fica guardada aqui.
     aliquota_iss_retido: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    # IBS e CBS (2026.10.7, raio-x seção 15): como a ME/EPP do Simples recolhe
+    # (`regApIBSCBSSN`: 1 tudo pelo Simples — o padrão quando vazio —, 2 CBS
+    # pelo Simples e IBS regular, 3 tudo regular), desde quando ("2027-01") e
+    # quando a empresa confirmou pela última vez. MEI não escolhe. Ainda não
+    # vai pro XML (esquema da NT 009 não publicado).
+    regime_ibs_cbs: Mapped[str | None] = mapped_column(String(1))
+    regime_ibs_cbs_desde: Mapped[str | None] = mapped_column(String(7))
+    ibs_cbs_confirmado_em: Mapped[date | None] = mapped_column(Date)
     # Perfis do cadastro (2026.10.7): como a empresa costuma emitir — ids de
     # app/data/perfis.json, o primeiro é o principal. `perfil_outro` = "Não me
     # encontrei". `perfil_respondido_em` nulo = ainda não respondeu (a pergunta
@@ -436,6 +444,11 @@ class PrestadorTomador(Base):
     # ISS retido pelo tomador (2026.10.7): memória — vale pra toda nota deste
     # tomador; na hora de gerar dá pra mudar só naquela nota. Nunca pra MEI.
     iss_retido: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
+    # Memória da reforma (2026.10.7): classificação tributária (cClassTrib, 6
+    # dígitos — os 3 primeiros são o CST) e código indicador da operação
+    # (cIndOp, 6 dígitos). Guardados pra quando o XML levar o grupo IBS/CBS.
+    cclass_trib: Mapped[str | None] = mapped_column(String(6))
+    cind_op: Mapped[str | None] = mapped_column(String(6))
     # Só controle de recebimento (parceria, bônus, PayPal, tomador
     # estrangeiro importado): a Ana não gera nota pra ele (28/09/2026).
     sem_nota: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
