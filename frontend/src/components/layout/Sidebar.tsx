@@ -1,4 +1,4 @@
-import { ArrowLeftRight, BriefcaseBusiness, Building2, CalendarDays, CircleHelp, Contact, FileText, FolderOpen, Gift, Home, Layers, ShieldCheck, UserRound, Users, Wallet } from "lucide-react"
+import { ArrowLeftRight, BriefcaseBusiness, Building2, CalendarDays, CircleHelp, Contact, FileText, FileArchive, FolderOpen, Gift, Home, Layers, ShieldCheck, UserRound, Users, Wallet } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link, NavLink, useLocation } from "react-router-dom"
 import { api } from "../../lib/api"
@@ -33,6 +33,8 @@ const GERAL = [
   { to: "/app/empresa", label: "Empresa", icon: Building2 },
   // Pasta do mês (08/10/2026): arquivos e conversa com o contador.
   { to: "/app/pasta", label: "Pasta do mês", icon: FolderOpen },
+  // Documentos da empresa (2026.10.7): guarda permanente; contador só com a permissão.
+  { to: "/app/documentos", label: "Documentos da empresa", icon: FileArchive },
 ]
 
 const classeItem = (ativo: boolean) =>
@@ -65,7 +67,10 @@ export function Sidebar({ aberto = false, onFechar }: { aberto?: boolean; onFech
   const grupos = soContador ? [] : [
     ...(modulos.emissor ? [{ titulo: "Notas", itens: NOTAS }] : []),
     ...(modulos.financeiro ? [{ titulo: "Financeiro", itens: modulos.emissor ? FINANCEIRO : [...FINANCEIRO, CLIENTES] }] : []),
-    { titulo: "", itens: GERAL },
+    {
+      titulo: "",
+      itens: GERAL.filter((i) => i.to !== "/app/documentos" || usuario?.papel !== "contador" || (usuario?.permissoes ?? []).includes("documentos")),
+    },
   ]
   const doisProdutos = modulos.emissor && modulos.financeiro
   // Selo da Conciliação (05/10/2026): a soma das DUAS conciliações — notas

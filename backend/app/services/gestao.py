@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import definir_prestador_atual
-from app.services import atendimento
+from app.services import atendimento, documentos_empresa
 from app.tempo import hoje as hoje_br
 
 # O que conta como "usar" cada ferramenta (id, nome, campo de volume no mês).
@@ -178,6 +178,8 @@ def painel(db: Session, prestador_de_volta: uuid.UUID, hoje: datetime.date | Non
                 "veio_por": "parceira: " + parcerias[prestador_id] if prestador_id in parcerias else ("indicação de cliente" if empresa["veio_por_indicacao"] else None),
                 # 2026.10.7: conta que já existia em cidade ou regime que a Ana não atende
                 # continua funcionando — só fica marcada aqui ("cidade_fora" | "regime" | None).
+                # Documentos da empresa (2026.10.7): só quantidade e espaço — nunca o conteúdo.
+                "documentos": documentos_empresa.resumo_gestao(db, prestador_id),
                 "fora_do_atendimento": None if empresa["so_contador"] else atendimento.fora_do_atendimento(
                     regime=empresa["op_simples_nacional"], cod_municipio=empresa["cod_municipio"], modulos=list(empresa["modulos"] or [])),
             })

@@ -39,7 +39,7 @@ TELAS = {
     "/app/tomadores": "Tomadores", "/app/tomadores/novo": "Novo tomador", "/app/tomadores/:id": "Tomador (cadastro)",
     "/app/calendario": "Calendário", "/app/financeiro": "Financeiro (painel)", "/app/financeiro/conciliacao": "Conciliação",
     "/app/financeiro/clientes": "Clientes do financeiro", "/app/empresa": "Empresa", "/app/conta": "Minha conta",
-    "/app/atendimentos": "Painel do contador", "/app/ajuda": "Ajuda", "/app/novidades": "Novidades", "/app/gestao": "Gestão",
+    "/app/atendimentos": "Painel do contador", "/app/ajuda": "Ajuda", "/app/documentos": "Documentos da empresa", "/app/pasta": "Pasta do mês", "/app/novidades": "Novidades", "/app/gestao": "Gestão",
 }
 
 

@@ -1225,6 +1225,50 @@ class IaChamada(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class DocumentoEmpresa(Base):
+    """Documentos da empresa (2026.10.7 — guarda permanente, separada da pasta
+    do mês): contrato social, cartão CNPJ, documentos dos sócios, certidões...
+    Só o dono e o contador com a permissão "documentos" enxergam; nem a Gestão
+    abre. Arquivo no banco, sem cifragem nesta fase (como a pasta do mês).
+    Substituir troca o arquivo (sem histórico). Some com a empresa (CASCADE)."""
+
+    __tablename__ = "documento_empresa"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False)
+    tipo: Mapped[str] = mapped_column(String(30), nullable=False)
+    nome: Mapped[str] = mapped_column(String(200), nullable=False)
+    nome_arquivo: Mapped[str] = mapped_column(String(200), nullable=False)
+    tipo_mime: Mapped[str] = mapped_column(String(100), nullable=False)
+    tamanho: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    conteudo: Mapped[bytes] = mapped_column(LargeBinary, nullable=False, deferred=True)
+    validade: Mapped[date | None] = mapped_column(Date)
+    enviado_por: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("usuario.id", ondelete="SET NULL"))
+    enviado_por_email: Mapped[str | None] = mapped_column(String(254))
+    papel: Mapped[str] = mapped_column(String(10), nullable=False)  # empresa | contador
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    substituido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (Index("ix_documento_empresa_prestador", "prestador_id"),)
+
+
+class DocumentoAcesso(Base):
+    """Quem abriu ou baixou cada documento da empresa (o dono vê)."""
+
+    __tablename__ = "documento_acesso"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    prestador_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("prestador.id", ondelete="CASCADE"), nullable=False)
+    documento_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("documento_empresa.id", ondelete="CASCADE"), nullable=False)
+    usuario_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("usuario.id", ondelete="SET NULL"))
+    email: Mapped[str | None] = mapped_column(String(254))
+    papel: Mapped[str] = mapped_column(String(10), nullable=False)
+    acao: Mapped[str] = mapped_column(String(10), nullable=False)  # abriu | baixou | enviou | substituiu
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("ix_documento_acesso_doc", "documento_id"),)
+
+
 class PerfilBusca(Base):
     """Profissão buscada no cadastro que não bateu com nenhum perfil
     (2026.10.7) — a lista de demanda pros próximos perfis, na Gestão. Só o

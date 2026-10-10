@@ -27,6 +27,7 @@ const AtendimentosPage = lazy(() => import("./pages/AtendimentosPage").then((m) 
 const GestaoPage = lazy(() => import("./pages/GestaoPage").then((m) => ({ default: m.GestaoPage })))
 const EmpresaPage = lazy(() => import("./pages/EmpresaPage").then((m) => ({ default: m.EmpresaPage })))
 const PastaPage = lazy(() => import("./pages/PastaPage").then((m) => ({ default: m.PastaPage })))
+const DocumentosPage = lazy(() => import("./pages/DocumentosPage").then((m) => ({ default: m.DocumentosPage })))
 const DashboardPage = lazy(() => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardPage })))
 const EmissaoDetalhePage = lazy(() => import("./pages/EmissaoDetalhePage").then((m) => ({ default: m.EmissaoDetalhePage })))
 const ClientesFinanceiroPage = lazy(() => import("./pages/ClientesFinanceiroPage").then((m) => ({ default: m.ClientesFinanceiroPage })))
@@ -101,6 +102,7 @@ export default function App() {
             <Route path="conta" element={<ContaPage />} />
             <Route path="empresa" element={<EmpresaPage />} />
             <Route path="pasta" element={<PastaPage />} />
+            <Route path="documentos" element={<DocumentosPage />} />
             <Route path="gestao" element={<GestaoPage />} />
             <Route path="atendimentos" element={<AtendimentosPage />} />
             <Route path="configuracoes" element={<ConfiguracoesPage />} />

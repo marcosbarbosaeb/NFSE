@@ -4076,6 +4076,11 @@ from app.pasta_rotas import rotas as _rotas_pasta  # noqa: E402
 
 app.include_router(_rotas_pasta)
 
+# Documentos da empresa (2026.10.7): app/documentos_rotas.py
+from app.documentos_rotas import rotas as _rotas_documentos  # noqa: E402
+
+app.include_router(_rotas_documentos)
+
 
 @app.get("/", include_in_schema=False)
 def frontend_raiz():

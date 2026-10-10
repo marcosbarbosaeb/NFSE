@@ -37,6 +37,8 @@ PERMISSOES: dict[str, tuple[str, str]] = {
     "tomadores": ("Cadastrar e editar tomadores", "Incluir, alterar e arquivar os clientes para quem a empresa emite."),
     "financeiro": ("Lançar e conciliar no Financeiro", "Registrar recebimentos e despesas, importar extrato, conciliar e fechar o mês."),
     "empresa": ("Alterar dados da empresa", "Dados cadastrais, alíquota, certificado A1 e preferências de emissão."),
+    # 2026.10.7: a exceção ao "ver é sempre livre" — sem ela o contador nem vê a área.
+    "documentos": ("Documentos da empresa", "Ver, enviar e substituir os documentos da empresa (contrato social, documentos dos sócios, certidões). Apagar, só o dono."),
 }
 
 LIVRE = "livre"  # não muda nada (prévia, busca): qualquer contador
@@ -60,6 +62,10 @@ _REGRAS_BRUTAS: list[tuple[str, str, str, str]] = [
     ("POST", r"/api/cep/buscar", LIVRE, ""),
     ("POST", r"/api/uso/tela", LIVRE, ""),
     ("POST", r"/api/ajuda/perguntar", LIVRE, ""),
+    ("POST", r"/api/documentos", "documentos", "Enviou um documento da empresa"),
+    ("POST", r"/api/documentos/[^/]+/substituir", "documentos", "Substituiu um documento da empresa"),
+    ("PATCH", r"/api/documentos/[^/]+", "documentos", "Editou um documento da empresa"),
+    ("DELETE", r"/api/documentos/[^/]+", NUNCA, ""),
     ("POST", r"/api/lista-espera", LIVRE, ""),
     ("POST", r"/api/dps/[^/]+/explicar-recusa", LIVRE, ""),
     ("POST", r"/api/dps/conferir", LIVRE, ""),
@@ -374,6 +380,17 @@ def do_contador(db: Session, usuario: Usuario, voltar_para: uuid.UUID) -> dict:
             modulos = list(p.modulos or []) or ["emissor"]
             do_financeiro: dict = {}
             pendencias = _pendencias_da_empresa(db, a.prestador_id, modulos, do_financeiro)
+            if "documentos" in (a.permissoes or []):
+                # Documentos da empresa vencendo/vencidos (2026.10.7) — só pra quem pode vê-los
+                from app.services.documentos_empresa import avisos_de_validade
+
+                definir_prestador_atual(db, a.prestador_id)
+                avisos_docs = avisos_de_validade(db, a.prestador_id)
+                if avisos_docs:
+                    pendencias.append({
+                        "tipo": "documentos", "titulo": f"Documentos da empresa vencendo ou vencidos: {len(avisos_docs)}",
+                        "link": "/app/documentos", "quantidade": len(avisos_docs), "atrasada": any(d["vencido"] for d in avisos_docs),
+                    })
             sit = situacao(db, a.prestador_id)
             raio = _raio_x(db, a.prestador_id, do_financeiro)
             pasta_do_mes = _pasta_da_empresa(db, a.prestador_id, usuario.id)

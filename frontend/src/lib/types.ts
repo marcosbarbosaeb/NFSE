@@ -25,7 +25,7 @@ export interface Usuario {
 
 // --- Contador com permissões e bloqueio sem assinatura (06/10/2026) ---
 
-export type PermissaoContador = "emitir" | "enviar" | "tomadores" | "financeiro" | "empresa"
+export type PermissaoContador = "emitir" | "enviar" | "tomadores" | "financeiro" | "empresa" | "documentos"
 
 export interface SituacaoAcesso {
   liberado: boolean

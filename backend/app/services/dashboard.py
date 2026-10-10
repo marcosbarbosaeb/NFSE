@@ -327,6 +327,23 @@ def resumo_mes(
                 "link_label": "Enviar novo certificado",
             })
 
+    # Documentos da empresa com validade (2026.10.7): 30 dias antes e vencidos.
+    # Sem o nome do documento aqui (o contador sem a permissão também vê esta lista).
+    from app.services.documentos_empresa import avisos_de_validade
+
+    docs_aviso = avisos_de_validade(db, prestador_id, hoje)
+    if docs_aviso:
+        vencidos = sum(1 for d in docs_aviso if d["vencido"])
+        vencendo = len(docs_aviso) - vencidos
+        partes = ([f"{vencidos} vencido(s)"] if vencidos else []) + ([f"{vencendo} vencendo em até 30 dias"] if vencendo else [])
+        atencao.append({
+            "tipo": "documento_vencendo" if not vencidos else "documento_vencido",
+            "titulo": "Documentos da empresa",
+            "mensagem": " e ".join(partes) + ".",
+            "link": "/app/documentos",
+            "link_label": "Ver os documentos",
+        })
+
     # Marco 16, item 5 — alíquota de referência do Simples Nacional ainda
     # não foi confirmada NESTE mês (ver PATCH /api/prestador/aliquota e
     # docstring de Prestador.aliquota_atualizada_em). Só avisa — nunca

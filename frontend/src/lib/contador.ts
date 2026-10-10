@@ -8,6 +8,7 @@ export const PERMISSOES_PADRAO: PermissaoInfo[] = [
   { id: "tomadores", nome: "Cadastrar e editar tomadores", descricao: "Incluir, alterar e arquivar os clientes para quem a empresa emite." },
   { id: "financeiro", nome: "Lançar e conciliar no Financeiro", descricao: "Registrar recebimentos e despesas, importar extrato, conciliar e fechar o mês." },
   { id: "empresa", nome: "Alterar dados da empresa", descricao: "Dados cadastrais, alíquota, certificado A1 e preferências de emissão." },
+  { id: "documentos", nome: "Documentos da empresa", descricao: "Ver, enviar e substituir os documentos da empresa (contrato social, documentos dos sócios, certidões). Apagar, só o dono." },
 ]
 
 const CURTO: Record<PermissaoContador, string> = {
@@ -16,6 +17,7 @@ const CURTO: Record<PermissaoContador, string> = {
   tomadores: "tomadores",
   financeiro: "financeiro",
   empresa: "dados da empresa",
+  documentos: "documentos da empresa",
 }
 
 export const nomeCurto = (p: PermissaoContador) => CURTO[p] ?? p
